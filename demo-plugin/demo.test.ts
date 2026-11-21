@@ -42,8 +42,8 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   t.after(() => client.close());
   const tools = (await client.listTools()).tools;
   const ui = tools.find(tool => tool.name === 'open_demo')?._meta?.ui as { resourceUri?: string } | undefined;
-  assert.equal(ui?.resourceUri, 'ui://arrela/journey-v2.html');
-  const resource = await client.readResource({ uri: 'ui://arrela/journey-v2.html' });
+  assert.equal(ui?.resourceUri, 'ui://arrela/journey-v3.html');
+  const resource = await client.readResource({ uri: 'ui://arrela/journey-v3.html' });
   const [widget] = resource.contents;
   assert.equal(widget.mimeType, 'text/html;profile=mcp-app');
   assert.ok('text' in widget);
@@ -78,7 +78,9 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
 
   await open('progress');
   const progress = await update('join_quest');
-  assert.equal((progress.progress as { xp: number }).xp, 450);
+  assert.equal((progress.progress as { xp: number; rank: number }).xp, 450);
+  assert.equal((progress.progress as { rank: number }).rank, 2);
+  assert.match(String(progress.message), /Level up/);
   assert.equal(((await update('join_quest')).progress as { xp: number }).xp, 450);
 
   const unread = await open('shortcuts');
@@ -90,15 +92,31 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   assert.equal(inbox.length, 5);
   assert.equal(inbox.find(item => item.id === 'rule')?.upfrontMonths, 0);
   assert.equal(inbox.find(item => item.id === 'rule')?.debtFreeMonths, 240);
-  assert.equal((await update('choose_shortcut', { opportunity: 'rule' })).chosen, 'rule');
+  assert.deepEqual(inbox.slice(0, 3).map(item => item.id), ['rule', 'listing', 'job']);
+  const previewed = await update('preview_shortcut', { opportunity: 'listing' });
+  assert.equal(previewed.previewed, 'listing');
+  assert.equal(previewed.chosen, null);
+  assert.equal((await update('choose_shortcut')).chosen, 'listing');
+  await update('preview_shortcut', { opportunity: 'job' });
+  const kept = await update('keep_route');
+  assert.equal(kept.chosen, 'listing');
+  assert.equal(kept.previewed, null);
 
   const debtFree = { original: 165000, remaining: 0, otherDebt: 0, percent: 100, paid: true };
-  assert.deepEqual((await open('payoff')).payoff, debtFree);
+  const finish = await open('payoff');
+  assert.deepEqual(finish.payoff, debtFree);
+  assert.equal(finish.credits, null);
+  assert.match(String(finish.message), /Want to see the credits/);
+  assert.ok((await update('show_credits')).credits);
+  assert.equal((await update('hide_credits')).credits, null);
+  await update('show_credits');
   assert.equal(((await update('replay_payment')).payoff as { remaining: number }).remaining, 620);
-  assert.deepEqual((await update('final_payment')).payoff, debtFree);
+  const replay = await update('final_payment');
+  assert.deepEqual(replay.payoff, debtFree);
+  assert.equal(replay.credits, null);
   await update('replay_payment');
   assert.deepEqual((await update('restart_persona')).payoff, debtFree);
-  assert.equal((await open('shortcuts')).chosen, 'rule');
+  assert.equal((await open('shortcuts')).chosen, 'listing');
   await update('restart_all');
   assert.equal((await open('shortcuts')).unread, 5);
   assert.equal(((await open('progress')).progress as { xp: number }).xp, 350);

@@ -56,6 +56,22 @@ const opportunities = [
     verify: 'See if the habit fits your schedule and budget.', target: initialTarget, extra: 40 },
 ] as const;
 const opportunityId = z.enum(['rule', 'job', 'rural', 'listing', 'friends']);
+type Opportunity = z.infer<typeof opportunityId>;
+const routeLetter: Record<Opportunity, string> = { rule: 'A', listing: 'B', job: 'C', rural: 'D', friends: 'E' };
+const credits = {
+  title: 'A place of your own',
+  stats: [
+    { label: 'Mortgage principal repaid', value: '€165,000' },
+    { label: 'Repayment journey', value: '20 years' },
+    { label: 'Remaining debt', value: '€0' },
+  ],
+  milestones: [
+    { title: 'The first step', detail: 'Jordi set a savings goal and built an upfront fund.' },
+    { title: 'Keys in hand', detail: 'He bought his home and began repaying the mortgage.' },
+    { title: 'The finish line', detail: 'The last installment cleared. He owns the home outright.' },
+  ],
+  achievements: ['Trailblazer', 'Keys in Hand', 'Mortgage-Free'],
+};
 
 export const openSchema = z.object({
   runId: z.uuid().optional(),
@@ -66,7 +82,7 @@ export const openSchema = z.object({
 export const updateSchema = z.object({
   runId: z.uuid(),
   action: z.enum(['answer', 'answer_batch', 'sample_bank', 'restart_persona', 'restart_all', 'join_quest',
-    'switch_persona', 'read_inbox', 'choose_shortcut', 'keep_route', 'replay_payment', 'final_payment']),
+    'switch_persona', 'read_inbox', 'preview_shortcut', 'choose_shortcut', 'keep_route', 'replay_payment', 'final_payment', 'show_credits', 'hide_credits']),
   persona: personaSchema.optional(),
   question: questionId.optional(),
   answer: answerValue.optional(),
@@ -78,8 +94,9 @@ function seed() {
   return {
     answers: {} as Partial<Record<QuestionId, string | number>>,
     bankConnected: false, joinedQuest: false, inboxRead: false,
-    chosen: null as z.infer<typeof opportunityId> | 'keep' | null,
-    paid: true,
+    chosen: null as Opportunity | null,
+    previewed: null as Opportunity | null,
+    paid: true, creditsVisible: false,
   };
 }
 type Run = { persona: Persona; state: ReturnType<typeof seed>; revision: number; pairCode: string };
@@ -126,14 +143,17 @@ export function getView(runId: string, message?: string) {
   }
   if (persona === 'progress') {
     const xp = state.joinedQuest ? 450 : 350;
+    const coach = state.joinedQuest
+      ? { headline: 'Level up! Good Neighbor unlocked.', milestone: 'You earned 100 XP and moved from third to second place.', next: 'Keep your savings streak going for another month.' }
+      : { headline: 'Marc, you’re past halfway!', milestone: 'Four months on a savings streak earned you the Steady Saver badge.', next: 'Join the first buyers’ picnic to reach Level 4 and earn Good Neighbor.' };
     return { ...base, progress: { saved: 32400, target: initialTarget, percent: 60, monthly: 900,
       ...routeTimeline(timeToGoal(32400, initialTarget, 900)), level: state.joinedQuest ? 4 : 3, xp, xpGoal: 550,
-      checkpoint: state.joinedQuest ? 2 : 1,
+      checkpoint: state.joinedQuest ? 2 : 1, streak: 4, rank: state.joinedQuest ? 2 : 3, coach,
       badges: state.joinedQuest ? ['Trailblazer', 'Steady Saver', 'Good Neighbor'] : ['Trailblazer', 'Steady Saver'],
       leaderboard: [{ name: 'Cami', xp: 505 }, { name: 'Sol', xp: 400 }, { name: 'Marc · You', xp }, { name: 'Nico', xp: 220 }]
         .sort((a, b) => b.xp - a.xp),
       joinedQuest: state.joinedQuest },
-      message: message || 'Marc is at 60% of the upfront milestone, saving €900 per month. The destination is owning the home outright. His next quest is a free local meetup.',
+      message: message || `${coach.headline} ${coach.milestone} ${coach.next}`,
     } as const;
   }
   if (persona === 'shortcuts') {
@@ -142,20 +162,31 @@ export function getView(runId: string, message?: string) {
     const baseline = timeToGoal(saved, initialTarget, monthly)!;
     const inbox = opportunities.map(item => {
       const months = timeToGoal(saved, item.target, monthly + item.extra)!;
-      return { ...item, ...routeTimeline(months), fasterBy: baseline - months };
-    });
+      return { ...item, letter: routeLetter[item.id], ...routeTimeline(months), fasterBy: baseline - months };
+    }).sort((a, b) => a.letter.localeCompare(b.letter));
     const unread = state.inboxRead ? 0 : inbox.length;
-    return { ...base, unread, baseline: routeTimeline(baseline), saved, inbox: state.inboxRead ? inbox : [], chosen: state.chosen,
+    const preview = inbox.find(item => item.id === state.previewed);
+    const currentRoute = inbox.find(item => item.id === state.chosen);
+    return { ...base, unread, baseline: routeTimeline(baseline), saved, inbox: state.inboxRead ? inbox : [],
+      chosen: state.chosen, previewed: state.previewed,
       message: message || (unread
-        ? `Núria has ${unread} unread route updates. Ask if she wants to read them now. Do not read them automatically.`
-        : 'Núria’s shortcut inbox is open. Explain the assumptions and ask before changing her route.'),
+        ? `Núria has ${unread} unread route updates. Ask if she wants to see the alternatives.`
+        : preview
+          ? `Previewing Route ${preview.letter}: ${preview.title}, ${preview.fasterBy} months sooner. Ask whether to switch or keep the active route.`
+          : currentRoute
+            ? `Route ${currentRoute.letter} is active, ${currentRoute.fasterBy} months sooner than the original plan.`
+            : `Three routes could get you there sooner. ${inbox.slice(0, 3).map(item =>
+              `Route ${item.letter}: ${item.title}, ${item.fasterBy} months faster.`).join(' ')} Which would you like to preview?`),
     } as const;
   }
   return { ...base, payoff: {
     original: 165000, remaining: state.paid ? 0 : 620, otherDebt: 0, percent: state.paid ? 100 : 99, paid: state.paid,
-  }, message: message || (state.paid
-    ? 'Jordi owns his home outright. The mortgage is paid off and he has zero other demo debt. Celebrate the finish.'
-    : 'Replaying Jordi’s last simulated €620 payment.'),
+  }, credits: state.paid && state.creditsVisible ? credits : null,
+    message: message || (state.paid
+      ? state.creditsVisible
+        ? 'Roll the credits: Jordi repaid €165,000 over 20 years and earned Trailblazer, Keys in Hand and Mortgage-Free. Final balance: €0.'
+        : 'You did it, Jordi! The home is yours outright. Want to see the credits?'
+      : 'One €620 installment to go on the replay.'),
   } as const;
 }
 export type DemoView = ReturnType<typeof getView>;
@@ -231,26 +262,43 @@ export function updateDemo({ runId, action, persona: nextPersona, question, answ
     case 'join_quest':
       if (persona !== 'progress') throw new Error('Open Marc’s progress first.');
       state.joinedQuest = true;
-      message = 'Marc joined the sample park picnic and earned 100 XP and the Good Neighbor badge.';
+      message = 'Level up, Marc! You earned 100 XP, unlocked Good Neighbor, and jumped to second place.';
       break;
     case 'read_inbox':
       if (persona !== 'shortcuts') throw new Error('Open Núria’s shortcuts first.');
       state.inboxRead = true;
       break;
+    case 'preview_shortcut':
+      if (persona !== 'shortcuts' || !state.inboxRead) throw new Error('Open Núria’s route alternatives first.');
+      state.previewed = opportunity ?? null;
+      break;
     case 'choose_shortcut':
     case 'keep_route':
       if (persona !== 'shortcuts' || !state.inboxRead) throw new Error('Open Núria’s shortcut inbox first.');
-      if (action === 'choose_shortcut' && !opportunity) throw new Error('Choose one of the five shortcut IDs.');
-      state.chosen = action === 'keep_route' ? 'keep' : opportunity!;
-      message = state.chosen === 'keep' ? 'Núria kept the current route.' : 'Núria switched the demo route. Real eligibility and costs would still need verification.';
+      if (action === 'choose_shortcut') {
+        const confirmed = opportunity ?? state.previewed;
+        if (!confirmed) throw new Error('Preview or name a route to switch to.');
+        state.chosen = confirmed;
+        message = `Route ${routeLetter[confirmed]} is now active. Dot has a new path to the finish.`;
+      } else {
+        // Dismiss the comparison without discarding a route accepted earlier.
+        message = 'Your current route is unchanged.';
+      }
+      state.previewed = null;
       break;
     case 'replay_payment':
       if (persona !== 'payoff') throw new Error('Open Jordi’s finish first.');
       state.paid = false;
+      state.creditsVisible = false;
       break;
     case 'final_payment':
       if (persona !== 'payoff') throw new Error('Open Jordi’s payoff first.');
       state.paid = true;
+      break;
+    case 'show_credits':
+    case 'hide_credits':
+      if (persona !== 'payoff' || !state.paid) throw new Error('Finish Jordi’s journey before rolling the credits.');
+      state.creditsVisible = action === 'show_credits';
       break;
     case 'restart_persona': {
       const initial = seed();
@@ -261,7 +309,11 @@ export function updateDemo({ runId, action, persona: nextPersona, question, answ
       else if (persona === 'shortcuts') {
         state.inboxRead = false;
         state.chosen = null;
-      } else state.paid = initial.paid;
+        state.previewed = null;
+      } else {
+        state.paid = initial.paid;
+        state.creditsVisible = false;
+      }
       break;
     }
     case 'restart_all':
