@@ -8,6 +8,11 @@
   "scripts": {
     "dev": "node --watch apps/profile-api/server.ts",
     "start": "node apps/profile-api/server.ts",
+    "setup:app": "npm --prefix demo-plugin ci",
+    "build:app": "npm --prefix demo-plugin run build",
+    "check:app": "npm --prefix demo-plugin run check",
+    "test:app": "npm --prefix demo-plugin test",
+    "dev:stack": "npm run build:app && node scripts/dev-stack.ts",
     "generate:users": "node scripts/generate-users.ts",
     "test": "node --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",

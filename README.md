@@ -12,9 +12,21 @@ Key references: [MCP architecture and contracts](https://chatgpt.com/space/page_
 
 ## Project status
 
-The project includes a local TypeScript profile/bank API, deterministic transaction cash-flow analysis and savings scenarios, 500 synthetic household profiles in per-user JSON and combined JSON/CSV formats, and a municipality MCP backend. The municipality backend covers town matching, school access, FGC schedules and housing incentives. ChatGPT widget and conversational finance integration remain planned.
+The project includes a connected ChatGPT plugin/live board, local profile/bank API, deterministic financial analysis, 500 synthetic profiles and a sourced municipality backend. Connected mode persists grouped interview answers, reads bank runtime changes and prepares provisional municipality screens. Property bedroom checks remain explicitly unverified until actual listing evidence is available.
 
-The separate `hackathon/arrela-demo-plugin` branch contains a scripted four-persona MCP/widget prototype. It is not merged into `main` and does not yet consume the profile API. Its fictional incentives and listings do not satisfy the sourced municipality demo requirement.
+The plugin work is integrated under `demo-plugin/`. With `PROFILE_API_URL` and `PROFILE_API_TOKEN`, one `/mcp` endpoint exposes municipality, bank-read and demo-board tools. Without configuration it runs the original scripted rehearsal. Scripted scenes remain visibly separate from sourced town/incentive results; backend errors never silently switch to scripted data.
+
+## Connected demo and development areas
+
+```powershell
+npm ci
+npm run setup:app
+npm run dev:stack
+```
+
+Open `http://127.0.0.1:8787/preview`; use `http://127.0.0.1:8787/mcp` as the single local MCP endpoint. The launcher starts the profile API on port 3001, keeps its credential in process memory and enables a clearly synthetic background feed for `user-001`. `DEMO_BANK_USERS` overrides the list (empty disables all feeds). `PROFILE_API_PORT` and `APP_PORT` override ports. Ctrl+C stops the stack. Expose the app through your chosen HTTPS host/tunnel for ChatGPT; the local launcher does not deploy it.
+
+See [the monorepo development map](docs/README.md) for each area's entry points, owners, contracts and checks. `npm run typecheck`, `npm test`, `npm run data:validate`, `npm run check:app` and `npm run test:app` verify the combined code. Runtime bank events persist in the ledger; timers run only while the profile service is running and clients poll for updates. They do not wake ChatGPT or send unsolicited messages.
 
 ## User profiles and API
 

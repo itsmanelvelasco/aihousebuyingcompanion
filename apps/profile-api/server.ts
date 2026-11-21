@@ -9,6 +9,7 @@ import type { Section } from './store.ts';
 import { createBankStore, accountBalances, dateSchema } from './bank.ts';
 import { analyzeTransactions, periodSchema, scenarioSchema, simulateSavings } from './finance.ts';
 import { createInputStore } from './inputs.ts';
+import { createBankRuntime } from './runtime.ts';
 
 async function body(req: IncomingMessage) {
   let size = 0;
@@ -30,7 +31,8 @@ export function createProfileApi(root: string, token: string) {
   const store = createStore(root);
   const bank = createBankStore(root);
   const inputs = createInputStore(root);
-  return createServer(async (req, res) => {
+  const runtime = createBankRuntime(bank);
+  const server = createServer(async (req, res) => {
     try {
       const expected = Buffer.from(`Bearer ${token}`);
       const actual = Buffer.from(req.headers.authorization ?? '');
@@ -64,6 +66,19 @@ export function createProfileApi(root: string, token: string) {
         if (parts[2] === 'bank') {
           const route = parts[3];
           const itemId = parts[4] === undefined ? undefined : userId.parse(parts[4]);
+          if (route === 'events' && parts.length === 4 && req.method === 'GET') {
+            const after = z.coerce.number().int().nonnegative().safe().parse(query.get('after') ?? 0);
+            const limit = z.coerce.number().int().min(1).max(100).parse(query.get('limit') ?? 50);
+            return reply(res, 200, await bank.events(id, after, limit));
+          }
+          if (route === 'runtime') {
+            if (parts.length === 4 && req.method === 'GET') return reply(res, 200, await runtime.status(id));
+            if (parts.length === 4 && req.method === 'POST') return reply(res, 200, await runtime.configure(id, await body(req)));
+            if (parts.length === 5 && itemId === 'tick' && req.method === 'POST') {
+              z.object({}).strict().parse(await body(req));
+              return reply(res, 200, await runtime.tick(id));
+            }
+          }
           if (route === 'demo' && parts.length === 4 && req.method === 'POST') {
             z.object({}).strict().parse(await body(req));
             const outcome = await bank.seedDemo(id);
@@ -101,7 +116,7 @@ export function createProfileApi(root: string, token: string) {
             const result = route === 'simulate' ? simulateSavings(summary, scenarioSchema.parse(await body(req))) : summary;
             return reply(res, 200, { ...result, ledgerUpdatedAt: ledger.updatedAt || null });
           }
-          if (!['accounts', 'transactions', 'summary', 'simulate', 'demo'].includes(route ?? '')) throw new ApiError(404, 'Bank route not found');
+          if (!['accounts', 'transactions', 'summary', 'simulate', 'demo', 'runtime', 'events'].includes(route ?? '')) throw new ApiError(404, 'Bank route not found');
           throw new ApiError(405, 'Method not allowed');
         }
         if (parts.length > 3) throw new ApiError(404, 'Route not found');
@@ -123,11 +138,20 @@ export function createProfileApi(root: string, token: string) {
       reply(res, 500, { error: 'Profile storage failure' });
     }
   });
+  server.on('close', () => { void runtime.close(); });
+  return Object.assign(server, { bankRuntime: runtime });
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const root = resolve(process.env.PROFILE_DATA_DIR ?? 'data/runtime-users');
   const server = createProfileApi(root, process.env.PROFILE_API_TOKEN ?? '');
   await seedRuntime(resolve('data/users'), root);
+  for (const id of (process.env.DEMO_BANK_USERS ?? '').split(',').map(id => id.trim()).filter(Boolean)) {
+    await server.bankRuntime.configure(id, { enabled: true, intervalMs: Number(process.env.DEMO_BANK_INTERVAL_MS ?? 5000) });
+    await server.bankRuntime.tick(id);
+  }
   const port = Number(process.env.PORT ?? 3001);
   server.listen(port, '127.0.0.1', () => console.log(`Profile API: http://127.0.0.1:${port}`));
+  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
+    void server.bankRuntime.close().then(() => server.close());
+  });
 }

@@ -110,6 +110,16 @@ Invoke-RestMethod "$base/simulate?from=2026-08-01&to=2026-10-31" -Method Post -H
 
 The supplied profiles have a 21 November 2026 snapshot, so demo seeding produces August–October 2026 movements. These repeat the profile's monthly totals for demonstration and are not reconstructed real history. Opening balances are back-calculated so the end-of-demo balance equals the supplied snapshot balance; that alignment is a fixture assumption, not an assertion about the actual snapshot date. The seed response includes its period.
 
+## Background runtime and events
+
+`GET /users/:id/bank/events?after=0&limit=50` returns durable `bank.updated` events, `nextCursor`, `latestRevision`, `hasMore` and `requiresRefresh`. Save the cursor between polls. Every actual ledger mutation advances the revision; identical import retries do not. The last 500 events are retained. When a cursor is too old or ahead of the current ledger, refresh accounts/summary and resume with the server cursor. Events contain counts and timestamps, not transaction descriptions.
+
+`GET /users/:id/bank/runtime` reads worker status. `POST` to that path with `{ "enabled": true, "intervalMs": 5000 }` starts a simulated background feed (1000–60000 ms). `{ "enabled": false }` stops it and waits for its active tick. `POST /users/:id/bank/runtime/tick` with `{}` performs one explicit tick without enabling a timer. An empty ledger is seeded from the profile first. The feed appends clearly synthetic grocery purchases with retry-stable IDs, not realistic population spending or bank-synced data. It pauses on errors and exposes a sanitized failure status. At most 20 feeds can run in one API process.
+
+Set `DEMO_BANK_USERS=user-001` and optional `DEMO_BANK_INTERVAL_MS=5000` when starting the profile service to opt in at startup. `npm run dev:stack` uses `user-001` by default; an empty `DEMO_BANK_USERS` disables that default. Runtime enablement is process-local; durable ledger rows/cursors survive restarts. Restart with the startup list to resume timers.
+
+The existing MCP server can register read-only `get_bank_updates`, `get_bank_runtime` and `get_bank_summary` when both `BANK_API_URL` and `BANK_API_TOKEN` are configured. The integrated plugin uses its server-side `PROFILE_API_URL`/`PROFILE_API_TOKEN` instead. Tokens never enter widget/tool payloads. These are polling tools, not push subscriptions; background mutations do not automatically trigger ChatGPT messages.
+
 ## Persistence and limitations
 
 Ledger reads/writes are separate from the existing `bank-account.json` snapshot. Updating one does not synchronize the other, and neither refreshes committed JSON/CSV exports. The API derives balances from the ledger, not stale profile totals. Runtime records remain git-ignored.
