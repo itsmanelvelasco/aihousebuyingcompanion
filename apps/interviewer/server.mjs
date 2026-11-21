@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
+import { firstScenarioInput, generateFirstScenario } from './scenario.ts';
 import { classificationLimit, expenseCategories, incomeCategories } from './finances.mjs';
 
 const port = Number(process.env.INTERVIEWER_PORT ?? 3000);
@@ -88,13 +89,27 @@ createServer(async (request, response) => {
       const [file, type] = assets[request.url];
       return send(response, 200, await readFile(new URL(file, import.meta.url), 'utf8'), type);
     }
-    if (request.method !== 'POST' || !['/voice', '/classify'].includes(request.url)) {
+    if (request.method !== 'POST' || !['/voice', '/classify', '/scenario'].includes(request.url)) {
       return send(response, 404, { error: 'Unknown route.' });
     }
     if (request.headers.origin !== `http://${request.headers.host}`) {
       return send(response, 403, { error: 'Open this feature from the local demo.' });
     }
     if (request.url === '/classify') return await classify(request, response);
+    if (request.url === '/scenario') {
+      if (!request.headers['content-type']?.startsWith('application/json')) {
+        return send(response, 415, { error: 'Send scenario inputs as JSON.' });
+      }
+      let body = '';
+      for await (const chunk of request) {
+        body += chunk;
+        if (body.length > 2048) return send(response, 413, { error: 'Scenario inputs are too large.' });
+      }
+      let input;
+      try { input = firstScenarioInput.parse(JSON.parse(body)); }
+      catch { return send(response, 400, { error: 'Confirm the savings target, current savings, and monthly contribution.' }); }
+      return send(response, 200, await generateFirstScenario(input));
+    }
     if (!request.headers['content-type']?.startsWith('application/sdp')) {
       return send(response, 415, { error: 'Send a WebRTC session offer.' });
     }
