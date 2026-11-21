@@ -24,6 +24,10 @@ export function createHttpServer(
 ) {
   return createServer(async (request, response) => {
     const path = request.url?.split("?")[0];
+    if (path === "/" && request.method === "GET") {
+      response.writeHead(302, { Location: "/connect" }).end();
+      return;
+    }
     if (handleConnectPage(request, response)) return;
     if (await handleTestUi(request, response, snapshot, policies, options.listings, options.travelEstimates)) return;
     if (path === "/health" && request.method === "GET") {
