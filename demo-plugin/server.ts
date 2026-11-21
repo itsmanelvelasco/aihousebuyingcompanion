@@ -1,3 +1,4 @@
+import { handleTestUi } from '../apps/mcp-server/test-ui.ts';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -145,6 +146,10 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const path = url.pathname;
   try {
+    if (path === '/test' || path.startsWith('/test/')) {
+      const { snapshot, policies } = loadData();
+      if (await handleTestUi(req, res, snapshot, policies)) return;
+    }
     if (path === '/mcp') {
       const mcp = createMcpServer();
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
