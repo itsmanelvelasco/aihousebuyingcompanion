@@ -14,7 +14,7 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 - [ ] Agree a profile adapter: stable user ID; household size and school needs; bedrooms, commute and transport; purchase budget; explicit unknowns.
 - [ ] Convert integer EUR cents from profile storage to the plugin's euro values at the boundary. Its total spending must include `monthlyExpensesCents + debtPaymentsCents` exactly once.
 - [ ] Replace scripted policy/listing examples with sourced results before presenting them as actual opportunities; retain fictional labels for demo scenes.
-- [ ] Reconcile older `check_housing_incentives` references with the Space's current `get_applicable_incentives` interface.
+- [x] Expose `get_applicable_incentives` with optional household checks, and retain `check_housing_incentives` for eligibility and exclusions.
 - [ ] Keep existing profile storage paths; agree shared contracts and the town/MCP layout with team owners before moving files.
 
 ## Delivered profile foundation
@@ -70,25 +70,11 @@ One ChatGPT conversation confirms household needs, calls the municipality MCP ba
 - [ ] Choose one fictional household and a repeatable demo prompt.
 - [ ] Create the TypeScript workspace and document the package manager and actual build, type-check and test commands once configured.
 - [ ] Define shared Zod contracts for household preferences, bank summaries, ownership plans, town profiles, recommendations and incentive results.
-- [ ] Include source URL, observation date/year, geographic scope and unknown-data status in evidence contracts.
-- [ ] Define incentive application status separately from household eligibility.
+- [x] Include source URL, observation date/year, geographic scope and unknown-data status in evidence contracts.
+- [x] Define incentive application status separately from household eligibility.
 - [ ] Provide mock tool responses immediately so UI and backend work can proceed independently.
 
-Suggested municipality layout from the current Space architecture (not yet created). Existing `apps/profile-api/` and `data/users/` remain in place; coordinate with the plugin branch before choosing final paths:
-
-```text
-src/data/                 # Normalization, joins and validation
-src/matching/             # Hard filters and preference ranking
-src/eligibility/          # Deterministic policy rules
-src/tools/                # Thin MCP wrappers
-src/mcp-server.ts         # One Streamable HTTP /mcp endpoint
-widget/                   # Optional town map/comparison cards
-data/municipalities.json  # Official municipality index
-data/town-metrics.json    # Indicators with source and observation year
-data/schools.json
-data/transport.json
-data/incentives.json
-```
+The municipality MCP service lives in `apps/mcp-server/`, with contracts in `packages/contracts/`, domain logic in `packages/places/`, and snapshots in `data/towns.json` and `data/incentives.json`. See the [local demo steps](apps/mcp-server/README.md).
 
 ## Phase 2 — Build independent workstreams (20–100 minutes)
 
@@ -107,14 +93,14 @@ Agree shared contracts first, then assign separate file ownership. Household req
 - [ ] Keep financial calculations in the complementary track; the core town journey must also work without a bank snapshot.
 - [ ] Mark housing prices as municipal indicators or estimates, distinct from live listings.
 - [ ] Preserve unknown requirements as unresolved rather than silently passing them.
-- [ ] Return `eligibilityStatus` as `eligible`, `ineligible` or `needs_verification`, with rule version and official evidence; use separate `callStatus`.
-- [ ] Keep closed or unknown calls distinct from open applications.
+- [x] Return `eligibilityStatus` as `eligible`, `ineligible` or `needs_verification`, with rule version and official evidence; use separate `callStatus`.
+- [x] Keep closed or unknown calls distinct from open applications.
 
 ## Phase 3 — Integrate the conversation (100–145 minutes)
 
-- [ ] Connect `recommend_towns`, `get_town_profile` and `get_applicable_incentives` to domain functions through one Streamable HTTP `/mcp` endpoint.
-- [ ] Return official municipality codes, `matchReasons`, `tradeoffs`, `metrics` with `observedAt` and `sourceUrl`, and `dataMissing`.
-- [ ] Supply incentives with separate `callStatus`, `eligibilityStatus`, missing criteria and official legal sources.
+- [x] Connect `recommend_towns`, `get_town_profile` and `get_applicable_incentives` to domain functions through one Streamable HTTP `/mcp` endpoint.
+- [x] Return official municipality codes, `matchReasons`, `tradeoffs`, `metrics` with `observedAt` and `sourceUrl`, and `dataMissing`.
+- [x] Supply incentives with separate `callStatus`, `eligibilityStatus`, missing criteria and official legal sources.
 - [ ] Share prepared results between chat and optional town-comparison widgets; keep calculations separate from rendering.
 - [ ] Optionally connect `get_ownership_plan`/`simulate_ownership` and update the target/timeline after selection once the core flow works.
 - [ ] Show synthetic-data labels, assumptions, evidence links, data freshness and missing-data messages in the UI.
@@ -125,7 +111,7 @@ Agree shared contracts first, then assign separate file ownership. Household req
 
 - [ ] Test finance boundaries: internal transfers, zero savings, target already reached and changed purchase assumptions.
 - [ ] Test matching against hard constraints, absent evidence and deterministic ranking ties.
-- [ ] Test incentive thresholds, missing household inputs, geographic exceptions and closed deadlines against verified rules.
+- [x] Test incentive thresholds, missing household inputs, geographic exceptions and closed deadlines against verified rules.
 - [ ] Validate all demo fixtures against the shared schemas and inspect their source metadata.
 - [ ] Run the configured type checks, focused tests and production build; record results and any remaining limitations.
 - [ ] Rehearse the full conversation and town-selection update with the fictional household.

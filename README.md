@@ -12,7 +12,7 @@ Key references: [MCP architecture and contracts](https://chatgpt.com/space/page_
 
 ## Project status
 
-Implemented so far: a local TypeScript user-profile API and 500 synthetic household profiles in per-user JSON, combined JSON and CSV formats. The coaching, matching, MCP integration and widgets below remain proposed. This description follows the implementation plan dated 21 November 2026 in the [DevDays 2026 — AI Housing Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003).
+The project includes a local TypeScript profile API, 500 synthetic household profiles, and a municipality MCP backend. The backend covers town matching, school access, FGC schedules, and housing incentives. ChatGPT widget and coaching integration are planned.
 
 The separate `hackathon/arrela-demo-plugin` branch contains a scripted four-persona MCP/widget prototype. It is not merged into `main` and does not yet consume the profile API. Its fictional incentives and listings do not satisfy the sourced municipality demo requirement.
 
@@ -77,43 +77,13 @@ Example prompt: “Where could I buy sooner without giving up schools and Barcel
 
 Full bank OAuth, coverage of every municipality and government submissions are outside the MVP. Live property opportunities are an approved complementary stream: use an authorized provider if access exists, otherwise clearly dated verified links or permitted search links. Listings and savings features must not block the town/incentive demo. Business-register enrichment is a later extension.
 
-## Proposed architecture
+## Municipality MCP backend
 
-Use one TypeScript codebase and one MCP server. Node.js and the official MCP TypeScript SDK expose tools through an HTTPS `/mcp` endpoint. Shared Zod schemas define the contracts. React/Vite widgets provide progress cards, maps and comparisons through the MCP Apps UI bridge. Data tools return structured results separately from UI-rendering tools.
+Run `npm run start:mcp` from the repository root. The service exposes Streamable HTTP at `http://127.0.0.1:8787/mcp`. See the [MCP setup, demo request and data sources](apps/mcp-server/README.md).
 
-The Space's latest architecture suggests the layout below; these town/MCP paths are proposed, not created. The existing `apps/profile-api/`, `data/users/` and export files remain in place. Coordinate with the plugin team before adopting paths or relocating code.
+The MCP backend lives in `apps/mcp-server/`. Its tools share Zod schemas in `packages/contracts/` and use the data loading, matching and eligibility code in `packages/places/`. The versioned fixtures in `data/towns.json` and `data/incentives.json` cover 15 municipalities along the FGC Lleida–La Pobla de Segur corridor. Tools compute household-specific recommendations and eligibility from the local snapshot.
 
-```text
-src/data/                # Normalization, joins and validation
-src/matching/            # Hard filters and preference ranking
-src/eligibility/         # Versioned deterministic policy checks
-src/tools/               # Thin domain-tool wrappers
-src/mcp-server.ts        # One Streamable HTTP /mcp endpoint
-widget/                 # Optional map and town cards
-data/municipalities.json # Official municipality index
-data/town-metrics.json   # Evidence with observation periods
-data/schools.json
-data/transport.json
-data/incentives.json
-```
-
-Planned tool interfaces:
-
-| Tool | Purpose |
-| --- | --- |
-| `recommend_towns` | Return ranked towns, evidence, trade-offs and source metadata. |
-| `get_town_profile` | Return sourced housing, schools, transit, services and local indicators. |
-| `get_applicable_incentives` | Return applicable measures, call status, eligibility, missing criteria and official links. |
-
-Those three tools are the core MVP. Dedicated school/transport tools, savings simulation, UI rendering tools and housing enquiries can follow. Earlier references to `check_housing_incentives` need an agreed adapter to the current `get_applicable_incentives` contract.
-
-Town results use official municipality codes, `matchReasons`, `tradeoffs`, `metrics` with `observedAt` and `sourceUrl`, and `dataMissing`. Incentives use separate `callStatus` and `eligibilityStatus`. Chat and widget views must consume the same prepared results. Cache versioned municipal evidence; compute household-specific matching and eligibility on request.
-
-## Data and evidence
-
-Planned sources include [Idescat municipal statistics](https://www.idescat.cat/dev/api/emex/), [Generalitat open data](https://analisi.transparenciacatalunya.cat/), [official rural municipality classifications](https://analisi.transparenciacatalunya.cat/Sector-P-blic/Municipis-rurals/7gqm-722r), [Catalan tax guidance](https://atc.gencat.cat/ca/tributs/irpf/deduccions-tram-irpf/), [INCASÒL](https://incasol.gencat.cat/), official education and transport datasets, and OpenStreetMap. These are planned integrations; listing a source here does not imply that its data has been ingested or verified by this repository.
-
-Join records using official municipality codes. Keep the source URL, observation year or date, geographic scope and missing-data status alongside every indicator. Incentive records also need their issuing authority, beneficiary type, applicable locations, rules, effective dates and application deadlines.
+The core demo calls `recommend_towns`, `get_town_profile`, and `get_applicable_incentives`. Additional tools cover schools, rail, business indicators, municipality lookup, and household eligibility detail. Town results include official codes, match reasons, trade-offs, evidence dates and URLs, and missing data. Incentives include separate application and eligibility statuses.
 
 ## Trust and privacy requirements
 
