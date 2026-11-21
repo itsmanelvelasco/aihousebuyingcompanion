@@ -5,13 +5,17 @@ import { after, before, test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
-  businessResult, incentivesResult, municipalityListResult, profileResult, recommendationResult, schoolResult, transportResult,
+  businessResult, incentivesResult, municipalityListResult, profileRecommendationResult, profileResult,
+  recommendationResult, schoolResult, transportResult,
 } from "../packages/contracts/places.ts";
 import { loadData } from "../packages/places/data.ts";
 import { createHttpServer } from "../apps/mcp-server/http.ts";
+import { loadTownExplorerPage } from "../apps/mcp-server/town-explorer.ts";
 
 const { snapshot, policies, travelEstimates } = loadData();
-const server = createHttpServer(snapshot, policies, { today: () => "2026-11-21", travelEstimates, listings: {} });
+const server = createHttpServer(snapshot, policies, {
+  today: () => "2026-11-21", travelEstimates, listings: {}, townExplorerPage: loadTownExplorerPage(),
+});
 const client = new Client({ name: "relocat-tests", version: "1.0.0" });
 let base: URL;
 const travelDate = "2026-11-23";
@@ -42,8 +46,12 @@ async function tool(name: string, args: Record<string, unknown>) {
 test("discovers schemas and exposes sourced profiles, schools and business indicators", async () => {
   assert.equal(client.getServerVersion()?.name, "relocat");
   const listed = await client.listTools();
-  assert.equal(listed.tools.length, 13);
+  assert.equal(listed.tools.length, 15);
   assert(listed.tools.every(tool => tool.inputSchema && tool.outputSchema && tool.annotations?.readOnlyHint));
+  const profileTool = listed.tools.find(tool => tool.name === "recommend_towns_for_profile");
+  assert.deepEqual(Object.keys(profileTool?.inputSchema.properties ?? {}).sort(), ["limit", "profile"]);
+  assert.deepEqual(profileTool?.inputSchema.required, ["profile"]);
+  assert.equal(profileTool?.inputSchema.additionalProperties, true);
 
   const coverage = municipalityListResult.parse(await tool("list_catalonia_municipalities", { query: "termens" }));
   assert.deepEqual(coverage.municipalities.map(town => town.code), [termens]);
@@ -74,6 +82,35 @@ test("serves the fictional interviewer cash-flow card and compares a savings hab
   assert.deepEqual(plan, { remaining: 24_000, baselineMonths: 40, withHabitMonths: 36 });
 });
 
+test("serves the read-only Town Explorer widget and preserves headless municipality tools", async () => {
+  const { tools } = await client.listTools();
+  const launcher = tools.find(tool => tool.name === "show_town_explorer");
+  const appMeta = launcher?._meta?.ui as { resourceUri: string; visibility: string[] } | undefined;
+  assert(appMeta?.resourceUri);
+  assert.deepEqual(appMeta.visibility, ["model"]);
+  for (const name of ["list_catalonia_municipalities", "get_town_profile"]) {
+    assert.equal(tools.find(tool => tool.name === name)?._meta?.ui, undefined);
+  }
+  assert.deepEqual(await tool("show_town_explorer", {}), { municipalityCode: null });
+  const selection = await tool("show_town_explorer", { municipalityCode: "080312" });
+  assert.deepEqual(selection, { municipalityCode: "080312" });
+  const profile = profileResult.parse(await tool("get_town_profile", selection));
+  assert.equal(profile.municipality.name, "Calaf");
+  assert.equal(profile.travelEstimates.length, 6);
+  assert((await client.callTool({ name: "show_town_explorer", arguments: { municipalityCode: "083015" } })).isError);
+
+  const discovery = await client.listResources();
+  assert(discovery.resources.some(resource => resource.uri === appMeta.resourceUri));
+  const { contents: [widget] } = await client.readResource({ uri: appMeta.resourceUri });
+  assert.equal(widget.mimeType, "text/html;profile=mcp-app");
+  assert("text" in widget);
+  assert.match(widget.text, /<title>Relocat Town Explorer<\/title>/);
+  assert.doesNotMatch(widget.text, /<!-- WIDGET -->/);
+  const preview = await fetch(new URL("/preview", base));
+  assert.equal(preview.status, 200);
+  assert.equal(await preview.text(), widget.text);
+});
+
 test("screens a three-town rural rail shortlist and requires opt-in to comarca purchase prices", async () => {
   const args = {
     travelDate, ruralOnly: true, schoolStages: ["eso"], schoolMode: "rail", maxSchoolJourneyMinutes: 50,
@@ -92,6 +129,68 @@ test("screens a three-town rural rail shortlist and requires opt-in to comarca p
 
   const invalid = await client.callTool({ name: "recommend_towns", arguments: { housing: { tenure: "buy", maxBudgetEur: 100_000 } } });
   assert(invalid.isError);
+});
+
+test("ranks family profiles by listed local school stages and flags property-level checks", async () => {
+  const family = profileRecommendationResult.parse(await tool("recommend_towns_for_profile", {
+    profile: { householdType: "family", hasChildren: true, hasDog: true, workMode: "remote" },
+  }));
+  assert.equal(family.profileAssessment.status, "ranked");
+  assert(family.profileAssessment.followUps.some(reason => /school stages/.test(reason)));
+  assert(family.profileAssessment.verificationNeeded.some(reason => /pet permission/.test(reason)));
+  assert(family.profileAssessment.verificationNeeded.some(reason => /broadband/.test(reason)));
+  assert.equal(family.towns.length, 3);
+  for (const town of family.towns) {
+    assert(town.schools.length > 0);
+    assert(town.schools.every(journey => journey.school.municipalityCode === town.municipality.code && journey.school.sourceUrl));
+    assert.match(town.matchReasons.join(" "), /education stage/);
+    assert.equal(town.commute, null);
+  }
+  assert.equal(family.excluded.length, 0);
+});
+
+test("uses the household profile to rank by setting or to suggest exploratory towns", async () => {
+  const singleRemote = { householdType: "single", hasChildren: false, hasDog: false, workMode: "remote" };
+  const explore = profileRecommendationResult.parse(await tool("recommend_towns_for_profile", { profile: singleRemote }));
+  assert.equal(explore.profileAssessment.status, "exploratory");
+  assert.equal(explore.profileAssessment.verificationNeeded.length, 1);
+  assert(explore.towns.every(town => town.score === null && town.schools.length === 0));
+  for (const preferredSetting of ["larger_town", "rural"]) {
+    const ranked = profileRecommendationResult.parse(await tool("recommend_towns_for_profile", {
+      profile: { ...singleRemote, preferredSetting },
+    }));
+    assert.equal(ranked.profileAssessment.status, "ranked");
+    if (preferredSetting === "larger_town") {
+      assert.equal(ranked.towns[0].municipality.code, balaguer);
+      assert(ranked.towns[0].metrics.some(metric => metric.kind === "population" && metric.sourceUrl));
+    } else {
+      assert(ranked.towns.every(town => ["rural", "special_attention"].includes(town.municipality.rural.category)));
+    }
+  }
+});
+
+test("uses school stages from the profile and handles an older purchase budget without floor area", async () => {
+  const profile = { householdType: "family", hasChildren: true, workMode: "remote", preferredSetting: "rural" };
+  const shortlist = profileRecommendationResult.parse(await tool("recommend_towns_for_profile", {
+    profile: { ...profile, schoolStages: ["eso"] },
+    limit: 2,
+  }));
+  assert.equal(shortlist.towns.length, 2);
+  assert(shortlist.towns.every(town => town.schools.some(journey => journey.school.stages.includes("eso"))));
+  assert.equal(shortlist.profileAssessment.ignoredCriteria, undefined);
+
+  const older = await client.callTool({
+    name: "recommend_towns_for_profile",
+    arguments: {
+      profile, schoolStages: ["eso"], limit: 2, housing: { tenure: "buy", maxBudgetEur: 130_000 },
+    },
+  });
+  assert(!older.isError);
+  const compatible = profileRecommendationResult.parse(older.structuredContent);
+  assert.deepEqual(compatible.towns, shortlist.towns);
+  assert.deepEqual(compatible.profileAssessment.ignoredCriteria, ["housing"]);
+  assert(compatible.towns.every(town => town.housingEstimate === null));
+  assert.match(JSON.stringify(older.content), /Use recommend_towns for budget/);
 });
 
 test("serves Calaf, Juncosa and Ulldemolins from the fixed demo snapshot", async () => {

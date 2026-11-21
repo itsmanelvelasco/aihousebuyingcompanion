@@ -4,7 +4,7 @@ The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539
 
 | Area | Development entry point | Responsibility |
 | --- | --- | --- |
-| [Interviewer](areas/interviewer.md) | `demo-plugin/demo.ts` | Confirm needs and submit structured answers. |
+| [Interviewer](areas/interviewer.md) | `apps/interviewer/`, `demo-plugin/intake.ts`, `profiles.ts` | Voice/guided interviews, cash-flow cards and confirmed structured answers. |
 | [Frontend/plugin](areas/frontend-plugin.md) | `demo-plugin/server.ts`, `widget.ts` | Conversation tools, live board and integrated MCP experience. |
 | [Profiles/inputs](areas/profiles-inputs.md) | `apps/profile-api/server.ts`, `inputs.ts` | Persistent synthetic profiles and multi-source context. |
 | [Bank/runtime](areas/bank-runtime.md) | `apps/profile-api/bank.ts`, `finance.ts` | Movements, event consumption and deterministic finance. |

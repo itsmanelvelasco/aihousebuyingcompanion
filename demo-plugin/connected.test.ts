@@ -30,7 +30,7 @@ test('connected board persists interview inputs, reads runtime bank data and ser
   await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)));
   t.after(() => client.close());
   const toolNames = (await client.listTools()).tools.map(tool => tool.name);
-  for (const name of ['recommend_towns', 'get_applicable_incentives', 'open_demo', 'update_demo', 'get_bank_updates']) assert(toolNames.includes(name), name);
+  for (const name of ['recommend_towns', 'recommend_towns_for_profile', 'get_applicable_incentives', 'open_demo', 'update_demo', 'get_bank_updates']) assert(toolNames.includes(name), name);
   const town = await client.callTool({ name: 'get_town_profile', arguments: { municipalityCode: '252206' } });
   assert(!town.isError, JSON.stringify(town.content));
   const profile = profileResult.parse(town.structuredContent);

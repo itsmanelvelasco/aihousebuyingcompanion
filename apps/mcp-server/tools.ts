@@ -3,7 +3,8 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import {
   businessResult, incentivesInput, incentivesResult, intent, municipalityCode, municipalityListInput,
-  municipalityListResult, profileInput, profileResult, recommendationInput, recommendationResult,
+  municipalityListResult, profileInput, profileRecommendationInput, profileRecommendationResult, profileResult,
+  recommendationInput, recommendationResult,
   schoolQuery, schoolResult, transportQuery, transportResult,
 } from "../../packages/contracts/places.ts";
 import type { IncentivesInput, Policy, Snapshot, TravelEstimateData } from "../../packages/contracts/places.ts";
@@ -11,7 +12,7 @@ import { getNearbySchools, getTransportOptions } from "../../packages/places/acc
 import { getTown, missingMetrics, snapshotInfo } from "../../packages/places/data.ts";
 import { evaluateIncentives } from "../../packages/places/eligibility.ts";
 import { madridDate, nextSchoolDay, normalizedName } from "../../packages/places/geography.ts";
-import { recommendTowns } from "../../packages/places/recommend.ts";
+import { recommendTowns, recommendTownsForProfile } from "../../packages/places/recommend.ts";
 import { registerInterviewerTools } from "../interviewer/mcp-tools.ts";
 import { getRelocationResearch } from "../../packages/places/relocation.ts";
 import { homeSearchInput, homeSearchResult } from "../../packages/contracts/listings.ts";
@@ -61,6 +62,24 @@ export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = 
     const summary = names.length ? names.join(", ") + " meet the requested pilot screening criteria."
       : "No towns met all requested screening criteria with the available data.";
     return result(summary, recommendation);
+  });
+
+  server.registerTool("recommend_towns_for_profile", {
+    title: "Recommend Catalan towns from a lifestyle profile",
+    description: "Shortlist pilot municipalities from a profile with household type, children, school stages, dog, work mode and town preference. Pass confirmed profile facts and optionally a result limit. Use recommend_towns for budget and detailed journey filters.",
+    inputSchema: profileRecommendationInput, outputSchema: profileRecommendationResult, annotations: readOnly,
+  }, (input) => {
+    const recommendation = recommendTownsForProfile(snapshot, policies, input, today());
+    const { status, followUps, verificationNeeded, ignoredCriteria } = recommendation.profileAssessment;
+    const names = recommendation.towns.map(town => town.municipality.name).join(", ");
+    const summary = status === "ranked" ? `Top pilot matches for the supplied preferences: ${names}.`
+      : status === "exploratory" ? `Pilot towns to explore: ${names}.`
+      : "No towns met all requested screening criteria with the available data.";
+    const messages = [summary, ...followUps, ...verificationNeeded];
+    if (ignoredCriteria?.length) {
+      messages.push("This profile shortlist skipped extra criteria. Use recommend_towns for budget and detailed journey filters.");
+    }
+    return result(messages.join(" "), recommendation);
   });
 
   server.registerTool("get_town_profile", {
