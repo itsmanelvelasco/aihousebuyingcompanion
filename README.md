@@ -1,137 +1,130 @@
-# relo.cat — AI House Buying Companion
+# ReloCat
 
-*Find where you belong. We'll help you get there.*
+**Find where you belong. Build a realistic path to your next home.**
 
-relo.cat is a ChatGPT-native housing and homeownership companion focused on Catalonia. The immediate demo helps people compare suitable municipalities, school and transport access, and verified housing incentives. Financial coaching and property listings are complementary capabilities.
+ReloCat is a housing companion for people considering a move within Catalonia. It brings together the questions that usually live in separate places: Can I afford to buy? Which towns fit my household? How would I get to work? Are there suitable schools? Is there public support I could apply for?
 
-## Source of truth
+You describe your needs in a conversation. ReloCat uses sourced local data and financial calculations to help you compare your options and understand what still needs checking.
 
-The [DevDays 2026 — AI Housing Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003) is authoritative for product decisions. This repository records implementation and mirrors the Space; when product descriptions disagree, follow the latest explicit Space decision. Check actual code and tests for implementation status rather than treating a planned feature as delivered.
+[Explore ReloCat](https://www.relo.cat) · [Project documentation](docs/README.md) · [Development plan](PLAN.md)
 
-Key references: [MCP architecture and contracts](https://chatgpt.com/space/page_692ac01a0a3c81918ab65c4a0052783f), [product scope](https://chatgpt.com/space/page_047fba29065c819193b15243a7e3ccd8) and [listings integration](https://chatgpt.com/space/page_5cb6c5414e088191827364cd0e43b847). The overview calls the product **relo.cat**; older pages, code and the plugin prototype still use **Arrela**. These refer to the same project; existing identifiers are retained until coordinated with their owners.
+## What can I do with it?
 
-## Project status
+- **Find places that fit your life.** Compare Catalan towns using your budget, household needs, school stages and transport requirements.
+- **Understand the trade-offs.** See housing indicators, school information and travel estimates, with sources, dates and gaps in the evidence.
+- **Explore housing support.** Check relevant public measures and distinguish whether applications are open from whether your household meets the known criteria.
+- **Make a savings plan.** Explore how your savings, monthly contribution and cash target affect the time needed to prepare for a purchase.
+- **Talk through your needs.** Use the homebuying interview, with a guided option and optional voice.
 
-The project includes a connected ChatGPT plugin/live board, local profile/bank API, deterministic financial analysis, 500 synthetic profiles and a sourced municipality backend. Connected mode persists grouped interview answers, reads bank runtime changes and prepares provisional municipality screens. Property bedroom checks remain explicitly unverified until actual listing evidence is available.
+For example, you could ask:
 
-The plugin work is integrated under `demo-plugin/`. With `PROFILE_API_URL` and `PROFILE_API_TOKEN`, one `/mcp` endpoint exposes municipality, bank-read and demo-board tools. Without configuration it runs the original scripted rehearsal. Scripted scenes remain visibly separate from sourced town/incentive results; backend errors never silently switch to scripted data.
+> “We want to buy our first home. Which towns could fit our budget, with a primary school nearby and a manageable commute?”
 
-## Connected demo and development areas
+The journey is to confirm your needs, compare a shortlist, inspect the evidence and choose a useful next step. A town recommendation is the start of a search; individual homes still need their own checks.
 
-```powershell
+## Try the experience
+
+**Start at [www.relo.cat](https://www.relo.cat).** The public homepage introduces the project and explains how to connect an agent. The main conversational experience uses ChatGPT with the ReloCat MCP connection enabled. You can ask to start a homebuying interview, compare towns or open the Town Explorer map.
+
+There are several views of the project:
+
+| View | What it is for |
+| --- | --- |
+| Public website | Project introduction and agent connection guide. |
+| ChatGPT widgets | Interactive interview cards, town maps and comparisons returned during a conversation. |
+| Local journey board | A developer/demo view with fictional households and simulated financial activity. |
+
+The public deployment and local development branches can contain different features. The [React workspace in PR #18](https://github.com/itsmanelvelasco/aihousebuyingcompanion/pull/18) adds profile/input management, bank controls and reviewed interviews to both a local web view and an MCP widget; it is separate from the features currently merged into `main`.
+
+## What is real, and what is simulated?
+
+This is a working hackathon prototype. Its municipality pilot includes **18 town profiles, 238 education centres, 86 rail trips and six policy records**, drawn from dated datasets. Coverage is limited: one profile is the Lleida transport destination, and detailed relocation opportunity research currently covers three towns.
+
+The **500 household profiles and demo bank movements are fictional**. They let the team test different needs and financial barriers without using anyone's real bank account. Live property searches are an optional integration; returned links are examples whose availability, location and details still need verification.
+
+ReloCat does not approve mortgages, guarantee grants or submit applications. School presence does not establish vacancies, a travel sample is not a live journey guarantee, and a town's average housing price is not a property listing. Missing information stays visible rather than becoming an assumed answer.
+
+## The technology behind it
+
+ReloCat connects a conversational interface to a set of small, specialised services in one repository.
+
+| Technology | Its role, in plain language |
+| --- | --- |
+| **TypeScript and Node.js** | Run the backend, data tools and local services. Shared types help the different parts agree on the shape of information. |
+| **MCP — Model Context Protocol** | Gives ChatGPT a standard way to call ReloCat's tools, such as looking up a town or checking an incentive. The combined demo exposes one `/mcp` endpoint. |
+| **Interactive web widgets** | Present maps, cards and forms inside a supported chat client. The current implementation includes bundled TypeScript widgets; the React workspace is developed in PR #18. |
+| **Zod validation** | Checks incoming data before the app uses or stores it, including municipality codes, money amounts and household criteria. |
+| **Official data snapshots** | Keep municipal facts, policy rules and evidence dates available for repeatable comparisons. They are not assumed to be live feeds. |
+| **OpenAI APIs, when enabled** | Support the optional voice interview, transaction classification and bounded AI habit suggestions. Keys stay on the server. |
+
+### How an answer is produced
+
+1. You supply or confirm your household's needs and financial assumptions.
+2. ChatGPT calls the relevant ReloCat tool through MCP.
+3. The backend validates the request, filters towns against supported requirements and calculates results using the loaded data.
+4. The tool returns structured results, evidence and missing-information flags.
+5. ChatGPT explains the result; a widget can make it easier to inspect or compare.
+
+**The model helps with the conversation; code performs the calculations and rule checks.** This makes it possible to inspect how a savings estimate or eligibility result was reached. Answers from different sources keep their origin and confirmation status, and conflicting inputs are surfaced for review.
+
+### How the pieces connect
+
+The connected local demo combines the web board and MCP tools on port **8787**. The profile/bank API on **3001** stores runtime edits and produces financial summaries. The optional habits service runs separately on **3002**; the standalone interviewer defaults to **3000**. Feature branches may extend this startup arrangement.
+
+Bank movements are stored separately from profile balance snapshots. A simulated worker can add movements while the service runs; clients poll for changes. It does not independently wake ChatGPT or send messages.
+
+## Run the local demo
+
+For developers and teammates, install **Node.js 24 or newer** and run these commands from the repository root:
+
+```sh
 npm ci
 npm run setup:app
 npm run dev:stack
 ```
 
-Open `http://127.0.0.1:8787/preview`; use `http://127.0.0.1:8787/mcp` as the single local MCP endpoint. The launcher starts the profile API on port 3001, keeps its credential in process memory and enables a clearly synthetic background feed for `user-001`. `DEMO_BANK_USERS` overrides the list (empty disables all feeds). `PROFILE_API_PORT` and `APP_PORT` override ports. Ctrl+C stops the stack. Expose the app through your chosen HTTPS host/tunnel for ChatGPT; the local launcher does not deploy it.
+Then open:
 
-See [the monorepo development map](docs/README.md) for each area's entry points, owners, contracts and checks. `npm run typecheck`, `npm test`, `npm run data:validate`, `npm run check:app` and `npm run test:app` verify the combined code. Runtime bank events persist in the ledger; timers run only while the profile service is running and clients poll for updates. They do not wake ChatGPT or send unsolicited messages.
+| Address | Purpose |
+| --- | --- |
+| `http://127.0.0.1:8787/preview` | Connected journey board. |
+| `http://127.0.0.1:8787/connect` | Homepage and agent setup guide. |
+| `http://127.0.0.1:8787/test` | Local tool-testing page. |
+| `http://127.0.0.1:8787/mcp` | MCP endpoint for a client, rather than a normal webpage. |
 
-The separate [habits service](apps/habits-agent/README.md) runs with `npm run start:habits` on port 3002 after setting `HABITS_API_TOKEN`. Local suggestions, goals and check-ins work without an API key. Optional `gpt-6.2-sol` suggestions use server-side `OPENAI_API_KEY`, bounded on-demand calls and no paid background loop. It is not automatically wired into the board or started by `dev:stack`.
+The launcher starts the profile API and board, shares a server-side token between them, and enables the synthetic feed for `user-001`. Stop both services with **Ctrl+C**. This demo does not need an OpenAI API key. Optional live voice and AI features require additional setup and may consume API credits.
 
-## Voice interviewer demo
+To run only the municipality MCP service, use `npm run start:mcp` instead. Both commands default to port 8787, so run one at a time. Agents running on another computer need a reachable HTTPS endpoint; your localhost address only points to your own machine.
 
-The complementary [voice interviewer](apps/interviewer/README.md) gathers home preferences, summarizes a demo bank account or CSV, and compares the effect of one savings habit. Run it with `npm run start:interviewer`. The shared MCP server also exposes the sample cash-flow card and savings comparison tools.
+For the separate interviewer, see [voice and guided interview setup](apps/interviewer/README.md). For the React workspace, follow [PR #18](https://github.com/itsmanelvelasco/aihousebuyingcompanion/pull/18) and its branch instructions.
 
-## User profiles and API
+## Find your way around the repository
 
-- [500 fictional profiles](data/users/README.md): each user has `details.json`, `preferences.json` and `bank-account.json`, with varied needs and financial barriers. Demographic categories are informed by official Idescat sources; the dataset is not statistically representative.
-- [Combined JSON](data/synthetic-users.json) preserves complete profiles; [CSV](data/synthetic-users.csv) provides a flattened summary.
-- [API setup and routes](apps/profile-api/README.md): token-protected local reads, user creation and section replacement. Runtime changes are stored separately from fixture exports.
-- [Bank ledger API](apps/profile-api/BANK_API.md): manage accounts and movements, analyse spending/recurring candidates, and compare savings scenarios. Seed three fictional months on demand for any supplied user; no real bank connection or payments.
-- [Shared app inputs](apps/profile-api/INPUTS.md): accept partial facts from interview, manual, bank and listing sources; resolve them with provenance and explicit conflicts; prepare municipality-tool inputs when complete.
+| Folder | What you will find |
+| --- | --- |
+| [`demo-plugin/`](demo-plugin/) | Connected journey board and combined MCP demo server. |
+| [`apps/mcp-server/`](apps/mcp-server/README.md) | Municipality tools, Town Explorer and agent connection pages. |
+| [`apps/interviewer/`](apps/interviewer/README.md) | Voice/guided interview and savings scenario tools. |
+| [`apps/profile-api/`](apps/profile-api/README.md) | Profile storage, shared inputs, bank movements and financial analysis. |
+| [`apps/habits-agent/`](apps/habits-agent/README.md) | Optional habit suggestions, goals and check-ins. |
+| [`packages/`](packages/) | Shared validation contracts, matching logic and policy calculations. |
+| [`data/`](data/) | Dated municipality/policy snapshots and fictional user fixtures. |
+| [`docs/`](docs/README.md) | Area guides, integration notes and team setup. |
 
-Requires Node.js 24+. From the repository root in PowerShell:
+Committed demo fixtures stay separate from ignored runtime records. Never commit real financial records, API keys or access tokens. The shared-token demo is not production per-user access control.
 
-```powershell
-npm install
-$env:PROFILE_API_TOKEN = [guid]::NewGuid().ToString('N')
-npm start
+## Contributing and verification
+
+Start with the [development map](docs/README.md) and the relevant area guide. The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003) holds product decisions; [PLAN.md](PLAN.md) tracks implementation work. Code and checks establish what is delivered.
+
+For code changes, the repository checks are:
+
+```sh
+npm run typecheck
+npm test
+npm run data:validate
+npm run check:app
+npm run test:app
 ```
 
-Run `npm run typecheck` and `npm test` for validation. The server listens on `http://127.0.0.1:3001` and requires the token on every request. All supplied financial data is fictional; this demo API does not implement production per-user authorization or real bank connectivity.
-
-## The problem
-
-Buying a home requires more than finding a property. People need to understand their savings capacity, purchase costs, commute, schools, local services and potential public incentives. These facts are fragmented across sources, making it difficult to compare realistic options, especially when considering a move from a city to a smaller town.
-
-## Product direction
-
-### Daily homeownership coach
-
-- Use a clearly labelled simulated bank feed for the hackathon to understand balances, recurring expenses and sustainable monthly savings.
-- Estimate the cash needed for a purchase, including the deposit, taxes and fees, with visible assumptions.
-- Show savings progress and an estimated time to reach the purchase cash target in an interactive card.
-- Let users explore changes such as saving more each month or choosing a different town.
-- In a future production version, connect accounts through a consent-based, read-only open-banking provider and store financial records in an authenticated backend.
-
-### Place and housing intelligence
-
-- Focus on Catalan municipalities, with sourced profiles covering housing indicators, schools, transport, amenities and local economic signals.
-- Filter hard requirements such as budget, school stage, transport needs and maximum travel time before ranking towns by personal preferences.
-- Explain recommendations through evidence, trade-offs, missing information and observation dates.
-- Check housing incentives using versioned, deterministic rules and official sources.
-- Connect a selected town to the savings plan to update the estimated purchase cash target and timeline.
-
-The municipality intelligence backend is the immediate data priority. Production bank connectivity should not block it.
-
-## Demo journey
-
-1. Confirm a household's budget, school stages, transport needs and relocation preferences in ChatGPT; use a fictional profile for the demo.
-2. Call `recommend_towns` and show three Catalan municipalities with evidence, trade-offs and missing information. Pass the same criteria to `show_town_explorer` to open the map and cards.
-3. Call `get_town_profile` for a selected municipality and compare school and scheduled transport access.
-4. Call `get_applicable_incentives`, distinguish call status from household eligibility, and explain one actual measure with an official source.
-5. Offer a verified next step. Optionally connect a simulated savings plan or authorized property links after the core journey works.
-
-Example prompt: “Where could I buy sooner without giving up schools and Barcelona access?”
-
-## Hackathon MVP
-
-- One end-to-end ChatGPT conversation calling the municipality MCP backend; bank access is not required.
-- Approximately 10–15 sourced municipality profiles with stable official municipality codes.
-- Housing indicators, nearby schools by stage and a small set of scheduled transport connections.
-- A small, verified incentive catalogue, with 1–2 real measures integrated into the end-to-end demo.
-- Deterministic town matching and incentive checks; optional interactive maps/comparison cards.
-- A browser-based preview as a fallback for the demo.
-
-Full bank OAuth, coverage of every municipality and government submissions are outside the MVP. Live property opportunities are an approved complementary stream: use an authorized provider if access exists, otherwise clearly dated verified links or permitted search links. Listings and savings features must not block the town/incentive demo. Business-register enrichment is a later extension.
-
-## Municipality MCP backend
-
-Run `npm run start:mcp` from the repository root. The service exposes Streamable HTTP at `http://127.0.0.1:8787/mcp`. See the [MCP setup, demo request and data sources](apps/mcp-server/README.md).
-
-The MCP backend lives in `apps/mcp-server/`. Its tools share Zod schemas in `packages/contracts/` and use the data loading, matching and eligibility code in `packages/places/`. The versioned fixtures in `data/towns.json` and `data/incentives.json` cover 18 municipalities, including Calaf, Juncosa, Ulldemolins and the FGC Lleida–La Pobla de Segur corridor. Tools compute household-specific recommendations and eligibility from the local snapshot.
-
-[Relocation pilot research](data/relocat-pilot-data.json) preserves the supplied 21 November 2026 export: four opportunities across Calaf, Juncosa and Ulldemolins, source and visual links, connections, rental-search observations and public contacts. Join `municipalities[].municipalityCode` to `data/towns.json`'s `municipalities[].code` as six-character strings. Extend each town's `opportunities` array with stable IDs, source links and check dates. Earlier leads remain in `historicalResearch`; `publicDataSnapshot` retains its own source commit and dates and does not replace the runtime fixtures. `get_town_profile` and each `recommend_towns` result now include a `relocation` section joined at load time. It contains research, opportunity checks, source/check dates and explicit `researched` or `not_researched` coverage. Official runtime statistics and incentive rules retain their original provenance; the bundled public-data snapshot and historical leads are not imported into those results. Opportunity research does not alter ranking or hard budget filters. Preserve closed, filled and unverified statuses, conflicting deadlines and unknown rents; listings, visual reuse rights and household incentive eligibility are not established by this export.
-
-The core demo calls `recommend_towns`, `get_town_profile`, and `get_applicable_incentives`. Additional tools cover schools, rail, business indicators, municipality lookup, and household eligibility detail. Town results include official codes, match reasons, trade-offs, evidence dates and URLs, and missing data. Incentives include separate application and eligibility statuses.
-
-Start from household and lifestyle facts with [`recommend_towns_for_profile`](apps/mcp-server/README.md#recommend-towns-from-a-household-profile). It uses the same municipality snapshot to return a shortlist, follow-up questions and checks for individual homes.
-
-All 18 municipality profiles include [sample travel estimates](apps/mcp-server/README.md#quick-travel-comparisons) to major stations and airports, with public transport times where the sample timetable supports a journey.
-
-The [Town Explorer sample plugin](apps/mcp-server/README.md#town-explorer-sample-plugin) shows recommendation cards, an interactive map of Catalonia and sourced profiles on the standalone MCP server. The browser preview opens a sample shortlist.
-
-## Trust and privacy requirements
-
-- Label synthetic data and confirm current user finances and preferences.
-- Treat missing data as unknown, never as zero.
-- Separate a programme's application status from a household's eligibility; do not present closed calls as open or municipal infrastructure funding as household aid.
-- Do not infer school vacancies from a school's existence, actual transport availability from a nearby stop, or business health from commercial density.
-- Distinguish municipal housing averages from actual listings and estimated timelines from mortgage approval.
-- Never fabricate grants, eligibility, contacts or bank offers.
-- Keep real credentials and raw financial records out of tool responses; prefer aggregated insights for the model.
-- Require separate consent for future bank connections and explicit opt-in for scheduled outreach. Enquiries are drafted for review, not sent automatically.
-
-## Demo definition of done
-
-A single ChatGPT conversation calls the municipality MCP backend, shows three sourced Catalan town recommendations, compares schools and transport, and explains one actual housing incentive with its source and application status. Keep a browser or recorded fallback. Savings timelines and authorized property opportunities extend this core journey.
-
-### Idealista property examples
-
-The MCP tool `search_homes` searches live through treg for indexed Idealista property examples in up to three pilot towns. Set `TREG_TOKEN` in the server environment and restart. It returns source links and timestamps, with explicit unknown availability and unverified town/budget/bedroom matches. It is web-search discovery, not a verified inventory feed; missing credentials or provider failures are reported separately from empty searches. See [setup, costs and limitations](apps/mcp-server/README.md#live-idealista-example-search-through-treg).
-
-## Connect an agent
-
-Open `/connect` on the connected demo or standalone MCP server for the illustrated relo.cat homepage, the Town Explorer demo link and agent setup. The standalone server also redirects `/` to `/connect`. The guide covers ChatGPT, Claude, Hermes, OpenClaw, Codex, Cursor, Gemini CLI and generic Streamable HTTP, with Meta Muse setup marked unverified. Each supported client has editable endpoint configuration, copyable examples and official documentation. Localhost works for agents on the same machine. Cloud clients need an operator-provided HTTPS endpoint or supported tunnel.
+Keep calculations explicit, preserve source links and dates, and show uncertainty where the evidence does not support a conclusion.
