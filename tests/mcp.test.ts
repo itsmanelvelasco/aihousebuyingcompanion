@@ -183,3 +183,21 @@ test("MCP advertises live search and reports missing provider access without fab
   const invalid = await client.callTool({ name: "search_homes", arguments: { municipalityCodes: ["999999"], operation: "buy" } });
   assert(invalid.isError);
 });
+
+test("local test UI runs real tools and rejects foreign origins and disallowed tools", async () => {
+  const page = await fetch(new URL('/test', base));
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /Try your move/);
+  const config = await (await fetch(new URL('/test/config', base))).json();
+  assert.equal(config.towns.length, 18);
+  assert.equal(config.liveSearchConfigured, false);
+  assert(!JSON.stringify(config).includes('TREG_TOKEN'));
+  const request = (tool: string, origin = base.origin) => fetch(new URL('/test/run', base), {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ tool, args: { municipalityCode: '080312' } }),
+  });
+  const result = await (await request('get_town_profile')).json();
+  assert.equal(result.structuredContent.municipality.name, 'Calaf');
+  assert.equal((await request('get_town_profile', 'https://example.com')).status, 403);
+  assert.equal((await request('update_demo')).status, 400);
+});

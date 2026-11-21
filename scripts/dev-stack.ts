@@ -39,5 +39,6 @@ try {
   if (!ready) throw new Error('Profile API did not become ready');
   launch('demo-plugin/server.ts', { PORT: String(appPort), HOST: '127.0.0.1', PROFILE_API_URL: baseUrl, PROFILE_API_TOKEN: token });
   console.log(`Connected demo: http://127.0.0.1:${appPort}/preview · profile API ${baseUrl}`);
+  console.log(`Test the data: http://127.0.0.1:${appPort}/test`);
   console.log('Synthetic background feed enabled for DEMO_BANK_USERS; credentials stay in server process memory. Ctrl+C stops both services.');
 } catch (error) { console.error(error instanceof Error ? error.message : 'Stack startup failed'); shutdown(1); }

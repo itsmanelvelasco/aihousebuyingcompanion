@@ -104,3 +104,9 @@ At most three town queries run per call, each with a USD 0.01 route ceiling and 
 The server forwards only town names/comarcas and the explicit operation, budget and bedroom hints—not profiles, bank data or household identities. It does not fetch listing pages or relay Idealista's official ChatGPT/Claude app. Those apps do not support manual use by other MCP clients. Sources: [treg integration documentation](https://treg.to/llms.txt), [Idealista app documentation](https://idealista.github.io/mcp-app-docs/openai/).
 
 Validation included a live treg search for Calaf on 21 November 2026 (USD 0.00038), followed by adapter normalization of that actual response. Automated tests use injected provider responses and never spend credits. A live end-to-end call from the local server still requires configuring `TREG_TOKEN`.
+
+## Browser test page
+
+Open `http://127.0.0.1:8787/test` after starting either the standalone MCP server or `npm run dev:stack`. Restart an already-running server after updating the code. The page offers town profiles, family/budget recommendations and Idealista example searches, with readable results, source links and an expandable full MCP response. The header reports whether the server process has `TREG_TOKEN` configured; it does not validate the key until a search runs. Never enter a key in the browser.
+
+The page and its API are restricted to localhost hosts, loopback connections and same-origin requests. Its tool allowlist excludes board/bank writes. It calls the real MCP server through an in-memory MCP client; it does not introduce separate recommendation logic. A live search is triggered only by the search button and uses the server's treg account. This is a local test interface, not a publicly deployed user portal.
