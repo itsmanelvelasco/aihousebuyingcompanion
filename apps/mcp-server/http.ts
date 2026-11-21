@@ -5,6 +5,7 @@ import { snapshotInfo } from "../../packages/places/data.ts";
 import { createMcpServer } from "./tools.ts";
 import { registerBankTools } from "./bank-tools.ts";
 import type { BankToolConfig } from "./bank-tools.ts";
+import { registerTownExplorer } from "./town-explorer.ts";
 
 export function createHttpServer(
   snapshot: Snapshot,
@@ -14,6 +15,7 @@ export function createHttpServer(
     today?: () => string;
     bankApi?: BankToolConfig;
     travelEstimates?: TravelEstimateData;
+    townExplorerPage?: string;
   } = {},
 ) {
   return createServer(async (request, response) => {
@@ -21,6 +23,14 @@ export function createHttpServer(
     if (path === "/health" && request.method === "GET") {
       response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       response.end(JSON.stringify({ status: "ok", snapshot: snapshotInfo(snapshot) }));
+      return;
+    }
+    if (path === "/preview" && request.method === "GET" && options.townExplorerPage) {
+      response.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+      }).end(options.townExplorerPage);
       return;
     }
     if (path !== "/mcp") {
@@ -35,6 +45,7 @@ export function createHttpServer(
     }
 
     const server = createMcpServer(snapshot, policies, options.today, options.travelEstimates);
+    if (options.townExplorerPage) registerTownExplorer(server, snapshot, options.townExplorerPage);
     if (options.bankApi) registerBankTools(server, options.bankApi);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     try {
