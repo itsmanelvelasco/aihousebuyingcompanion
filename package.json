@@ -13,6 +13,7 @@
     "package:team-plugin": "node scripts/package-team-plugin.ts",
     "setup:app": "npm --prefix demo-plugin ci",
     "build:app": "npm run build:mcp-ui && npm --prefix demo-plugin run build",
+    "build:web": "node scripts/build-management-site.mjs",
     "check:app": "npm --prefix demo-plugin run check",
     "test:app": "npm --prefix demo-plugin test",
     "dev:stack": "npm run build:app && node scripts/dev-stack.ts",
