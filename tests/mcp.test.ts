@@ -113,6 +113,16 @@ test("serves the read-only Town Explorer widget and preserves headless municipal
   assert.equal(profile.travelEstimates.length, 6);
   assert((await client.callTool({ name: "show_town_explorer", arguments: { municipalityCode: "083015" } })).isError);
 
+  const recommendation = {
+    tool: "recommend_towns",
+    arguments: { schoolStages: ["eso"], schoolMode: "rail", maxSchoolJourneyMinutes: 50, travelDate, limit: 3 },
+  };
+  assert.deepEqual(await tool("show_town_explorer", { recommendation }), { municipalityCode: null, recommendation });
+  const exploratory = { tool: "recommend_towns_for_profile", arguments: { profile: { hasChildren: true }, limit: 3 } };
+  assert.deepEqual(await tool("show_town_explorer", { recommendation: exploratory }), { municipalityCode: null, recommendation: exploratory });
+  const badInput = { ...recommendation, arguments: { ...recommendation.arguments, schoolMode: "walking_only" } };
+  assert((await client.callTool({ name: "show_town_explorer", arguments: { recommendation: badInput } })).isError);
+
   const discovery = await client.listResources();
   assert(discovery.resources.some(resource => resource.uri === appMeta.resourceUri));
   const { contents: [widget] } = await client.readResource({ uri: appMeta.resourceUri });

@@ -20,7 +20,20 @@ The tools are read-only. The application processes supplied household criteria i
 
 ## Town Explorer sample plugin
 
-Town Explorer is a read-only MCP App on the same `/mcp` endpoint. `show_town_explorer` opens the widget, optionally on a specified town. The iframe calls `list_catalonia_municipalities` and `get_town_profile` through the standard MCP Apps host bridge. It shows the 18 mapped municipalities with sourced resale indicators, sample driving and public transport times, schools, and housing measures. It runs with no profile API, bank data, or OpenAI API key. [OpenAI’s MCP Apps UI guide](https://developers.openai.com/plugins/build/chatgpt-ui)
+Town Explorer is a read-only MCP App on the same `/mcp` endpoint. `show_town_explorer` opens a map of Catalonia with cards for a recommendation or the pilot directory. Selecting a pin or card loads sourced housing indicators, sample driving and public transport times, schools, and housing measures through the MCP Apps host bridge. It runs with no profile API, bank data, or OpenAI API key. [OpenAI’s MCP Apps UI guide](https://developers.openai.com/plugins/build/chatgpt-ui)
+
+After either recommendation tool, pass its name and exact arguments to `show_town_explorer`. The widget reruns that read-only query against the same snapshot, preserving filters, result order, and the travel date. For example, if the original call was `recommend_towns` with `{"schoolStages":["eso"],"limit":3}`, pass:
+
+```json
+{
+  "recommendation": {
+    "tool": "recommend_towns",
+    "arguments": { "schoolStages": ["eso"], "limit": 3 }
+  }
+}
+```
+
+The map uses the pilot’s sourced town centres and simplified ICGC provincial boundaries (20 January 2026, 1:1,000,000). The illustration and boundaries are bundled with the widget. [ICGC boundary data](https://www.icgc.cat/en/Geoinformation-and-Maps/Data-and-products/Cartographic-geoinformation/Administrative-boundaries) · [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 
 ### Preview in a browser
 
@@ -29,7 +42,7 @@ npm ci
 ALLOWED_ORIGINS=http://127.0.0.1:8787 npm run start:mcp
 ```
 
-Open [the preview on Calaf](http://127.0.0.1:8787/preview?town=080312). Pick another town to fetch its profile from the running MCP. Use the same host and port in the preview URL and the origin allowlist. If port 8787 is occupied, set `PORT` and update both URLs.
+Open [the preview](http://127.0.0.1:8787/preview) to try a sample ESO shortlist, or [start on Calaf](http://127.0.0.1:8787/preview?town=080312). Pick any visible card or pin to fetch its profile from the running MCP. Use the same host and port in the preview URL and the origin allowlist. If port 8787 is occupied, set `PORT` and update both URLs.
 
 ### Try in ChatGPT
 
@@ -46,7 +59,7 @@ Open [the preview on Calaf](http://127.0.0.1:8787/preview?town=080312). Pick ano
 | `recommend_towns` | Apply hard constraints first, then rank with weighted affordability, school, commute and rural preferences. Read `excluded` for constraint failures or missing evidence. |
 | `recommend_towns_for_profile` | Shortlist towns from household and lifestyle facts. Returns ranked or exploratory towns and what to verify. |
 | `get_town_profile` | Read municipal and comarca indicators, map coordinates, school access, dated rail evidence, sample travel estimates and geographically relevant policies. |
-| `show_town_explorer` | Open the Town Explorer widget, optionally preselected to a six-digit municipality code. |
+| `show_town_explorer` | Open the Town Explorer map and cards with a recommendation query or a preselected six-digit municipality code. |
 | `get_nearby_schools` | Find authorized school stages within the municipality or nearby. Filter by stage, estimated journey time or a scheduled rail option. |
 | `get_transport_options` | Find dated, direct FGC services between two pilot municipalities and count departures in a requested window. |
 | `get_business_activity` | Read resident Social Security, unemployment and historical retail census indicators. |
