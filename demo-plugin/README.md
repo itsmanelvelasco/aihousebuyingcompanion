@@ -68,6 +68,10 @@ Use fictional details on the shared demo board and stop the public tunnel when y
 
 ## Rehearse the four scenes
 
+Open **Laia · Getting started** and click **Start talking** to begin the bank-first interview in the browser. On the same demo server, set `OPENAI_API_KEY` for live voice and `PUBLIC_ORIGIN` to its public HTTPS origin for hosted voice and links from ChatGPT. The local connected stack loads the key from the root `.env`. If a microphone is unavailable, **Conversation options → Guided interview** follows the same flow. Use fictional figures on this shared rehearsal.
+
+After confirming her household and preferences, enter the upfront target, savings set aside for the purchase and monthly contribution. **Save to Laia’s board** shares the confirmed fields and monthly statement totals with the run. Return to the board to see her first savings scenario. In native ChatGPT, ask “Open Laia’s interview” to open the board and continue by voice or text. Rehearsals are stored in the demo server’s memory.
+
 | Persona | What to say in ChatGPT | What to show |
 | --- | --- | --- |
 | **Laia · Getting started** | “relo.cat, start.” If the board has moved on, say “Switch to Laia.” | Try “We’re three people looking for two bedrooms in Manresa. I work full time.” The board saves all four details together. Open **Refine your household and housing profile** for budget, floor area, schools, commute, debt and emergency cash. Say “Connect the sample bank and show my updated plan,” or use the button. The fixture fills €18,400 saved, €2,900 net income and €2,180 spending, producing a €720/month surplus and a 50-month estimate for the sample €54,000 upfront milestone. The board then models a 20-year mortgage term, or 290 months total to owning outright. |

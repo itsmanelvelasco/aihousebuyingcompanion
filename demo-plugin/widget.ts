@@ -43,6 +43,30 @@ function timeline(plan: { upfrontMonths: number | null; termMonths: number; debt
   </ol>`;
 }
 
+function laiaInterview(view: Extract<DemoView, { answers: unknown }>) {
+  const profile = view.interview?.profile;
+  const scenario = view.firstScenario;
+  const summary = view.interview?.cash;
+  const details = [
+    ['Who’s moving', profile?.householdSize], ['Home', profile?.homeType], ['Preferred area', profile?.location],
+    ['Must-haves', profile?.amenities], ['Nearby areas', profile?.nearbyAreas], ['Lifestyle', profile?.lifestyle],
+    ['Monthly take-home pay', profile?.confirmedSalary == null ? null : euro.format(profile.confirmedSalary)],
+    ['Monthly spending', profile?.confirmedSpending == null ? null : euro.format(profile.confirmedSpending)],
+    ['Cash-flow notes', profile?.cashFlowNotes],
+  ].filter(([, value]) => value != null);
+  return `<section class="panel hero laia-voice"><h1>Plan a home with Laia</h1>
+    <p>${view.interview ? 'Pick up where you left off in her interview.' : 'Start with a fictional bank statement, a sample CSV or spoken estimates.'}</p>
+    <div class="actions">${button(view.interview ? 'Resume talking' : 'Start talking', 'laia_voice', '', 'talk')}</div></section>
+    ${scenario && profile ? `<section class="panel laia-scenario"><h2>Laia’s first savings scenario</h2>
+      <p class="amount">${scenario.baselineMonths === null ? 'No timeline at this contribution' : scenario.baselineMonths === 0 ? 'Upfront goal reached' : displayMonths(scenario.baselineMonths) + ' to the upfront goal'}</p>
+      <p>${euro.format(profile.saved!)} set aside toward ${euro.format(profile.target!)} · ${euro.format(profile.monthly!)} per month</p>
+      ${scenario.suggestions.map(item => `<p><strong>${safe(item.title)}</strong> · ${safe(item.action)}</p>`).join('')}</section>` : ''}
+    ${details.length || summary ? `<section class="panel"><h2>Saved interview</h2>
+      <dl class="facts">${details.map(([label, value]) => `<div><dt>${safe(label)}</dt><dd>${safe(value)}</dd></div>`).join('')}
+      ${summary ? `<div><dt>Statement income per month</dt><dd>${euro.format(summary.monthlyInflows)}</dd></div>
+      <div><dt>Statement expenses per month</dt><dd>${euro.format(summary.monthlyCostOfLiving)}</dd></div>` : ''}</dl></section>` : ''}`;
+}
+
 function onboarding(view: Extract<DemoView, { answers: unknown }>) {
   const { group, answers } = view;
   const allExtras = view.extraGroups.flatMap(section => section.questions);
@@ -59,7 +83,7 @@ function onboarding(view: Extract<DemoView, { answers: unknown }>) {
     `<label>${field.label}<input name="${field.id}" type="${field.kind}"
       ${field.kind === 'number' ? `min="${field.min}" max="${field.max}" step="1"` : 'maxlength="80"'}
       placeholder="${field.example}" value="${prefill ? safe(answers[field.id] ?? '') : ''}"></label>`).join('');
-  return hero('01 · Intake', 'Let’s chart your route, Laia.', 'Tell us what works for your household. Start with the basics, then add the details that could change where you live.') +
+  return laiaInterview(view) +
     `<section class="panel"><span class="label">${view.answeredBasic} of ${view.totalQuestions} basics saved</span>
       ${group ? `<h2>${group.title}</h2>
         <form class="intake"><div class="fields">${inputs(group.questions, false)}</div><div class="actions"><button class="primary">Save answers</button>
@@ -232,7 +256,7 @@ function render(view: BoardView) {
   if (view.connection?.mode === 'connected_synthetic') {
     const connection = view.connection;
     const screen = view.townScreening;
-    byId('view').insertAdjacentHTML('afterbegin', `<section class="panel"><span class="label">Connected fictional profile · ${safe(connection.userId)}</span><h2>Runtime bank feed</h2><p>Ledger revision ${safe(connection.ledgerRevision ?? 0)} · ${connection.runtime?.enabled ? 'Background simulation running' : 'Background simulation stopped'}</p><div class="actions">${button(connection.runtime?.enabled ? 'Stop simulated feed' : 'Start simulated feed', connection.runtime?.enabled ? 'stop_bank_runtime' : 'start_bank_runtime')}${button('Refresh bank data', 'refresh_data', '', 'link')}</div>${connection.summary ? `<p class="small">Observed net cash flow: ${euro.format(connection.summary.netCashflowCents / 100)} (${safe(connection.summary.from)} to ${safe(connection.summary.to)}). Historical totals are not a current-month forecast.</p>` : ''}</section>`);
+    byId('view').insertAdjacentHTML(view.persona === 'onboarding' ? 'beforeend' : 'afterbegin', `<section class="panel"><span class="label">Connected fictional profile · ${safe(connection.userId)}</span><h2>Runtime bank feed</h2><p>Ledger revision ${safe(connection.ledgerRevision ?? 0)} · ${connection.runtime?.enabled ? 'Background simulation running' : 'Background simulation stopped'}</p><div class="actions">${button(connection.runtime?.enabled ? 'Stop simulated feed' : 'Start simulated feed', connection.runtime?.enabled ? 'stop_bank_runtime' : 'start_bank_runtime')}${button('Refresh bank data', 'refresh_data', '', 'link')}</div>${connection.summary ? `<p class="small">Observed net cash flow: ${euro.format(connection.summary.netCashflowCents / 100)} (${safe(connection.summary.from)} to ${safe(connection.summary.to)}). Historical totals are not a current-month forecast.</p>` : ''}</section>`);
     if (screen) byId('view').insertAdjacentHTML('beforeend', `<section class="panel"><h2>Sourced municipality screen</h2><p>Provisional town comparison; this is not a verified property match or mortgage approval.</p>${screen.propertyChecks.map(check => `<p class="small">Property check pending: ${safe(check.required)} bedrooms.</p>`).join('')}${screen.result ? screen.result.towns.map(town => `<article><h3>${safe(town.municipality.name)}</h3><p>${town.matchReasons.map(safe).join(' · ')}</p>${town.incentives.map(policy => `<p><a href="${safe(policy.sourceUrl)}" target="_blank" rel="noopener noreferrer">${safe(policy.title)}</a> · ${safe(policy.callStatus)} · ${safe(policy.eligibilityStatus)}</p>`).join('')}</article>`).join('') : `<p>More information needed: ${screen.missingFields.map(safe).join(', ') || 'resolve profile conflicts'}.</p>`}</section>`);
   }
   const current = checkpoint(view);
@@ -303,11 +327,32 @@ function parseFormAnswers(raw: Record<string, unknown>) {
       : key === 'schoolStages' ? String(value).split(',').map(stage => stage.trim()).filter(Boolean) : value]));
 }
 
+async function startLaiaVoice(view: BoardView) {
+  const path = `/interview/?run=${encodeURIComponent(view.runId)}&start=1`;
+  if (!app) {
+    location.assign(path);
+    return;
+  }
+  try {
+    if (view.boardUrl) {
+      const { isError } = await app.openLink({ url: new URL(path, view.boardUrl).href });
+      if (!isError) return;
+    }
+    const { isError } = await app.sendMessage({ role: 'user', content: [{ type: 'text',
+      text: `Continue Laia’s fictional bank-first interview on this board, run ${view.runId}. Save my confirmed demo answers to this run.` }] });
+    if (isError) throw new Error();
+    byId('status').textContent = 'Select Voice in ChatGPT to speak your answers.';
+  } catch {
+    byId('status').textContent = 'Select Voice in ChatGPT and say “Continue Laia’s interview on this board.”';
+  }
+}
+
 document.addEventListener('click', event => {
   const control = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
   if (!active || !control) return;
   const { action, key } = control.dataset;
   if (!action) return;
+  if (action === 'laia_voice') { void startLaiaVoice(active); return; }
   const args: Record<string, unknown> = { runId: active.runId, action };
   if (action === 'switch_persona') args.persona = key;
   if (action === 'adopt_habit' || action === 'complete_habit') args.habit = key;

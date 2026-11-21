@@ -1,11 +1,10 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { firstScenarioInput, generateFirstScenario } from './scenario.ts';
 import { classificationLimit, expenseCategories, incomeCategories } from './finances.mjs';
 
-const port = Number(process.env.INTERVIEWER_PORT ?? 3000);
-const base = `http://localhost:${port}`;
 const assets = {
   '/': ['index.html', 'text/html'],
   '/app.mjs': ['app.mjs', 'text/javascript'],
@@ -80,23 +79,33 @@ async function classify(request, response) {
   send(response, 200, { categories });
 }
 
-createServer(async (request, response) => {
-  if (![base.slice(7), `127.0.0.1:${port}`].includes(request.headers.host)) {
-    return send(response, 403, { error: 'Use the local demo URL.' });
+export function interviewRequestOrigin(request, publicOrigin = null) {
+  const hosted = publicOrigin ? new URL(publicOrigin) : null;
+  if (hosted?.protocol === 'https:' && request.headers.origin === hosted.origin) return hosted.origin;
+  const peers = ['127.0.0.1', '::1', '::ffff:127.0.0.1'];
+  if (!peers.includes(request.socket.remoteAddress)) return null;
+  const port = request.socket.localPort;
+  for (const name of ['localhost', '127.0.0.1', '[::1]']) {
+    const origin = new URL(`http://${name}:${port}`);
+    if (request.headers.host === origin.host) return origin.origin;
   }
+  return null;
+}
+
+export async function handleInterviewRequest(request, response, path, trustedOrigin) {
   try {
-    if (request.method === 'GET' && Object.hasOwn(assets, request.url)) {
-      const [file, type] = assets[request.url];
+    if (request.method === 'GET' && Object.hasOwn(assets, path)) {
+      const [file, type] = assets[path];
       return send(response, 200, await readFile(new URL(file, import.meta.url), 'utf8'), type);
     }
-    if (request.method !== 'POST' || !['/voice', '/classify', '/scenario'].includes(request.url)) {
+    if (request.method !== 'POST' || !['/voice', '/classify', '/scenario'].includes(path)) {
       return send(response, 404, { error: 'Unknown route.' });
     }
-    if (request.headers.origin !== `http://${request.headers.host}`) {
-      return send(response, 403, { error: 'Open this feature from the local demo.' });
+    if (!trustedOrigin || request.headers.origin !== trustedOrigin) {
+      return send(response, 403, { error: 'Open the interviewer from its configured demo address.' });
     }
-    if (request.url === '/classify') return await classify(request, response);
-    if (request.url === '/scenario') {
+    if (path === '/classify') return await classify(request, response);
+    if (path === '/scenario') {
       if (!request.headers['content-type']?.startsWith('application/json')) {
         return send(response, 415, { error: 'Send scenario inputs as JSON.' });
       }
@@ -133,11 +142,20 @@ createServer(async (request, response) => {
       signal: AbortSignal.timeout(25000),
     });
     if (upstream.status === 401) {
-      return send(response, 502, { error: 'OpenAI rejected the API key. Update OPENAI_API_KEY and restart the local server.' });
+      return send(response, 502, { error: 'OpenAI rejected the demo server’s API key.' });
     }
     if (!upstream.ok) return send(response, 502, { error: `OpenAI Realtime returned HTTP ${upstream.status}. Check API access and billing.` });
     send(response, 200, await upstream.text(), 'application/sdp');
   } catch {
-    send(response, 502, { error: 'The local server could not complete this request.' });
+    send(response, 502, { error: 'The interview server could not complete this request.' });
   }
-}).listen(port, '127.0.0.1', () => console.log(`Voice demo: ${base}`));
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const port = Number(process.env.INTERVIEWER_PORT ?? 3000);
+  createServer((request, response) => {
+    const origin = interviewRequestOrigin(request);
+    if (!origin) return send(response, 403, { error: 'Use the local demo URL.' });
+    return handleInterviewRequest(request, response, request.url.split('?')[0], origin);
+  }).listen(port, '127.0.0.1', () => console.log(`Voice demo: http://localhost:${port}`));
+}

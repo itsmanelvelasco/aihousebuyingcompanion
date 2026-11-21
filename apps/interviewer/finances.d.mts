@@ -1,3 +1,5 @@
+export const expenseCategories: string[];
+
 export interface CashFlowSummary {
   observedMonths: string[];
   transactionCount: number;

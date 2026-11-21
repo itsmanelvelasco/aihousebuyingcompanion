@@ -6,24 +6,39 @@ import { readFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
-import { getView, openDemo, openSchema, updateDemo, updateSchema } from './demo.ts';
+import { getView, InterviewConflictError, openDemo, openSchema, saveLaiaInterview, updateDemo, updateSchema } from './demo.ts';
+import { laiaInterviewSchema } from './laia-interview.ts';
+import { z } from 'zod';
 import { validateAnswers } from './intake.ts';
 import { profileConnection, ProfileBridge, connectedAnswers } from './profiles.ts';
 import { createMcpServer as createPlacesMcpServer } from '../apps/mcp-server/tools.ts';
-import { interviewerRouting, registerInterviewerTools } from '../apps/interviewer/mcp-tools.ts';
+import { bankOpeningQuestion, interviewerRouting, registerInterviewerTools } from '../apps/interviewer/mcp-tools.ts';
+import { handleInterviewRequest, interviewRequestOrigin } from '../apps/interviewer/server.mjs';
 import { loadData } from '../packages/places/data.ts';
 import { registerBankTools } from '../apps/mcp-server/bank-tools.ts';
 
 const connection = profileConnection();
 const bridge = connection ? new ProfileBridge(connection) : null;
 const connectedUpdateSchema = updateSchema.extend({ answers: connectedAnswers.optional() });
+const interviewSaveSchema = z.strictObject({
+  runId: z.uuid(), expectedRevision: z.number().int().nonnegative(), ...laiaInterviewSchema.shape,
+});
+const laiaInstructions = 'For Laia, the fictional onboarding persona, call open_demo with persona onboarding and reuse the active runId when known. Her Start talking button opens the interview for that run. In chat or Live, offer the bank CSV, fictional transactions or spoken estimates first. Use fictional details on the shared demo board. Continue from the saved interview, ask how many people need the home, then the home and area preferences. Ask for the upfront target, savings already set aside for purchase and regular monthly contribution. Save the confirmed interview using save_laia_interview and present the returned firstScenario without asking for another habit. ';
 
-const widgetUri = 'ui://arrela/journey-v5.html';
+const widgetUri = 'ui://arrela/journey-v6.html';
 const publicOrigin = process.env.PUBLIC_ORIGIN ? new URL(process.env.PUBLIC_ORIGIN).origin : null;
 
-function withBoardLink(view: ReturnType<typeof getView>) {
+async function boardSnapshot(view: ReturnType<typeof getView>, opening = false) {
+  const decorated = bridge ? await bridge.decorate(view) : { ...view, connection: { mode: 'scripted_demo' } };
   const path = view.sharedBoard ? '/preview' : `/preview?run=${view.runId}`;
-  return { ...view, boardUrl: publicOrigin ? publicOrigin + path : null };
+  const boardUrl = publicOrigin ? publicOrigin + path : null;
+  if (!('interview' in view)) return { ...decorated, boardUrl };
+  return { ...decorated, boardUrl,
+    interviewUrl: publicOrigin ? `${publicOrigin}/interview/?run=${view.runId}&start=1` : null,
+    message: opening
+      ? view.interview ? 'Continue from Laia’s saved interview.' : bankOpeningQuestion
+      : decorated.message,
+  };
 }
 const template = readFileSync(new URL('./widget.html', import.meta.url), 'utf8');
 const bundle = readFileSync(new URL('./dist/widget.js', import.meta.url), 'utf8');
@@ -34,6 +49,10 @@ async function reply(name: string, input: unknown) {
   try {
     let view: ReturnType<typeof getView> | null = null;
     if (name === 'open_demo') view = openDemo(openSchema.parse(input));
+    else if (name === 'save_laia_interview') {
+      const { runId, expectedRevision, ...snapshot } = interviewSaveSchema.parse(input);
+      view = await saveLaiaInterview(runId, snapshot, expectedRevision);
+    }
     else if (name === 'update_demo') {
       if (!bridge) view = updateDemo(updateSchema.parse(input));
       else {
@@ -64,11 +83,10 @@ async function reply(name: string, input: unknown) {
       }
     }
     if (!view) throw new Error('Unknown demo tool.');
-    const decorated = bridge ? await bridge.decorate(view) : { ...view, connection: { mode: 'scripted_demo' } };
-    const snapshot = { ...decorated, boardUrl: withBoardLink(view).boardUrl };
+    const snapshot = await boardSnapshot(view, name === 'open_demo');
     const text = name === 'open_demo' && snapshot.boardUrl
-      ? `${decorated.message} Live board for this same run: ${snapshot.boardUrl}`
-      : decorated.message;
+      ? `${snapshot.message} Live board for this same run: ${snapshot.boardUrl}`
+      : snapshot.message;
     return { content: [{ type: 'text' as const, text }], structuredContent: snapshot };
   } catch (error) {
     return { isError: true, content: [{ type: 'text' as const,
@@ -78,13 +96,11 @@ async function reply(name: string, input: unknown) {
 
 function createMcpServer() {
   const legacyServer = () => new McpServer({ name: 'relo.cat', version: '0.1.0' }, {
-    instructions: interviewerRouting + ' When the user says “relo.cat, start” (or the old “Arrela, start”), call open_demo with no arguments immediately. The browser and chat share one live board. ' +
+    instructions: laiaInstructions + interviewerRouting + ' When the user says “relo.cat, start” (or the old “Arrela, start”), call open_demo with no arguments immediately. The browser and chat share one live board. ' +
       'Do not ask for a code, run ID, or persona to start. Present boardUrl as a clickable link if the widget is hidden; do not read URLs aloud. ' +
       'Use the runId returned by open_demo for subsequent writes. Pass persona to switch when asked. ' +
       'Speak as a warm, concise game guide. The board labels the rehearsal data, so skip repeated spoken labels. ' +
       'If asked about real-world applicability, explain what needs verification. ' +
-      'For Laia, group missing home details or finances into a natural prompt. Extract all answers from each spoken or typed reply ' +
-      'and save them in one update_demo answer_batch call. Ask only for details still missing. Once the basics are saved, offer the extra profile groups. ' +
       'The board updates when the tool saves the turn. Offer boardUrl as a clickable link if the voice host does not show the widget. ' +
       'Only claim the widget is visible if you have confirmed it. For Marc, lead with the win and the next quest from progress.coach; ' +
       'offer a concrete quest with its spending swap and estimated monthly benefit. Use adopt_habit on acceptance and complete_habit only after a check-in. For Núria, ask before opening the inbox. Then pitch routes A/B/C briefly and ask which to preview. ' +
@@ -95,7 +111,7 @@ function createMcpServer() {
   });
   const server = bridge ? (() => {
     const { snapshot, policies, travelEstimates } = loadData();
-    return createPlacesMcpServer(snapshot, policies, undefined, travelEstimates);
+    return createPlacesMcpServer(snapshot, policies, undefined, travelEstimates, undefined, laiaInstructions);
   })() : legacyServer();
   if (!bridge) registerInterviewerTools(server);
   if (connection) registerBankTools(server, { baseUrl: connection.baseUrl, token: connection.token });
@@ -105,7 +121,7 @@ function createMcpServer() {
       uri: widgetUri, mimeType: RESOURCE_MIME_TYPE, text: page,
       _meta: {
         ui: { prefersBorder: true, csp: { connectDomains: publicOrigin ? [publicOrigin] : [] } },
-        'openai/widgetCSP': { connect_domains: publicOrigin ? [publicOrigin] : [], resource_domains: [] },
+        'openai/widgetCSP': { connect_domains: publicOrigin ? [publicOrigin] : [], redirect_domains: publicOrigin ? [publicOrigin] : [], resource_domains: [] },
       },
     }],
   }));
@@ -113,12 +129,19 @@ function createMcpServer() {
   registerAppTool(server, 'open_demo', {
     title: 'Show relo.cat demo',
     description: 'Call with no arguments when the user says “relo.cat, start” or “start relo.cat”. Opens the shared live board without a code. ' +
-      'Pass persona only when asked to show Laia (onboarding), Marc (progress), Núria (shortcuts), or Jordi (payoff). ' +
+      'For Laia’s voice interview open persona onboarding. For Marc use progress, for Núria shortcuts, and for Jordi payoff. ' +
       'Return the board link in chat if the host does not display the widget. Use newRun only for an explicitly separate rehearsal.',
     inputSchema: openSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     _meta: { ui: { resourceUri: widgetUri }, 'openai/outputTemplate': widgetUri },
   }, input => reply('open_demo', input));
+
+  server.registerTool('save_laia_interview', {
+    title: 'Save Laia’s interview to her demo board',
+    description: 'Save confirmed fictional details for this run. Submit the complete interview including previously saved fields and the latest board revision. Cash accepts only monthly aggregates from the selected fictional statement. The board generates the first scenario when the upfront target, purchase savings and monthly contribution are confirmed.',
+    inputSchema: interviewSaveSchema.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  }, input => reply('save_laia_interview', input));
 
   server.registerTool('update_demo', {
     title: 'Update relo.cat demo',
@@ -156,6 +179,30 @@ const server = createServer(async (req, res) => {
   const path = url.pathname;
   try {
     if (handleConnectPage(req, res)) return;
+    if (path.startsWith('/interview/')) {
+      await handleInterviewRequest(req, res, path.slice('/interview'.length), interviewRequestOrigin(req, publicOrigin));
+      return;
+    }
+    if (path === '/preview/interview' && req.method === 'POST') {
+      if (!req.headers.origin || req.headers.origin !== interviewRequestOrigin(req, publicOrigin)) {
+        send(res, 403, JSON.stringify({ error: 'Open the interview from Laia’s board.' }), 'application/json');
+        return;
+      }
+      if (!req.headers['content-type']?.startsWith('application/json')) {
+        send(res, 415, JSON.stringify({ error: 'Expected an interview summary in JSON.' }), 'application/json');
+        return;
+      }
+      try {
+        const { runId, expectedRevision, ...snapshot } = interviewSaveSchema.parse(await readJson(req));
+        const saved = await saveLaiaInterview(runId, snapshot, expectedRevision);
+        send(res, 200, JSON.stringify({ saved: true, revision: saved.revision }), 'application/json');
+      } catch (error) {
+        send(res, error instanceof InterviewConflictError ? 409 : 400, JSON.stringify({ error:
+          error instanceof z.ZodError ? 'Check the interview fields and use EUR for Laia’s board.' :
+          error instanceof Error ? error.message : 'Could not save this interview.' }), 'application/json');
+      }
+      return;
+    }
     if (path === '/test' || path.startsWith('/test/')) {
       const { snapshot, policies } = loadData();
       if (await handleTestUi(req, res, snapshot, policies)) return;
@@ -182,8 +229,7 @@ const server = createServer(async (req, res) => {
       }
       try {
         const view = run.data ? getView(run.data) : openDemo({});
-        const decorated = bridge ? await bridge.decorate(view) : view;
-        send(res, 200, JSON.stringify({ ...decorated, boardUrl: withBoardLink(view).boardUrl }), 'application/json; charset=utf-8');
+        send(res, 200, JSON.stringify(await boardSnapshot(view)), 'application/json; charset=utf-8');
       } catch {
         send(res, 404, 'This rehearsal expired. Open the shared live board.');
       }
