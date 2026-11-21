@@ -1,12 +1,20 @@
-# Arrela — AI House Buying Companion
+# Relocat — AI House Buying Companion
 
 *Find where you belong. We'll help you get there.*
 
-Arrela is a hackathon project for a ChatGPT-native homeownership and relocation companion. It combines everyday financial coaching with evidence-backed recommendations for Catalan municipalities, helping people understand where buying a suitable home could become achievable and how to get there.
+Relocat is a ChatGPT-native housing and homeownership companion focused on Catalonia. The immediate demo helps people compare suitable municipalities, school and transport access, and verified housing incentives. Financial coaching and property listings are complementary capabilities.
+
+## Source of truth
+
+The [DevDays 2026 — AI Housing Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003) is authoritative for product decisions. This repository records implementation and mirrors the Space; when product descriptions disagree, follow the latest explicit Space decision. Check actual code and tests for implementation status rather than treating a planned feature as delivered.
+
+Key references: [MCP architecture and contracts](https://chatgpt.com/space/page_692ac01a0a3c81918ab65c4a0052783f), [product scope](https://chatgpt.com/space/page_047fba29065c819193b15243a7e3ccd8) and [listings integration](https://chatgpt.com/space/page_5cb6c5414e088191827364cd0e43b847). The overview calls the product **Relocat**; older pages, code and the plugin prototype still use **Arrela**. These refer to the same project; existing identifiers are retained until coordinated with their owners.
 
 ## Project status
 
 Implemented so far: a local TypeScript user-profile API and 500 synthetic household profiles in per-user JSON, combined JSON and CSV formats. The coaching, matching, MCP integration and widgets below remain proposed. This description follows the implementation plan dated 21 November 2026 in the [DevDays 2026 — AI Housing Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003).
+
+The separate `hackathon/arrela-demo-plugin` branch contains a scripted four-persona MCP/widget prototype. It is not merged into `main` and does not yet consume the profile API. Its fictional incentives and listings do not satisfy the sourced municipality demo requirement.
 
 ## User profiles and API
 
@@ -50,51 +58,56 @@ The municipality intelligence backend is the immediate data priority. Production
 
 ## Demo journey
 
-1. Confirm a fictional household's finances, location preferences and practical constraints in ChatGPT.
-2. Load a simulated bank snapshot, identify one useful savings insight and show the initial ownership timeline.
-3. Recommend three Catalan towns with a map, comparison cards and evidence for the relevant trade-offs.
-4. Select a town and recalculate the savings target and estimated timing.
-5. Suggest a concrete next step, such as a local visit, a sustainable savings habit or a draft enquiry to a verified housing office.
+1. Confirm a household's budget, school stages, transport needs and relocation preferences in ChatGPT; use a fictional profile for the demo.
+2. Call `recommend_towns` and show three Catalan municipalities with evidence, trade-offs and missing information.
+3. Call `get_town_profile` for a selected municipality and compare school and scheduled transport access.
+4. Call `get_applicable_incentives`, distinguish call status from household eligibility, and explain one actual measure with an official source.
+5. Offer a verified next step. Optionally connect a simulated savings plan or authorized property links after the core journey works.
 
 Example prompt: “Where could I buy sooner without giving up schools and Barcelona access?”
 
 ## Hackathon MVP
 
-- One end-to-end ChatGPT conversation using fictional financial data.
+- One end-to-end ChatGPT conversation calling the municipality MCP backend; bank access is not required.
 - Approximately 10–15 sourced municipality profiles with stable official municipality codes.
 - Housing indicators, nearby schools by stage and a small set of scheduled transport connections.
 - A small, verified incentive catalogue, with 1–2 real measures integrated into the end-to-end demo.
-- Savings calculations, town matching and interactive progress/comparison views.
+- Deterministic town matching and incentive checks; optional interactive maps/comparison cards.
 - A browser-based preview as a fallback for the demo.
 
-Full bank OAuth, coverage of every municipality, live property listings and government submissions are outside the MVP. Business-register enrichment is a later extension.
+Full bank OAuth, coverage of every municipality and government submissions are outside the MVP. Live property opportunities are an approved complementary stream: use an authorized provider if access exists, otherwise clearly dated verified links or permitted search links. Listings and savings features must not block the town/incentive demo. Business-register enrichment is a later extension.
 
 ## Proposed architecture
 
 Use one TypeScript codebase and one MCP server. Node.js and the official MCP TypeScript SDK expose tools through an HTTPS `/mcp` endpoint. Shared Zod schemas define the contracts. React/Vite widgets provide progress cards, maps and comparisons through the MCP Apps UI bridge. Data tools return structured results separately from UI-rendering tools.
 
-Target layout (the profile API currently lives in `apps/profile-api/`; the MCP/widget packages below remain planned):
+The Space's latest architecture suggests the layout below; these town/MCP paths are proposed, not created. The existing `apps/profile-api/`, `data/users/` and export files remain in place. Coordinate with the plugin team before adopting paths or relocating code.
 
 ```text
-apps/mcp-server/          # MCP endpoint, tools and API adapters
-apps/widget/             # React/Vite progress, map and comparison views
-packages/contracts/      # Shared Zod schemas
-packages/finance/        # Transaction normalization and savings calculations
-packages/places/         # Municipality data, ranking and incentive rules
-data/demo-bank.json      # Fictional transactions and balances
-data/towns.json          # Sourced municipality profiles
+src/data/                # Normalization, joins and validation
+src/matching/            # Hard filters and preference ranking
+src/eligibility/         # Versioned deterministic policy checks
+src/tools/               # Thin domain-tool wrappers
+src/mcp-server.ts        # One Streamable HTTP /mcp endpoint
+widget/                 # Optional map and town cards
+data/municipalities.json # Official municipality index
+data/town-metrics.json   # Evidence with observation periods
+data/schools.json
+data/transport.json
+data/incentives.json
 ```
 
 Planned tool interfaces:
 
 | Tool | Purpose |
 | --- | --- |
-| `get_ownership_plan` | Return savings progress, monthly capacity and data freshness. |
-| `simulate_ownership` | Recalculate the cash target and timing for a savings change or selected town. |
 | `recommend_towns` | Return ranked towns, evidence, trade-offs and source metadata. |
-| `check_housing_incentives` | Return rule-backed eligibility or a need for verification, with official links. |
-| `render_home_plan` / `render_town_comparison` | Display interactive views of prepared results. |
-| `prepare_housing_enquiry` (stretch) | Draft an enquiry to a verified contact for the user to review. |
+| `get_town_profile` | Return sourced housing, schools, transit, services and local indicators. |
+| `get_applicable_incentives` | Return applicable measures, call status, eligibility, missing criteria and official links. |
+
+Those three tools are the core MVP. Dedicated school/transport tools, savings simulation, UI rendering tools and housing enquiries can follow. Earlier references to `check_housing_incentives` need an agreed adapter to the current `get_applicable_incentives` contract.
+
+Town results use official municipality codes, `matchReasons`, `tradeoffs`, `metrics` with `observedAt` and `sourceUrl`, and `dataMissing`. Incentives use separate `callStatus` and `eligibilityStatus`. Chat and widget views must consume the same prepared results. Cache versioned municipal evidence; compute household-specific matching and eligibility on request.
 
 ## Data and evidence
 
@@ -115,4 +128,4 @@ Join records using official municipality codes. Keep the source URL, observation
 
 ## Demo definition of done
 
-A fictional bank snapshot produces a useful savings insight, three evidence-backed Catalan town recommendations and an updated estimated time to ownership after the user selects a town, with clear assumptions, sources and data freshness throughout.
+A single ChatGPT conversation calls the municipality MCP backend, shows three sourced Catalan town recommendations, compares schools and transport, and explains one actual housing incentive with its source and application status. Keep a browser or recorded fallback. Savings timelines and authorized property opportunities extend this core journey.

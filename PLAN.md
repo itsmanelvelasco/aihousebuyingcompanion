@@ -1,6 +1,21 @@
-# Arrela implementation plan
+# Relocat implementation plan
 
 This is the hackathon roadmap, based on the project brief dated 21 November 2026. Unchecked items are planned work, not completed features.
+
+## Authority and current priority
+
+The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003) is authoritative. Its current overview and [MCP architecture](https://chatgpt.com/space/page_692ac01a0a3c81918ab65c4a0052783f) prioritize Catalonia-only town recommendations, school/transit access and verified incentives. This supersedes older bank-first demo sequences. The overview uses Relocat; Arrela remains a legacy code/prototype name.
+
+The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_applicable_incentives`. Bank-informed coaching and [authorized property listings](https://chatgpt.com/space/page_5cb6c5414e088191827364cd0e43b847) are complementary streams, not prerequisites for demo success.
+
+## Integration gaps to resolve
+
+- [ ] Coordinate with the frontend/setup team on `hackathon/arrela-demo-plugin`; its four scripted personas and in-memory state are not yet connected to the 500-user API on `main`.
+- [ ] Agree a profile adapter: stable user ID; household size and school needs; bedrooms, commute and transport; purchase budget; explicit unknowns.
+- [ ] Convert integer EUR cents from profile storage to the plugin's euro values at the boundary. Its total spending must include `monthlyExpensesCents + debtPaymentsCents` exactly once.
+- [ ] Replace scripted policy/listing examples with sourced results before presenting them as actual opportunities; retain fictional labels for demo scenes.
+- [ ] Reconcile older `check_housing_incentives` references with the Space's current `get_applicable_incentives` interface.
+- [ ] Keep existing profile storage paths; agree shared contracts and the town/MCP layout with team owners before moving files.
 
 ## Delivered profile foundation
 
@@ -48,7 +63,7 @@ Provide representative interview answers and a small, clearly synthetic bank sna
 
 ## Target outcome
 
-One ChatGPT conversation takes a fictional bank snapshot, explains a useful savings insight, recommends three evidence-backed Catalan towns, and updates the estimated purchase cash target and timeline after the user selects a town.
+One ChatGPT conversation confirms household needs, calls the municipality MCP backend, recommends three sourced Catalan towns, compares schools and transport, and explains one real housing incentive with official evidence, call status and eligibility uncertainty. No bank connection is required.
 
 ## Phase 1 — Agree contracts and scaffold (0–20 minutes)
 
@@ -59,21 +74,25 @@ One ChatGPT conversation takes a fictional bank snapshot, explains a useful savi
 - [ ] Define incentive application status separately from household eligibility.
 - [ ] Provide mock tool responses immediately so UI and backend work can proceed independently.
 
-Proposed layout:
+Suggested municipality layout from the current Space architecture (not yet created). Existing `apps/profile-api/` and `data/users/` remain in place; coordinate with the plugin branch before choosing final paths:
 
 ```text
-apps/mcp-server/       # MCP tools, adapters and HTTPS endpoint
-apps/widget/           # React/Vite progress, map and comparisons
-packages/contracts/    # Shared schemas and types
-packages/finance/      # Deterministic savings and purchase calculations
-packages/places/       # Town matching and incentive rules
-data/demo-bank.json    # Clearly fictional balances and transactions
-data/towns.json        # Sourced Catalan municipality profiles
+src/data/                 # Normalization, joins and validation
+src/matching/             # Hard filters and preference ranking
+src/eligibility/          # Deterministic policy rules
+src/tools/                # Thin MCP wrappers
+src/mcp-server.ts         # One Streamable HTTP /mcp endpoint
+widget/                   # Optional town map/comparison cards
+data/municipalities.json  # Official municipality index
+data/town-metrics.json    # Indicators with source and observation year
+data/schools.json
+data/transport.json
+data/incentives.json
 ```
 
 ## Phase 2 — Build independent workstreams (20–100 minutes)
 
-Agree shared contracts first, then assign separate file ownership. Finance and municipality data are the core inputs; real bank connectivity must not block either track.
+Agree shared contracts first, then assign separate file ownership. Household requirements, municipality evidence and policy rules are the core inputs. Finance and listings can progress independently without blocking them.
 
 | Workstream | Scope | Handoff |
 | --- | --- | --- |
@@ -85,17 +104,19 @@ Agree shared contracts first, then assign separate file ownership. Finance and m
 | Integration/contracts — owner to assign | Agree shared schemas and connect the MCP server, domain functions and widgets. | Working end-to-end conversation and browser-preview fallback. |
 
 - [ ] Make financial calculations pure and deterministic; handle a reached target and zero or negative savings explicitly.
+- [ ] Keep financial calculations in the complementary track; the core town journey must also work without a bank snapshot.
 - [ ] Mark housing prices as municipal indicators or estimates, distinct from live listings.
 - [ ] Preserve unknown requirements as unresolved rather than silently passing them.
-- [ ] Return incentive outcomes as eligible, ineligible or needs verification, with rule version and official evidence.
+- [ ] Return `eligibilityStatus` as `eligible`, `ineligible` or `needs_verification`, with rule version and official evidence; use separate `callStatus`.
 - [ ] Keep closed or unknown calls distinct from open applications.
 
 ## Phase 3 — Integrate the conversation (100–145 minutes)
 
-- [ ] Connect `get_ownership_plan` and `simulate_ownership` to the finance functions.
-- [ ] Connect `recommend_towns` and `check_housing_incentives` to the places functions.
-- [ ] Connect `render_home_plan` and `render_town_comparison` to prepared results; keep calculation and rendering tools separate.
-- [ ] Update the target and timeline when the user selects a town.
+- [ ] Connect `recommend_towns`, `get_town_profile` and `get_applicable_incentives` to domain functions through one Streamable HTTP `/mcp` endpoint.
+- [ ] Return official municipality codes, `matchReasons`, `tradeoffs`, `metrics` with `observedAt` and `sourceUrl`, and `dataMissing`.
+- [ ] Supply incentives with separate `callStatus`, `eligibilityStatus`, missing criteria and official legal sources.
+- [ ] Share prepared results between chat and optional town-comparison widgets; keep calculations separate from rendering.
+- [ ] Optionally connect `get_ownership_plan`/`simulate_ownership` and update the target/timeline after selection once the core flow works.
 - [ ] Show synthetic-data labels, assumptions, evidence links, data freshness and missing-data messages in the UI.
 - [ ] Run the MCP endpoint and widget together; document the actual run instructions.
 - [ ] Verify a browser-based demo fallback if ChatGPT integration is unavailable.
@@ -114,7 +135,8 @@ Agree shared contracts first, then assign separate file ownership. Finance and m
 ## Acceptance criteria
 
 - [ ] The demo returns three relevant town recommendations with understandable trade-offs and source links.
-- [ ] A selected town changes the estimated cash target and projected savings timeline consistently.
+- [ ] Selecting a town exposes sourced school/transit details and one actual housing incentive with application status and clearly qualified eligibility.
+- [ ] The core flow works without bank access or a listings provider; complementary savings estimates remain internally consistent when enabled.
 - [ ] Figures include visible assumptions, source dates and synthetic-data labels where applicable.
 - [ ] No output claims mortgage approval, guaranteed grant funding, school vacancies or confirmed journeys without evidence.
 - [ ] No real bank credentials, secrets or personal financial records are committed or exposed through tool responses.
@@ -122,4 +144,4 @@ Agree shared contracts first, then assign separate file ownership. Finance and m
 
 ## Deferred scope
 
-Production bank OAuth, durable financial storage, nationwide coverage, live property listings, comprehensive business-register enrichment, government submissions and proactive outreach are future work. A housing-office enquiry draft is a stretch feature and must remain a user-reviewed draft.
+Production bank OAuth, durable real-financial-data storage, nationwide coverage, comprehensive business-register enrichment, government submissions and proactive outreach are future work. Live property opportunities are an approved complementary stream: query authorized providers on demand for shortlisted towns if access is available; otherwise show verified timestamped links or permitted search links. Never fabricate inventory or treat provider failures as no available homes. A housing-office enquiry draft is a stretch feature and must remain a user-reviewed draft.
