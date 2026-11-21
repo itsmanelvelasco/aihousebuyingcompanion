@@ -1,8 +1,10 @@
 import { handleConnectPage } from '../apps/mcp-server/connect-page.ts';
 import { handleTestUi } from '../apps/mcp-server/test-ui.ts';
+import { handleInterviewerProxy } from '../apps/mcp-server/interviewer-proxy.ts';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFileSync } from 'node:fs';
+import { applyTheme } from '../packages/ui/theme.ts';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
@@ -18,14 +20,14 @@ const connection = profileConnection();
 const bridge = connection ? new ProfileBridge(connection) : null;
 const connectedUpdateSchema = updateSchema.extend({ answers: connectedAnswers.optional() });
 
-const widgetUri = 'ui://arrela/journey-v5.html';
+const widgetUri = 'ui://relocat/journey-v6.html';
 const publicOrigin = process.env.PUBLIC_ORIGIN ? new URL(process.env.PUBLIC_ORIGIN).origin : null;
 
 function withBoardLink(view: ReturnType<typeof getView>) {
   const path = view.sharedBoard ? '/preview' : `/preview?run=${view.runId}`;
   return { ...view, boardUrl: publicOrigin ? publicOrigin + path : null };
 }
-const template = readFileSync(new URL('./widget.html', import.meta.url), 'utf8');
+const template = applyTheme(readFileSync(new URL('./widget.html', import.meta.url), 'utf8'));
 const bundle = readFileSync(new URL('./dist/widget.js', import.meta.url), 'utf8');
 const page = template.replace('<!-- WIDGET -->', () =>
   '<script>' + bundle.replace(/<\/script/gi, '<\\/script') + '</script>');
@@ -78,7 +80,7 @@ async function reply(name: string, input: unknown) {
 
 function createMcpServer() {
   const legacyServer = () => new McpServer({ name: 'relo.cat', version: '0.1.0' }, {
-    instructions: interviewerRouting + ' When the user says “relo.cat, start” (or the old “Arrela, start”), call open_demo with no arguments immediately. The browser and chat share one live board. ' +
+    instructions: interviewerRouting + ' For other requests that invoke ReloCat or open/show the app, call open_demo with no arguments before answering to return its UI template. The browser and chat share one live board. ' +
       'Do not ask for a code, run ID, or persona to start. Present boardUrl as a clickable link if the widget is hidden; do not read URLs aloud. ' +
       'Use the runId returned by open_demo for subsequent writes. Pass persona to switch when asked. ' +
       'Speak as a warm, concise game guide. The board labels the rehearsal data, so skip repeated spoken labels. ' +
@@ -112,12 +114,12 @@ function createMcpServer() {
 
   registerAppTool(server, 'open_demo', {
     title: 'Show relo.cat demo',
-    description: 'Call with no arguments when the user says “relo.cat, start” or “start relo.cat”. Opens the shared live board without a code. ' +
+    description: 'Use this UI entry tool FIRST on the initial request after the user invokes relo.cat, and whenever they ask to open, start or show the plugin. Call with no arguments to return the board UI immediately without a code. ' +
       'Pass persona only when asked to show Laia (onboarding), Marc (progress), Núria (shortcuts), or Jordi (payoff). ' +
       'Return the board link in chat if the host does not display the widget. Use newRun only for an explicitly separate rehearsal.',
     inputSchema: openSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-    _meta: { ui: { resourceUri: widgetUri }, 'openai/outputTemplate': widgetUri },
+    _meta: { ui: { resourceUri: widgetUri, visibility: ['model', 'app'] }, 'openai/outputTemplate': widgetUri, 'openai/toolInvocation/invoking': 'Opening relo.cat…', 'openai/toolInvocation/invoked': 'relo.cat board ready' },
   }, input => reply('open_demo', input));
 
   server.registerTool('update_demo', {
@@ -155,6 +157,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const path = url.pathname;
   try {
+    if (await handleInterviewerProxy(req, res)) return;
     if (handleConnectPage(req, res)) return;
     if (path === '/test' || path.startsWith('/test/')) {
       const { snapshot, policies } = loadData();

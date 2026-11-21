@@ -42,7 +42,15 @@
   }
 
   function render(summary) {
+    if (summary?.openingQuestion) {
+      document.querySelector('h2').textContent = 'Let’s find your next home';
+      byId('coverage').textContent = summary.openingQuestion;
+      byId('totals').replaceChildren();
+      byId('breakdown').hidden = true;
+      return;
+    }
     if (!Array.isArray(summary?.observedMonths) || !summary.monthlyExpenses) return;
+    document.querySelector('h2').textContent = 'Sample monthly cash flow';
     byId('coverage').textContent = summary.observedMonths.length + ' months of fictional transactions';
     renderRows('totals', [
       ['Estimated salary', summary.estimatedMonthlySalary],

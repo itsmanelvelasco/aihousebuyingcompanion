@@ -10,6 +10,8 @@ import { createBankStore, accountBalances, dateSchema } from './bank.ts';
 import { analyzeTransactions, periodSchema, scenarioSchema, simulateSavings } from './finance.ts';
 import { createInputStore } from './inputs.ts';
 import { createBankRuntime } from './runtime.ts';
+import { handleManagementUi } from './admin.ts';
+import { handleInterviewerProxy } from '../mcp-server/interviewer-proxy.ts';
 
 async function body(req: IncomingMessage) {
   let size = 0;
@@ -34,6 +36,8 @@ export function createProfileApi(root: string, token: string) {
   const runtime = createBankRuntime(bank);
   const server = createServer(async (req, res) => {
     try {
+      if (await handleManagementUi(req, res)) return;
+      if (await handleInterviewerProxy(req, res)) return;
       const expected = Buffer.from(`Bearer ${token}`);
       const actual = Buffer.from(req.headers.authorization ?? '');
       if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) throw new ApiError(401, 'Bearer token required');

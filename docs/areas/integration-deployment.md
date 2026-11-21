@@ -8,8 +8,9 @@
 | --- | --- | --- |
 | Profile/bank API | `apps/profile-api/server.ts` | Authenticated storage, inputs and runtime bank writer; port 3001. |
 | Integrated plugin/board | `demo-plugin/server.ts` | Preview and combined ChatGPT-facing tools; port 8787. |
+| Interviewer/voice backend | `apps/interviewer/server.mjs` | Separate local backend on 3003 in the stack; proxied through the plugin's `/interviewer/` entry. |
 | Standalone places MCP | `apps/mcp-server/index.ts` | Municipality-only development alternative; port 8787 by default. |
-| Combined local launcher | `scripts/dev-stack.ts` | Starts the API, waits for readiness, then starts the connected plugin and stops both on exit. |
+| Combined local launcher | `scripts/dev-stack.ts` | Starts profile and interviewer backends, waits for readiness, then starts the connected plugin; stops all three on exit. |
 
 Do not run the integrated plugin and standalone places MCP on port 8787 simultaneously. The connected demo should reuse municipality tools in the plugin's one MCP endpoint. The API remains an internal HTTP service.
 
@@ -23,7 +24,7 @@ npm run setup:app
 npm run dev:stack
 ```
 
-`dev:stack` builds the widget and starts the profile API on 3001 plus the unified plugin on 8787. If no `PROFILE_API_TOKEN` was supplied, it generates one and shares it only through child-process environment variables. It defaults the synthetic feed to `user-001`; override `DEMO_BANK_USERS` to choose the startup set. `DEMO_BANK_INTERVAL_MS` controls the feed interval (default 5000 ms). `PROFILE_API_PORT` and `APP_PORT` override the two ports and must differ. Ctrl+C stops both services.
+`dev:stack` builds both widgets and starts the profile API on 3001, interviewer backend on 3003 and unified plugin on 8787. If no `PROFILE_API_TOKEN` was supplied, it generates one and shares it only through child-process environment variables. It defaults the synthetic feed to `user-001`; override `DEMO_BANK_USERS` to choose the startup set. `DEMO_BANK_INTERVAL_MS` controls the feed interval (default 5000 ms). `PROFILE_API_PORT`, `INTERVIEWER_PORT` and `APP_PORT` override the ports, which must all differ. Ctrl+C stops all three services. Open `http://127.0.0.1:8787/interviewer/` for the interviewer through the main app, or use the backend's direct URL. Its bridge accepts only loopback, same-origin requests and never forwards browser credentials. Voice/classification use OpenAI only when explicitly requested and configured in the backend environment.
 
 For separate terminals, first set a private `PROFILE_API_TOKEN` and run root `npm start`. In the plugin terminal set the same token and the API URL:
 

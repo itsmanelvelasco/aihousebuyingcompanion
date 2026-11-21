@@ -4,6 +4,16 @@ import { drawRouteTimeline, drawWorld, nextSegment, stopNames, stops } from './m
 
 const app = window.parent === window ? null : new App({ name: 'relo.cat demo', version: '0.1.0' });
 const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+byId('website-interview').hidden = app !== null;
+byId('open-interview').addEventListener('click', () => {
+  const frame = byId<HTMLIFrameElement>('interview-frame');
+  const open = frame.hidden;
+  const userId = active?.connection?.userId;
+  frame.src = open ? '/interviewer/' + (userId ? `?userId=${encodeURIComponent(userId)}` : '') : 'about:blank';
+  frame.hidden = !open;
+  byId('open-interview').textContent = open ? 'Close interview' : 'Start your interview';
+  byId('open-interview').setAttribute('aria-expanded', String(open));
+});
 const euro = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 const safe = (value: unknown) => String(value).replace(/[&<>"']/g, char =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
@@ -220,6 +230,12 @@ function checkpoint(view: DemoView) {
 
 function render(view: BoardView) {
   if (active?.runId === view.runId && active.revision >= view.revision && active.connection?.ledgerRevision === view.connection?.ledgerRevision) return;
+  if (active && active.persona !== view.persona) {
+    byId<HTMLIFrameElement>('interview-frame').src = 'about:blank';
+    byId('interview-frame').hidden = true;
+    byId('open-interview').textContent = 'Start your interview';
+    byId('open-interview').setAttribute('aria-expanded', 'false');
+  }
   const preferencesOpen = byId<HTMLDetailsElement>('preferences')?.open;
   const enteringCredits = 'payoff' in view && !!view.credits && (!active || !('payoff' in active) || !active.credits);
   if (!app && (enteringCredits || (active && active.persona !== view.persona))) window.scrollTo(0, 0);

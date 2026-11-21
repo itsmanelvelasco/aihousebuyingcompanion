@@ -1,0 +1,35 @@
+[build]
+  command = "npm run build:web"
+  publish = "artifacts/team-plugin/netlify/public"
+
+[build.environment]
+  NODE_VERSION = "24"
+
+[functions]
+  directory = "artifacts/team-plugin/netlify/functions"
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/manage"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/manage/"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "no-store"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+    X-Frame-Options = "DENY"
+
+[[headers]]
+  for = "/interviewer/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    Content-Security-Policy = "frame-ancestors 'self'"
+

@@ -35,7 +35,7 @@ function result(summary: string, structuredContent: Record<string, unknown>): Ca
 export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = madridDate, travelEstimates: TravelEstimateData = {}, listings: ListingSearchConfig = { token: process.env.TREG_TOKEN, org: process.env.TREG_ORG }) {
   const metadata = snapshotInfo(snapshot);
   const server = new McpServer({ name: "relocat", version: "0.1.0" }, {
-    instructions: interviewerRouting + " Use Relocat to compare selected Catalan municipalities from a dated official-data snapshot. Cite evidence URLs. Explain geographic proxies and use the actual school and service dates. Describe sample travel times as approximate, with the transport mode and sample date. Distinguish policy eligibility from application status. Do not infer user finances, schooling, residence or tax facts.",
+    instructions: interviewerRouting + " For other initial requests invoking or opening ReloCat, call open_demo if available, otherwise show_town_explorer, before answering to return the UI template. Opening the UI must not import banks or start paid calls. Use ReloCat to compare selected Catalan municipalities from a dated official-data snapshot. Cite evidence URLs. Explain geographic proxies and use the actual school and service dates. Describe sample travel times as approximate, with the transport mode and sample date. Distinguish policy eligibility from application status. Do not infer user finances, schooling, residence or tax facts.",
   });
 
   server.registerTool("list_catalonia_municipalities", {
