@@ -12,6 +12,7 @@ The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539
 | [Municipalities/incentives](areas/municipalities-incentives.md) | `apps/mcp-server/tools.ts`, `packages/places/` | Sourced town matching and policy screening. |
 | [Shared contracts](areas/shared-contracts.md) | `packages/contracts/` | Validation, units and cross-area handoffs. |
 | [Integration/deployment](areas/integration-deployment.md) | Root `package.json` and service entry points | Run services, test connections and release. |
+| [Team plugins/skills](areas/team-plugins-skills.md) | `plugins/relocat-team/`, `scripts/package-team-plugin.ts` | One shared versioned bundle and verified teammate rollout. |
 
 ```text
 Interview / manual answers / reviewed bank aggregates
