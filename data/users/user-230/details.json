@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-230",
+  "name": "Fictional household 230",
+  "age": 41,
+  "householdType": "single_parent",
+  "householdSize": 2,
+  "dependants": 1,
+  "dependantAges": [
+    10
+  ],
+  "currentMunicipality": "Figueres",
+  "province": "Girona",
+  "employmentStatus": "temporary_employee",
+  "monthlyIncomeCents": 188800,
+  "incomeScope": "whole_household",
+  "workMunicipality": "Figueres",
+  "remoteWorkDaysPerWeek": 3,
+  "currentHousing": "private_rental",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "no_reported_credit_issue",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "income_instability"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "income_instability"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}

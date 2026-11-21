@@ -4,7 +4,7 @@
 
 Build Arrela, a ChatGPT-native companion connecting a realistic homeownership savings plan with evidence-backed recommendations for Catalan municipalities. Read `README.md` for product scope and `PLAN.md` for implementation milestones when present.
 
-The repository starts as documentation only. The TypeScript workspace, MCP server, widgets and datasets described in the README are proposed. Inspect the actual files before assuming a component or command exists. Update documentation as implementation lands.
+The repository implements a TypeScript local profile API and a seeded synthetic household dataset. The MCP server, widgets, finance engine and place recommendations remain proposed. Inspect actual files before assuming a component exists. Run `npm run typecheck` and `npm test`; start the API with `npm start` after setting `PROFILE_API_TOKEN`. Update documentation as implementation lands.
 
 ## Working approach
 
@@ -15,6 +15,7 @@ The repository starts as documentation only. The TypeScript workspace, MCP serve
 - Keep domain logic in reusable functions, validate external inputs at boundaries and return explicit errors or unknown states.
 - Use parallel agents when the user authorizes them and tasks have independent file ownership. Agree on shared contracts first, assign distinct files and integrate through one coordinator.
 - Respect the active team ownership in `PLAN.md`: interviewer, plugin frontend/setup, project lead's fictional persona, and Catalunya relocation research. Confirm file boundaries before overlapping their work; finance and integration ownership remain to be assigned.
+- The profile API lives in `apps/profile-api/`. Keep generated fixtures in `data/users/` separate from ignored `data/runtime-users/`; API writes must not overwrite committed demo exports. Regeneration via `npm run generate:users -- --overwrite` deliberately resets fixtures and exports.
 
 ## Domain rules
 

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "userId": "user-304",
+  "currency": "EUR",
+  "dataSource": "simulated",
+  "balanceCents": 2116800,
+  "monthlyIncomeCents": 227500,
+  "monthlyExpensesCents": 225225,
+  "debtPaymentsCents": 9400,
+  "monthlyNetCashflowCents": -7125,
+  "expensesExcludeDebtPayments": true,
+  "estimatedUpfrontCashCents": 5880000,
+  "purchaseCostAssumption": "Illustrative 30% of target price; not a verified tax or lending rule.",
+  "accounts": [
+    {
+      "id": "user-304-demo-current",
+      "type": "current",
+      "balanceCents": 2116800,
+      "currency": "EUR",
+      "provider": "fictional-demo-bank"
+    }
+  ],
+  "credentialsStored": false
+}

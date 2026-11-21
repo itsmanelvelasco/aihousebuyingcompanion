@@ -1,6 +1,17 @@
 # Arrela implementation plan
 
-This is the proposed hackathon roadmap, based on the project brief dated 21 November 2026. The repository is currently documentation-only; unchecked items are planned work, not completed features.
+This is the hackathon roadmap, based on the project brief dated 21 November 2026. Unchecked items are planned work, not completed features.
+
+## Delivered profile foundation
+
+- [x] Generate 500 fictional homebuyer households with varied preferences, demographics and financial/credit barriers, with documented Idescat grounding and explicit sampling limitations.
+- [x] Store each profile in separate details, preferences and bank-account JSON documents; provide full JSON and flattened CSV exports.
+- [x] Add a token-protected local API to list/read/create users and replace sections, using isolated runtime storage and atomic file writes.
+- [x] Verify dataset/export consistency, API authorization, invalid inputs, persistence and runtime edit preservation with automated tests and TypeScript checks.
+- [ ] Project lead selects or customizes a canonical demo persona from the candidate profiles and confirms it with the interviewer team.
+- [ ] Teams agree stricter domain schemas; the API currently validates document provenance and IDs while allowing evolving fields.
+
+See [profile API instructions](apps/profile-api/README.md) and [dataset assumptions](data/users/README.md). No real bank connection or production per-user authorization is implemented.
 
 ## Current team ownership
 

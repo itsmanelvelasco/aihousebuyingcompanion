@@ -6,7 +6,23 @@ Arrela is a hackathon project for a ChatGPT-native homeownership and relocation 
 
 ## Project status
 
-This repository currently documents the product and proposed implementation. The capabilities and architecture below are planned, not implemented. This description follows the implementation plan dated 21 November 2026 in the [DevDays 2026 — AI Housing Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003).
+Implemented so far: a local TypeScript user-profile API and 500 synthetic household profiles in per-user JSON, combined JSON and CSV formats. The coaching, matching, MCP integration and widgets below remain proposed. This description follows the implementation plan dated 21 November 2026 in the [DevDays 2026 — AI Housing Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003).
+
+## User profiles and API
+
+- [500 fictional profiles](data/users/README.md): each user has `details.json`, `preferences.json` and `bank-account.json`, with varied needs and financial barriers. Demographic categories are informed by official Idescat sources; the dataset is not statistically representative.
+- [Combined JSON](data/synthetic-users.json) preserves complete profiles; [CSV](data/synthetic-users.csv) provides a flattened summary.
+- [API setup and routes](apps/profile-api/README.md): token-protected local reads, user creation and section replacement. Runtime changes are stored separately from fixture exports.
+
+Requires Node.js 24+. From the repository root in PowerShell:
+
+```powershell
+npm install
+$env:PROFILE_API_TOKEN = [guid]::NewGuid().ToString('N')
+npm start
+```
+
+Run `npm run typecheck` and `npm test` for validation. The server listens on `http://127.0.0.1:3001` and requires the token on every request. All supplied financial data is fictional; this demo API does not implement production per-user authorization or real bank connectivity.
 
 ## The problem
 
@@ -57,7 +73,7 @@ Full bank OAuth, coverage of every municipality, live property listings and gove
 
 Use one TypeScript codebase and one MCP server. Node.js and the official MCP TypeScript SDK expose tools through an HTTPS `/mcp` endpoint. Shared Zod schemas define the contracts. React/Vite widgets provide progress cards, maps and comparisons through the MCP Apps UI bridge. Data tools return structured results separately from UI-rendering tools.
 
-Suggested layout (not yet created):
+Target layout (the profile API currently lives in `apps/profile-api/`; the MCP/widget packages below remain planned):
 
 ```text
 apps/mcp-server/          # MCP endpoint, tools and API adapters
