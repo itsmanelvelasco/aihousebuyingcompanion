@@ -1,14 +1,14 @@
-# Relocat — AI House Buying Companion
+# relo.cat — AI House Buying Companion
 
 *Find where you belong. We'll help you get there.*
 
-Relocat is a ChatGPT-native housing and homeownership companion focused on Catalonia. The immediate demo helps people compare suitable municipalities, school and transport access, and verified housing incentives. Financial coaching and property listings are complementary capabilities.
+relo.cat is a ChatGPT-native housing and homeownership companion focused on Catalonia. The immediate demo helps people compare suitable municipalities, school and transport access, and verified housing incentives. Financial coaching and property listings are complementary capabilities.
 
 ## Source of truth
 
 The [DevDays 2026 — AI Housing Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003) is authoritative for product decisions. This repository records implementation and mirrors the Space; when product descriptions disagree, follow the latest explicit Space decision. Check actual code and tests for implementation status rather than treating a planned feature as delivered.
 
-Key references: [MCP architecture and contracts](https://chatgpt.com/space/page_692ac01a0a3c81918ab65c4a0052783f), [product scope](https://chatgpt.com/space/page_047fba29065c819193b15243a7e3ccd8) and [listings integration](https://chatgpt.com/space/page_5cb6c5414e088191827364cd0e43b847). The overview calls the product **Relocat**; older pages, code and the plugin prototype still use **Arrela**. These refer to the same project; existing identifiers are retained until coordinated with their owners.
+Key references: [MCP architecture and contracts](https://chatgpt.com/space/page_692ac01a0a3c81918ab65c4a0052783f), [product scope](https://chatgpt.com/space/page_047fba29065c819193b15243a7e3ccd8) and [listings integration](https://chatgpt.com/space/page_5cb6c5414e088191827364cd0e43b847). The overview calls the product **relo.cat**; older pages, code and the plugin prototype still use **Arrela**. These refer to the same project; existing identifiers are retained until coordinated with their owners.
 
 ## Project status
 
