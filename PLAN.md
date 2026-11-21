@@ -1,4 +1,4 @@
-# Relocat implementation plan
+# relo.cat implementation plan
 
 This is the hackathon roadmap, based on the project brief dated 21 November 2026. Unchecked items are planned work, not completed features.
 

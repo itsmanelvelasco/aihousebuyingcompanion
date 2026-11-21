@@ -16,11 +16,12 @@ const connection = profileConnection();
 const bridge = connection ? new ProfileBridge(connection) : null;
 const connectedUpdateSchema = updateSchema.extend({ answers: connectedAnswers.optional() });
 
-const widgetUri = 'ui://arrela/journey-v3.html';
+const widgetUri = 'ui://arrela/journey-v5.html';
 const publicOrigin = process.env.PUBLIC_ORIGIN ? new URL(process.env.PUBLIC_ORIGIN).origin : null;
 
 function withBoardLink(view: ReturnType<typeof getView>) {
-  return { ...view, boardUrl: publicOrigin ? `${publicOrigin}/preview?run=${view.runId}` : null };
+  const path = view.sharedBoard ? '/preview' : `/preview?run=${view.runId}`;
+  return { ...view, boardUrl: publicOrigin ? publicOrigin + path : null };
 }
 const template = readFileSync(new URL('./widget.html', import.meta.url), 'utf8');
 const bundle = readFileSync(new URL('./dist/widget.js', import.meta.url), 'utf8');
@@ -46,7 +47,7 @@ async function reply(name: string, input: unknown) {
           if (!parsed.answers || !Object.keys(parsed.answers).length) throw new Error('Supply interview answers.');
           // Persist before changing the visible board. Backend errors never fall back to scripted state.
           await bridge.save({ ...before, revision: before.revision + 1 }, parsed.answers);
-          const legacy = Object.fromEntries(Object.entries(parsed.answers).filter(([key]) => ['town', 'bedrooms', 'household', 'employment', 'income', 'spending', 'savings'].includes(key)));
+          const legacy = Object.fromEntries(Object.entries(parsed.answers).filter(([key]) => ['town', 'bedrooms', 'household', 'employment', 'income', 'spending', 'savings', 'currentTown', 'budget', 'homeSize', 'dependants', 'rural', 'commuteTo', 'commuteTime', 'transport', 'schoolStages', 'debtPayments', 'reserve', 'cashTarget'].includes(key) && !Array.isArray(parsed.answers![key as keyof typeof parsed.answers])));
           view = Object.keys(legacy).length ? updateDemo(updateSchema.parse({ ...parsed, answers: legacy })) : updateDemo({ runId: parsed.runId, action: 'refresh_data' });
         } else if (parsed.action === 'answer') {
           if (!parsed.question || parsed.answer === undefined) throw new Error('Supply a question and answer.');
@@ -58,7 +59,7 @@ async function reply(name: string, input: unknown) {
     }
     if (!view) throw new Error('Unknown demo tool.');
     const decorated = bridge ? await bridge.decorate(view) : { ...view, connection: { mode: 'scripted_demo' } };
-    const snapshot = { ...decorated, boardUrl: publicOrigin ? `${publicOrigin}/preview?run=${view.runId}` : null };
+    const snapshot = { ...decorated, boardUrl: withBoardLink(view).boardUrl };
     const text = name === 'open_demo' && snapshot.boardUrl
       ? `${decorated.message} Live board for this same run: ${snapshot.boardUrl}`
       : decorated.message;
@@ -70,15 +71,17 @@ async function reply(name: string, input: unknown) {
 }
 
 function createMcpServer() {
-  const legacyServer = () => new McpServer({ name: 'arrela-demo', version: '0.1.0' }, {
-    instructions: 'Open the requested Arrela persona with open_demo. Speak as a warm, concise game guide. The board already labels the rehearsal data, ' +
-      'so do not repeat that label in spoken turns. If asked about real-world applicability, explain what needs verification. ' +
-      'If the user gives a board code, use pairCode to join that board. Reuse its runId for all writes and persona switches. ' +
+  const legacyServer = () => new McpServer({ name: 'relo.cat', version: '0.1.0' }, {
+    instructions: 'When the user says “relo.cat, start” (or the old “Arrela, start”), call open_demo with no arguments immediately. The browser and chat share one live board. ' +
+      'Do not ask for a code, run ID, or persona to start. Present boardUrl as a clickable link if the widget is hidden; do not read URLs aloud. ' +
+      'Use the runId returned by open_demo for subsequent writes. Pass persona to switch when asked. ' +
+      'Speak as a warm, concise game guide. The board labels the rehearsal data, so skip repeated spoken labels. ' +
+      'If asked about real-world applicability, explain what needs verification. ' +
       'For Laia, group missing home details or finances into a natural prompt. Extract all answers from each spoken or typed reply ' +
-      'and save them in one update_demo answer_batch call. Ask only for details still missing; do not make the user repeat answers. ' +
+      'and save them in one update_demo answer_batch call. Ask only for details still missing. Once the basics are saved, offer the extra profile groups. ' +
       'The board updates when the tool saves the turn. Offer boardUrl as a clickable link if the voice host does not show the widget. ' +
       'Only claim the widget is visible if you have confirmed it. For Marc, lead with the win and the next quest from progress.coach; ' +
-      'offer financial details if asked. For Núria, ask before opening the inbox. Then pitch routes A/B/C briefly and ask which to preview. ' +
+      'offer a concrete quest with its spending swap and estimated monthly benefit. Use adopt_habit on acceptance and complete_habit only after a check-in. For Núria, ask before opening the inbox. Then pitch routes A/B/C briefly and ask which to preview. ' +
       'Use preview_shortcut to highlight a route on the map without switching. Route A = rule, B = listing, C = job, D = rural, E = friends. ' +
       'Only call choose_shortcut after explicit confirmation. Import the sample bank or replay a payment only on request. ' +
       'Jordi starts debt-free. Celebrate and ask whether to roll the credits; on yes, call update_demo with action show_credits and briefly recap. ' +
@@ -91,7 +94,7 @@ function createMcpServer() {
   if (!bridge) registerInterviewerTools(server);
   if (connection) registerBankTools(server, { baseUrl: connection.baseUrl, token: connection.token });
 
-  registerAppResource(server, 'Arrela journey board', widgetUri, {}, async () => ({
+  registerAppResource(server, 'relo.cat journey board', widgetUri, {}, async () => ({
     contents: [{
       uri: widgetUri, mimeType: RESOURCE_MIME_TYPE, text: page,
       _meta: {
@@ -102,18 +105,18 @@ function createMcpServer() {
   }));
 
   registerAppTool(server, 'open_demo', {
-    title: 'Show Arrela demo',
-    description: 'Open a fictional persona and live board. Choose onboarding (Laia), progress (Marc), shortcuts (Núria), or payoff (Jordi, already debt-free). ' +
-      'Use pairCode when given a board code. Otherwise keep the current runId when switching personas. ' +
-      'With neither, start a new run. If the widget is not visible, share the returned boardUrl to follow the same run in a browser.',
+    title: 'Show relo.cat demo',
+    description: 'Call with no arguments when the user says “relo.cat, start” or “start relo.cat”. Opens the shared live board without a code. ' +
+      'Pass persona only when asked to show Laia (onboarding), Marc (progress), Núria (shortcuts), or Jordi (payoff). ' +
+      'Return the board link in chat if the host does not display the widget. Use newRun only for an explicitly separate rehearsal.',
     inputSchema: openSchema.shape,
-    annotations: { readOnlyHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     _meta: { ui: { resourceUri: widgetUri }, 'openai/outputTemplate': widgetUri },
   }, input => reply('open_demo', input));
 
   server.registerTool('update_demo', {
-    title: 'Update Arrela demo',
-    description: 'Change a fictional demo run by runId. Use answer_batch with all provided fields (town, bedrooms, household, employment, income, spending, savings; in connected mode also budget, floorArea, destinationCode, maxCommuteMinutes, schoolStages, schoolMode, allowComarcaEstimate, upfrontTarget and emergencyReserve in EUR). Spending includes debt. Ask only for missing fields. ' +
+    title: 'Update relo.cat demo',
+    description: 'Update by runId. Save all provided fields in answer_batch; connected mode accepts canonical and board intake aliases. Living spending excludes separate debt by default; spendingIncludesDebt:true normalizes inclusive legacy totals. Ask only for missing fields. Use adopt_habit/complete_habit for accepted scripted habits. ' +
       'Use preview_shortcut to highlight A (rule), B (listing), C (job), D (rural), or E (friends) via opportunity ID without changing the active route. ' +
       'After confirmation use choose_shortcut, or keep_route to dismiss the preview. Use show_credits on yes to Jordi’s credits and hide_credits to close. ' +
       'Also supports sample_bank, switch_persona, join_quest, read_inbox, replay_payment, final_payment, restart_persona and restart_all. ' +
@@ -163,24 +166,24 @@ const server = createServer(async (req, res) => {
       return;
     }
     if (req.method === 'GET' && path === '/preview/state') {
-      // Read-only access to a fictional run. The UUID is needed even with the widget origin allowed.
+      // No run parameter means the shared demo board; separate rehearsals use their UUID.
       res.setHeader('Access-Control-Allow-Origin', '*');
-      const run = openSchema.shape.runId.safeParse(url.searchParams.get('run'));
-      if (!run.success || !run.data) {
+      const run = openSchema.shape.runId.safeParse(url.searchParams.get('run') ?? undefined);
+      if (!run.success) {
         send(res, 400, 'A valid run ID is required.');
         return;
       }
       try {
-        const view = getView(run.data);
-        const decorated = bridge ? await bridge.decorate(view) : withBoardLink(view);
-        send(res, 200, JSON.stringify({ ...decorated, boardUrl: publicOrigin ? `${publicOrigin}/preview?run=${view.runId}` : null }), 'application/json; charset=utf-8');
+        const view = run.data ? getView(run.data) : openDemo({});
+        const decorated = bridge ? await bridge.decorate(view) : view;
+        send(res, 200, JSON.stringify({ ...decorated, boardUrl: withBoardLink(view).boardUrl }), 'application/json; charset=utf-8');
       } catch {
-        send(res, 404, 'This demo run expired. Start a fresh board.');
+        send(res, 404, 'This rehearsal expired. Open the shared live board.');
       }
       return;
     }
     if (req.method === 'GET' && path === '/health') {
-      send(res, 200, 'Arrela demo is ready');
+      send(res, 200, 'relo.cat demo is ready');
       return;
     }
     if (req.method === 'POST' && path === '/preview/action') {
@@ -201,6 +204,6 @@ const server = createServer(async (req, res) => {
 server.listen(port, host, () => {
   const address = server.address();
   const boundPort = address && typeof address === 'object' ? address.port : port;
-  console.log('Arrela preview: http://localhost:%d/preview', boundPort);
+  console.log('relo.cat preview: http://localhost:%d/preview', boundPort);
   console.log('MCP endpoint:   http://localhost:%d/mcp', boundPort);
 });
