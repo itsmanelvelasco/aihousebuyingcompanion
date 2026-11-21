@@ -8,6 +8,7 @@ import { ApiError, createStore, profileSchema, sections, seedRuntime, userId } f
 import type { Section } from './store.ts';
 import { createBankStore, accountBalances, dateSchema } from './bank.ts';
 import { analyzeTransactions, periodSchema, scenarioSchema, simulateSavings } from './finance.ts';
+import { createInputStore } from './inputs.ts';
 
 async function body(req: IncomingMessage) {
   let size = 0;
@@ -28,6 +29,7 @@ export function createProfileApi(root: string, token: string) {
   if (!token) throw new Error('PROFILE_API_TOKEN is required');
   const store = createStore(root);
   const bank = createBankStore(root);
+  const inputs = createInputStore(root);
   return createServer(async (req, res) => {
     try {
       const expected = Buffer.from(`Bearer ${token}`);
@@ -45,6 +47,20 @@ export function createProfileApi(root: string, token: string) {
         }
       } else {
         const id = userId.parse(parts[1]);
+        if (parts[2] === 'context' && parts.length === 3) {
+          if (req.method !== 'GET') throw new ApiError(405, 'Method not allowed');
+          return reply(res, 200, await inputs.context(id));
+        }
+        if (parts[2] === 'inputs') {
+          if (parts.length === 3 && req.method === 'GET') return reply(res, 200, await inputs.read(id));
+          if (parts.length === 3 && req.method === 'POST') return reply(res, 200, await inputs.add(id, await body(req)));
+          if (parts.length === 4) {
+            const inputId = userId.parse(parts[3]);
+            if (req.method === 'PUT') return reply(res, 200, await inputs.replace(id, inputId, await body(req)));
+            if (req.method === 'DELETE') return reply(res, 200, await inputs.delete(id, inputId));
+          }
+          throw new ApiError(405, 'Method not allowed');
+        }
         if (parts[2] === 'bank') {
           const route = parts[3];
           const itemId = parts[4] === undefined ? undefined : userId.parse(parts[4]);

@@ -22,6 +22,7 @@ The separate `hackathon/arrela-demo-plugin` branch contains a scripted four-pers
 - [Combined JSON](data/synthetic-users.json) preserves complete profiles; [CSV](data/synthetic-users.csv) provides a flattened summary.
 - [API setup and routes](apps/profile-api/README.md): token-protected local reads, user creation and section replacement. Runtime changes are stored separately from fixture exports.
 - [Bank ledger API](apps/profile-api/BANK_API.md): manage accounts and movements, analyse spending/recurring candidates, and compare savings scenarios. Seed three fictional months on demand for any supplied user; no real bank connection or payments.
+- [Shared app inputs](apps/profile-api/INPUTS.md): accept partial facts from interview, manual, bank and listing sources; resolve them with provenance and explicit conflicts; prepare municipality-tool inputs when complete.
 
 Requires Node.js 24+. From the repository root in PowerShell:
 

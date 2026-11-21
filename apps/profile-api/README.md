@@ -62,3 +62,7 @@ npm run generate:users -- --overwrite
 ## Bank movements and financial scenarios
 
 The same server now exposes a [bank ledger API](BANK_API.md) for synthetic accounts, transactions, cash-flow summaries and savings scenarios. It stores `bank-ledger.json` in each runtime user's folder. It does not automatically modify the original `bank-account.json` snapshot or fixture exports.
+
+## Several input sources
+
+Use [the shared input contract](INPUTS.md) to submit partial interview answers, manual preferences, bank aggregates and property facts. `/users/:id/context` combines them with saved profile data, exposes conflicts and prepares a validated town-tool request when required facts are available.

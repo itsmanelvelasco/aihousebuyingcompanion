@@ -19,6 +19,7 @@ The repository includes a TypeScript profile/bank API, deterministic cash-flow a
 - Respect the active team ownership in `PLAN.md`: interviewer, plugin frontend/setup, project lead's fictional persona, and Catalunya relocation research. Confirm file boundaries before overlapping their work; finance and integration ownership remain to be assigned.
 - The profile API lives in `apps/profile-api/`. Keep generated fixtures in `data/users/` separate from ignored `data/runtime-users/`; API writes must not overwrite committed demo exports. Regeneration via `npm run generate:users -- --overwrite` deliberately resets fixtures and exports.
 - Bank movements live in a separate runtime `bank-ledger.json`, not the profile's bank snapshot. Keep ledger and snapshot provenance distinct. Preserve idempotent imports, per-user serialized atomic ledger writes and deterministic finance calculations; pending/internal transfers must not inflate savings.
+- Shared partial inputs use `packages/contracts/inputs.ts` and runtime `app-inputs.json`. Preserve source/time/confirmation provenance and unresolved conflicts; never silently discard a hard constraint when adapting to municipality tools. See `apps/profile-api/INPUTS.md` for resolution semantics.
 - Before integrating the separate `hackathon/arrela-demo-plugin` branch, reconcile its four scripted personas with persisted user IDs. Convert cents to euros at the boundary and include separate debt payments in total spending exactly once. Do not present its fictional rules/listings as verified public evidence.
 
 ## Domain rules
