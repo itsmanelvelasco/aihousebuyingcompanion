@@ -8,7 +8,7 @@ relo.cat is a ChatGPT-native housing and homeownership companion focused on Cata
 
 The [DevDays 2026 — AI Housing Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003) is authoritative for product decisions. This repository records implementation and mirrors the Space; when product descriptions disagree, follow the latest explicit Space decision. Check actual code and tests for implementation status rather than treating a planned feature as delivered.
 
-Key references: [MCP architecture and contracts](https://chatgpt.com/space/page_692ac01a0a3c81918ab65c4a0052783f), [product scope](https://chatgpt.com/space/page_047fba29065c819193b15243a7e3ccd8) and [listings integration](https://chatgpt.com/space/page_5cb6c5414e088191827364cd0e43b847). The overview calls the product **relo.cat**; older pages, code and the plugin prototype still use **Arrela**. These refer to the same project; existing identifiers are retained until coordinated with their owners.
+Key references: [MCP architecture and contracts](https://chatgpt.com/space/page_692ac01a0a3c81918ab65c4a0052783f), [product scope](https://chatgpt.com/space/page_047fba29065c819193b15243a7e3ccd8) and [listings integration](https://chatgpt.com/space/page_5cb6c5414e088191827364cd0e43b847). Use **ReloCat** as the product name and **relo.cat** as the domain.
 
 ## Project status
 
@@ -29,8 +29,6 @@ Open `http://127.0.0.1:8787/preview`; use `http://127.0.0.1:8787/mcp` as the sin
 See [the monorepo development map](docs/README.md) for each area's entry points, owners, contracts and checks. `npm run typecheck`, `npm test`, `npm run data:validate`, `npm run check:app` and `npm run test:app` verify the combined code. Runtime bank events persist in the ledger; timers run only while the profile service is running and clients poll for updates. They do not wake ChatGPT or send unsolicited messages.
 
 The separate [habits service](apps/habits-agent/README.md) runs with `npm run start:habits` on port 3002 after setting `HABITS_API_TOKEN`. Local suggestions, goals and check-ins work without an API key. Optional `gpt-6.2-sol` suggestions use server-side `OPENAI_API_KEY`, bounded on-demand calls and no paid background loop. It is not automatically wired into the board or started by `dev:stack`.
-
-## Voice interviewer demo
 
 ## Input management website
 

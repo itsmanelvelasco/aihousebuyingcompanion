@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 const localPeer = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const assets = new Set(['/', '/app.mjs', '/finances.mjs', '/demo.csv']);
-const actions = new Set(['/voice', '/classify']);
+const actions = new Set(['/voice', '/classify', '/scenario']);
 
 /** Local same-origin bridge; deliberately not a public API or arbitrary URL proxy. */
 export async function handleInterviewerProxy(req: IncomingMessage, res: ServerResponse,

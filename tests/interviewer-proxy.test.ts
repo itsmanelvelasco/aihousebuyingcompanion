@@ -38,6 +38,7 @@ test('local interviewer bridge forwards assets/voice with correct backend origin
     assert.equal(result.contentType, 'application/sdp'); assert.equal(result.body, 'fictional-offer');
     assert.equal(result.authorization, null); assert.equal(result.cookie, null);
     assert.equal((await fetch(`${base}/interviewer/classify`, { method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' }, body: '[]' })).status, 200);
+    assert.equal((await fetch(`${base}/interviewer/scenario`, { method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' }, body: '{}' })).status, 200);
     assert.equal((await fetch(`${base}/interviewer/voice`, { method: 'POST', headers: { Origin: 'https://foreign.example', 'Content-Type': 'application/sdp' }, body: 'x' })).status, 403);
     const foreignHostStatus = await new Promise<number | undefined>((resolve, reject) => {
       request(`${base}/interviewer/`, { headers: { Host: 'public.example' } }, response => {

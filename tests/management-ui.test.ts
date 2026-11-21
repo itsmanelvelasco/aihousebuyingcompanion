@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { request } from 'node:http';
 import { createProfileApi } from '../apps/profile-api/server.ts';
 
 test('local management shell keeps data authenticated and blocks foreign origins', async () => {
@@ -22,7 +23,12 @@ test('local management shell keeps data authenticated and blocks foreign origins
     assert.equal((await fetch(`${base}/users`)).status, 401);
     assert.equal((await fetch(`${base}/manage/`, { headers: { Origin: 'https://foreign.example' } })).status, 403);
     assert.equal((await fetch(`${base}/manage/`, { method: 'POST' })).status, 405);
-    assert.equal((await fetch(`${base}/manage/`, { headers: { Host: 'foreign.example' } })).status, 403);
+    const foreignHostStatus = await new Promise<number | undefined>((resolve, reject) => {
+      request(`${base}/manage/`, { headers: { Host: 'foreign.example' } }, response => {
+        response.resume(); resolve(response.statusCode);
+      }).on('error', reject).end();
+    });
+    assert.equal(foreignHostStatus, 403);
     assert.equal((await fetch(`${base}/manage`, { redirect: 'manual' })).headers.get('location'), '/manage/');
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()));

@@ -8,7 +8,7 @@ export async function profileGateway(request) {
     status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }
   });
   const url = new URL(request.url);
-  if (['/interviewer/voice', '/interviewer/classify'].includes(url.pathname)) {
+  if (['/interviewer/voice', '/interviewer/classify', '/interviewer/scenario'].includes(url.pathname)) {
     return reply(503, 'Hosted voice and classification are unavailable until an authenticated backend adapter is configured.');
   }
   const id = '[a-z0-9][a-z0-9-]{0,63}';
@@ -104,7 +104,7 @@ export async function buildManagementSite(output = resolve('artifacts/team-plugi
     .replace('Voice uses configured OpenAI API credits. Starts only when you press Start.', 'Hosted voice is unavailable. Guided interview works without API credits.'));
   await mkdir(resolve(output, 'functions'), { recursive: true });
   await writeFile(resolve(output, 'functions/profile-api.mjs'),
-    `export default ${profileGateway.toString()};\nexport const config = { path: ['/users', '/users/*', '/interviewer/voice', '/interviewer/classify'] };\n`);
+    `export default ${profileGateway.toString()};\nexport const config = { path: ['/users', '/users/*', '/interviewer/voice', '/interviewer/classify', '/interviewer/scenario'] };\n`);
   return output;
 }
 

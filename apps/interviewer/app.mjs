@@ -108,7 +108,7 @@ function firstScenario() {
     useDemoBank: state.source === 'demo',
   });
   if (scenarioRequest?.body !== body) {
-    const promise = fetch('/scenario', {
+    const promise = fetch(new URL('./scenario', import.meta.url), {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
       signal: AbortSignal.timeout(5000),
     }).then(response => {

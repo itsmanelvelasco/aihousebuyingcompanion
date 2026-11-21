@@ -7,7 +7,7 @@ import { createProfileApi } from '../apps/profile-api/server.ts';
 import { seedRuntime } from '../apps/profile-api/store.ts';
 
 test('API authorizes requests, persists sections and rejects unsafe or malformed writes', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'arrela-api-'));
+  const root = await mkdtemp(join(tmpdir(), 'relocat-api-'));
   const server = createProfileApi(root, 'test-token');
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -45,7 +45,7 @@ test('API authorizes requests, persists sections and rejects unsafe or malformed
 });
 
 test('runtime seeding preserves existing user edits', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'arrela-seed-'));
+  const root = await mkdtemp(join(tmpdir(), 'relocat-seed-'));
   const source = join(root, 'source');
   const target = join(root, 'target');
   const { createStore } = await import('../apps/profile-api/store.ts');

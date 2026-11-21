@@ -19,7 +19,7 @@ const connection = profileConnection();
 const bridge = connection ? new ProfileBridge(connection) : null;
 const connectedUpdateSchema = updateSchema.extend({ answers: connectedAnswers.optional() });
 
-const widgetUri = 'ui://arrela/journey-v6.html';
+const widgetUri = 'ui://relocat/journey-v6.html';
 const publicOrigin = process.env.PUBLIC_ORIGIN ? new URL(process.env.PUBLIC_ORIGIN).origin : null;
 
 function withBoardLink(view: ReturnType<typeof getView>) {
@@ -79,7 +79,7 @@ async function reply(name: string, input: unknown) {
 
 function createMcpServer() {
   const legacyServer = () => new McpServer({ name: 'relo.cat', version: '0.1.0' }, {
-    instructions: interviewerRouting + ' When the user says “relo.cat, start” (or the old “Arrela, start”), call open_demo with no arguments immediately. The browser and chat share one live board. ' +
+    instructions: interviewerRouting + ' For other requests that invoke ReloCat or open/show the app, call open_demo with no arguments before answering to return its UI template. The browser and chat share one live board. ' +
       'Do not ask for a code, run ID, or persona to start. Present boardUrl as a clickable link if the widget is hidden; do not read URLs aloud. ' +
       'Use the runId returned by open_demo for subsequent writes. Pass persona to switch when asked. ' +
       'Speak as a warm, concise game guide. The board labels the rehearsal data, so skip repeated spoken labels. ' +

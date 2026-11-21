@@ -7,6 +7,8 @@ The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539
 | [Interviewer](areas/interviewer.md) | `apps/interviewer/`, `demo-plugin/intake.ts`, `profiles.ts` | Voice/guided interviews, cash-flow cards and confirmed structured answers. |
 | [Frontend/plugin](areas/frontend-plugin.md) | `demo-plugin/server.ts`, `widget.ts` | Conversation tools, live board and integrated MCP experience. |
 | [Profiles/inputs](areas/profiles-inputs.md) | `apps/profile-api/server.ts`, `inputs.ts` | Persistent synthetic profiles and multi-source context. |
+| [Input management website](areas/input-management.md) | `apps/profile-api/admin.html`, `admin.mjs` | Local operator workspace and reviewed interviewer handoff. |
+| [Netlify hosting](areas/netlify-hosting.md) | `netlify.toml`, `scripts/build-management-site.mjs` | Website builds, restricted API gateway and remaining deployment configuration. |
 | [Bank/runtime](areas/bank-runtime.md) | `apps/profile-api/bank.ts`, `finance.ts` | Movements, event consumption and deterministic finance. |
 | [Habits agent](areas/habits-agent.md) | `apps/habits-agent/server.ts`, `agent.ts` | User-reviewed goals/check-ins and optional on-demand Sol suggestions. |
 | [Municipalities/incentives](areas/municipalities-incentives.md) | `apps/mcp-server/tools.ts`, `packages/places/` | Sourced town matching and policy screening. |

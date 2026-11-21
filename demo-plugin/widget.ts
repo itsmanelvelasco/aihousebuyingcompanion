@@ -4,6 +4,7 @@ import { drawRouteTimeline, drawWorld, nextSegment, stopNames, stops } from './m
 
 const app = window.parent === window ? null : new App({ name: 'relo.cat demo', version: '0.1.0' });
 const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+byId('website-interview').hidden = app !== null;
 const euro = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 const safe = (value: unknown) => String(value).replace(/[&<>"']/g, char =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
