@@ -1,4 +1,4 @@
-# Relocat implementation plan
+# relo.cat implementation plan
 
 This is the hackathon roadmap, based on the project brief dated 21 November 2026. Unchecked items are planned work, not completed features.
 
@@ -35,6 +35,7 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 - [x] Add synthetic bank accounts and movement import/correction/deletion with idempotent IDs and serialized atomic ledger persistence.
 - [x] Implement monthly cash-flow/category analysis, recurring-expense candidates and savings scenarios with explicit reserves, assumptions and unknown-data handling.
 - [x] Add versioned multi-source app inputs, normalized context, explicit conflict reporting and a municipality recommendation-input adapter; frontend wiring remains to be integrated.
+- [x] Build a complementary browser voice interviewer with demo bank and CSV intake, optional OpenAI Decisions classification, and a local savings plan. Shared profile API integration remains pending.
 - [ ] Project lead selects or customizes a canonical demo persona from the candidate profiles and confirms it with the interviewer team.
 - [ ] Teams agree stricter domain schemas; the API currently validates document provenance and IDs while allowing evolving fields.
 
@@ -111,13 +112,14 @@ Agree shared contracts first, then assign separate file ownership. Household req
 ## Phase 3 — Integrate the conversation (100–145 minutes)
 
 - [x] Connect `recommend_towns`, `get_town_profile` and `get_applicable_incentives` to domain functions through one Streamable HTTP `/mcp` endpoint.
+- [x] Add a separate `recommend_towns_for_profile` tool that uses the same evidence and supports lifestyle-first discovery.
 - [x] Return official municipality codes, `matchReasons`, `tradeoffs`, `metrics` with `observedAt` and `sourceUrl`, and `dataMissing`.
 - [x] Supply incentives with separate `callStatus`, `eligibilityStatus`, missing criteria and official legal sources.
-- [ ] Share prepared results between chat and optional town-comparison widgets; keep calculations separate from rendering.
+- [x] Add a read-only Town Explorer widget that reads the same municipality tools as chat, with a separate render tool.
 - [ ] Optionally connect `get_ownership_plan`/`simulate_ownership` and update the target/timeline after selection once the core flow works.
 - [ ] Show synthetic-data labels, assumptions, evidence links, data freshness and missing-data messages in the UI.
 - [ ] Run the MCP endpoint and widget together; document the actual run instructions.
-- [ ] Verify a browser-based demo fallback if ChatGPT integration is unavailable.
+- [x] Provide a standalone browser preview for the Town Explorer, using the live municipality MCP.
 
 ## Phase 4 — Verify and rehearse (145–180 minutes)
 

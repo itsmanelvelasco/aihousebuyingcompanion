@@ -1,6 +1,7 @@
 import type { z } from "zod";
-import type { Metric, Municipality, Policy, RecommendationInput, SchoolJourney, Snapshot } from "../contracts/places.ts";
-import type { recommendationResult } from "../contracts/places.ts";
+import { recommendationInput, schoolStage } from "../contracts/places.ts";
+import type { Metric, Municipality, Policy, ProfileRecommendationInput, RecommendationInput, SchoolJourney, Snapshot } from "../contracts/places.ts";
+import type { profileRecommendationResult, recommendationResult } from "../contracts/places.ts";
 import { bestCommute, railwayCoverage, schoolJourneys, timeSeconds } from "./access.ts";
 import { getTown, missingMetrics, snapshotInfo } from "./data.ts";
 import { evaluateIncentives } from "./eligibility.ts";
@@ -9,6 +10,7 @@ import { nextSchoolDay, normalizedName } from "./geography.ts";
 import { getRelocationResearch } from "./relocation.ts";
 
 type Result = z.infer<typeof recommendationResult>;
+type ProfileResult = z.infer<typeof profileRecommendationResult>;
 type Weight = keyof NonNullable<RecommendationInput["weights"]>;
 
 function estimateHousing(snapshot: Snapshot, town: Municipality, housing: NonNullable<RecommendationInput["housing"]>) {
@@ -34,7 +36,35 @@ function reasonsForSchool(journeys: SchoolJourney[]) {
   return `Requested school stages are covered by ${[...options].join(" and ")}.`;
 }
 
-export function recommendTowns(snapshot: Snapshot, policies: Policy[], input: RecommendationInput, asOf: string): Result {
+function assessProfile(
+  profile: ProfileRecommendationInput["profile"], stages: RecommendationInput["schoolStages"], towns: Result["towns"],
+): ProfileResult["profileAssessment"] {
+  const applied: string[] = [];
+  const followUps: string[] = [];
+  const verificationNeeded: string[] = [];
+  if (stages?.length) applied.push("Screened the requested school stages.");
+  if (profile.hasChildren && stages === undefined) {
+    applied.push("Compared the range of education stages listed within each municipality.");
+    followUps.push("Which school stages should we require?");
+  }
+  if (profile.workMode === "hybrid" || profile.workMode === "on_site") {
+    verificationNeeded.push("Check travel to the workplace from the shortlisted towns.");
+  }
+  if (profile.preferredSetting === "rural") applied.push("Preferred towns with an official municipality-wide rural classification.");
+  if (profile.preferredSetting === "larger_town") applied.push("Preferred towns with a larger published population.");
+  if (profile.hasDog) verificationNeeded.push("Check pet permission for the specific home and suitable dog-walking areas nearby.");
+  if (profile.workMode === "remote" || profile.workMode === "hybrid") {
+    verificationNeeded.push("Check broadband availability and speed at the specific address.");
+  }
+  const status = !towns.length ? "no_matches" : towns.some(town => town.score !== null) ? "ranked" : "exploratory";
+  if (status === "exploratory") followUps.push("Would you prefer a rural municipality or a larger town?");
+  return { status, applied, followUps, verificationNeeded };
+}
+
+export function recommendTowns(
+  snapshot: Snapshot, policies: Policy[], input: RecommendationInput, asOf: string,
+  profile?: ProfileRecommendationInput["profile"],
+): Result {
   if (input.housing?.tenure === "buy" && input.housing.homeSizeM2 === undefined) {
     throw new Error("Provide homeSizeM2 (constructed floor area) with a purchase budget to estimate a resale price.");
   }
@@ -48,10 +78,15 @@ export function recommendTowns(snapshot: Snapshot, policies: Policy[], input: Re
   const travelDate = input.travelDate ?? nextSchoolDay(asOf);
   const destination = input.commute ? getTown(snapshot, input.commute.destinationCode) : undefined;
   const stages = [...new Set(input.schoolStages ?? [])];
+  const candidates = snapshot.municipalities.filter(town => town.recommendable);
+  const preferLargerTown = profile?.preferredSetting === "larger_town";
+  const maxPopulation = preferLargerTown
+    ? Math.max(1, ...candidates.map(town => snapshot.townMetrics[town.code].find(metric => metric.kind === "population")?.value ?? 0))
+    : 1;
   const excluded: Result["excluded"] = [];
   const towns: Result["towns"] = [];
 
-  for (const municipality of snapshot.municipalities.filter(town => town.recommendable)) {
+  for (const municipality of candidates) {
     const dataMissing: string[] = missingMetrics(snapshot, municipality.code);
     const reasons: string[] = [];
     const matchReasons: string[] = [];
@@ -66,7 +101,14 @@ export function recommendTowns(snapshot: Snapshot, policies: Policy[], input: Re
     if (input.ruralOnly && !rural) reasons.push("The requested municipality-wide rural classification is not evidenced.");
     if (rural) matchReasons.push(`Official rural classification: ${municipality.rural.category === "special_attention" ? "special attention" : "rural"}.`);
     if (municipality.rural.category === "partial") tradeoffs.push("Rural tax benefits depend on the exact attached settlement.");
-    addFactor("rural", rural ? 1 : 0, 0);
+    addFactor("rural", rural ? 1 : 0, profile?.preferredSetting === "rural" ? 1 : 0);
+    if (preferLargerTown) {
+      const population = metrics.find(metric => metric.kind === "population");
+      if (population) {
+        factors.push({ value: population.value / maxPopulation, weight: 1 });
+        matchReasons.push(`Published population of ${population.value.toLocaleString("en")} (${population.observedAt}) informs the larger-town preference.`);
+      }
+    }
 
     const housingEstimate = input.housing ? estimateHousing(snapshot, municipality, input.housing) : undefined;
     if (input.housing && !housingEstimate) reasons.push("Published housing data is insufficient to screen the budget.");
@@ -106,6 +148,23 @@ export function recommendTowns(snapshot: Snapshot, policies: Policy[], input: Re
         }
         tradeoffs.push("Verify school admissions, walkability and the return journey.");
       }
+    } else if (profile?.hasChildren && input.schoolStages === undefined) {
+      const localStages = new Map<string, SchoolJourney>();
+      for (const journey of schoolJourneys(snapshot, municipality, travelDate)) {
+        if (journey.school.municipalityCode !== municipality.code) continue;
+        for (const stage of journey.school.stages) {
+          if (!localStages.has(stage)) localStages.set(stage, journey);
+        }
+      }
+      addFactor("schoolAccess", localStages.size / schoolStage.options.length);
+      schoolMatches.push(...localStages.values());
+      if (localStages.size) {
+        matchReasons.push(`In-town schools are listed for ${localStages.size} education stage(s).`);
+        tradeoffs.push("Confirm the stages you need and check school admissions and travel.");
+      } else {
+        dataMissing.push("local_school_option");
+        tradeoffs.push("The snapshot has no listed school in this municipality. Check nearby schools.");
+      }
     }
 
     const commute = input.commute && destination ? bestCommute(snapshot, municipality, destination, travelDate, input.commute) : undefined;
@@ -144,4 +203,16 @@ export function recommendTowns(snapshot: Snapshot, policies: Policy[], input: Re
   ];
   if (!railwayCoverage(snapshot, travelDate)) limitations.push("The requested travel date is outside the cached FGC timetable.");
   return { snapshot: snapshotInfo(snapshot), travelDate, towns: towns.slice(0, input.limit ?? 3), excluded, limitations };
+}
+
+export function recommendTownsForProfile(snapshot: Snapshot, policies: Policy[], input: ProfileRecommendationInput, asOf: string): ProfileResult {
+  const { profile, limit, ...extra } = input;
+  const legacyStages = recommendationInput.shape.schoolStages.safeParse(extra.schoolStages);
+  const schoolStages = profile.schoolStages ?? (legacyStages.success ? legacyStages.data : undefined);
+  const ignoredCriteria = Object.keys(extra).filter(key =>
+    key !== "schoolStages" || !legacyStages.success || profile.schoolStages !== undefined);
+  const recommendation = recommendTowns(snapshot, policies, { schoolStages, limit }, asOf, profile);
+  const profileAssessment = assessProfile(profile, schoolStages, recommendation.towns);
+  if (ignoredCriteria.length) profileAssessment.ignoredCriteria = ignoredCriteria;
+  return { ...recommendation, profileAssessment };
 }

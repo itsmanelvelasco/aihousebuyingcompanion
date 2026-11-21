@@ -4,7 +4,7 @@ The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539
 
 | Area | Development entry point | Responsibility |
 | --- | --- | --- |
-| [Interviewer](areas/interviewer.md) | `demo-plugin/demo.ts` | Confirm needs and submit structured answers. |
+| [Interviewer](areas/interviewer.md) | `apps/interviewer/`, `demo-plugin/intake.ts`, `profiles.ts` | Voice/guided interviews, cash-flow cards and confirmed structured answers. |
 | [Frontend/plugin](areas/frontend-plugin.md) | `demo-plugin/server.ts`, `widget.ts` | Conversation tools, live board and integrated MCP experience. |
 | [Profiles/inputs](areas/profiles-inputs.md) | `apps/profile-api/server.ts`, `inputs.ts` | Persistent synthetic profiles and multi-source context. |
 | [Bank/runtime](areas/bank-runtime.md) | `apps/profile-api/bank.ts`, `finance.ts` | Movements, event consumption and deterministic finance. |
@@ -12,6 +12,7 @@ The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539
 | [Municipalities/incentives](areas/municipalities-incentives.md) | `apps/mcp-server/tools.ts`, `packages/places/` | Sourced town matching and policy screening. |
 | [Shared contracts](areas/shared-contracts.md) | `packages/contracts/` | Validation, units and cross-area handoffs. |
 | [Integration/deployment](areas/integration-deployment.md) | Root `package.json` and service entry points | Run services, test connections and release. |
+| [Team plugins/skills](areas/team-plugins-skills.md) | `plugins/relocat-team/`, `scripts/package-team-plugin.ts` | One shared versioned bundle and verified teammate rollout. |
 
 ```text
 Interview / manual answers / reviewed bank aggregates

@@ -237,6 +237,22 @@ export const recommendationInput = z.object({
   limit: z.number().int().min(1).max(10).optional(),
 }).strict();
 
+const relocationProfile = z.object({
+  householdType: z.enum(["single", "couple", "family", "shared"]).optional().describe("Living arrangement supplied by the user. Do not infer children or housing needs from it."),
+  hasChildren: z.boolean().optional().describe("When true and schoolStages is omitted, prioritize the range of stages listed in town."),
+  schoolStages: recommendationInput.shape.schoolStages.describe("Required education stages, if known."),
+  hasDog: z.boolean().optional().describe("When true, flag pet permission and nearby walking areas for verification."),
+  workMode: z.enum(["remote", "hybrid", "on_site"]).optional().describe("Remote and hybrid work prompt an address-level internet check."),
+  preferredSetting: z.enum(["rural", "larger_town"]).optional().describe("Explicit preference. Rural uses official municipality-wide status. Larger town uses published population."),
+}).strict();
+
+// Keep accepting old top-level arguments so cached clients still get a profile shortlist.
+// Advertise that policy as a boolean for MCP clients that reject an empty subschema.
+export const profileRecommendationInput = z.looseObject({
+  profile: relocationProfile.describe("Confirmed lifestyle facts and optional town preference. Omit unknown facts."),
+  limit: recommendationInput.shape.limit,
+}).meta({ additionalProperties: true });
+
 export const snapshotInfo = z.object({ version: z.string(), generatedOn: isoDate });
 export const transportResult = z.object({
   snapshot: snapshotInfo,
@@ -275,13 +291,42 @@ export const recommendationResult = z.object({
   limitations: z.array(z.string()),
 });
 
+export const profileRecommendationResult = recommendationResult.extend({
+  profileAssessment: z.object({
+    status: z.enum(["ranked", "exploratory", "no_matches"]),
+    applied: z.array(z.string()),
+    followUps: z.array(z.string()),
+    verificationNeeded: z.array(z.string()),
+    ignoredCriteria: z.array(z.string()).optional(),
+  }),
+});
+
 export const profileInput = z.object({ municipalityCode, travelDate: isoDate.optional() }).strict();
+export const destinationTravelEstimate = z.object({
+  destinationId: z.enum(["lleida", "barcelona", "bcn_t1", "bcn_t2", "girona", "girona_airport"]),
+  destination: z.string().min(1),
+  car: source.extend({
+    durationMinutes: z.number().int().positive().describe("Approximate driving time from the town centre from a road network model without live traffic"),
+  }),
+  publicTransport: z.object({
+    mode: z.enum(["train", "bus", "bus_and_train"]),
+    durationMinutes: z.number().int().positive().describe("Approximate duration from sampled published journeys, including transfer waits where applicable"),
+    sampleDate: isoDate,
+    sampleCount: z.number().int().positive(),
+    summary: z.string().min(1),
+    sourceUrls: z.array(z.url()).nonempty(),
+  }).nullable().describe("Null means the demo has no verified public transport sample to this destination"),
+});
+export const travelEstimateData = z.record(municipalityCode, z.array(destinationTravelEstimate).nonempty());
+export type TravelEstimateData = z.infer<typeof travelEstimateData>;
+
 export const profileResult = z.object({
   snapshot: snapshotInfo,
   municipality,
   metrics: z.array(metric),
   comarcaMetrics: z.array(metric),
   nearbySchools: schoolResult,
+  travelEstimates: z.array(destinationTravelEstimate).describe("Dated comparison estimates for selected demo towns"),
   relocation: relocationResult,
   railway: source.extend({
     stops: z.array(railStop),
@@ -301,6 +346,7 @@ export type RailRoute = z.infer<typeof railRoute>;
 export type Policy = z.infer<typeof policy>;
 export type IncentivesInput = z.infer<typeof incentivesInput>;
 export type RecommendationInput = z.infer<typeof recommendationInput>;
+export type ProfileRecommendationInput = z.infer<typeof profileRecommendationInput>;
 export type SchoolQuery = z.infer<typeof schoolQuery>;
 export type TransportQuery = z.infer<typeof transportQuery>;
 

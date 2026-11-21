@@ -2,14 +2,14 @@ import { readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import type { Policy, Snapshot } from "../../packages/contracts/places.ts";
+import type { Policy, Snapshot, TravelEstimateData } from "../../packages/contracts/places.ts";
 import type { ListingSearchConfig } from "../../packages/listings/search.ts";
 import { createMcpServer } from "./tools.ts";
 
 const html = readFileSync(new URL("./test-ui.html", import.meta.url), "utf8");
 const allowedTools = new Set(["get_town_profile", "recommend_towns", "search_homes"]);
 export async function handleTestUi(req: IncomingMessage, res: ServerResponse, snapshot: Snapshot, policies: Policy[],
-  listings: ListingSearchConfig = { token: process.env.TREG_TOKEN, org: process.env.TREG_ORG }) {
+  listings: ListingSearchConfig = { token: process.env.TREG_TOKEN, org: process.env.TREG_ORG }, travelEstimates: TravelEstimateData = {}) {
   const path = req.url?.split("?")[0];
   if (!["/test", "/test/config", "/test/run"].includes(path ?? "")) return false;
   const send = (status: number, body: unknown, isHtml = false) => {
@@ -45,7 +45,7 @@ export async function handleTestUi(req: IncomingMessage, res: ServerResponse, sn
     const { tool, args } = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     if (!allowedTools.has(tool)) { send(400, { error: "Choose one of the available tests." }); return true; }
     client = new Client({ name: "relocat-test-ui", version: "1.0.0" });
-    server = createMcpServer(snapshot, policies, undefined, listings);
+    server = createMcpServer(snapshot, policies, undefined, travelEstimates, listings);
     const [a, b] = InMemoryTransport.createLinkedPair();
     await server.connect(a); await client.connect(b);
     const result = await client.callTool({ name: tool, arguments: args }, undefined, { timeout: 60000 });

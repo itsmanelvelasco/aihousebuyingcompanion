@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import { metricKind, policy, snapshotSchema, relocationDataset } from "../contracts/places.ts";
+import { metricKind, policy, snapshotSchema, travelEstimateData, relocationDataset } from "../contracts/places.ts";
 import type { Policy, Snapshot } from "../contracts/places.ts";
 
 const snapshotPath = new URL("../../data/towns.json", import.meta.url);
 const policyPath = new URL("../../data/incentives.json", import.meta.url);
+const travelEstimatePath = new URL("../../data/travel-estimates.json", import.meta.url);
 
 function unique(ids: string[], context: string) {
   if (ids.length !== new Set(ids).size) throw new Error(`Duplicate ${context}`);
@@ -87,8 +88,13 @@ export function combineRelocationData(snapshot: Snapshot, raw: unknown): Snapsho
 
 export function loadData() {
   const snapshot = validateSnapshot(JSON.parse(readFileSync(snapshotPath, "utf8")));
+  const travelEstimates = travelEstimateData.parse(JSON.parse(readFileSync(travelEstimatePath, "utf8")));
+  for (const [code, estimates] of Object.entries(travelEstimates)) {
+    getTown(snapshot, code);
+    unique(estimates.map(({ destinationId }) => destinationId), `travel destination for ${code}`);
+  }
   const research = JSON.parse(readFileSync(new URL("../../data/relocat-pilot-data.json", import.meta.url), "utf8"));
-  return { snapshot: combineRelocationData(snapshot, research), policies: readPolicies() };
+  return { snapshot: combineRelocationData(snapshot, research), policies: readPolicies(), travelEstimates };
 }
 
 export function snapshotInfo(snapshot: Snapshot) {

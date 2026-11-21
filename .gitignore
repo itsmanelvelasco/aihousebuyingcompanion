@@ -1,7 +1,9 @@
 node_modules/
+apps/mcp-server/dist/
 .env
 .env.*
 !.env.example
 data/runtime-users/
 data/runtime-habits/
 *.tmp
+artifacts/team-plugin/

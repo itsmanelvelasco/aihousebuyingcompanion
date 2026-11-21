@@ -1,0 +1,12 @@
+{
+  "name": "relocat-team-marketplace",
+  "interface": { "displayName": "Relocat team" },
+  "plugins": [
+    {
+      "name": "relocat-team",
+      "source": { "source": "local", "path": "./plugins/relocat-team" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}

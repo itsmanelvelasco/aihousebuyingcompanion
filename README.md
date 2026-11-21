@@ -1,14 +1,14 @@
-# Relocat — AI House Buying Companion
+# relo.cat — AI House Buying Companion
 
 *Find where you belong. We'll help you get there.*
 
-Relocat is a ChatGPT-native housing and homeownership companion focused on Catalonia. The immediate demo helps people compare suitable municipalities, school and transport access, and verified housing incentives. Financial coaching and property listings are complementary capabilities.
+relo.cat is a ChatGPT-native housing and homeownership companion focused on Catalonia. The immediate demo helps people compare suitable municipalities, school and transport access, and verified housing incentives. Financial coaching and property listings are complementary capabilities.
 
 ## Source of truth
 
 The [DevDays 2026 — AI Housing Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003) is authoritative for product decisions. This repository records implementation and mirrors the Space; when product descriptions disagree, follow the latest explicit Space decision. Check actual code and tests for implementation status rather than treating a planned feature as delivered.
 
-Key references: [MCP architecture and contracts](https://chatgpt.com/space/page_692ac01a0a3c81918ab65c4a0052783f), [product scope](https://chatgpt.com/space/page_047fba29065c819193b15243a7e3ccd8) and [listings integration](https://chatgpt.com/space/page_5cb6c5414e088191827364cd0e43b847). The overview calls the product **Relocat**; older pages, code and the plugin prototype still use **Arrela**. These refer to the same project; existing identifiers are retained until coordinated with their owners.
+Key references: [MCP architecture and contracts](https://chatgpt.com/space/page_692ac01a0a3c81918ab65c4a0052783f), [product scope](https://chatgpt.com/space/page_047fba29065c819193b15243a7e3ccd8) and [listings integration](https://chatgpt.com/space/page_5cb6c5414e088191827364cd0e43b847). The overview calls the product **relo.cat**; older pages, code and the plugin prototype still use **Arrela**. These refer to the same project; existing identifiers are retained until coordinated with their owners.
 
 ## Project status
 
@@ -29,6 +29,10 @@ Open `http://127.0.0.1:8787/preview`; use `http://127.0.0.1:8787/mcp` as the sin
 See [the monorepo development map](docs/README.md) for each area's entry points, owners, contracts and checks. `npm run typecheck`, `npm test`, `npm run data:validate`, `npm run check:app` and `npm run test:app` verify the combined code. Runtime bank events persist in the ledger; timers run only while the profile service is running and clients poll for updates. They do not wake ChatGPT or send unsolicited messages.
 
 The separate [habits service](apps/habits-agent/README.md) runs with `npm run start:habits` on port 3002 after setting `HABITS_API_TOKEN`. Local suggestions, goals and check-ins work without an API key. Optional `gpt-6.2-sol` suggestions use server-side `OPENAI_API_KEY`, bounded on-demand calls and no paid background loop. It is not automatically wired into the board or started by `dev:stack`.
+
+## Voice interviewer demo
+
+The complementary [voice interviewer](apps/interviewer/README.md) gathers home preferences, summarizes a demo bank account or CSV, and compares the effect of one savings habit. Run it with `npm run start:interviewer`. The shared MCP server also exposes the sample cash-flow card and savings comparison tools.
 
 ## User profiles and API
 
@@ -102,6 +106,12 @@ The MCP backend lives in `apps/mcp-server/`. Its tools share Zod schemas in `pac
 [Relocation pilot research](data/relocat-pilot-data.json) preserves the supplied 21 November 2026 export: four opportunities across Calaf, Juncosa and Ulldemolins, source and visual links, connections, rental-search observations and public contacts. Join `municipalities[].municipalityCode` to `data/towns.json`'s `municipalities[].code` as six-character strings. Extend each town's `opportunities` array with stable IDs, source links and check dates. Earlier leads remain in `historicalResearch`; `publicDataSnapshot` retains its own source commit and dates and does not replace the runtime fixtures. `get_town_profile` and each `recommend_towns` result now include a `relocation` section joined at load time. It contains research, opportunity checks, source/check dates and explicit `researched` or `not_researched` coverage. Official runtime statistics and incentive rules retain their original provenance; the bundled public-data snapshot and historical leads are not imported into those results. Opportunity research does not alter ranking or hard budget filters. Preserve closed, filled and unverified statuses, conflicting deadlines and unknown rents; listings, visual reuse rights and household incentive eligibility are not established by this export.
 
 The core demo calls `recommend_towns`, `get_town_profile`, and `get_applicable_incentives`. Additional tools cover schools, rail, business indicators, municipality lookup, and household eligibility detail. Town results include official codes, match reasons, trade-offs, evidence dates and URLs, and missing data. Incentives include separate application and eligibility statuses.
+
+Start from household and lifestyle facts with [`recommend_towns_for_profile`](apps/mcp-server/README.md#recommend-towns-from-a-household-profile). It uses the same municipality snapshot to return a shortlist, follow-up questions and checks for individual homes.
+
+All 18 municipality profiles include [sample travel estimates](apps/mcp-server/README.md#quick-travel-comparisons) to major stations and airports, with public transport times where the sample timetable supports a journey.
+
+The [Town Explorer sample plugin](apps/mcp-server/README.md#town-explorer-sample-plugin) adds an interactive ChatGPT widget and browser preview to this endpoint. It uses the same sourced municipality profiles and requires only the standalone MCP server.
 
 ## Trust and privacy requirements
 
