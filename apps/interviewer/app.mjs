@@ -13,6 +13,7 @@ try {
 }
 
 const fields = {
+  householdSize: ['Number of people who will live in the home', 'number'],
   homeType: ['Home type', ['Flat', 'House', 'Either']],
   location: ['Preferred area', 'text'],
   amenities: ['Amenities and must-haves', 'text'],
@@ -46,8 +47,8 @@ for (const [name, [label, type]] of Object.entries(fields)) {
   } else {
     input.type = type;
     if (type === 'number') {
-      input.step = '0.01';
-      if (name !== 'monthly') input.min = '0';
+      input.step = name === 'householdSize' ? '1' : '0.01';
+      if (name !== 'monthly') input.min = name === 'householdSize' ? '1' : '0';
     } else input.maxLength = 300;
   }
   wrapper.append(input);
@@ -244,6 +245,7 @@ const tool = {
       description,
       type: type === 'number' ? 'number' : 'string',
       ...(Array.isArray(type) ? { enum: type } : {}),
+      ...(name === 'householdSize' ? { type: 'integer', minimum: 1 } : {}),
     }])),
     additionalProperties: false,
   },
@@ -286,6 +288,7 @@ function applyAnswers(args) {
     const [, type] = fields[name];
     const valid = type === 'number'
       ? Number.isFinite(value) && (name === 'monthly' || value >= 0) && (name !== 'target' || value > 0)
+        && (name !== 'householdSize' || (Number.isSafeInteger(value) && value >= 1))
       : typeof value === 'string' && value.trim() && value.length <= 300 &&
         (!Array.isArray(type) || type.includes(value));
     if (valid) patch[name] = value;
@@ -310,6 +313,7 @@ const guideQuestions = [
   ['cashFlowNotes', () => state.cash
     ? `Average spending was ${money(state.cash.monthlyCostOfLiving)} a month. Was anything unusual or missing?`
     : 'What are your main monthly expenses, such as rent, food and transport?'],
+  ['householdSize', () => 'How many people will live in the home, including you?'],
   ['homeType', () => 'What are you looking for, a flat or a house?'],
   ['location', () => 'Where would you like to live?'],
   ['amenities', () => 'What needs to be nearby? Think parks, supermarkets, cinemas or transit.'],
@@ -465,7 +469,8 @@ When asked by voice to connect a bank, attach a CSV, or open the plan, call show
 Use financial figures as estimates.
 Use profileCurrency for existing savings amounts when it differs from the bank statement currency. Do not assume conversion.
 Confirm guessed salary and whether spending months were representative; save confirmed salary and cash flow notes. Ask about missing expenses, lifestyle priorities
-and spending they want to protect. Learn flat versus house, location, amenities (parks, cinemas, groceries or their own
+and spending they want to protect. Before asking about the home type, ask how many people will live in the home,
+including the user, and save the confirmed total as householdSize. Learn flat versus house, location, amenities (parks, cinemas, groceries or their own
 priorities) and whether nearby areas work. Ask for their cash target, current savings and actual monthly contribution.
 Do not treat net cash flow as a committed contribution. Offer one small habit they choose and confirm its estimated monthly
 savings. Save confirmed answers as they emerge, including corrections. For return visits, ask what changed and avoid

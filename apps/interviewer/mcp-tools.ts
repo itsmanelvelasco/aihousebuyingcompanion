@@ -62,6 +62,7 @@ export function registerInterviewerTools(server: McpServer) {
     },
     nextSteps: [
       "Confirm whether the income and spending reflect a typical month.",
+      "Ask how many people will live in the home, including the user. Confirm the total household size before asking about the home type.",
       "Ask about the area, home type, and must-have amenities one question at a time.",
       "Confirm the savings target, amount already saved, monthly contribution, and one optional habit. Call compare_home_savings only after those values are confirmed.",
     ],

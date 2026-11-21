@@ -63,6 +63,7 @@ test("serves the fictional interviewer cash-flow card and compares a savings hab
   const start = await tool("start_homebuying_interview", {});
   assert(typeof start === "object" && start !== null && "openingQuestion" in start);
   assert.match(String(start.openingQuestion), /bank CSV.*fictional demo bank account.*monthly income and spending/);
+  assert.match(JSON.stringify(start), /how many people will live in the home/);
   const sample = await tool("sample_cash_flow", {});
   assert(typeof sample === "object" && sample !== null && "monthlyNetCashFlow" in sample);
   assert.equal(sample.monthlyNetCashFlow, 854.33);
