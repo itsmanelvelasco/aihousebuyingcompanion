@@ -121,3 +121,7 @@ A single ChatGPT conversation calls the municipality MCP backend, shows three so
 ### Idealista property examples
 
 The MCP tool `search_homes` searches live through treg for indexed Idealista property examples in up to three pilot towns. Set `TREG_TOKEN` in the server environment and restart. It returns source links and timestamps, with explicit unknown availability and unverified town/budget/bedroom matches. It is web-search discovery, not a verified inventory feed; missing credentials or provider failures are reported separately from empty searches. See [setup, costs and limitations](apps/mcp-server/README.md#live-idealista-example-search-through-treg).
+
+## Connect an agent
+
+Open `/connect` on the connected demo or standalone MCP server for the Relocat agent setup guide. It includes ChatGPT, Claude, Hermes, OpenClaw, Codex, Cursor, Gemini CLI and a generic Streamable HTTP path; Meta Muse is explicitly marked unverified. The page provides editable endpoint configuration, copyable examples and links to official client documentation. Localhost is for clients on the same machine; cloud clients need an operator-provided HTTPS endpoint or supported tunnel. This page does not deploy the server or add authentication. Brand logos load from Brandfetch and official provider sites.

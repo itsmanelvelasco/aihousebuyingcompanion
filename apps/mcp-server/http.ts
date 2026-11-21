@@ -1,3 +1,4 @@
+import { handleConnectPage } from "./connect-page.ts";
 import { handleTestUi } from "./test-ui.ts";
 import { createServer } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -15,6 +16,7 @@ export function createHttpServer(
 ) {
   return createServer(async (request, response) => {
     const path = request.url?.split("?")[0];
+    if (handleConnectPage(request, response)) return;
     if (await handleTestUi(request, response, snapshot, policies, options.listings)) return;
     if (path === "/health" && request.method === "GET") {
       response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });

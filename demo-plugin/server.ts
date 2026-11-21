@@ -1,3 +1,4 @@
+import { handleConnectPage } from '../apps/mcp-server/connect-page.ts';
 import { handleTestUi } from '../apps/mcp-server/test-ui.ts';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -141,6 +142,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const path = url.pathname;
   try {
+    if (handleConnectPage(req, res)) return;
     if (path === '/test' || path.startsWith('/test/')) {
       const { snapshot, policies } = loadData();
       if (await handleTestUi(req, res, snapshot, policies)) return;
