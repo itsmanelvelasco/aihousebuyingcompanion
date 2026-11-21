@@ -12,6 +12,8 @@ test('Netlify build emits only dashboard/interviewer assets and a separate restr
   await buildManagementSite(output);
   const html = await readFile(join(output, 'public/index.html'), 'utf8');
   assert(html.includes('src="/manage/app.mjs"'));
+  assert(html.includes('data-relocat-theme'));
+  assert((await readFile(join(output, 'public/interviewer/index.html'), 'utf8')).includes('data-relocat-theme'));
   assert(html.includes('Hosted voice is unavailable'));
   assert((await readFile(join(output, 'public/manage/app.mjs'), 'utf8')).includes('Bearer ${state.token}'));
   assert.deepEqual((await readdir(join(output, 'public/interviewer'))).sort(), ['app.mjs', 'finances.mjs', 'index.html']);

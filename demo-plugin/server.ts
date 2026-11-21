@@ -4,6 +4,7 @@ import { handleInterviewerProxy } from '../apps/mcp-server/interviewer-proxy.ts'
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFileSync } from 'node:fs';
+import { applyTheme } from '../packages/ui/theme.ts';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
@@ -26,7 +27,7 @@ function withBoardLink(view: ReturnType<typeof getView>) {
   const path = view.sharedBoard ? '/preview' : `/preview?run=${view.runId}`;
   return { ...view, boardUrl: publicOrigin ? publicOrigin + path : null };
 }
-const template = readFileSync(new URL('./widget.html', import.meta.url), 'utf8');
+const template = applyTheme(readFileSync(new URL('./widget.html', import.meta.url), 'utf8'));
 const bundle = readFileSync(new URL('./dist/widget.js', import.meta.url), 'utf8');
 const page = template.replace('<!-- WIDGET -->', () =>
   '<script>' + bundle.replace(/<\/script/gi, '<\\/script') + '</script>');

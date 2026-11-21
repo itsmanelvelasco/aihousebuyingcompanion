@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { applyTheme } from '../../packages/ui/theme.ts';
 
 // Static local operator UI; all data routes still require the bearer token.
 export async function handleManagementUi(req: IncomingMessage, res: ServerResponse) {
@@ -18,9 +19,9 @@ export async function handleManagementUi(req: IncomingMessage, res: ServerRespon
   res.writeHead(200, {
     'Content-Type': script ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8',
     'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
-    'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     'Referrer-Policy': 'no-referrer',
   });
-  res.end(content);
+  res.end(script ? content : applyTheme(content.toString('utf8')));
   return true;
 }

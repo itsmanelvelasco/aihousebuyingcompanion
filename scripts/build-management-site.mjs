@@ -1,6 +1,7 @@
 import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { applyTheme } from '../packages/ui/theme.ts';
 
 // Self-contained so the generated function has no repository/runtime-data imports.
 export async function profileGateway(request) {
@@ -95,6 +96,9 @@ export async function buildManagementSite(output = resolve('artifacts/team-plugi
     const destination = resolve(output, target);
     await mkdir(resolve(destination, '..'), { recursive: true });
     await copyFile(resolve(source), destination);
+    if (source.endsWith('.html')) {
+      await writeFile(destination, applyTheme(await readFile(destination, 'utf8')));
+    }
   }
   const indexPath = resolve(output, 'public/index.html');
   const html = await readFile(indexPath, 'utf8');

@@ -27,3 +27,9 @@
     Referrer-Policy = "no-referrer"
     X-Frame-Options = "DENY"
 
+[[headers]]
+  for = "/interviewer/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    Content-Security-Policy = "frame-ancestors 'self'"
+

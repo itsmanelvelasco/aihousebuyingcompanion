@@ -86,6 +86,9 @@ window.addEventListener('beforeunload', event => { if (state.dirty) { event.prev
 
 function updateInterviewLink() {
   const selected = /^[a-z0-9][a-z0-9-]{0,63}$/.test(state.user);
+  const frame = $('interviewer-frame');
+  if (frame.getAttribute('src') && frame.getAttribute('src') !== 'about:blank'
+    && new URL(frame.src).searchParams.get('userId') !== state.user) closeInlineInterview();
   $('interviewer-link').href = selected ? `/interviewer/?userId=${encodeURIComponent(state.user)}` : '/interviewer/';
   $('interviewer-link').textContent = selected ? `Tell us what you need · ${state.user}` : 'Tell us what you need';
   $('review-interview').disabled = !selected || !state.token;
@@ -157,4 +160,19 @@ $('export-interview').addEventListener('click', () => {
   });
 });
 updateInterviewLink();
+
+function closeInlineInterview() {
+  $('interviewer-frame').src = 'about:blank';
+  $('inline-interview').classList.add('hidden');
+  $('interviewer-link').setAttribute('aria-expanded', 'false');
+}
+$('interviewer-link').addEventListener('click', event => {
+  event.preventDefault();
+  if (!$('inline-interview').classList.contains('hidden')) { closeInlineInterview(); return; }
+  $('interviewer-frame').src = $('interviewer-link').getAttribute('href');
+  $('inline-interview').classList.remove('hidden');
+  $('interviewer-link').setAttribute('aria-expanded', 'true');
+  $('inline-interview').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+$('close-interview').addEventListener('click', closeInlineInterview);
 

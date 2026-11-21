@@ -3,6 +3,13 @@ import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { z } from 'zod';
+import { existsSync } from 'node:fs';
+
+// Worktrees and the shared hackathon checkout can use the workspace's local env file.
+// loadEnvFile preserves explicitly supplied process environment and never prints values.
+for (const candidate of [resolve('.env'), resolve('../.env')]) {
+  if (existsSync(candidate)) process.loadEnvFile(candidate);
+}
 
 // One owner for file writes: the bank worker runs inside the profile API.
 const profilePort = z.coerce.number().int().min(1).max(65535).parse(process.env.PROFILE_API_PORT ?? 3001);

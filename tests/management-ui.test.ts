@@ -16,8 +16,11 @@ test('local management shell keeps data authenticated and blocks foreign origins
     const page = await fetch(`${base}/manage/`);
     assert.equal(page.status, 200);
     assert.match(page.headers.get('content-security-policy') ?? '', /frame-ancestors 'none'/);
+    assert.match(page.headers.get('content-security-policy') ?? '', /frame-src 'self'/);
     const html = await page.text();
     assert.match(html, /Tell us what you need/);
+    assert.match(html, /data-relocat-theme/);
+    assert.match(html, /id="interviewer-frame"/);
     assert.doesNotMatch(html, /test-token/);
     assert.equal((await fetch(`${base}/manage/app.mjs`)).status, 200);
     assert.equal((await fetch(`${base}/users`)).status, 401);
