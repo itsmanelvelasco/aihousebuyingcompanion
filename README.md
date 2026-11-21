@@ -28,6 +28,8 @@ Open `http://127.0.0.1:8787/preview`; use `http://127.0.0.1:8787/mcp` as the sin
 
 See [the monorepo development map](docs/README.md) for each area's entry points, owners, contracts and checks. `npm run typecheck`, `npm test`, `npm run data:validate`, `npm run check:app` and `npm run test:app` verify the combined code. Runtime bank events persist in the ledger; timers run only while the profile service is running and clients poll for updates. They do not wake ChatGPT or send unsolicited messages.
 
+The separate [habits service](apps/habits-agent/README.md) runs with `npm run start:habits` on port 3002 after setting `HABITS_API_TOKEN`. Local suggestions, goals and check-ins work without an API key. Optional `gpt-6.2-sol` suggestions use server-side `OPENAI_API_KEY`, bounded on-demand calls and no paid background loop. It is not automatically wired into the board or started by `dev:stack`.
+
 ## User profiles and API
 
 - [500 fictional profiles](data/users/README.md): each user has `details.json`, `preferences.json` and `bank-account.json`, with varied needs and financial barriers. Demographic categories are informed by official Idescat sources; the dataset is not statistically representative.

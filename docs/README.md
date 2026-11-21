@@ -8,6 +8,7 @@ The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539
 | [Frontend/plugin](areas/frontend-plugin.md) | `demo-plugin/server.ts`, `widget.ts` | Conversation tools, live board and integrated MCP experience. |
 | [Profiles/inputs](areas/profiles-inputs.md) | `apps/profile-api/server.ts`, `inputs.ts` | Persistent synthetic profiles and multi-source context. |
 | [Bank/runtime](areas/bank-runtime.md) | `apps/profile-api/bank.ts`, `finance.ts` | Movements, event consumption and deterministic finance. |
+| [Habits agent](areas/habits-agent.md) | `apps/habits-agent/server.ts`, `agent.ts` | User-reviewed goals/check-ins and optional on-demand Sol suggestions. |
 | [Municipalities/incentives](areas/municipalities-incentives.md) | `apps/mcp-server/tools.ts`, `packages/places/` | Sourced town matching and policy screening. |
 | [Shared contracts](areas/shared-contracts.md) | `packages/contracts/` | Validation, units and cross-area handoffs. |
 | [Integration/deployment](areas/integration-deployment.md) | Root `package.json` and service entry points | Run services, test connections and release. |

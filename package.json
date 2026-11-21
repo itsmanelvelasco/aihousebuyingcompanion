@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "node --watch apps/profile-api/server.ts",
     "start": "node apps/profile-api/server.ts",
+    "start:habits": "node apps/habits-agent/server.ts",
     "setup:app": "npm --prefix demo-plugin ci",
     "build:app": "npm --prefix demo-plugin run build",
     "check:app": "npm --prefix demo-plugin run check",
