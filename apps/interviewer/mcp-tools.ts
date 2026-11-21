@@ -71,7 +71,7 @@ export function registerInterviewerTools(server: McpServer) {
     title: "Start the bank-first homebuying interview",
     description: interviewerRouting + " If the user requests voice from a text chat, share voiceSetup. Otherwise ask the returned opening question and wait for the user to choose a transaction source.",
     annotations: readOnly,
-    _meta: { ui: { resourceUri: voiceCardUri } },
+    _meta: { ui: { resourceUri: voiceCardUri }, "openai/outputTemplate": voiceCardUri },
     inputSchema: z.object({}).strict(),
     outputSchema: z.object({
       openingQuestion: z.string(),

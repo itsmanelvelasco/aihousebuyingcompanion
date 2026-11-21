@@ -3,12 +3,21 @@ import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { z } from 'zod';
+import { existsSync } from 'node:fs';
+
+// Worktrees and the shared hackathon checkout can use the workspace's local env file.
+// loadEnvFile preserves explicitly supplied process environment and never prints values.
+for (const candidate of [resolve('.env'), resolve('../.env')]) {
+  if (existsSync(candidate)) process.loadEnvFile(candidate);
+}
 
 // One owner for file writes: the bank worker runs inside the profile API.
 const profilePort = z.coerce.number().int().min(1).max(65535).parse(process.env.PROFILE_API_PORT ?? 3001);
 const appPort = z.coerce.number().int().min(1).max(65535).parse(process.env.APP_PORT ?? 8787);
-if (profilePort === appPort) throw new Error('Profile and app ports must differ');
+const interviewerPort = z.coerce.number().int().min(1).max(65535).parse(process.env.INTERVIEWER_PORT ?? 3003);
+if (new Set([profilePort, appPort, interviewerPort]).size !== 3) throw new Error('Profile, app and interviewer ports must differ');
 const baseUrl = `http://127.0.0.1:${profilePort}`;
+const interviewerUrl = `http://127.0.0.1:${interviewerPort}`;
 const token = process.env.PROFILE_API_TOKEN || randomUUID();
 const children: ChildProcess[] = [];
 let closing = false;
@@ -27,6 +36,7 @@ function launch(file: string, extra: NodeJS.ProcessEnv) {
 }
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => shutdown());
 launch('apps/profile-api/server.ts', { PORT: String(profilePort), PROFILE_API_TOKEN: token, DEMO_BANK_USERS: process.env.DEMO_BANK_USERS ?? 'user-001' });
+launch('apps/interviewer/server.mjs', { INTERVIEWER_PORT: String(interviewerPort) });
 try {
   let ready = false;
   for (let attempt = 0; attempt < 120 && !closing; attempt++) {
@@ -37,8 +47,20 @@ try {
     await new Promise(resolve => setTimeout(resolve, 250));
   }
   if (!ready) throw new Error('Profile API did not become ready');
-  launch('demo-plugin/server.ts', { PORT: String(appPort), HOST: '127.0.0.1', PROFILE_API_URL: baseUrl, PROFILE_API_TOKEN: token });
+  let interviewerReady = false;
+  for (let attempt = 0; attempt < 40 && !closing; attempt++) {
+    try {
+      const response = await fetch(`${interviewerUrl}/`, { signal: AbortSignal.timeout(1000) });
+      if (response.ok) { interviewerReady = true; break; }
+    } catch { /* wait for local interviewer startup */ }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  if (!interviewerReady) throw new Error('Interviewer backend did not become ready');
+  launch('demo-plugin/server.ts', { PORT: String(appPort), HOST: '127.0.0.1', PROFILE_API_URL: baseUrl, PROFILE_API_TOKEN: token, INTERVIEWER_BASE_URL: interviewerUrl });
   console.log(`Connected demo: http://127.0.0.1:${appPort}/preview · profile API ${baseUrl}`);
   console.log(`Test the data: http://127.0.0.1:${appPort}/test`);
-  console.log('Synthetic background feed enabled for DEMO_BANK_USERS; credentials stay in server process memory. Ctrl+C stops both services.');
+  console.log(`React web/MCP workspace: http://127.0.0.1:${appPort}/workspace`);
+  console.log(`Manage inputs: ${baseUrl}/manage/ (use your configured PROFILE_API_TOKEN; generated tokens are not displayed)`);
+  console.log(`Interviewer backend: ${interviewerUrl} · connected entry: http://127.0.0.1:${appPort}/interviewer/`);
+  console.log('Synthetic background feed enabled for DEMO_BANK_USERS; credentials stay in server process memory. Ctrl+C stops all three services.');
 } catch (error) { console.error(error instanceof Error ? error.message : 'Stack startup failed'); shutdown(1); }

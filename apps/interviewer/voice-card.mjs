@@ -56,15 +56,15 @@ export function renderVoiceCard(launchUrl) {
 <title>Relocat homebuying interview</title>
 <style>
   :root { color-scheme: light dark; font: 15px/1.5 system-ui,sans-serif; }
-  body { margin:0; color:#f3f8ed; background:#10251b; text-align:center; }
+  body { margin:0; color:#fcf8ef; background:#23193f; text-align:center; }
   main { padding:24px 18px; max-width:38rem; margin:auto; }
   .orb { display:grid; place-items:center; width:84px; height:84px; border-radius:50%; margin:2px auto 16px;
-    background:radial-gradient(circle at 35% 22%,#e8f4a8,#6aa669 48%,#214b36 82%);
-    box-shadow:0 0 26px #7ca85d66; }
+    background:radial-gradient(circle at 35% 22%,#eee7fa,#5738aa 48%,#392960 82%);
+    box-shadow:0 0 26px #5738aa40; }
   .wave { color:#ffffe4; font-size:13px; }
   h1 { margin:0 0 4px; font:500 1.6rem Georgia,serif; }
-  p { margin:0 auto 16px; color:#c9dccb; }
-  .action { display:inline-block; background:#e1efbf; color:#18291e; border-radius:100px;
+  p { margin:0 auto 16px; color:#d9caff; }
+  .action { display:inline-block; background:#ffd36f; color:#23193f; border-radius:100px;
     padding:8px 17px; font-weight:650; cursor:pointer; text-decoration:none; }
   .action:focus-visible { outline:2px solid #f5f9eb; outline-offset:3px; }
   summary { list-style:none; }

@@ -37,7 +37,7 @@ test('onboarding batches answers atomically and separates the upfront and payoff
 });
 
 test('MCP transport serves the widget and supports each of the four scenarios', async t => {
-  const proc = spawn(process.execPath, ['server.ts'], { env: { ...process.env, HOST: '127.0.0.1', PORT: '0', PUBLIC_ORIGIN: 'https://arrela.example' } });
+  const proc = spawn(process.execPath, ['server.ts'], { env: { ...process.env, HOST: '127.0.0.1', PORT: '0', PUBLIC_ORIGIN: 'https://relocat.example' } });
   t.after(() => proc.kill());
   const [line] = await once(proc.stdout, 'data');
   const port = /localhost:(\d+)\/preview/.exec(line.toString())?.[1];
@@ -49,8 +49,8 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   t.after(() => client.close());
   const tools = (await client.listTools()).tools;
   const ui = tools.find(tool => tool.name === 'open_demo')?._meta?.ui as { resourceUri?: string } | undefined;
-  assert.equal(ui?.resourceUri, 'ui://arrela/journey-v5.html');
-  const resource = await client.readResource({ uri: 'ui://arrela/journey-v5.html' });
+  assert.equal(ui?.resourceUri, 'ui://relocat/journey-v6.html');
+  const resource = await client.readResource({ uri: 'ui://relocat/journey-v6.html' });
   const [widget] = resource.contents;
   assert.equal(widget.mimeType, 'text/html;profile=mcp-app');
   assert.ok('text' in widget);
@@ -68,7 +68,7 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   const first = await call('open_demo');
   const runId = first.runId;
   assert.equal(first.persona, 'onboarding');
-  assert.equal(first.boardUrl, 'https://arrela.example/preview');
+  assert.equal(first.boardUrl, 'https://relocat.example/preview');
   assert.equal(first.sharedBoard, true);
   const reopened = await call('open_demo');
   assert.equal(reopened.runId, runId);

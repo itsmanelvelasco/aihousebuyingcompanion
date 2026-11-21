@@ -11,7 +11,7 @@ You need access to the team’s GitHub repository and a GitHub SSH key for the c
 For a fresh checkout:
 
 ```sh
-git clone --branch hackathon/arrela-demo-plugin git@github.com:itsmanelvelasco/aihousebuyingcompanion.git
+git clone --branch main git@github.com:itsmanelvelasco/aihousebuyingcompanion.git
 cd aihousebuyingcompanion/demo-plugin
 ```
 
@@ -19,8 +19,8 @@ If you already cloned the repository, start from its root:
 
 ```sh
 git fetch origin
-git switch hackathon/arrela-demo-plugin
-git pull --ff-only origin hackathon/arrela-demo-plugin
+git switch main
+git pull --ff-only origin main
 cd demo-plugin
 ```
 

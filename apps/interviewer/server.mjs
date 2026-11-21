@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
+import { applyTheme } from '../../packages/ui/theme.ts';
 import { firstScenarioInput, generateFirstScenario } from './scenario.ts';
 import { classificationLimit, expenseCategories, incomeCategories } from './finances.mjs';
 
@@ -87,7 +88,8 @@ createServer(async (request, response) => {
   try {
     if (request.method === 'GET' && Object.hasOwn(assets, request.url)) {
       const [file, type] = assets[request.url];
-      return send(response, 200, await readFile(new URL(file, import.meta.url), 'utf8'), type);
+      const content = await readFile(new URL(file, import.meta.url), 'utf8');
+      return send(response, 200, type === 'text/html' ? applyTheme(content) : content, type);
     }
     if (request.method !== 'POST' || !['/voice', '/classify', '/scenario'].includes(request.url)) {
       return send(response, 404, { error: 'Unknown route.' });

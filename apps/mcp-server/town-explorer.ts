@@ -35,7 +35,7 @@ export function registerTownExplorer(server: McpServer, snapshot: Snapshot, page
     inputSchema: explorerInput,
     outputSchema: explorerResult,
     annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false, idempotentHint: true },
-    _meta: { ui: { resourceUri: widgetUri, visibility: ["model"] } },
+    _meta: { ui: { resourceUri: widgetUri, visibility: ["model"] }, "openai/outputTemplate": widgetUri },
   }, ({ municipalityCode: code, recommendation }) => {
     const town = code === undefined ? null : getTown(snapshot, code);
     return {

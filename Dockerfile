@@ -3,8 +3,8 @@ FROM node:24-bookworm-slim AS widget
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY apps/mcp-server/town-explorer-widget.ts ./apps/mcp-server/
-COPY packages/contracts ./packages/contracts
+COPY apps/mcp-server ./apps/mcp-server
+COPY packages ./packages
 RUN npm run build:mcp-ui
 
 FROM node:24-bookworm-slim

@@ -1,5 +1,9 @@
 import { handleConnectPage } from "./connect-page.ts";
 import { handleTestUi } from "./test-ui.ts";
+import { handleInterviewerProxy } from "./interviewer-proxy.ts";
+import { handleWorkspaceHttp } from "./workspace-tools.ts";
+import { handleWorkspaceVoiceHttp } from "./workspace-voice.ts";
+import { handleWorkspacePage, loadWorkspacePage, workspaceConnection } from "./workspace-page.ts";
 import { createServer } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Policy, Snapshot, TravelEstimateData } from "../../packages/contracts/places.ts";
@@ -24,6 +28,10 @@ export function createHttpServer(
 ) {
   return createServer(async (request, response) => {
     const path = request.url?.split("?")[0];
+    if (handleWorkspacePage(request, response, loadWorkspacePage())) return;
+    if (await handleWorkspaceHttp(request, response, options.bankApi ?? workspaceConnection())) return;
+    if (await handleWorkspaceVoiceHttp(request, response)) return;
+    if (await handleInterviewerProxy(request, response)) return;
     if (handleConnectPage(request, response)) return;
     if (await handleTestUi(request, response, snapshot, policies, options.listings, options.travelEstimates)) return;
     if (path === "/health" && request.method === "GET") {
@@ -50,7 +58,7 @@ export function createHttpServer(
       return;
     }
 
-    const server = createMcpServer(snapshot, policies, options.today, options.travelEstimates, options.listings);
+    const server = createMcpServer(snapshot, policies, options.today, options.travelEstimates, options.listings, options.bankApi ?? workspaceConnection());
     if (options.townExplorerPage) registerTownExplorer(server, snapshot, options.townExplorerPage);
     if (options.bankApi) registerBankTools(server, options.bankApi);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });

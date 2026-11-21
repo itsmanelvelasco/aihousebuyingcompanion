@@ -4,12 +4,18 @@ This is the hackathon roadmap, based on the project brief dated 21 November 2026
 
 ## Authority and current priority
 
-The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003) is authoritative. Its current overview and [MCP architecture](https://chatgpt.com/space/page_692ac01a0a3c81918ab65c4a0052783f) prioritize Catalonia-only town recommendations, school/transit access and verified incentives. This supersedes older bank-first demo sequences. The overview uses Relocat; Arrela remains a legacy code/prototype name.
+The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003) is authoritative. Its current overview and [MCP architecture](https://chatgpt.com/space/page_692ac01a0a3c81918ab65c4a0052783f) prioritize Catalonia-only town recommendations, school/transit access and verified incentives. This supersedes older bank-first demo sequences. Use ReloCat as the product name.
 
 The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_applicable_incentives`. Bank-informed coaching and [authorized property listings](https://chatgpt.com/space/page_5cb6c5414e088191827364cd0e43b847) are complementary streams, not prerequisites for demo success.
 
 ## Delivered integration and remaining product boundaries
 
+- [x] Add a shared React web/MCP workspace with app-only profile/input/bank operations, guided interview drafts, sourced municipality tools and the common ReloCat theme.
+- [ ] Verify React workspace rendering and optional microphone permission in the installed target ChatGPT client after refreshing its MCP connection.
+
+- [x] Add a local management website for profile documents, multi-source input CRUD, resolved conflicts, bank movements and synthetic feed controls, with an interviewer entry button.
+- [x] Run the interviewer backend separately on port 3003 and proxy its bounded routes through the local app and management website.
+- [ ] Deploy the management website to the existing Netlify project for `relo.cat`; verify persistent backend hosting, paid-route authentication, domain routing and HTTPS before claiming it live.
 - [x] Add `/connect`, a branded agent setup guide with official client documentation, copyable configurations and explicit local/remote and unverified-client states.
 
 - [x] Preserve the supplied relocation pilot research export for three towns and four opportunities in `data/relocat-pilot-data.json`, with historical leads and a separately dated public-data snapshot.

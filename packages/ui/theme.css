@@ -1,0 +1,68 @@
+/* ReloCat palette, aligned with docs/brand/brand.css. No remote font dependency. */
+:root {
+  --rc-ink:#23193f; --rc-ink-soft:#392960; --rc-muted:#574e68;
+  --rc-page:#fcf8ef; --rc-white:#fff; --rc-lavender:#d9caff;
+  --rc-gold:#ffd36f; --rc-mint:#b9e5cb; --rc-violet:#5738aa; --rc-line:#d8cfe2;
+  --rc-success:#17563b; --rc-warning:#72420c; --rc-danger:#8e2d40;
+  --rc-success-bg:#e2f3e9; --rc-warning-bg:#fff0c8; --rc-danger-bg:#fbe7ec;
+  --muted:var(--rc-muted); --line:var(--rc-line); --gold:var(--rc-gold);
+  --purple:var(--rc-violet); --navy:var(--rc-ink); --mint:var(--rc-mint);
+  font-family:Montserrat,'Segoe UI',system-ui,sans-serif;
+  color-scheme:light; color:var(--rc-ink); background:var(--rc-page);
+}
+[hidden]{display:none!important}
+body{color:var(--rc-ink);background:var(--rc-page)}
+button,input,select,textarea{font-family:inherit}
+button,a,input,select,textarea,summary{outline-offset:4px}
+:focus-visible{outline:3px solid var(--rc-violet)}
+button{min-height:44px}
+.primary{background:var(--rc-violet);border-color:var(--rc-violet);color:var(--rc-white)}
+.primary:hover{background:var(--rc-ink-soft);border-color:var(--rc-ink-soft)}
+.panel,.connection,.metric,.momentum div,.credit-stats div{background:var(--rc-white);border-color:var(--rc-line)}
+.brand{color:inherit;letter-spacing:-.04em}
+iframe{border-radius:16px;background:var(--rc-page);max-width:100%}
+
+/* Main board */
+.logo,.hero{background:var(--rc-ink);color:var(--rc-gold)}
+.hero p{color:#efe8ff}
+.pill{background:#eee7fa;border-color:var(--rc-line);color:var(--rc-ink-soft)}
+.nav button[aria-pressed=true],.selected,.current{background:#eee7fa;border-color:var(--rc-violet);color:var(--rc-ink)}
+.nav button strong,summary,.pair,.pair a,.inbox-card .label{color:var(--rc-ink-soft)}
+.gold{background:var(--rc-gold);border-color:#cda342;color:var(--rc-ink)}
+.fill{background:linear-gradient(90deg,var(--rc-violet),var(--rc-lavender))}
+.coach{background:linear-gradient(125deg,var(--rc-ink),var(--rc-ink-soft))}
+.timeline li:last-child,.alert{background:var(--rc-warning-bg);border-color:var(--rc-gold)}
+#website-interview{border:1px solid var(--rc-line);padding:clamp(16px,3vw,26px)}
+#website-interview h2{font-size:1.5rem}
+
+/* Input management */
+aside{background:var(--rc-ink)}
+aside .nav button{color:#efe8ff}
+aside .nav button.active{background:var(--rc-ink-soft);color:var(--rc-gold)}
+aside .brand span{color:var(--rc-gold)}
+.interview-link{background:var(--rc-violet);color:var(--rc-white)}
+.interview-link:hover{background:var(--rc-ink-soft)}
+.user-list button.active,.notice{background:var(--rc-success-bg);color:var(--rc-success);border-color:var(--rc-mint)}
+.status{background:#eee7fa;color:var(--rc-ink-soft)}
+.status.success{background:var(--rc-success-bg);color:var(--rc-success)}
+.status.error{background:var(--rc-danger-bg);color:var(--rc-danger)}
+.danger{color:var(--rc-danger)}
+.dirty{color:var(--rc-warning)}
+
+/* Embedded and standalone interviewer */
+body[data-surface=interviewer]{--accent:var(--rc-violet);--panel:var(--rc-white);min-height:100svh}
+[data-surface=interviewer] .top{border-color:var(--rc-line);padding:16px 24px}
+[data-surface=interviewer] .brand span{background:var(--rc-violet);box-shadow:none}
+[data-surface=interviewer] .stage{background:radial-gradient(ellipse at 50% 46%,#eee7fa 0%,var(--rc-page) 65%);padding:24px 18px}
+[data-surface=interviewer] h1{font-family:inherit;font-weight:750;font-size:clamp(2rem,5vw,3.6rem)}
+[data-surface=interviewer] h2{font-family:inherit;font-weight:700}
+[data-surface=interviewer] .voice-graphic{--size:clamp(110px,23vh,180px);background:radial-gradient(ellipse at 35% 20%,#eee7fa,var(--rc-lavender) 25%,var(--rc-violet) 65%,var(--rc-ink) 95%);box-shadow:inset 0 0 28px #d9caff80,0 12px 38px #5738aa30;margin:30px auto}
+[data-surface=interviewer] .voice-graphic::before,[data-surface=interviewer] .voice-graphic::after{border-color:#5738aa24}
+[data-surface=interviewer] .wave i{background:var(--rc-white);box-shadow:none}
+[data-surface=interviewer] input,[data-surface=interviewer] select{background:var(--rc-white);border-color:var(--rc-line)}
+[data-surface=interviewer] dialog{background:var(--rc-white);box-shadow:0 20px 70px #23193f30}
+[data-surface=interviewer] dialog::backdrop{background:#23193f75}
+[data-surface=interviewer] .end{color:var(--rc-danger);border-color:var(--rc-danger)}
+[data-surface=interviewer] #plan,[data-surface=interviewer] #last-question{background:#eee7fa}
+[data-surface=interviewer] .voice-controls .intro{flex-basis:100%;order:4;font-size:.875rem}
+@media(max-width:560px){[data-surface=interviewer] .top{padding:12px}.topline{flex-wrap:wrap}#interview-frame,#interviewer-frame{height:720px!important}}

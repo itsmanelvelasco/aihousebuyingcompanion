@@ -14,6 +14,9 @@ import { evaluateIncentives } from "../../packages/places/eligibility.ts";
 import { madridDate, nextSchoolDay, normalizedName } from "../../packages/places/geography.ts";
 import { recommendTowns, recommendTownsForProfile } from "../../packages/places/recommend.ts";
 import { interviewerRouting, registerInterviewerTools } from "../interviewer/mcp-tools.ts";
+import { registerWorkspaceTools } from "./workspace-tools.ts";
+import { registerWorkspaceVoiceTool } from "./workspace-voice.ts";
+import { loadWorkspacePage, workspaceConnection } from "./workspace-page.ts";
 import { getRelocationResearch } from "../../packages/places/relocation.ts";
 import { homeSearchInput, homeSearchResult } from "../../packages/contracts/listings.ts";
 import { searchHomes } from "../../packages/listings/search.ts";
@@ -32,10 +35,10 @@ function result(summary: string, structuredContent: Record<string, unknown>): Ca
   return { content: [{ type: "text", text: summary }], structuredContent };
 }
 
-export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = madridDate, travelEstimates: TravelEstimateData = {}, listings: ListingSearchConfig = { token: process.env.TREG_TOKEN, org: process.env.TREG_ORG }) {
+export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = madridDate, travelEstimates: TravelEstimateData = {}, listings: ListingSearchConfig = { token: process.env.TREG_TOKEN, org: process.env.TREG_ORG }, workspaceApi = workspaceConnection()) {
   const metadata = snapshotInfo(snapshot);
   const server = new McpServer({ name: "relocat", version: "0.1.0" }, {
-    instructions: interviewerRouting + " Use Relocat to compare selected Catalan municipalities from a dated official-data snapshot. Cite evidence URLs. Explain geographic proxies and use the actual school and service dates. Describe sample travel times as approximate, with the transport mode and sample date. Distinguish policy eligibility from application status. Do not infer user finances, schooling, residence or tax facts.",
+    instructions: interviewerRouting + " Use open_input_workspace for the React app when the user asks to manage profiles, preferences, interview answers, source inputs, bank movements or runtime feeds. For other initial requests invoking or opening ReloCat, call open_demo if available, otherwise show_town_explorer, before answering to return the UI template. Opening the UI must not import banks or start paid calls. Use ReloCat to compare selected Catalan municipalities from a dated official-data snapshot. Cite evidence URLs. Explain geographic proxies and use the actual school and service dates. Describe sample travel times as approximate, with the transport mode and sample date. Distinguish policy eligibility from application status. Do not infer user finances, schooling, residence or tax facts.",
   });
 
   server.registerTool("list_catalonia_municipalities", {
@@ -164,6 +167,11 @@ export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = 
   });
 
   registerInterviewerTools(server);
+  const workspacePage = loadWorkspacePage();
+  if (workspacePage) {
+    registerWorkspaceTools(server, workspacePage, workspaceApi);
+    registerWorkspaceVoiceTool(server);
+  }
   server.registerTool("search_homes", {
     title: "Find Idealista property examples",
     description: "Search the web live through treg for Idealista listing examples in up to three pilot towns. Budget and bedrooms are search hints, not verified filters. Returns original links and search timestamps; availability and exact location remain unverified. Costs up to USD 0.01 per town. Requires server-side TREG_TOKEN; otherwise returns provider_unavailable and search links.",
