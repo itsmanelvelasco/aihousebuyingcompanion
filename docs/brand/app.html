@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototipo de app · relo.cat</title><meta name="description" content="Sistema de marca de relo.cat, guía de vivienda y municipios en Cataluña."><link rel="icon" href="assets/logo-mark.svg" type="image/svg+xml"><link rel="stylesheet" href="brand.css"><link rel="stylesheet" href="app.css"></head>
+<body><a class="skip" href="#main">Saltar al contenido</a>
+<header class="site-header"><div class="wrap header-inner"><a class="lockup" href="index.html"><img src="assets/logo-mark.svg" alt="">relo.cat</a><nav class="site-nav" aria-label="Kit de marca"><a href="index.html">Manual</a><a href="app.html" aria-current="page">App</a><a href="presentation.html">Presentación</a><a href="index.html#recursos">Recursos</a></nav></div></header>
+<main class="wrap app-shell" id="main">
+<section class="app-banner dark"><div><p class="eyebrow">Prototipo de diseño · Datos ilustrativos</p><h1>Compara municipios</h1><p>Revisa el trayecto, la escuela y lo que queda por confirmar antes de elegir dónde mirar vivienda.</p></div><img src="assets/pin.svg" alt=""></section>
+<div class="app-layout"><section class="card" aria-labelledby="shortlist"><h2 id="shortlist">Tu lista corta</h2><p class="small muted">Ejemplo de perfil con primaria y acceso en transporte público.</p>
+<div class="toolbar" role="group" aria-label="Filtrar municipios"><button type="button" class="button alt" data-filter="all" aria-pressed="true">Todos</button><button type="button" class="button alt" data-filter="rail" aria-pressed="false">Con tren en el ejemplo</button></div>
+<div class="towns" id="towns">
+<article class="town" data-town="calaf" data-rail="true"><div><span class="tag">Perfil ilustrativo</span><h3>Calaf</h3><p class="small">El ejemplo reúne estación y oferta escolar. El horario necesita confirmación.</p></div><button type="button" class="button alt" data-town-button="calaf" aria-pressed="true">Ver Calaf</button></article>
+<article class="town" data-town="juncosa" data-rail="false"><div><span class="tag warning">Trayecto por verificar</span><h3>Juncosa</h3><p class="small">La ficha de ejemplo deja pendiente comprobar conexiones y frecuencia.</p></div><button type="button" class="button alt" data-town-button="juncosa" aria-pressed="false">Ver Juncosa</button></article>
+<article class="town" data-town="ulldemolins" data-rail="false"><div><span class="tag">Perfil ilustrativo</span><h3>Ulldemolins</h3><p class="small">La ficha de ejemplo destaca la confirmación de plazas y del trayecto.</p></div><button type="button" class="button alt" data-town-button="ulldemolins" aria-pressed="false">Ver Ulldemolins</button></article>
+</div>
+<div class="state" id="state" hidden></div><p class="readout small" id="readout" role="status">3 municipios en el ejemplo.</p>
+</section>
+<aside class="card" aria-labelledby="detail-name"><span class="tag warning">Por verificar</span><h2 id="detail-name" style="margin-top:10px">Calaf</h2><dl class="facts">
+<div><dt><img src="assets/school.svg" alt="">Escuela</dt><dd id="school-detail">Primaria en el ejemplo. Plazas por confirmar con el centro.</dd></div>
+<div><dt><img src="assets/train.svg" alt="">Trayecto</dt><dd id="train-detail">Estación en el ejemplo. Confirma horarios para tu jornada.</dd></div>
+<div><dt><img src="assets/incentive.svg" alt="">Convocatoria</dt><dd>Sin convocatoria vigente verificada en esta muestra.</dd></div>
+<div><dt><img src="assets/check.svg" alt="">Elegibilidad</dt><dd>Pendiente de verificar para el hogar.</dd></div></dl>
+<p class="app-source small muted">Fuente y fecha · Datos de muestra para revisión visual.</p></aside>
+</div>
+<section class="card" style="margin-top:16px" aria-labelledby="states"><h3 id="states">Estados de la interfaz</h3><div class="toolbar" role="group" aria-label="Simular estado"><button type="button" class="button alt" data-state="results" aria-pressed="true">Resultados</button><button type="button" class="button alt" data-state="loading" aria-pressed="false">Cargando</button><button type="button" class="button alt" data-state="empty" aria-pressed="false">Sin coincidencias</button><button type="button" class="button alt" data-state="error" aria-pressed="false">Error</button></div></section>
+<noscript><p>Activa JavaScript para probar filtros y estados. La ficha de ejemplo sigue disponible arriba.</p></noscript>
+</main><script src="app.js" defer></script>
+<footer class="footer"><div class="wrap"><span>relo.cat · Kit de marca v1.0</span><a href="index.html">Manual de marca</a></div></footer>
+</body></html>
