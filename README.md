@@ -16,6 +16,10 @@ The project includes a local TypeScript profile/bank API, deterministic transact
 
 The separate `hackathon/arrela-demo-plugin` branch contains a scripted four-persona MCP/widget prototype. It is not merged into `main` and does not yet consume the profile API. Its fictional incentives and listings do not satisfy the sourced municipality demo requirement.
 
+## Voice interviewer demo
+
+The complementary [voice interviewer](apps/interviewer/README.md) gathers home preferences, summarizes a demo bank account or CSV, and compares the effect of one savings habit. Run it with `npm run start:interviewer`. The shared MCP server also exposes the sample cash-flow card and savings comparison tools.
+
 ## User profiles and API
 
 - [500 fictional profiles](data/users/README.md): each user has `details.json`, `preferences.json` and `bank-account.json`, with varied needs and financial barriers. Demographic categories are informed by official Idescat sources; the dataset is not statistically representative.

@@ -4,11 +4,11 @@ A hackathon prototype that turns bank transactions and a voice interview into a 
 
 ## Run locally
 
-Use Node.js 22 or newer. Set `OPENAI_API_KEY` in your environment or in a local `.env` file for voice. If OpenAI rejects the key, replace the environment value and restart the server. An existing environment value takes precedence over `.env`. Then run:
+From the repository root, use Node.js 24 or newer. Set `OPENAI_API_KEY` in your environment or in a local `.env` file for live voice and Decisions. If OpenAI rejects the key, replace the environment value and restart the server. An existing environment value takes precedence over `.env`. Then run:
 
 ```powershell
 npm.cmd ci
-npm.cmd start
+npm.cmd run start:interviewer
 ```
 
 Open [the local voice demo](http://localhost:3000) in Chrome or Edge.
@@ -23,7 +23,7 @@ CSV format is `date,description,amount` with YYYY-MM-DD dates and signed amounts
 
 ## Connect the ChatGPT plugin
 
-The separate MCP listener is at `http://localhost:3001/mcp`. Connect it using a Secure MCP Tunnel or an HTTPS endpoint forwarding to port 3001. In ChatGPT Plugins, select **Add custom MCP server**, enter that endpoint and install the plugin. In Work, invoke it and ask “Show me the sample cash flow for a first-time buyer.”
+Run `npm.cmd run start:mcp` to start Relocat’s shared MCP server at `http://localhost:8787/mcp`. Connect it using a Secure MCP Tunnel or an HTTPS endpoint forwarding to that listener. In ChatGPT Plugins, select **Add custom MCP server**, enter that endpoint and install the plugin. In Work, invoke it and ask “Show me the sample cash flow for a first-time buyer.”
 
 The sample tool displays a cash-flow card and a spending breakdown in ChatGPT. The plugin can also analyze CSV text shared explicitly in chat and compare two savings timelines. Try “Interview me one question at a time using the fictional cash flow, then help me compare two savings timelines.” The local Realtime interview runs in the browser demo and retains its own profile. Live banking and cross-device accounts are outside the prototype.
 

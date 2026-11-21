@@ -41,7 +41,7 @@ async function tool(name: string, args: Record<string, unknown>) {
 test("discovers schemas and exposes sourced profiles, schools and business indicators", async () => {
   assert.equal(client.getServerVersion()?.name, "relocat");
   const listed = await client.listTools();
-  assert.equal(listed.tools.length, 8);
+  assert.equal(listed.tools.length, 11);
   assert(listed.tools.every(tool => tool.inputSchema && tool.outputSchema && tool.annotations?.readOnlyHint));
 
   const coverage = municipalityListResult.parse(await tool("list_catalonia_municipalities", { query: "termens" }));
@@ -56,6 +56,16 @@ test("discovers schemas and exposes sourced profiles, schools and business indic
   assert(schools.schools.some(journey => journey.school.municipalityCode === balaguer && journey.rail?.line === "RL2"));
   const business = businessResult.parse(await tool("get_business_activity", { municipalityCode: termens }));
   assert(business.metrics.some(metric => metric.kind === "retail_establishments" && metric.observedAt === "2023"));
+});
+
+test("serves the fictional interviewer cash-flow card and compares a savings habit", async () => {
+  const sample = await tool("sample_cash_flow", {});
+  assert(typeof sample === "object" && sample !== null && "monthlyNetCashFlow" in sample);
+  assert.equal(sample.monthlyNetCashFlow, 854.33);
+  const resource = await client.readResource({ uri: "ui://homebuying/cash-flow.html" });
+  assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
+  const plan = await tool("compare_home_savings", { target: 30_000, saved: 6_000, monthly: 600, habit: 75 });
+  assert.deepEqual(plan, { remaining: 24_000, baselineMonths: 40, withHabitMonths: 36 });
 });
 
 test("screens a three-town rural rail shortlist and requires opt-in to comarca purchase prices", async () => {

@@ -147,6 +147,10 @@ export function summarizeCsv(csv) {
 
 export function compareSavings({ target, saved, monthly, habit }) {
   const remaining = Math.max(0, target - saved);
-  const months = rate => remaining === 0 ? 0 : rate > 0 ? Math.ceil(remaining / rate) : null;
+  const months = rate => {
+    if (remaining === 0) return 0;
+    const estimate = Math.ceil(remaining / rate);
+    return rate > 0 && Number.isSafeInteger(estimate) ? estimate : null;
+  };
   return { remaining, baselineMonths: months(monthly), withHabitMonths: months(monthly + habit) };
 }

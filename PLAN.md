@@ -26,6 +26,7 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 - [x] Add synthetic bank accounts and movement import/correction/deletion with idempotent IDs and serialized atomic ledger persistence.
 - [x] Implement monthly cash-flow/category analysis, recurring-expense candidates and savings scenarios with explicit reserves, assumptions and unknown-data handling.
 - [x] Add versioned multi-source app inputs, normalized context, explicit conflict reporting and a municipality recommendation-input adapter; frontend wiring remains to be integrated.
+- [x] Build a complementary browser voice interviewer with demo bank and CSV intake, optional OpenAI Decisions classification, and a local savings plan. Shared profile API integration remains pending.
 - [ ] Project lead selects or customizes a canonical demo persona from the candidate profiles and confirms it with the interviewer team.
 - [ ] Teams agree stricter domain schemas; the API currently validates document provenance and IDs while allowing evolving fields.
 

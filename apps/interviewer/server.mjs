@@ -1,17 +1,9 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
-import { classificationLimit, compareSavings, expenseCategories, incomeCategories, summarizeCsv } from './finances.mjs';
+import { classificationLimit, expenseCategories, incomeCategories } from './finances.mjs';
 
-const demo = await readFile(new URL('./demo.csv', import.meta.url), 'utf8');
-const sampleSummary = summarizeCsv(demo);
-const widget = await readFile(new URL('./cash-flow-widget.html', import.meta.url), 'utf8');
-const widgetUri = 'ui://homebuying/cash-flow.html';
-const widgetType = 'text/html;profile=mcp-app';
-const port = Number(process.env.PORT ?? 3000);
-const mcpPort = Number(process.env.MCP_PORT ?? 3001);
+const port = Number(process.env.INTERVIEWER_PORT ?? 3000);
 const base = `http://localhost:${port}`;
 const assets = {
   '/': ['index.html', 'text/html'],
@@ -134,55 +126,3 @@ createServer(async (request, response) => {
     send(response, 502, { error: 'The local server could not complete this request.' });
   }
 }).listen(port, '127.0.0.1', () => console.log(`Voice demo: ${base}`));
-
-function result(data) {
-  return { structuredContent: data, content: [{ type: 'text', text: JSON.stringify(data) }] };
-}
-
-function createPlugin() {
-  const plugin = new McpServer({ name: 'homebuying-interviewer', version: '0.1.0' }, {
-    instructions: 'For a first-home onboarding, start with sample cash flow or a CSV the user chose to share. Confirm whether the figures are representative. Ask one question at a time about house or flat, location, amenities, nearby alternatives, and lifestyle priorities. Before comparing a habit, ask for cash target, amount already saved, current monthly contribution, and the extra monthly savings they chose. Present timelines as estimates for a cash goal and avoid claims about mortgage eligibility.',
-  });
-  const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
-  plugin.registerResource('Homebuying cash flow', widgetUri, {
-    mimeType: widgetType,
-    description: 'Monthly income and spending for the fictional homebuying demo.',
-  }, () => ({ contents: [{ uri: widgetUri, mimeType: widgetType, text: widget }] }));
-  plugin.registerTool('sample_cash_flow', {
-    description: 'Summarize three months of fictional bank transactions for the homebuying demo.',
-    annotations: readOnly,
-    _meta: { ui: { resourceUri: widgetUri } },
-  }, () => result(sampleSummary));
-  plugin.registerTool('summarize_bank_csv', {
-    description: 'Summarize CSV text the user explicitly chooses to share with ChatGPT. Use date, description, amount headers, ISO dates and signed amounts. Remove identifiers before sharing. For browser-only CSV parsing, use the local voice demo.',
-    annotations: readOnly,
-    inputSchema: { csv: z.string().min(1).max(100000) },
-  }, ({ csv }) => {
-    try { return result(summarizeCsv(csv)); }
-    catch (error) { return { isError: true, content: [{ type: 'text', text: error.message }] }; }
-  });
-  plugin.registerTool('compare_home_savings', {
-    description: 'Compare baseline and habit-adjusted months to a confirmed cash savings goal. All values must use the same currency. Monthly contribution can be negative.',
-    annotations: readOnly,
-    inputSchema: {
-      target: z.number().positive(),
-      saved: z.number().nonnegative(),
-      monthly: z.number(),
-      habit: z.number().nonnegative(),
-    },
-  }, input => result(compareSavings(input)));
-  return plugin;
-}
-
-createServer(async (request, response) => {
-  if (request.url !== '/mcp') return send(response, 404, { error: 'Use /mcp.' });
-  const plugin = createPlugin();
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-  response.on('close', () => { void plugin.close(); });
-  try {
-    await plugin.connect(transport);
-    await transport.handleRequest(request, response);
-  } catch {
-    if (!response.headersSent) send(response, 500, { error: 'The plugin request failed.' });
-  }
-}).listen(mcpPort, '127.0.0.1', () => console.log(`ChatGPT MCP: http://localhost:${mcpPort}/mcp`));
