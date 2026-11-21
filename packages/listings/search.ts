@@ -3,6 +3,8 @@ import type { Snapshot } from "../contracts/places.ts";
 import { homeSearchInput } from "../contracts/listings.ts";
 import type { HomeSearchResult } from "../contracts/listings.ts";
 import { getTown } from "../places/data.ts";
+import { homeSearchLinks } from "./links.ts";
+import { getCheckedListings } from "./checked.ts";
 
 export interface ListingSearchConfig {
   token?: string;
@@ -24,15 +26,10 @@ export async function searchHomes(snapshot: Snapshot, rawInput: unknown, config:
   const searchedAt = (config.now?.() ?? new Date()).toISOString();
   const searches: HomeSearchResult["searches"] = [];
   for (const town of towns) {
-    const query = [`site:idealista.com/inmueble/ "${town.name}" "${town.comarca}"`,
-      input.operation === "buy" ? "venta vivienda" : "alquiler vivienda",
-      ...(input.maxPriceEur === undefined ? [] : [`hasta ${input.maxPriceEur} euros`]),
-      ...(input.minBedrooms === undefined ? [] : [`${input.minBedrooms} dormitorios`]),
-    ].join(" ");
     const search: HomeSearchResult["searches"][number] = {
-      municipalityCode: town.code, municipalityName: town.name, query,
-      searchUrl: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
-      status: "provider_unavailable", errorCode: "not_configured", costUsd: null, examples: [],
+      municipalityCode: town.code, municipalityName: town.name, ...homeSearchLinks(town, input),
+      status: "provider_unavailable", errorCode: "not_configured", costUsd: null,
+      checkedExamples: getCheckedListings(town.code, input), examples: [],
     };
     searches.push(search);
     if (!config.token?.trim()) continue;
@@ -44,7 +41,7 @@ export async function searchHomes(snapshot: Snapshot, rawInput: unknown, config:
           ...(config.org ? { "X-Treg-Org": config.org } : {}),
           "Cache-Control": "no-cache", "X-Treg-Route-Max-Cost": "0.01",
         },
-        body: JSON.stringify({ q: query, country: "es", language: "es", limit: input.limitPerTown }),
+        body: JSON.stringify({ q: search.query, country: "es", language: "es", limit: input.limitPerTown }),
       });
       const charge = response.headers.get("X-Treg-Cost-Micro");
       if (charge !== null && /^\d+$/.test(charge)) search.costUsd = Number(charge) / 1_000_000;
@@ -87,6 +84,8 @@ export async function searchHomes(snapshot: Snapshot, rawInput: unknown, config:
     provider: "treg_google_search", evidenceType: "search_index_examples", searchedAt,
     requestedFilters: input, searches,
     limitations: [
+      "Checked examples are dated snapshots of Idealista's asking prices and property details. Confirm current price and availability at the source.",
+      "Open idealistaSearchUrl to browse the town on Idealista and apply price or bedroom filters there. Use searchUrl for a Google search with the requested hints, including when a direct town page is unavailable.",
       "Live web search finds indexed Idealista examples, not a live inventory feed. Index snippets may be stale; foundAt is the search time, not a listing verification date.",
       "Town, operation, price and bedroom criteria are search hints, not verified filters. Confirm all requirements and the actual municipality on the original listing before using an example.",
       "No indexed examples or a provider failure does not mean no homes are available. Availability, exact location, affordability and incentive eligibility remain unknown.",

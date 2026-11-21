@@ -4,10 +4,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Snapshot } from "../../packages/contracts/places.ts";
 import { getTown } from "../../packages/places/data.ts";
 import { explorerInput, explorerResult } from "./town-explorer-contract.ts";
+import { localizeMarkup } from "../../packages/site/language.ts";
+import type { SiteLanguage } from "../../packages/site/language.ts";
+import { explorerCopy } from "./town-explorer-copy.ts";
 
-const widgetUri = "ui://relocat/town-explorer-v1.html";
+const widgetUri = "ui://relocat/town-explorer-v2.html";
 
-export function loadTownExplorerPage() {
+export function loadTownExplorerPage(): Record<SiteLanguage, string> | undefined {
   let bundle: string;
   try {
     bundle = readFileSync(new URL("./dist/town-explorer.js", import.meta.url), "utf8");
@@ -16,7 +19,11 @@ export function loadTownExplorerPage() {
     throw error;
   }
   const template = readFileSync(new URL("./town-explorer.html", import.meta.url), "utf8");
-  return template.replace("<!-- WIDGET -->", () => `<script>${bundle.replace(/<\/script/gi, "<\\/script")}</script>`);
+  const script = `<script>${bundle.replace(/<\/script/gi, "<\\/script")}</script>`;
+  return {
+    ca: localizeMarkup(template, explorerCopy, "ca").replace("<!-- WIDGET -->", () => script),
+    en: localizeMarkup(template, explorerCopy, "en").replace("<!-- WIDGET -->", () => script),
+  };
 }
 
 export function registerTownExplorer(server: McpServer, snapshot: Snapshot, page: string) {

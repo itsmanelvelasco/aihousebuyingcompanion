@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{language}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Relocat Town Explorer</title>
+  <title>{{copy.pageTitle}}</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -68,6 +68,7 @@
       text-wrap: balance;
     }
     .hero .intro { max-width: 25ch; color: #3a5545; font-size: .94rem; }
+    .preview-nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; font-size: .88rem; }
     .explorer { margin-top: 22px; }
     .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; justify-content: space-between; margin-bottom: 11px; }
     .section-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 9px; }
@@ -76,6 +77,23 @@
     .views button, .retry { min-height: 34px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--violet); padding: 4px 9px; font-size: .84rem; font-weight: 730; }
     .views button[aria-pressed="true"], .views button:hover, .retry:hover { background: var(--card); border-color: var(--line); }
     .retry { border-color: var(--line); background: var(--lilac); }
+    .property-examples .retry { min-height: 44px; margin-block: 8px; }
+    .property-examples [role="status"]:empty { display: none; }
+    .listing-heading, .listing-links { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+    .listing-links { font-size: .9rem; }
+    .listing-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 232px), 1fr));
+      gap: 10px;
+      list-style: none;
+      padding: 0;
+      margin: 10px 0 0;
+    }
+    .listing-card { display: grid; align-content: start; gap: 3px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+    .listing-card a { font-weight: 680; }
+    .listing-card p { margin: 0; }
+    .listing-price { font-size: 1.35rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
+    .listing-facts, .listing-note { color: var(--muted); font-size: .87rem; }
     .workspace { display: grid; grid-template-columns: minmax(0, 1.48fr) minmax(0, 1fr); align-items: start; gap: 12px; }
     .map-shell { min-width: 0; border: 1px solid #bfc8b0; background: #ece8f3; border-radius: 14px; overflow: hidden; }
     .map {
@@ -152,12 +170,10 @@
     .map-pin:hover, .map-pin:focus-visible, .map-pin[aria-pressed="true"] { z-index: 3; }
     .map-pin[aria-pressed="true"] .pin-marker, .town-card[aria-pressed="true"] .rank { background: #ffda65; color: #47391c; }
     .results { min-width: 0; }
-    .town-list { list-style: none; padding: 0 4px 3px; margin: 0 -4px; display: grid; gap: 7px; max-height: 367px; overflow: auto; scrollbar-color: var(--line) transparent; }
+    .town-list { list-style: none; padding: 0 4px 3px; margin: 0 -4px; display: grid; gap: 8px; max-height: 430px; overflow: auto; scrollbar-color: var(--line) transparent; }
     .town-card {
       display: grid;
-      grid-template-columns: auto minmax(0, 1fr) auto;
-      gap: 10px;
-      align-items: center;
+      gap: 8px;
       text-align: start;
       width: 100%;
       min-height: 78px;
@@ -168,12 +184,15 @@
       transition: background-color 160ms ease, border-color 160ms ease;
     }
     .town-card:hover, .town-card[aria-pressed="true"] { border-color: var(--violet); background: var(--lilac); }
+    .town-card-header { display: flex; align-items: center; gap: 10px; }
     .town-card strong, .town-card small { display: block; overflow-wrap: anywhere; }
     .town-card strong { font-size: 1.04rem; line-height: 1.15; }
-    .town-card .region { margin-top: 3px; }
-    .town-card .highlight { margin-top: 5px; color: var(--forest); font-size: .84rem; font-weight: 680; line-height: 1.35; }
-    .town-card .access { margin-top: 3px; line-height: 1.35; }
-    .card-arrow { width: 7px; height: 7px; border: solid var(--violet); border-width: 1.5px 1.5px 0 0; transform: rotate(45deg); margin-right: 2px; }
+    .town-card .region { margin-top: 2px; }
+    .town-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; padding-top: 7px; border-top: 1px solid var(--line); }
+    .town-facts b { display: block; font-size: .96rem; font-variant-numeric: tabular-nums; line-height: 1.25; overflow-wrap: anywhere; }
+    .town-facts small, .town-card .access { font-size: .81rem; line-height: 1.3; }
+    .town-facts small { margin-top: 3px; }
+    .card-arrow { flex: 0 0 auto; width: 7px; height: 7px; border: solid var(--violet); border-width: 1.5px 1.5px 0 0; transform: rotate(45deg); margin-inline: auto 2px; }
     .chooser { margin: 0 0 8px; display: grid; gap: 4px; font-size: .82rem; color: var(--muted); font-weight: 700; }
     select { width: 100%; min-height: 36px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
     .panel-message { padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
@@ -181,6 +200,7 @@
     .panel-message.hint { padding: 0 0 8px; border: 0; background: transparent; color: var(--muted); font-size: .85rem; }
     .panel-message + .retry { margin-top: 8px; }
     .snapshot { margin-top: 8px; color: var(--muted); font-size: .8rem; }
+    #comparison-note { margin-top: 4px; }
     #status { color: var(--muted); margin-top: 10px; }
     #status:empty { display: none; }
     #profile { margin-top: 24px; scroll-margin-top: 8px; }
@@ -221,7 +241,7 @@
       .workspace, .panels { grid-template-columns: minmax(0, 1fr); }
       .panels { gap: 0; }
       .map { height: 276px; }
-      .town-list { max-height: 290px; }
+      .town-list { max-height: 380px; }
     }
     @media (max-width: 420px) {
       main { padding: 11px; }
@@ -242,48 +262,53 @@
       <div class="hero-art" aria-hidden="true"></div>
       <div>
         <p class="brand">relo<span>.cat</span></p>
-        <h1>Find your town</h1>
-        <p class="intro">Compare places to live in Catalonia.</p>
+        <h1>{{copy.title}}</h1>
+        <p class="intro">{{copy.intro}}</p>
       </div>
     </header>
+    <nav class="preview-nav" id="preview-nav" aria-label="{{copy.navLabel}}" hidden>
+      <a href="{{copy.homeHref}}">{{copy.home}}</a>
+      <a id="preview-language" href="{{copy.localeHref}}" lang="{{copy.otherLanguage}}" hreflang="{{copy.otherLanguage}}">{{copy.localeLabel}}</a>
+    </nav>
     <section class="explorer" aria-labelledby="results-title">
       <div class="toolbar">
-        <div class="section-label"><h2 id="results-title">Explore Catalonia</h2><span id="count"></span></div>
-        <div class="views" role="group" aria-label="Towns to display" hidden>
-          <button id="show-results" type="button" aria-pressed="false">Results</button>
-          <button id="show-all" type="button" aria-pressed="false">All towns</button>
+        <div class="section-label"><h2 id="results-title">{{copy.explore}}</h2><span id="count"></span></div>
+        <div class="views" role="group" aria-label="{{copy.views}}" hidden>
+          <button id="show-results" type="button" aria-pressed="false">{{copy.results}}</button>
+          <button id="show-all" type="button" aria-pressed="false">{{copy.allTowns}}</button>
         </div>
       </div>
       <div class="workspace">
-        <figure class="map-shell" aria-label="Map of the Catalonia pilot">
+        <figure class="map-shell" aria-label="{{copy.mapLabel}}">
           <div id="map" class="map">
             <canvas aria-hidden="true"></canvas>
-            <div class="map-key"><span class="north" aria-hidden="true"></span>Catalonia</div>
-            <div id="map-pins" role="group" aria-label="Town map pins"></div>
-            <div class="map-controls" role="group" aria-label="Map controls">
+            <div class="map-key"><span class="north" aria-hidden="true"></span>{{copy.catalonia}}</div>
+            <div id="map-pins" role="group" aria-label="{{copy.mapPins}}"></div>
+            <div class="map-controls" role="group" aria-label="{{copy.controls}}">
               <div class="zoom">
-                <button id="zoom-out" type="button" aria-label="Zoom out" disabled>−</button>
-                <button id="zoom-in" type="button" aria-label="Zoom in" disabled>+</button>
+                <button id="zoom-out" type="button" aria-label="{{copy.zoomOut}}" disabled>−</button>
+                <button id="zoom-in" type="button" aria-label="{{copy.zoomIn}}" disabled>+</button>
               </div>
-              <button id="fit-map" type="button" disabled>Fit towns</button>
+              <button id="fit-map" type="button" disabled>{{copy.fit}}</button>
             </div>
           </div>
-          <figcaption><span>Boundaries adapted from <a id="map-source" target="_blank" rel="noopener noreferrer">ICGC</a> · <a id="map-license" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></span><span id="map-selection"></span></figcaption>
+          <figcaption><span>{{copy.mapAttribution}}<a id="map-source" target="_blank" rel="noopener noreferrer">ICGC</a> · <a id="map-license" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></span><span id="map-selection"></span></figcaption>
         </figure>
         <div class="results">
-          <label class="chooser" for="town" hidden>Jump to a municipality
-            <select id="town" disabled><option value="">Choose a town</option></select>
+          <label class="chooser" for="town" hidden>{{copy.chooser}}
+            <select id="town" disabled><option value="">{{copy.selectTown}}</option></select>
           </label>
-          <p id="results-status" class="panel-message" role="status">Loading towns…</p>
-          <button id="retry-results" class="retry" type="button" hidden>Retry</button>
-          <ol id="town-list" class="town-list" aria-label="Town cards"></ol>
+          <p id="results-status" class="panel-message" role="status">{{copy.loading}}</p>
+          <button id="retry-results" class="retry" type="button" hidden>{{copy.retry}}</button>
+          <ol id="town-list" class="town-list" aria-label="{{copy.cards}}"></ol>
           <p id="snapshot" class="snapshot"></p>
+          <p id="comparison-note" class="snapshot" hidden>{{copy.comparison}}</p>
         </div>
       </div>
       <p id="status" role="status"></p>
-      <div id="profile" aria-label="Selected town details"></div>
+      <div id="profile" aria-label="{{copy.profile}}"></div>
     </section>
-    <noscript>JavaScript is required to browse the town profiles.</noscript>
+    <noscript>{{copy.noScript}}</noscript>
   </main>
   <!-- WIDGET -->
 </body>

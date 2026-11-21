@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { municipalityCode } from "./places.ts";
+import { isoDate, municipalityCode } from "./places.ts";
 
 export const homeSearchInput = z.object({
   municipalityCodes: z.array(municipalityCode).min(1).max(3),
@@ -9,6 +9,14 @@ export const homeSearchInput = z.object({
   limitPerTown: z.number().int().min(1).max(5).default(3),
 }).strict();
 export type HomeSearchInput = z.infer<typeof homeSearchInput>;
+export const checkedListing = z.object({
+  provider: z.literal("idealista"), listingId: z.string().regex(/^\d+$/), url: z.url(),
+  municipalityCode, operation: homeSearchInput.shape.operation, title: z.string(), titleCa: z.string(),
+  askingPriceEur: z.number().positive(), bedrooms: z.number().int().nonnegative(), areaM2: z.number().positive(),
+  checkedOn: isoDate, availability: z.literal("unknown"),
+});
+export type CheckedListing = z.infer<typeof checkedListing>;
+
 export const homeSearchResult = z.object({
   provider: z.literal("treg_google_search"),
   evidenceType: z.literal("search_index_examples"),
@@ -16,9 +24,11 @@ export const homeSearchResult = z.object({
   requestedFilters: homeSearchInput,
   searches: z.array(z.object({
     municipalityCode, municipalityName: z.string(), query: z.string(), searchUrl: z.url(),
+    idealistaSearchUrl: z.url().nullable(),
     status: z.enum(["ok", "no_indexed_examples", "provider_unavailable", "provider_error"]),
     errorCode: z.enum(["not_configured", "authentication", "quota_or_cost_limit", "rate_limited", "upstream_error"]).nullable(),
     costUsd: z.number().nonnegative().nullable(),
+    checkedExamples: z.array(checkedListing),
     examples: z.array(z.object({
       provider: z.literal("idealista"), listingId: z.string(), url: z.url(),
       title: z.string(), snippet: z.string(), foundAt: z.iso.datetime(),

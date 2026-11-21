@@ -10,7 +10,7 @@
 - `packages/contracts/places.ts`: municipality and tool contracts.
 - `data/towns.json`, `data/incentives.json`: versioned pilot evidence.
 - `data/travel-estimates.json`: approximate, dated travel evidence; `data/relocat-pilot-data.json`: separately sourced opportunity research with its own availability/eligibility uncertainty.
-- `packages/places/relocation.ts`, `packages/listings/search.ts`: join pilot research without overriding official metrics; retrieve indexed property examples only when the optional provider is configured.
+- `packages/places/relocation.ts`, `packages/listings/`: join pilot research without overriding official metrics, build portal links and retrieve indexed examples when the optional provider is configured.
 - `apps/mcp-server/town-explorer.ts`, `town-explorer-widget.ts`: interactive Town Explorer and profile-derived recommendations, using the same domain functions/contracts.
 - `scripts/refresh-data.ts`, `sources.ts`, `validate-data.ts`: refresh and validation workflow.
 
@@ -18,7 +18,7 @@
 
 Core tools are `recommend_towns`, `get_town_profile` and `get_applicable_incentives`. The backend also exposes school, transport, business and detailed eligibility tools. Pass official six-digit municipality codes, confirmed household criteria and explicit dates. Budget is expressed in euros in this tool interface; the profile adapter converts stored cents once.
 
-`search_homes` returns indexed examples with explicit unknown availability/location/filter verification; it cannot satisfy bedroom or live-inventory constraints. `TREG_TOKEN`/optional `TREG_ORG` stay server-side. Missing configuration returns an unavailable result with follow-up links. Build both widget bundles through root `npm run build:app` before starting the connected stack.
+`search_homes` returns direct Idealista links where available and a Google search link for every town. With server-side `TREG_TOKEN` and optional `TREG_ORG`, it also returns indexed examples with explicit unknown availability, location and filter verification. Check bedroom count and availability at the source. Build the widget bundles through root `npm run build:app` before starting the connected stack.
 
 Results retain source/observation dates, geography, match reasons, trade-offs and missing data. Separate policy call status from household eligibility. Never infer school vacancies, transport reliability, business health or tax facts from proxy indicators. Comarca price estimates require explicit user agreement. Bedroom availability remains a property-level check, not a town fact.
 

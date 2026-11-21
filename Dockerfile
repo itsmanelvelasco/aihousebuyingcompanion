@@ -5,6 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY apps/mcp-server/town-explorer-widget.ts apps/mcp-server/town-explorer-contract.ts apps/mcp-server/town-map.ts ./apps/mcp-server/
 COPY apps/mcp-server/assets ./apps/mcp-server/assets
+COPY apps/interviewer/finances.mjs apps/interviewer/savings-contract.ts apps/interviewer/savings-coach-widget.ts apps/interviewer/voice-card-widget.ts ./apps/interviewer/
 COPY packages/contracts ./packages/contracts
 RUN npm run build:mcp-ui
 

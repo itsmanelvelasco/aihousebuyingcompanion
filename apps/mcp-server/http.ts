@@ -9,6 +9,8 @@ import { registerBankTools } from "./bank-tools.ts";
 import type { ListingSearchConfig } from "../../packages/listings/search.ts";
 import type { BankToolConfig } from "./bank-tools.ts";
 import { registerTownExplorer } from "./town-explorer.ts";
+import { siteLanguage } from "../../packages/site/language.ts";
+import type { SiteLanguage } from "../../packages/site/language.ts";
 
 export function createHttpServer(
   snapshot: Snapshot,
@@ -19,16 +21,16 @@ export function createHttpServer(
     bankApi?: BankToolConfig;
     travelEstimates?: TravelEstimateData;
     listings?: ListingSearchConfig;
-    townExplorerPage?: string;
+    townExplorerPage?: Record<SiteLanguage, string>;
   } = {},
 ) {
   return createServer(async (request, response) => {
     const path = request.url?.split("?")[0];
     if (path === "/" && request.method === "GET") {
-      response.writeHead(302, { Location: "/connect" }).end();
+      response.writeHead(302, { Location: siteLanguage(request.url) === "en" ? "/connect?lang=en" : "/connect" }).end();
       return;
     }
-    if (handleConnectPage(request, response)) return;
+    if (await handleConnectPage(request, response)) return;
     if (await handleTestUi(request, response, snapshot, policies, options.listings, options.travelEstimates)) return;
     if (path === "/health" && request.method === "GET") {
       response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -36,11 +38,13 @@ export function createHttpServer(
       return;
     }
     if (path === "/preview" && request.method === "GET" && options.townExplorerPage) {
+      const language = siteLanguage(request.url);
       response.writeHead(200, {
         "Content-Type": "text/html; charset=utf-8",
+        "Content-Language": language,
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
-      }).end(options.townExplorerPage);
+      }).end(options.townExplorerPage[language]);
       return;
     }
     if (path !== "/mcp") {
@@ -55,7 +59,7 @@ export function createHttpServer(
     }
 
     const server = createMcpServer(snapshot, policies, options.today, options.travelEstimates, options.listings);
-    if (options.townExplorerPage) registerTownExplorer(server, snapshot, options.townExplorerPage);
+    if (options.townExplorerPage) registerTownExplorer(server, snapshot, options.townExplorerPage.en);
     if (options.bankApi) registerBankTools(server, options.bankApi);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     try {

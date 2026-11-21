@@ -22,7 +22,9 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 - [x] Expose `get_applicable_incentives` with optional household checks, and retain `check_housing_incentives` for eligibility and exclusions.
 - [x] Preserve existing profile paths and expose municipality, bank-read and board tools through one connected MCP endpoint.
 - [x] Add a synthetic background worker, durable cursor-based bank events, authenticated polling tools, stack launcher and per-area development guides.
-- [x] Add `search_homes` for live treg web searches of Idealista examples, with bounded costs, explicit provider failures and unverified location/filter/availability labels. Runtime access requires `TREG_TOKEN`.
+- [x] Add keyless Idealista town links and a Google search to `search_homes` and Town Explorer. Keep Treg as an optional source of dated examples with bounded costs and explicit provider status. Apply filters and check availability on the portal.
+- [x] Show dated Idealista listing cards for five pilot towns and compare municipal housing averages, active measures in the pilot catalogue and listed local schools in Town Explorer.
+- [x] Default the public homepage, savings demo and Town Explorer preview to Catalan, with an English option.
 - [ ] Verify bedroom counts and actual property availability against authorized listing evidence. Town screens deliberately retain these as unresolved property checks.
 - [ ] Complete human visual/voice rehearsal in the target ChatGPT client; automated transport tests do not establish client widget visibility.
 
@@ -116,6 +118,8 @@ Agree shared contracts first, then assign separate file ownership. Household req
 - [x] Return official municipality codes, `matchReasons`, `tradeoffs`, `metrics` with `observedAt` and `sourceUrl`, and `dataMissing`.
 - [x] Supply incentives with separate `callStatus`, `eligibilityStatus`, missing criteria and official legal sources.
 - [x] Add a read-only Town Explorer widget with linked map pins and shortlist cards. Its separate render tool passes the original recommendation criteria to the same municipality tools as chat.
+- [x] Add an on-demand Idealista examples section in Town Explorer with original links, search dates and provider status.
+- [x] Add a fictional Savings Coach MCP widget and a homepage demo using the existing savings tools and habit rules.
 - [ ] Optionally connect `get_ownership_plan`/`simulate_ownership` and update the target/timeline after selection once the core flow works.
 - [ ] Show synthetic-data labels, assumptions, evidence links, data freshness and missing-data messages in the UI.
 - [ ] Run the MCP endpoint and widget together; document the actual run instructions.

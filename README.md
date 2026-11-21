@@ -13,7 +13,7 @@ You describe your needs in a conversation. ReloCat uses sourced local data and f
 - **Find places that fit your life.** Compare Catalan towns using your budget, household needs, school stages and transport requirements.
 - **Understand the trade-offs.** See housing indicators, school information and travel estimates, with sources, dates and gaps in the evidence.
 - **Explore housing support.** Check relevant public measures and distinguish whether applications are open from whether your household meets the known criteria.
-- **Make a savings plan.** Explore how your savings, monthly contribution and cash target affect the time needed to prepare for a purchase.
+- **Make a savings plan.** Explore how your savings, monthly contribution and cash target affect the time needed to prepare for a purchase. Choose **Try the Savings Coach** on the homepage to try a plan with fictional data.
 - **Talk through your needs.** Use the homebuying interview, with a guided option and optional voice.
 
 For example, you could ask:
@@ -24,7 +24,7 @@ The journey is to confirm your needs, compare a shortlist, inspect the evidence 
 
 ## Try the experience
 
-**Start at [www.relo.cat](https://www.relo.cat).** The public homepage introduces the project and explains how to connect an agent. The main conversational experience uses ChatGPT with the ReloCat MCP connection enabled. You can ask to start a homebuying interview, compare towns or open the Town Explorer map.
+**Start at [www.relo.cat](https://www.relo.cat).** The homepage, browser savings demo and Town Explorer open in Catalan. Choose **English** in the navigation to switch languages. The main conversational experience uses ChatGPT with the ReloCat MCP connection enabled. You can ask to start a homebuying interview, compare towns or open the Town Explorer map.
 
 There are several views of the project:
 
@@ -40,7 +40,7 @@ The public deployment and local development branches can contain different featu
 
 This is a working hackathon prototype. Its municipality pilot includes **18 town profiles, 238 education centres, 86 rail trips and six policy records**, drawn from dated datasets. Coverage is limited: one profile is the Lleida transport destination, and detailed relocation opportunity research currently covers three towns.
 
-The **500 household profiles and demo bank movements are fictional**. They let the team test different needs and financial barriers without using anyone's real bank account. Live property searches are an optional integration; returned links are examples whose availability, location and details still need verification.
+The **500 household profiles and demo bank movements are fictional**. They let the team test different needs and financial barriers without using anyone's real bank account. Town Explorer compares local resale prices or rents, active housing measures in the pilot catalogue and schools in the official directory. Five pilot towns also have dated Idealista listing cards for sale. Check current prices and availability on Idealista. The listing cards, direct portal links and Google search links work without a Treg key. **Find indexed examples** can surface more links when the optional search provider is available.
 
 ReloCat does not approve mortgages, guarantee grants or submit applications. School presence does not establish vacancies, a travel sample is not a live journey guarantee, and a town's average housing price is not a property listing. Missing information stays visible rather than becoming an assumed answer.
 
