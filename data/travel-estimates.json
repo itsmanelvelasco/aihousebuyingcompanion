@@ -1,0 +1,2077 @@
+{
+  "250024": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 55,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus",
+        "durationMinutes": 140,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0288 from Àger bus stop. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/"
+        ]
+      }
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 145,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 320,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0288 + AVE from Àger bus stop via Lleida-Pirineus. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 150,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 400,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "The T2 public transport sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 150,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 370,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0288 + AVE + R2N from Àger bus stop via Lleida-Pirineus and Barcelona Sants. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 190,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 370,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0288 + AVE from Àger bus stop via Lleida-Pirineus. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 175,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 420,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0288 + AVE + L0324 from Àger bus stop via Lleida-Pirineus and Girona railway station. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    }
+  ],
+  "250122": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 10,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 5,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 from Alcoletge station. Sample departure 07:17 and arrival 07:24.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip"
+        ]
+      }
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 110,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 120,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 + AVANT from Alcoletge station via Lleida-Pirineus. Sample departure 07:17 and arrival 09:15.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 115,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 190,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "The T2 public transport sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 115,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 160,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 + AVANT + R2N from Alcoletge station via Lleida-Pirineus and Barcelona Sants. Sample departure 07:17 and arrival 09:56.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 155,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 175,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 + AVANT + AVANT from Alcoletge station via Lleida-Pirineus and Barcelona Sants. Sample departure 07:17 and arrival 10:13.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 145,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 260,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 + AVE + L0324 from Alcoletge station via Lleida-Pirineus and Girona railway station. Sample departure 10:27 and arrival 14:45.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/"
+        ]
+      }
+    }
+  ],
+  "250371": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 40,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus",
+        "durationMinutes": 110,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0288 from les Avellanes bus stop. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/"
+        ]
+      }
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 130,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 290,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0288 + AVE from les Avellanes bus stop via Lleida-Pirineus. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 135,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 375,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "The T2 public transport sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 135,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 345,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0288 + AVE + R2N from les Avellanes bus stop via Lleida-Pirineus and Barcelona Sants. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 175,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 345,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0288 + AVE from les Avellanes bus stop via Lleida-Pirineus. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 160,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 395,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0288 + AVE + L0324 from les Avellanes bus stop via Lleida-Pirineus and Girona railway station. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    }
+  ],
+  "250404": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 30,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus",
+        "durationMinutes": 40,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0057 from Balaguer bus stop. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/"
+        ]
+      }
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 115,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 115,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "L0057 + AVANT from Balaguer bus stop via Lleida-Pirineus. Sample departure 07:20 and arrival 09:15.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 120,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 185,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "The T2 public transport sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 120,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 155,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "L0057 + AVANT + R2N from Balaguer bus stop via Lleida-Pirineus and Barcelona Sants. Sample departure 07:20 and arrival 09:56.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 160,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 170,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "L0057 + AVANT + AVANT from Balaguer bus stop via Lleida-Pirineus and Barcelona Sants. Sample departure 07:20 and arrival 10:13.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 145,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 330,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + AVE + L0328 from Balaguer station via Lleida-Pirineus and Girona railway station. Sample departure 08:00 and arrival 13:30.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/"
+        ]
+      }
+    }
+  ],
+  "250621": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 40,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 125,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 125,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 125,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 165,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 155,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    }
+  ],
+  "251180": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 40,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus",
+        "durationMinutes": 60,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "Line 119 from Plaça Major to Lleida bus station. Two weekday departures in the published timetable.",
+        "sourceUrls": [
+          "https://www.autocarssolesero.com/wp-content/uploads/2026/03/QUADRE-DHORARIS-GENER-2026-NOVA-ESTACIO-AUTOBUSOS-LLEIDA-actualitzat.pdf"
+        ]
+      }
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 135,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 220,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "Line 119 from Juncosa at 07:30, with a train transfer at Lleida-Pirineus. Barcelona Sants arrival at 11:11.",
+        "sourceUrls": [
+          "https://www.autocarssolesero.com/wp-content/uploads/2026/03/QUADRE-DHORARIS-GENER-2026-NOVA-ESTACIO-AUTOBUSOS-LLEIDA-actualitzat.pdf",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 130,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 295,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "The T2 bus-and-rail sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://www.autocarssolesero.com/wp-content/uploads/2026/03/QUADRE-DHORARIS-GENER-2026-NOVA-ESTACIO-AUTOBUSOS-LLEIDA-actualitzat.pdf",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 135,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 265,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "Juncosa at 07:30 by bus to Lleida, then trains via Barcelona Sants. Airport station arrival at 11:56.",
+        "sourceUrls": [
+          "https://www.autocarssolesero.com/wp-content/uploads/2026/03/QUADRE-DHORARIS-GENER-2026-NOVA-ESTACIO-AUTOBUSOS-LLEIDA-actualitzat.pdf",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 190,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 280,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "Line 119 from Juncosa at 07:30, then the 10:00 train from Lleida-Pirineus. Girona arrival at 12:08.",
+        "sourceUrls": [
+          "https://www.autocarssolesero.com/wp-content/uploads/2026/03/QUADRE-DHORARIS-GENER-2026-NOVA-ESTACIO-AUTOBUSOS-LLEIDA-actualitzat.pdf",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 175,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 360,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "Juncosa at 07:30 by bus to Lleida and onward by train to Girona. Bus L0328 from Girona at 13:00 arrives at the airport at 13:30.",
+        "sourceUrls": [
+          "https://www.autocarssolesero.com/wp-content/uploads/2026/03/QUADRE-DHORARIS-GENER-2026-NOVA-ESTACIO-AUTOBUSOS-LLEIDA-actualitzat.pdf",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/"
+        ]
+      }
+    }
+  ],
+  "251207": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 5,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 115,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 65,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "AVANT from Lleida-Pirineus. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 115,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 140,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "The T2 public transport sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 120,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 110,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "AVANT + R2N from Lleida-Pirineus via Barcelona Sants. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 160,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 155,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "AVANT + AVANT from Lleida-Pirineus via Barcelona Sants. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 150,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 205,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "AVANT + AVANT + L0324 from Lleida-Pirineus via Barcelona Sants and Girona railway station. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/"
+        ]
+      }
+    }
+  ],
+  "251569": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 40,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus",
+        "durationMinutes": 100,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0288 from Os de Balaguer bus stop. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/"
+        ]
+      }
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 130,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 280,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0288 + AVE from Os de Balaguer bus stop via Lleida-Pirineus. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 135,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 365,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "The T2 public transport sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 130,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 335,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0288 + AVE + R2N from Os de Balaguer bus stop via Lleida-Pirineus and Barcelona Sants. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 170,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 335,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0288 + AVE from Os de Balaguer bus stop via Lleida-Pirineus. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 160,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 385,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0288 + AVE + L0324 from Os de Balaguer bus stop via Lleida-Pirineus and Girona railway station. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    }
+  ],
+  "251713": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 90,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 95,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 from La Pobla de Segur station. Sample departure 10:08 and arrival 11:41.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip"
+        ]
+      }
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 170,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 180,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + Intercity from La Pobla de Segur station via Lleida-Pirineus. Sample departure 10:08 and arrival 13:09.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 170,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 260,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "The T2 public transport sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 170,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 230,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + Intercity + R2N from La Pobla de Segur station via Lleida-Pirineus and Barcelona Sants. Sample departure 10:08 and arrival 13:56.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 210,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 325,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + Intercity + R11 from La Pobla de Segur station via Lleida-Pirineus and Barcelona Sants. Sample departure 10:08 and arrival 15:35.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 200,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    }
+  ],
+  "251902": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 85,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 90,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 from Salàs de Pallars station. Sample departure 10:11 and arrival 11:41.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip"
+        ]
+      }
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 165,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 180,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + Intercity from Salàs de Pallars station via Lleida-Pirineus. Sample departure 10:11 and arrival 13:09.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 165,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 255,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "The T2 public transport sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 165,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 225,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + Intercity + R2N from Salàs de Pallars station via Lleida-Pirineus and Barcelona Sants. Sample departure 10:11 and arrival 13:56.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 205,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 325,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + Intercity + R11 from Salàs de Pallars station via Lleida-Pirineus and Barcelona Sants. Sample departure 10:11 and arrival 15:35.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 195,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    }
+  ],
+  "252154": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 80,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 160,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 160,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 160,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 200,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 190,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    }
+  ],
+  "252206": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 20,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 20,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 from Térmens station. Sample departure 07:06 and arrival 07:24.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip"
+        ]
+      }
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 115,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 130,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 + AVANT from Térmens station via Lleida-Pirineus. Sample departure 07:06 and arrival 09:15.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 120,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 200,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "The T2 public transport sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 115,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 170,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 + AVANT + R2N from Térmens station via Lleida-Pirineus and Barcelona Sants. Sample departure 07:06 and arrival 09:56.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 155,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 185,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 + AVANT + AVANT from Térmens station via Lleida-Pirineus and Barcelona Sants. Sample departure 07:06 and arrival 10:13.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 145,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 325,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "L0245 + AVE + L0328 from Térmens bus stop via Lleida-Pirineus and Girona railway station. Sample departure 08:05 and arrival 13:30.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    }
+  ],
+  "252347": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 80,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 80,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "RL2 from Tremp station. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip"
+        ]
+      }
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 155,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 170,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + Intercity from Tremp station via Lleida-Pirineus. Sample departure 10:19 and arrival 13:09.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 160,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 245,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "The T2 public transport sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 155,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 215,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + Intercity + R2N from Tremp station via Lleida-Pirineus and Barcelona Sants. Sample departure 10:19 and arrival 13:56.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 195,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 305,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + AVE from Tremp station via Lleida-Pirineus. Sample departure 07:04 and arrival 12:08.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 185,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 385,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + AVE + L0328 from Tremp station via Lleida-Pirineus and Girona railway station. Sample departure 07:04 and arrival 13:30.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/"
+        ]
+      }
+    }
+  ],
+  "252402": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 25,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 20,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 from Vallfogona de Balaguer station. Sample departure 07:02 and arrival 07:24.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip"
+        ]
+      }
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 115,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 135,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 + AVANT from Vallfogona de Balaguer station via Lleida-Pirineus. Sample departure 07:02 and arrival 09:15.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 120,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 205,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "The T2 public transport sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 120,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 175,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 + AVANT + R2N from Vallfogona de Balaguer station via Lleida-Pirineus and Barcelona Sants. Sample departure 07:02 and arrival 09:56.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 160,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 190,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 + AVANT + AVANT from Vallfogona de Balaguer station via Lleida-Pirineus and Barcelona Sants. Sample departure 07:02 and arrival 10:13.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 150,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 325,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + AVE + L0328 from Vallfogona de Balaguer station via Lleida-Pirineus and Girona railway station. Sample departure 08:04 and arrival 13:30.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/"
+        ]
+      }
+    }
+  ],
+  "252542": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 15,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 10,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 from Vilanova de la Barca station. Sample departure 07:12 and arrival 07:24.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip"
+        ]
+      }
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 115,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 125,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 + AVANT from Vilanova de la Barca station via Lleida-Pirineus. Sample departure 07:12 and arrival 09:15.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 120,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 195,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "The T2 public transport sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 120,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 165,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 + AVANT + R2N from Vilanova de la Barca station via Lleida-Pirineus and Barcelona Sants. Sample departure 07:12 and arrival 09:56.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 160,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 180,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL1 + AVANT + AVANT from Vilanova de la Barca station via Lleida-Pirineus and Barcelona Sants. Sample departure 07:12 and arrival 10:13.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 145,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 325,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "L0503 + AVE + L0328 from Vilanova de la Barca bus stop via Lleida-Pirineus and Girona railway station. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    }
+  ],
+  "259046": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 75,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 75,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 2,
+        "summary": "RL2 from Guardia de Tremp station. Average of 2 comparable timetable trips.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip"
+        ]
+      }
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 155,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 160,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + Intercity from Guardia de Tremp station via Lleida-Pirineus. Sample departure 10:27 and arrival 13:09.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 160,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 240,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "The T2 public transport sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 160,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 210,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + Intercity + R2N from Guardia de Tremp station via Lleida-Pirineus and Barcelona Sants. Sample departure 10:27 and arrival 13:56.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 200,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 295,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + AVE from Guardia de Tremp station via Lleida-Pirineus. Sample departure 07:12 and arrival 12:08.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 190,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 380,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "RL2 + AVE + L0328 from Guardia de Tremp station via Lleida-Pirineus and Girona railway station. Sample departure 07:12 and arrival 13:30.",
+        "sourceUrls": [
+          "https://www.fgc.cat/google/google_transit.zip",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/"
+        ]
+      }
+    }
+  ],
+  "431573": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 60,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": null
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 115,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 335,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "Ulldemolins at 07:30, buses via Falset and Marçà-Falset, then R15. Barcelona Sants arrival at 13:07.",
+        "sourceUrls": [
+          "https://www.priorat.cat/que-es-el-consell-comarcal-del-priorat/linia-ulldemolins-cornudella-poboleda-falset",
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 115,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 415,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "The T2 bus-and-rail sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://www.priorat.cat/que-es-el-consell-comarcal-del-priorat/linia-ulldemolins-cornudella-poboleda-falset",
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 115,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 385,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "Ulldemolins at 07:30, buses via Falset and Marçà-Falset, then trains via Barcelona Sants. Airport station arrival at 13:56.",
+        "sourceUrls": [
+          "https://www.priorat.cat/que-es-el-consell-comarcal-del-priorat/linia-ulldemolins-cornudella-poboleda-falset",
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 170,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 485,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "Ulldemolins at 07:30, buses via Falset and Marçà-Falset, then trains via Barcelona Sants. Girona arrival at 15:35.",
+        "sourceUrls": [
+          "https://www.priorat.cat/que-es-el-consell-comarcal-del-priorat/linia-ulldemolins-cornudella-poboleda-falset",
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 160,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 545,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "Ulldemolins at 07:30 by buses to Marçà-Falset and trains via Barcelona and Girona. Bus L0324 from Girona at 16:00 arrives at the airport at 16:15.",
+        "sourceUrls": [
+          "https://www.priorat.cat/que-es-el-consell-comarcal-del-priorat/linia-ulldemolins-cornudella-poboleda-falset",
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/",
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    }
+  ],
+  "080312": [
+    {
+      "destinationId": "lleida",
+      "destination": "Lleida-Pirineus / bus station",
+      "car": {
+        "durationMinutes": 55,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 80,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 3,
+        "summary": "Direct RL4 from Calaf station to Lleida-Pirineus. Three departures on the sample day.",
+        "sourceUrls": [
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "barcelona",
+      "destination": "Barcelona Sants",
+      "car": {
+        "durationMinutes": 70,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 140,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "Calaf station at 10:01 via Manresa. Barcelona Sants arrival at 12:21.",
+        "sourceUrls": [
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t1",
+      "destination": "Barcelona Airport T1",
+      "car": {
+        "durationMinutes": 75,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 205,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "The T2 rail sample plus about 30 minutes for walking, waiting and the terminal shuttle.",
+        "sourceUrls": [
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html"
+        ]
+      }
+    },
+    {
+      "destinationId": "bcn_t2",
+      "destination": "Barcelona Airport T2",
+      "car": {
+        "durationMinutes": 75,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 175,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "Calaf station at 10:01 via Manresa and Barcelona Sants, then R2 Nord. Airport station arrival at 12:56.",
+        "sourceUrls": [
+          "https://data.renfe.com/dataset/horarios-cercanias"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona",
+      "destination": "Girona railway station",
+      "car": {
+        "durationMinutes": 105,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "train",
+        "durationMinutes": 235,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "Calaf station at 10:01 via Manresa and Barcelona Sants. Girona arrival at 13:58.",
+        "sourceUrls": [
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia"
+        ]
+      }
+    },
+    {
+      "destinationId": "girona_airport",
+      "destination": "Girona-Costa Brava Airport",
+      "car": {
+        "durationMinutes": 90,
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://routing.openstreetmap.de/about.html"
+      },
+      "publicTransport": {
+        "mode": "bus_and_train",
+        "durationMinutes": 285,
+        "sampleDate": "2026-11-23",
+        "sampleCount": 1,
+        "summary": "Calaf at 10:01 by train via Manresa, Barcelona and Girona. Bus L0324 from Girona at 14:30 arrives at the airport at 14:45.",
+        "sourceUrls": [
+          "https://data.renfe.com/dataset/horarios-cercanias",
+          "https://data.renfe.com/es/dataset/horarios-de-alta-velocidad-larga-distancia-y-media-distancia",
+          "https://territori.gencat.cat/ca/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/"
+        ]
+      }
+    }
+  ]
+}

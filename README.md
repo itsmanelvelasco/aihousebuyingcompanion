@@ -101,6 +101,8 @@ The MCP backend lives in `apps/mcp-server/`. Its tools share Zod schemas in `pac
 
 The core demo calls `recommend_towns`, `get_town_profile`, and `get_applicable_incentives`. Additional tools cover schools, rail, business indicators, municipality lookup, and household eligibility detail. Town results include official codes, match reasons, trade-offs, evidence dates and URLs, and missing data. Incentives include separate application and eligibility statuses.
 
+All 18 municipality profiles include [sample travel estimates](apps/mcp-server/README.md#quick-travel-comparisons) to major stations and airports, with public transport times where the sample timetable supports a journey.
+
 ## Trust and privacy requirements
 
 - Label synthetic data and confirm current user finances and preferences.

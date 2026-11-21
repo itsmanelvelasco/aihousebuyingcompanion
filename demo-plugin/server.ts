@@ -82,7 +82,10 @@ function createMcpServer() {
       'Jordi starts debt-free. Celebrate and ask whether to roll the credits; on yes, call update_demo with action show_credits and briefly recap. ' +
       'Always separate the upfront milestone from owning outright; the comparison assumes 20 years of repayments after purchase readiness.',
   });
-  const server = bridge ? (() => { const { snapshot, policies } = loadData(); return createPlacesMcpServer(snapshot, policies); })() : legacyServer();
+  const server = bridge ? (() => {
+    const { snapshot, policies, travelEstimates } = loadData();
+    return createPlacesMcpServer(snapshot, policies, undefined, travelEstimates);
+  })() : legacyServer();
   if (connection) registerBankTools(server, { baseUrl: connection.baseUrl, token: connection.token });
 
   registerAppResource(server, 'Arrela journey board', widgetUri, {}, async () => ({
