@@ -49,8 +49,8 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   t.after(() => client.close());
   const tools = (await client.listTools()).tools;
   const ui = tools.find(tool => tool.name === 'open_demo')?._meta?.ui as { resourceUri?: string } | undefined;
-  assert.equal(ui?.resourceUri, 'ui://arrela/journey-v5.html');
-  const resource = await client.readResource({ uri: 'ui://arrela/journey-v5.html' });
+  assert.equal(ui?.resourceUri, 'ui://arrela/journey-v6.html');
+  const resource = await client.readResource({ uri: ui.resourceUri });
   const [widget] = resource.contents;
   assert.equal(widget.mimeType, 'text/html;profile=mcp-app');
   assert.ok('text' in widget);
@@ -70,6 +70,27 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   assert.equal(first.persona, 'onboarding');
   assert.equal(first.boardUrl, 'https://arrela.example/preview');
   assert.equal(first.sharedBoard, true);
+  assert.equal(first.interviewUrl, `https://arrela.example/interview/?run=${runId}&start=1`);
+  assert.match(String(first.message), /bank CSV/);
+  const interview = await fetch(origin + '/interview/?run=' + runId);
+  assert.equal(interview.status, 200);
+  assert.match(await interview.text(), /Start talking/);
+  const demoSave = { runId, expectedRevision: first.revision, currency: 'EUR', source: null,
+    profile: { householdSize: 3, saved: 24000, monthly: 700, target: 54000 } };
+  const post = (body: object, browserOrigin = origin) => fetch(origin + '/preview/interview', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: browserOrigin }, body: JSON.stringify(body),
+  });
+  assert.equal((await post(demoSave, 'https://other.example')).status, 403);
+  const saved = await post(demoSave);
+  assert.equal(saved.status, 200);
+  const resumed = await call('open_demo', { runId });
+  assert.deepEqual((resumed.interview as typeof demoSave).profile, demoSave.profile);
+  assert.equal((resumed.firstScenario as { baselineMonths: number }).baselineMonths, 43);
+  assert.equal((await post(demoSave)).status, 409);
+  const changed = await call('save_laia_interview', { ...demoSave, expectedRevision: resumed.revision,
+    profile: { ...demoSave.profile, monthly: 750 } });
+  assert.equal((changed.firstScenario as { baselineMonths: number }).baselineMonths, 40);
+  await call('update_demo', { runId, action: 'restart_persona' });
   const reopened = await call('open_demo');
   assert.equal(reopened.runId, runId);
   const update = (action: string, args = {}) => call('update_demo', { runId, action, ...args });

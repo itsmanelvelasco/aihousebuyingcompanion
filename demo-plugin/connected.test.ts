@@ -69,4 +69,16 @@ test('connected board persists interview inputs, reads runtime bank data and ser
   const serialized = await response.text();
   assert(!serialized.includes('test-token'));
   assert(!serialized.includes('"transactions":'));
+
+  const voice = await client.callTool({ name: 'save_laia_interview', arguments: {
+    runId, expectedRevision: bankView.revision, currency: 'EUR', source: null,
+    profile: { householdSize: 3, homeType: 'Flat', target: 54000, saved: 24000, monthly: 700 },
+  } });
+  assert(!voice.isError, JSON.stringify(voice.content));
+  const savedBoard = await (await fetch(`http://127.0.0.1:${port}/preview/state?run=${runId}`)).json();
+  assert.equal(savedBoard.firstScenario.baselineMonths, 43);
+  assert.equal(savedBoard.interview.profile.homeType, 'Flat');
+  assert.equal(savedBoard.plan, null);
+  const separate = await client.callTool({ name: 'open_demo', arguments: { newRun: true, persona: 'onboarding' } });
+  assert.equal((separate.structuredContent as Record<string, unknown>).interview, null);
 });

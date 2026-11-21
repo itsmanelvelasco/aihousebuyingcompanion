@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { parseEnv } from 'node:util';
 import { z } from 'zod';
 
 // One owner for file writes: the bank worker runs inside the profile API.
@@ -37,7 +39,13 @@ try {
     await new Promise(resolve => setTimeout(resolve, 250));
   }
   if (!ready) throw new Error('Profile API did not become ready');
-  launch('demo-plugin/server.ts', { PORT: String(appPort), HOST: '127.0.0.1', PROFILE_API_URL: baseUrl, PROFILE_API_TOKEN: token });
+  const envFile = new URL('../.env', import.meta.url);
+  const localVoice = existsSync(envFile) ? parseEnv(readFileSync(envFile, 'utf8')) : {};
+  launch('demo-plugin/server.ts', {
+    PORT: String(appPort), HOST: '127.0.0.1', PROFILE_API_URL: baseUrl, PROFILE_API_TOKEN: token,
+    ...(localVoice.OPENAI_API_KEY && { OPENAI_API_KEY: localVoice.OPENAI_API_KEY }),
+    ...(localVoice.REALTIME_MODEL && { REALTIME_MODEL: localVoice.REALTIME_MODEL }),
+  });
   console.log(`Connected demo: http://127.0.0.1:${appPort}/preview · profile API ${baseUrl}`);
   console.log(`Test the data: http://127.0.0.1:${appPort}/test`);
   console.log('Synthetic background feed enabled for DEMO_BANK_USERS; credentials stay in server process memory. Ctrl+C stops both services.');

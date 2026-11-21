@@ -41,7 +41,8 @@ function errorResult(text: string): CallToolResult {
   return { isError: true, content: [{ type: "text", text }] };
 }
 
-export const interviewerRouting = "When Relocat is invoked and the user starts a home purchase journey (for example, “I want to buy a new home”, “Quiero comprar una vivienda” or “Vull comprar un habitatge”), call start_homebuying_interview before asking any questions about location, budget or home type. The tool opens the Start talking card and supplies the bank-first question. Use town or listing tools directly for specific requests about a town, property or incentive.";
+export const bankOpeningQuestion = "Would you like to start with a bank CSV, use the fictional demo bank account, or tell me your rough monthly income and spending?";
+export const interviewerRouting = "When Relocat is invoked and the user starts their own home purchase journey (for example, “I want to buy a new home”, “Quiero comprar una vivienda” or “Vull comprar un habitatge”), call start_homebuying_interview before asking any questions about location, budget or home type. The tool opens the Start talking card and supplies the bank-first question. Use town or listing tools directly for specific requests about a town, property or incentive.";
 
 export function registerInterviewerTools(server: McpServer) {
   let launchUrl: URL | undefined;
@@ -85,7 +86,7 @@ export function registerInterviewerTools(server: McpServer) {
       nextSteps: z.array(z.string()),
     }),
   }, () => result({
-    openingQuestion: "Would you like to start with a bank CSV, use the fictional demo bank account, or tell me your rough monthly income and spending?",
+    openingQuestion: bankOpeningQuestion,
     voiceSetup: "Select the Voice icon in ChatGPT to start Live, then say: Use Relocat Team to start my homebuying interview.",
     voiceUrl: launchHref,
     sources: {

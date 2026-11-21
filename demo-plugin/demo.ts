@@ -2,6 +2,8 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { answersSchema, answerValue, basicGroups, extraGroups, questionId, validateAnswers } from './intake.ts';
 import type { Answers } from './intake.ts';
+import { interviewBoardAnswers, interviewScenario, laiaInterviewSchema } from './laia-interview.ts';
+import type { FirstScenario, LaiaInterview } from './laia-interview.ts';
 
 const people = {
   onboarding: { name: 'Laia', label: 'Getting started' },
@@ -94,6 +96,9 @@ export const updateSchema = z.object({
 function seed() {
   return {
     answers: {} as Answers,
+    interview: null as LaiaInterview | null,
+    interviewAnswers: {} as Answers,
+    firstScenario: null as FirstScenario | null,
     bankConnected: false, habitStatus: {} as Partial<Record<HabitId, 'adopted' | 'complete'>>, inboxRead: false,
     chosen: null as Opportunity | null,
     previewed: null as Opportunity | null,
@@ -119,6 +124,27 @@ function routeTimeline(upfrontMonths: number | null) {
   return { upfrontMonths, termMonths, debtFreeMonths: upfrontMonths === null ? null : upfrontMonths + termMonths };
 }
 
+export class InterviewConflictError extends Error {}
+
+// Every connected rehearsal uses user-001. Keep voice answers on the selected
+// run rather than writing one rehearsal's details into every Laia board.
+export async function saveLaiaInterview(runId: string, input: unknown, expectedRevision?: number) {
+  const run = getRun(runId);
+  if (run.persona !== 'onboarding') throw new InterviewConflictError('Open Laia’s board before saving the interview.');
+  const revision = run.revision;
+  if (expectedRevision !== undefined && revision !== expectedRevision) {
+    throw new InterviewConflictError('Laia’s board changed. Reopen the interview to review the latest answers.');
+  }
+  const interview = laiaInterviewSchema.parse(input);
+  const firstScenario = await interviewScenario(interview);
+  if (getRun(runId).revision !== revision) {
+    throw new InterviewConflictError('Laia’s board changed while saving. Reopen the interview to review the latest answers.');
+  }
+  Object.assign(run.state, { interview, firstScenario, interviewAnswers: interviewBoardAnswers(interview) });
+  run.revision++;
+  return getView(runId);
+}
+
 export function getView(runId: string, message?: string) {
   const { persona, state, revision, pairCode } = getRun(runId);
   const person = people[persona];
@@ -128,12 +154,13 @@ export function getView(runId: string, message?: string) {
     goal: 'Own the home outright, with no mortgage or other demo debt.',
   };
   if (persona === 'onboarding') {
+    const answers = { ...state.answers, ...state.interviewAnswers };
     const group = basicGroups.map(({ title, questions }) => ({
-      title, questions: questions.filter(question => state.answers[question.id] === undefined),
+      title, questions: questions.filter(question => answers[question.id] === undefined),
     })).find(group => group.questions.length) ?? null;
-    const { income, spending, savings, debtPayments, reserve, cashTarget, budget } = state.answers;
+    const { income, spending, savings, debtPayments, reserve, cashTarget, budget } = answers;
     let plan = null;
-    if (typeof income === 'number' && typeof spending === 'number' && typeof savings === 'number') {
+    if (!state.firstScenario && typeof income === 'number' && typeof spending === 'number' && typeof savings === 'number') {
       const monthly = income - spending - (typeof debtPayments === 'number' ? debtPayments : 0);
       const emergencyReserve = typeof reserve === 'number' ? reserve : 0;
       const available = Math.max(0, savings - emergencyReserve);
@@ -142,8 +169,9 @@ export function getView(runId: string, message?: string) {
       plan = { monthly, saved: available, target, ...routeTimeline(timeToGoal(available, target, monthly)) };
     }
     const basicQuestions = basicGroups.flatMap(group => group.questions);
-    return { ...base, answers: { ...state.answers }, group, extraGroups, totalQuestions: basicQuestions.length,
-      answeredBasic: basicQuestions.filter(question => state.answers[question.id] !== undefined).length,
+    return { ...base, answers, interview: state.interview, interviewAnswers: { ...state.interviewAnswers },
+      firstScenario: state.firstScenario, group, extraGroups, totalQuestions: basicQuestions.length,
+      answeredBasic: basicQuestions.filter(question => answers[question.id] !== undefined).length,
       financeNote: [
         typeof cashTarget === 'number' ? 'Uses your custom upfront goal.'
           : typeof budget === 'number' && budget > 0 ? 'Models 30% of the purchase budget for deposit and buying costs.'
@@ -260,12 +288,15 @@ export function updateDemo({ runId, action, persona: nextPersona, question, answ
       if (persona !== 'onboarding') throw new Error('Open Laia’s onboarding first.');
       const fields = action === 'answer' && question && answer !== undefined ? { [question]: answer } : answers;
       if (!fields || !Object.keys(fields).length) throw new Error('Provide the answers the user gave.');
-      Object.assign(state.answers, validateAnswers(fields));
+      const validated = validateAnswers(fields);
+      Object.assign(state.answers, validated);
+      for (const key of Object.keys(validated) as (keyof Answers)[]) delete state.interviewAnswers[key];
       break;
     }
     case 'sample_bank':
       if (persona !== 'onboarding') throw new Error('Open Laia’s onboarding first.');
       state.bankConnected = true;
+      delete state.interviewAnswers.income;
       Object.assign(state.answers, { income: bank.income, spending: bank.spending, savings: bank.savings, debtPayments: bank.debtPayments });
       break;
     case 'join_quest':
@@ -328,6 +359,9 @@ export function updateDemo({ runId, action, persona: nextPersona, question, answ
       const initial = seed();
       if (persona === 'onboarding') {
         state.answers = initial.answers;
+        state.interview = initial.interview;
+        state.interviewAnswers = initial.interviewAnswers;
+        state.firstScenario = initial.firstScenario;
         state.bankConnected = false;
       } else if (persona === 'progress') state.habitStatus = initial.habitStatus;
       else if (persona === 'shortcuts') {

@@ -27,7 +27,7 @@
   }
   button:hover, .button:hover { background: #ffffff12; }
   button:disabled { opacity: .45; cursor: default; }
-  button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, #csv:focus-visible + label {
+  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, #csv:focus-visible + label {
     outline: 2px solid var(--accent); outline-offset: 3px;
   }
   .primary { background: var(--accent); color: #18291e; border-color: transparent; font-weight: 660; }
@@ -40,6 +40,9 @@
   }
   .brand { display: flex; gap: 10px; align-items: center; font-size: .94rem; font-weight: 680; }
   .brand span { border-radius: 50%; width: 12px; height: 12px; background: #cce5a5; box-shadow: 0 0 18px #cce5a580; }
+  #board-link { color: var(--accent); text-underline-offset: 3px; }
+  #board-controls { margin: 18px auto 0; max-width: 460px; }
+  #board-status { margin: 6px 0 0; }
   .top .actions { justify-content: flex-end; }
   .top button { font-size: .88rem; padding: 7px 12px; }
   .stage {
@@ -121,7 +124,7 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span aria-hidden="true"></span> Homebuying Interviewer</div>
+  <div class="brand"><span aria-hidden="true"></span><b id="brand">Homebuying Interviewer</b><a id="board-link" href="/preview" hidden>Laia’s board</a></div>
   <nav class="actions" aria-label="Interview tools">
     <button id="source-button" data-open="data-panel">Add bank data</button>
     <button data-open="plan-panel">Your plan</button>
@@ -130,7 +133,7 @@
 <main class="stage">
   <section id="conversation" class="conversation" data-voice="idle" aria-labelledby="title">
     <h1 id="title">Let’s talk about your first home.</h1>
-    <p class="intro">Start with your bank transactions, then talk through your first-home goals.</p>
+    <p id="intro" class="intro">Start with your bank transactions, then talk through your first-home goals.</p>
     <div class="voice-graphic" aria-hidden="true">
       <div class="wave"><i style="--height:10px"></i><i style="--height:21px"></i><i style="--height:34px"></i><i style="--height:25px"></i><i style="--height:13px"></i></div>
     </div>
@@ -141,6 +144,10 @@
       <button id="stop" class="end" hidden>End conversation</button>
     </div>
     <p id="last-question" aria-live="polite" hidden></p>
+    <div id="guided-source" class="actions voice-controls" hidden>
+      <button data-open="data-panel">Choose bank or CSV</button>
+      <button id="use-estimates">Use estimates</button>
+    </div>
     <form id="typed-answer" hidden>
       <input id="answer" aria-label="Type an interview answer" placeholder="Type your answer" maxlength="1000" required>
       <button id="send-answer" disabled>Send</button>
@@ -151,13 +158,18 @@
       <button id="skip" type="button">Skip</button>
     </form>
     <div class="more"><button data-open="options-panel">Conversation options</button></div>
+    <div id="board-controls" hidden>
+      <button id="share-board" type="button" disabled>Save to Laia’s board</button>
+      <p id="board-status" class="hint" role="status"></p>
+      <a class="quiet" id="reload-interview" hidden>Reload the latest interview</a>
+    </div>
     <audio id="audio" autoplay></audio>
   </section>
 </main>
 <dialog id="data-panel" aria-labelledby="data-heading">
   <div class="panel-head"><h2 id="data-heading">Add bank data</h2><button data-close>Close</button></div>
   <div id="sources">
-    <p class="hint">Use a statement to ground the conversation in your actual spending.</p>
+    <p class="hint" id="bank-intro">Use a statement to ground the conversation in your actual spending.</p>
     <div class="source-options">
       <button id="bank" class="source"><strong>Connect a bank</strong><small>Demo connection</small></button>
       <input id="csv" type="file" accept=".csv,text/csv"><label class="button source" for="csv"><strong>Upload CSV</strong><small>Bank statement</small></label>
@@ -201,6 +213,6 @@
   </div>
   <p class="hint">Voice uses your microphone and sends your saved answers and financial summary to OpenAI. Uploaded CSV files are processed in this browser.</p>
 </dialog>
-<script type="module" src="/app.mjs"></script>
+<script type="module" src="./app.mjs"></script>
 </body>
 </html>

@@ -32,7 +32,7 @@ The separate [habits service](apps/habits-agent/README.md) runs with `npm run st
 
 ## Voice interviewer demo
 
-The complementary [voice interviewer](apps/interviewer/README.md) gathers home preferences, summarizes a demo bank account or CSV, and compares the effect of one savings habit. Run it with `npm run start:interviewer`. The shared MCP server also exposes the sample cash-flow card and savings comparison tools.
+Run `npm run dev:stack`, open [Laia’s board](http://127.0.0.1:8787/preview?persona=onboarding), and select **Start talking**. Choose a fictional statement, a sample CSV, or spoken estimates. Select **Save to Laia’s board** to share the confirmed answers with that rehearsal. The board shows the first savings scenario once Laia confirms her upfront target, purchase savings and monthly contribution. Run data lasts until the demo server restarts. Live browser voice uses the server’s `OPENAI_API_KEY`; the guided interview works without a key. Set `PUBLIC_ORIGIN` to the board’s HTTPS origin on a hosted demo so its ChatGPT widget can open the same interview. The [standalone interviewer](apps/interviewer/README.md) also runs with `npm run start:interviewer`.
 
 ## User profiles and API
 

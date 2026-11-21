@@ -167,18 +167,21 @@ export class ProfileBridge {
       extra.townScreening = { ...prepared, result: towns, propertyChecks, completeHomeMatch: false };
     }
     if ('answers' in view) {
+      const runAnswers = view.interviewAnswers;
+      Object.assign(answers, runAnswers);
+      if (runAnswers.cashTarget !== undefined) answers.upfrontTarget = runAnswers.cashTarget;
       const required = ['budget', 'floorArea', 'destinationCode', 'maxCommuteMinutes', 'schoolStages', ...(Array.isArray(answers.schoolStages) && answers.schoolStages.length ? ['schoolMode'] : []), 'allowComarcaEstimate', 'upfrontTarget', 'emergencyReserve'];
       const prompts: Record<string, string> = { budget: 'Maximum purchase budget in EUR?', floorArea: 'Required floor area in m²?', destinationCode: 'Six-digit municipality code for the commute destination?', maxCommuteMinutes: 'Maximum one-way commute in minutes?', schoolStages: 'Required stages as a comma-separated list (empty means none)?', schoolMode: 'School travel mode: car_free or rail?', allowComarcaEstimate: 'May we use clearly labelled comarca purchase-price estimates? true or false', upfrontTarget: 'Confirmed upfront cash target in EUR, including your deposit, tax and fee assumptions?', emergencyReserve: 'How much savings in EUR must remain as an emergency reserve?' };
       const examples: Record<string, string> = { budget: '130000', floorArea: '85', destinationCode: '251207', maxCommuteMinutes: '120', schoolStages: 'eso', schoolMode: 'rail', allowComarcaEstimate: 'false', upfrontTarget: '54000' };
       const group = { title: 'Complete the municipality screening', questions: required.filter(key => answers[key] === undefined || answers[key] === null).map(key => ({ id: key, label: prompts[key], min: 0, max: 10000000, money: ['budget', 'upfrontTarget', 'emergencyReserve'].includes(key), prompt: prompts[key], example: examples[key] ?? '0', kind: ['budget', 'floorArea', 'maxCommuteMinutes', 'upfrontTarget', 'emergencyReserve'].includes(key) ? 'number' : 'text' })) };
       const saved = typeof answers.savings === 'number' ? answers.savings : null;
       const monthly = summary.averageMonthlySavingsCents === null ? null : summary.averageMonthlySavingsCents / 100;
-      const target = data.finance?.targetCashCents == null ? null : data.finance.targetCashCents / 100;
+      const target = typeof answers.upfrontTarget === 'number' ? answers.upfrontTarget : null;
       const available = saved === null || data.finance?.emergencyReserveCents == null ? null : Math.max(0, saved - data.finance.emergencyReserveCents / 100);
       const months = available !== null && target !== null && monthly !== null ? (available >= target ? 0 : monthly > 0 ? Math.ceil((target - available) / monthly) : null) : null;
       return { ...view, ...extra, answers, group: group.questions.length ? group : null, totalQuestions: Object.keys(answers).length + group.questions.length,
         bank: accounts.accounts.length ? { currency: 'EUR', savings: saved, income: answers.income, spending: answers.spending, discretionary: 0, insight: 'Runtime ledger balances are loaded. Historical cash-flow estimates retain their stated period and assumptions.' } : null,
-        plan: available !== null && target !== null && monthly !== null ? { saved: available, monthly, target, upfrontMonths: months, termMonths: 240, debtFreeMonths: months === null ? null : months + 240 } : null,
+        plan: !view.firstScenario && available !== null && target !== null && monthly !== null ? { saved: available, monthly, target, upfrontMonths: months, termMonths: 240, debtFreeMonths: months === null ? null : months + 240 } : null,
         message: group.questions.length ? group.questions.map(q => q.prompt).join(' ') : 'Profile saved. Compare the sourced municipality screen; property-level bedroom requirements remain unverified.' };
     }
     // Legacy scenes remain scripted illustrations, visibly separated from runtime data.
