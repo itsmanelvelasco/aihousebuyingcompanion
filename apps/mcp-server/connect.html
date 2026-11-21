@@ -326,7 +326,7 @@
           <div class="endpoint" id="endpoint-box">
             <label for="endpoint">relo.cat MCP server URL</label>
             <div class="endpoint-row">
-              <input id="endpoint" type="url" spellcheck="false" autocomplete="off" aria-describedby="endpoint-note">
+              <input id="endpoint" type="url" value="https://relo.cat/mcp" spellcheck="false" autocomplete="off" aria-describedby="endpoint-note">
               <button class="button compact" id="copy-url" type="button">Copy URL</button>
             </div>
             <p id="endpoint-note" class="meta"></p>
@@ -394,7 +394,7 @@
         kind: 'Cloud connection',
         docs: 'https://developers.openai.com/plugins/deploy/connect-chatgpt',
         intro: 'Add relo.cat as a custom MCP plugin to use its tools in your conversations.',
-        steps: ['Open ChatGPT’s Plugins page. Select the plus button, then “Add custom MCP server”.','Name it relo.cat. Choose a public URL connection and paste your operator’s HTTPS MCP URL, including /mcp. A configured Secure MCP Tunnel is another option.','Use the authentication settings supplied by the operator. Review the tools and create the plugin.','Install it, start a new chat, and type @ to select relo.cat. Try one of the prompts below.']
+        steps: ['Open ChatGPT’s Plugins page. Select the plus button, then “Add custom MCP server”.','Name it relo.cat. Choose a public URL connection and paste the MCP server URL shown above. A configured Secure MCP Tunnel is another option.','Use the authentication settings supplied by the operator. Review the tools and create the plugin.','Install it, start a new chat, and type @ to select relo.cat. Try one of the prompts below.']
       },
       {
         id: 'claude',
@@ -402,7 +402,7 @@
         kind: 'Cloud connection',
         docs: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
         intro: 'Add a custom connector in Claude. Remote connectors connect from Claude’s cloud, including in Claude Desktop.',
-        steps: ['Open Customize → Connectors. Choose “+ Add”, then “Add custom connector”.','Name the connector relo.cat and paste the public HTTPS MCP URL, including /mcp.','Review the detected authentication and follow your operator’s settings. Team or Enterprise users may need an administrator to add it first.','Enable relo.cat from the chat’s + menu → Connectors, then ask about a town.']
+        steps: ['Open Customize → Connectors. Choose “+ Add”, then “Add custom connector”.','Name the connector relo.cat and paste the MCP server URL shown above.','Review the detected authentication and follow your operator’s settings. Team or Enterprise users may need an administrator to add it first.','Enable relo.cat from the chat’s + menu → Connectors, then ask about a town.']
       },
       {
         id: 'hermes',
@@ -463,7 +463,7 @@
         kind: 'Streamable HTTP',
         docs: 'https://modelcontextprotocol.io/docs/learn/client-concepts',
         intro: 'Use any MCP client that supports Streamable HTTP and can reach your relo.cat server.',
-        steps: ['Add a server named relo.cat in your agent’s MCP settings.','Select Streamable HTTP and enter the MCP URL below. Use the authentication required by your server operator.','Connect, list the available tools, and try get_town_profile or recommend_towns. Client configuration formats differ; follow your client’s documentation.']
+        steps: ['Add a server named relo.cat in your agent’s MCP settings.','Select Streamable HTTP and enter the MCP server URL shown above. Use the authentication required by your server operator.','Connect, list the available tools, and try get_town_profile or recommend_towns. Client configuration formats differ; follow your client’s documentation.']
       }
     ];
 
@@ -473,7 +473,6 @@
     const agentSelect = get("agent-select");
     const feedback = get("feedback");
     let active = agents[0];
-    endpoint.value = location.origin + "/mcp";
 
     function safeUrl() {
       try {
