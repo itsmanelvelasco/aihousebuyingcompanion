@@ -39,6 +39,34 @@ function errorResult(text: string): CallToolResult {
 }
 
 export function registerInterviewerTools(server: McpServer) {
+  server.registerTool("start_homebuying_interview", {
+    title: "Start the bank-first homebuying interview",
+    description: "Begin the Relocat homebuying interview in ChatGPT, including Live voice. Call this when a user asks to start the interview. Ask the returned opening question, wait for their answer, and use the indicated tool only after they choose a transaction source.",
+    annotations: readOnly,
+    inputSchema: z.object({}).strict(),
+    outputSchema: z.object({
+      openingQuestion: z.string(),
+      sources: z.object({
+        demo: z.string(),
+        csv: z.string(),
+        estimates: z.string(),
+      }),
+      nextSteps: z.array(z.string()),
+    }),
+  }, () => result({
+    openingQuestion: "Would you like to start with a bank CSV, use the fictional demo bank account, or tell me your rough monthly income and spending?",
+    sources: {
+      demo: "Call sample_cash_flow when the user chooses fictional transactions.",
+      csv: "Ask the user to attach a CSV with date, description, and amount. Call summarize_bank_csv only with CSV text they explicitly share and that you can access. Ask them to remove account identifiers.",
+      estimates: "Ask for rough monthly take-home income and then spending. Ask one question at a time and identify the figures as estimates.",
+    },
+    nextSteps: [
+      "Confirm whether the income and spending reflect a typical month.",
+      "Ask about the area, home type, and must-have amenities one question at a time.",
+      "Confirm the savings target, amount already saved, monthly contribution, and one optional habit. Call compare_home_savings only after those values are confirmed.",
+    ],
+  }));
+
   server.registerResource("Homebuying cash flow", widgetUri, {
     mimeType: widgetType,
     description: "Monthly income and spending for the fictional homebuying demo.",

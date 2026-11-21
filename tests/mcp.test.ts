@@ -41,7 +41,7 @@ async function tool(name: string, args: Record<string, unknown>) {
 test("discovers schemas and exposes sourced profiles, schools and business indicators", async () => {
   assert.equal(client.getServerVersion()?.name, "relocat");
   const listed = await client.listTools();
-  assert.equal(listed.tools.length, 11);
+  assert.equal(listed.tools.length, 12);
   assert(listed.tools.every(tool => tool.inputSchema && tool.outputSchema && tool.annotations?.readOnlyHint));
 
   const coverage = municipalityListResult.parse(await tool("list_catalonia_municipalities", { query: "termens" }));
@@ -60,6 +60,9 @@ test("discovers schemas and exposes sourced profiles, schools and business indic
 });
 
 test("serves the fictional interviewer cash-flow card and compares a savings habit", async () => {
+  const start = await tool("start_homebuying_interview", {});
+  assert(typeof start === "object" && start !== null && "openingQuestion" in start);
+  assert.match(String(start.openingQuestion), /bank CSV.*fictional demo bank account.*monthly income and spending/);
   const sample = await tool("sample_cash_flow", {});
   assert(typeof sample === "object" && sample !== null && "monthlyNetCashFlow" in sample);
   assert.equal(sample.monthlyNetCashFlow, 854.33);

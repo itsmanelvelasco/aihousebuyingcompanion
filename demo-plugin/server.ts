@@ -7,6 +7,7 @@ import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@model
 import { getView, openDemo, openSchema, updateDemo, updateSchema } from './demo.ts';
 import { profileConnection, ProfileBridge, connectedAnswers } from './profiles.ts';
 import { createMcpServer as createPlacesMcpServer } from '../apps/mcp-server/tools.ts';
+import { registerInterviewerTools } from '../apps/interviewer/mcp-tools.ts';
 import { loadData } from '../packages/places/data.ts';
 import { registerBankTools } from '../apps/mcp-server/bank-tools.ts';
 
@@ -86,6 +87,7 @@ function createMcpServer() {
     const { snapshot, policies, travelEstimates } = loadData();
     return createPlacesMcpServer(snapshot, policies, undefined, travelEstimates);
   })() : legacyServer();
+  if (!bridge) registerInterviewerTools(server);
   if (connection) registerBankTools(server, { baseUrl: connection.baseUrl, token: connection.token });
 
   registerAppResource(server, 'Arrela journey board', widgetUri, {}, async () => ({
