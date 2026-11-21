@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createStore } from '../apps/profile-api/store.ts';
 import { createProfileApi } from '../apps/profile-api/server.ts';
+import { profileResult } from '../packages/contracts/places.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
@@ -30,6 +31,11 @@ test('connected board persists interview inputs, reads runtime bank data and ser
   t.after(() => client.close());
   const toolNames = (await client.listTools()).tools.map(tool => tool.name);
   for (const name of ['recommend_towns', 'get_applicable_incentives', 'open_demo', 'update_demo', 'get_bank_updates']) assert(toolNames.includes(name), name);
+  const town = await client.callTool({ name: 'get_town_profile', arguments: { municipalityCode: '252206' } });
+  assert(!town.isError, JSON.stringify(town.content));
+  const profile = profileResult.parse(town.structuredContent);
+  assert.equal(profile.travelEstimates.length, 6);
+  assert(profile.travelEstimates.some(estimate => estimate.destinationId === 'lleida' && estimate.publicTransport));
   const open = await client.callTool({ name: 'open_demo', arguments: {} });
   assert(!open.isError, JSON.stringify(open.content));
   const first = open.structuredContent as Record<string, unknown>;

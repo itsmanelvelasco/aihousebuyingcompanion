@@ -24,7 +24,7 @@ The tools are read-only. The application processes supplied household criteria i
 | --- | --- |
 | `list_catalonia_municipalities` | Search pilot coverage by name, comarca or six-digit Idescat code. |
 | `recommend_towns` | Apply hard constraints first, then rank with weighted affordability, school, commute and rural preferences. Read `excluded` for constraint failures or missing evidence. |
-| `get_town_profile` | Read municipal and comarca indicators, map coordinates, school access, dated rail evidence and geographically relevant policies. |
+| `get_town_profile` | Read municipal and comarca indicators, map coordinates, school access, dated rail evidence, sample travel estimates and geographically relevant policies. |
 | `get_nearby_schools` | Find authorized school stages within the municipality or nearby. Filter by stage, estimated journey time or a scheduled rail option. |
 | `get_transport_options` | Find dated, direct FGC services between two pilot municipalities and count departures in a requested window. |
 | `get_business_activity` | Read resident Social Security, unemployment and historical retail census indicators. |
@@ -52,6 +52,16 @@ Call `recommend_towns` with these arguments to screen an 85 m² purchase up to �
 ```
 
 The committed snapshot returns Térmens, Vallfogona de Balaguer and Vilanova de la Barca. Vallfogona has a published municipal resale price. The other two use their respective comarca prices. Call `get_town_profile` for one of the returned codes, then `get_applicable_incentives` with intent `buy` and any confirmed household facts. Use `check_housing_incentives` to explain exclusions as well.
+
+### Quick travel comparisons
+
+`get_town_profile` returns `travelEstimates` for all 18 mapped municipalities. The endpoints are Lleida-Pirineus and its bus station, Barcelona Sants, Barcelona Airport T1 and T2, Girona railway station, and Girona-Costa Brava Airport.
+
+Car estimates use an OpenStreetMap-based road model from the town centre, rounded to five minutes. Traffic and parking can change the time. [FOSSGIS OSRM service and OpenStreetMap attribution](https://routing.openstreetmap.de/about.html)
+
+Public transport estimates use published journeys from November 23, 2026. The rounded time includes sampled transfer waits and starts at the first station or bus stop. Each result includes the mode, sample count and sources. The T1 estimate adds an allowance for walking and the published shuttle from T2. A null value means this snapshot lacks a verified sample for that destination and mode. Treat the estimates as comparisons and use a current timetable to plan a specific journey. [Aena terminal shuttle](https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html)
+
+The samples live in `data/travel-estimates.json`. Town snapshot refreshes run independently of the travel samples.
 
 ## Data and refresh
 

@@ -6,7 +6,7 @@ import {
   municipalityListResult, profileInput, profileResult, recommendationInput, recommendationResult,
   schoolQuery, schoolResult, transportQuery, transportResult,
 } from "../../packages/contracts/places.ts";
-import type { IncentivesInput, Policy, Snapshot } from "../../packages/contracts/places.ts";
+import type { IncentivesInput, Policy, Snapshot, TravelEstimateData } from "../../packages/contracts/places.ts";
 import { getNearbySchools, getTransportOptions } from "../../packages/places/access.ts";
 import { getTown, missingMetrics, snapshotInfo } from "../../packages/places/data.ts";
 import { evaluateIncentives } from "../../packages/places/eligibility.ts";
@@ -26,10 +26,10 @@ function result(summary: string, structuredContent: Record<string, unknown>): Ca
   return { content: [{ type: "text", text: summary }], structuredContent };
 }
 
-export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = madridDate) {
+export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = madridDate, travelEstimates: TravelEstimateData = {}) {
   const metadata = snapshotInfo(snapshot);
   const server = new McpServer({ name: "relocat", version: "0.1.0" }, {
-    instructions: "Use relocat to compare selected Catalan municipalities from a dated official-data snapshot. Cite evidence URLs. Explain geographic proxies, use the actual school and service dates, and distinguish policy eligibility from application status. Do not infer user finances, schooling, residence or tax facts.",
+    instructions: "Use relocat to compare selected Catalan municipalities from a dated official-data snapshot. Cite evidence URLs. Explain geographic proxies and use the actual school and service dates. Describe sample travel times as approximate, with the transport mode and sample date. Distinguish policy eligibility from application status. Do not infer user finances, schooling, residence or tax facts.",
   });
 
   server.registerTool("list_catalonia_municipalities", {
@@ -60,7 +60,7 @@ export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = 
 
   server.registerTool("get_town_profile", {
     title: "Read a municipality profile",
-    description: "Retrieve sourced housing, population and economic indicators, map coordinates, nearby schools, FGC stations, a sample connection to Lleida and geographically relevant housing measures.",
+    description: "Retrieve sourced housing and economic indicators, schools, FGC stations, dated sample travel estimates to city stations and airports where covered, and relevant housing measures.",
     inputSchema: profileInput, outputSchema: profileResult, annotations: readOnly,
   }, (input) => {
     const town = getTown(snapshot, input.municipalityCode);
@@ -75,6 +75,7 @@ export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = 
       metrics: snapshot.townMetrics[town.code],
       comarcaMetrics: snapshot.comarcaMetrics[town.comarca] ?? [],
       nearbySchools: getNearbySchools(snapshot, { municipalityCode: town.code, limit: 6 }, travelDate),
+      travelEstimates: travelEstimates[town.code] ?? [],
       railway: { stops, validThrough: snapshot.rail.validThrough, sampleConnectionToLleida, observedAt: snapshot.rail.observedAt, sourceUrl: snapshot.rail.sourceUrl },
       incentives: evaluateIncentives(policies, town, input, asOf).filter(incentive => incentive.geographicStatus !== "does_not_apply"),
       dataMissing: [...missingMetrics(snapshot, town.code), ...(!stops.length ? ["local_fgc_rail_stop"] : [])],
