@@ -6,7 +6,7 @@ import type { Policy, Snapshot, TravelEstimateData } from "../../packages/contra
 import type { ListingSearchConfig } from "../../packages/listings/search.ts";
 import { createMcpServer } from "./tools.ts";
 
-const html = readFileSync(new URL("./test-ui.html", import.meta.url), "utf8");
+const html = readFileSync(new URL("../../apps/mcp-server/test-ui.html", import.meta.url), "utf8");
 const allowedTools = new Set(["get_town_profile", "recommend_towns", "search_homes"]);
 export async function handleTestUi(req: IncomingMessage, res: ServerResponse, snapshot: Snapshot, policies: Policy[],
   listings: ListingSearchConfig = { token: process.env.TREG_TOKEN, org: process.env.TREG_ORG }, travelEstimates: TravelEstimateData = {}) {

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-const page = readFileSync(new URL('./connect.html', import.meta.url), 'utf8');
+const page = readFileSync(new URL('../../apps/mcp-server/connect.html', import.meta.url), 'utf8');
 export function handleConnectPage(req: IncomingMessage, res: ServerResponse): boolean {
   if (req.url?.split('?')[0] !== '/connect' || req.method !== 'GET') return false;
   res.writeHead(200, {

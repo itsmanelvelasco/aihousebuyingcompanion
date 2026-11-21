@@ -23,7 +23,7 @@ export async function generateFirstScenario(input: z.infer<typeof firstScenarioI
   const baseline = { currency: input.currency, remaining, baselineMonths };
   if (!input.useDemoBank) return { ...baseline, suggestions: [] };
 
-  const demo = summarizeCsv(await readFile(new URL("./demo.csv", import.meta.url), "utf8"));
+  const demo = summarizeCsv(await readFile(new URL("../../apps/interviewer/demo.csv", import.meta.url), "utf8"));
   const cents = (amount: number) => Math.round(amount * 100);
   const expense = (category: string) => demo.monthlyExpenses[category] ?? 0;
   const firstMonth = demo.observedMonths[0];

@@ -1,0 +1,26 @@
+[build]
+command = "npm run typecheck && npm test && npm run data:validate && mkdir -p apps/mcp-server/dist/netlify-public"
+publish = "apps/mcp-server/dist/netlify-public"
+
+[build.environment]
+NODE_VERSION = "24"
+
+[server]
+path = ["/connect", "/health", "/mcp", "/preview"]
+includedFiles = [
+  "apps/interviewer/cash-flow-widget.html",
+  "apps/interviewer/demo.csv",
+  "apps/mcp-server/connect.html",
+  "apps/mcp-server/dist/town-explorer.js",
+  "apps/mcp-server/test-ui.html",
+  "apps/mcp-server/town-explorer.html",
+  "data/incentives.json",
+  "data/relocat-pilot-data.json",
+  "data/towns.json",
+  "data/travel-estimates.json",
+]
+
+[[redirects]]
+from = "/"
+to = "/connect"
+status = 302
