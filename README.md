@@ -87,7 +87,7 @@ The municipality intelligence backend is the immediate data priority. Production
 ## Demo journey
 
 1. Confirm a household's budget, school stages, transport needs and relocation preferences in ChatGPT; use a fictional profile for the demo.
-2. Call `recommend_towns` and show three Catalan municipalities with evidence, trade-offs and missing information.
+2. Call `recommend_towns` and show three Catalan municipalities with evidence, trade-offs and missing information. Pass the same criteria to `show_town_explorer` to open the map and cards.
 3. Call `get_town_profile` for a selected municipality and compare school and scheduled transport access.
 4. Call `get_applicable_incentives`, distinguish call status from household eligibility, and explain one actual measure with an official source.
 5. Offer a verified next step. Optionally connect a simulated savings plan or authorized property links after the core journey works.
@@ -119,7 +119,7 @@ Start from household and lifestyle facts with [`recommend_towns_for_profile`](ap
 
 All 18 municipality profiles include [sample travel estimates](apps/mcp-server/README.md#quick-travel-comparisons) to major stations and airports, with public transport times where the sample timetable supports a journey.
 
-The [Town Explorer sample plugin](apps/mcp-server/README.md#town-explorer-sample-plugin) adds an interactive ChatGPT widget and browser preview to this endpoint. It uses the same sourced municipality profiles and requires only the standalone MCP server.
+The [Town Explorer sample plugin](apps/mcp-server/README.md#town-explorer-sample-plugin) shows recommendation cards, an interactive map of Catalonia and sourced profiles on the standalone MCP server. The browser preview opens a sample shortlist.
 
 ## Trust and privacy requirements
 
