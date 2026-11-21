@@ -14,6 +14,7 @@ The repository starts as documentation only. The TypeScript workspace, MCP serve
 - Prefer one TypeScript codebase, one MCP server, shared Zod contracts and React/Vite widgets as proposed in the README. Keep calculation and data tools separate from rendering tools.
 - Keep domain logic in reusable functions, validate external inputs at boundaries and return explicit errors or unknown states.
 - Use parallel agents when the user authorizes them and tasks have independent file ownership. Agree on shared contracts first, assign distinct files and integrate through one coordinator.
+- Respect the active team ownership in `PLAN.md`: interviewer, plugin frontend/setup, project lead's fictional persona, and Catalunya relocation research. Confirm file boundaries before overlapping their work; finance and integration ownership remain to be assigned.
 
 ## Domain rules
 

@@ -2,6 +2,33 @@
 
 This is the proposed hackathon roadmap, based on the project brief dated 21 November 2026. The repository is currently documentation-only; unchecked items are planned work, not completed features.
 
+## Current team ownership
+
+The team allocation below reflects work already underway and supersedes the earlier suggested five-person split. Work in progress does not mean that code or datasets have landed in this repository.
+
+| Owner | Current responsibility | Integration handoff |
+| --- | --- | --- |
+| Interviewer team | Build the conversational interview that gathers and confirms the household's needs. | Structured household profile: budget, household composition, work/commute constraints, school stages, transport needs, preferences and unresolved questions. |
+| ChatGPT plugin frontend/setup team | Build the first frontend pass and establish how to configure and run the ChatGPT plugin. | Initial interactive views, setup instructions, connection requirements and agreed tool/UI contracts. |
+| Project lead (user) | Create the fake user for the shared demo. | One explicitly fictional persona, consistent financial snapshot and sample interview answers used by every team. |
+| Catalunya relocation team | Analyse candidate towns/cities, demographics, government incentives and new legislation affecting relocation. | Sourced municipality profiles and policy rules with official codes, observation years, effective dates, geographic scope and verification status. |
+
+Financial calculations, shared contracts and final end-to-end integration still need an explicitly agreed owner. Do not assume an existing team has taken those responsibilities.
+
+### Immediate coordination checklist
+
+- [ ] Share the fake user's profile with the interviewer and relocation teams so they use the same household.
+- [ ] Agree a minimal household-profile contract between the interviewer and recommendation logic before implementing separate formats.
+- [ ] Agree a town/recommendation response contract with the frontend team; provide mock responses while research continues.
+- [ ] Record each team's actual files or branch before editing in its area; avoid duplicating the interviewer, frontend setup or municipality research.
+- [ ] Assign owners for finance calculations, shared contracts and integration.
+
+### Fake-user handoff
+
+The project lead owns this fixture. Agree its final file location and schema with the teams before creating competing versions. Include a stable fictional ID, household ages/dependants, current location, employment/work location, commute frequency, transport access, required school stages, housing preferences, purchase budget, savings, income, recurring expenses and relocation priorities. Use explicit EUR units and a snapshot date; leave undecided facts unknown rather than inventing them.
+
+Provide representative interview answers and a small, clearly synthetic bank snapshot if the savings demo needs transactions. Candidate towns and incentive eligibility must come from the relocation team's evidence and rule checks, rather than being asserted as facts in the persona.
+
 ## How to use the project documents
 
 - [README.md](README.md) explains the product, scope and trust requirements.
@@ -39,11 +66,12 @@ Agree shared contracts first, then assign separate file ownership. Finance and m
 
 | Workstream | Scope | Handoff |
 | --- | --- | --- |
-| Finance | Normalize the synthetic feed, identify recurring spending, exclude own-account transfers from savings, calculate sustainable savings and purchase cash needs. | Ownership plan and simulator functions with explicit assumptions. |
-| Town data | Assemble 10–15 Catalan municipality profiles using official codes, housing indicators, schools by stage and selected scheduled transport links. | Validated town fixtures with evidence and dates. |
-| Matching and incentives | Apply hard requirements before preference ranking; implement 1–2 verified public measures with deterministic rules. | Ranked recommendations with reasons, compromises and eligibility explanations. |
-| Widget | Build progress cards, a town map, comparison cards and selection interaction from mock responses. | Views that consume shared contracts and display evidence and unknowns. |
-| Integration | Implement the single MCP server, tool registration, error handling and demo orchestration. | Working tool calls and a browser-preview fallback. |
+| Interviewer team | Collect and confirm the fictional household's requirements in conversation. | Validated profile with hard constraints, preferences and unknowns. |
+| Fake user — project lead | Supply the shared persona, sample answers and synthetic financial snapshot. | Consistent demo inputs across all workstreams. |
+| Catalunya relocation team | Assemble 10–15 sourced profiles, demographic indicators and verified housing policies; define matching inputs and rule requirements. | Municipality evidence and versioned incentive rules; confirm ownership of executable matching/eligibility functions. |
+| Frontend/setup team | Build the initial plugin views and document setup; expand into progress, map and comparisons using agreed responses. | Interactive views and repeatable plugin connection/run instructions. |
+| Finance — owner to assign | Normalize the synthetic feed, exclude internal transfers and calculate savings capacity and purchase cash needs. | Deterministic ownership plan and simulator with explicit assumptions. |
+| Integration/contracts — owner to assign | Agree shared schemas and connect the MCP server, domain functions and widgets. | Working end-to-end conversation and browser-preview fallback. |
 
 - [ ] Make financial calculations pure and deterministic; handle a reached target and zero or negative savings explicitly.
 - [ ] Mark housing prices as municipal indicators or estimates, distinct from live listings.
