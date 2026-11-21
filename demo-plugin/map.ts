@@ -117,74 +117,111 @@ export function drawWorld(canvas: HTMLCanvasElement, completed: number, program 
   });
 }
 
-const routePaths: Record<string, { points: number[][]; marker: [number, number] }> = {
-  original: { points: [[45, 182], [102, 182], [164, 211], [260, 211], [335, 142], [400, 142], [435, 65]], marker: [254, 211] },
-  A: { points: [[45, 182], [94, 113], [185, 68], [267, 50], [352, 50], [435, 65]], marker: [245, 55] },
-  B: { points: [[45, 182], [126, 154], [183, 119], [264, 119], [327, 84], [390, 84], [435, 65]], marker: [246, 119] },
-  C: { points: [[45, 182], [118, 182], [163, 165], [264, 165], [313, 117], [376, 117], [435, 65]], marker: [242, 165] },
-  D: { points: [[45, 182], [97, 79], [159, 43], [205, 29], [342, 29], [435, 65]], marker: [241, 29] },
-  E: { points: [[45, 182], [91, 206], [168, 228], [282, 227], [361, 167], [404, 136], [435, 65]], marker: [242, 227] },
+type RouteLane = {
+  letter: string;
+  upfrontMonths: number | null;
+  debtFreeMonths: number | null;
+  waypoint?: { label: string; offset: number };
 };
 
-export function drawRouteMap(canvas: HTMLCanvasElement, letters: string[], highlighted: string) {
+export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[], selected: string, pastMonths: number) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  const region = (color: string, ...points: [number, number][]) => {
+  const width = Math.max(280, canvas.clientWidth);
+  const height = canvas.clientHeight || 340;
+  const scale = window.devicePixelRatio || 1;
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  ctx.scale(scale, scale);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  const left = 35;
+  const usable = width - left - 24;
+  const x = (progress: number) => left + usable * progress;
+  const start = x(.07), today = x(.23), detour = x(.43), mortgage = x(.62), finish = x(.94);
+  const bottom = height - 46;
+  const top = 39;
+  const horizon = Math.max(300, ...lanes.map(lane => pastMonths + (lane.debtFreeMonths ?? 0))) + 4;
+  const y = (months: number) => bottom - months / horizon * (bottom - top);
+  const selectedColor = '#653ec8';
+  const doneColor = '#137865';
+
+  function line(color: string, weight: number, points: [number, number][], dash: number[] = []) {
+    if (!ctx) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = weight;
+    ctx.setLineDash(dash);
     ctx.beginPath();
     ctx.moveTo(...points[0]);
     for (const point of points.slice(1)) ctx.lineTo(...point);
-    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  function label(value: string, xx: number, yy: number, color: string, bold = false, align: CanvasTextAlign = 'left') {
+    if (!ctx) return;
     ctx.fillStyle = color;
-    ctx.fill();
-  };
-  ctx.fillStyle = '#f0ede3';
-  ctx.fillRect(0, 0, 480, 250);
-  region('#dfebd9', [0, 0], [203, 0], [181, 61], [85, 102], [0, 105]);
-  region('#e5ebd5', [290, 250], [384, 169], [480, 131], [480, 250]);
-  region('#d4e5e8', [0, 128], [122, 48], [187, 17], [290, 0], [315, 0], [195, 26], [133, 62], [0, 145]);
-  ctx.strokeStyle = '#fffdf5';
-  ctx.lineWidth = 4;
-  for (const [start, end] of [[5, 110], [64, 212], [130, 244], [194, 313], [251, 373], [329, 436]]) {
+    ctx.font = `${bold ? 750 : 550} ${bold ? 12 : 11}px system-ui`;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(value, xx, yy);
+  }
+
+  function stop(xx: number, yy: number, color: string, radius = 5) {
+    if (!ctx) return;
     ctx.beginPath();
-    ctx.moveTo(start, 6);
-    ctx.lineTo(end, 244);
+    ctx.arc(xx, yy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = color;
     ctx.stroke();
   }
 
-  const paths = ['original', ...letters].filter(key => routePaths[key]);
-  paths.sort((a, b) => Number(a === highlighted) - Number(b === highlighted));
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  for (const key of paths) {
-    const { points, marker: [x, y] } = routePaths[key];
-    const focused = key === highlighted;
-    const color = focused ? '#5844cc' : '#727b96';
-    ctx.beginPath();
-    ctx.moveTo(points[0][0], points[0][1]);
-    for (const point of points.slice(1)) ctx.lineTo(point[0], point[1]);
-    ctx.strokeStyle = '#fffdf5';
-    ctx.lineWidth = focused ? 13 : 9;
-    ctx.stroke();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = focused ? 8 : 4;
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(x, y, focused ? 12 : 10, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.fillStyle = 'white';
-    ctx.font = 'bold 12px system-ui';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(key === 'original' ? '•' : key, x, y);
+  ctx.fillStyle = '#f9f7fc';
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = '#eaf6f0';
+  ctx.fillRect(left, 25, today - left, bottom - 25);
+  ctx.fillStyle = '#f1edfb';
+  ctx.fillRect(mortgage, 25, width - mortgage, bottom - 25);
+  label('Years on the journey', 14, 17, '#574872', true);
+  for (let years = 0; years * 12 <= horizon; years += 5) {
+    const level = y(years * 12);
+    label(`${years}y`, 9, level, '#685f77');
+    if (years === 0) line('#e7deef', 1, [[left, level], [width - 14, level]]);
+    else line('#d2c6df', 1, [[left, level], [left + 8, level]]);
   }
-  for (const [x, y, color] of [[45, 182, '#493798'], [435, 65, '#453763']] as const) {
-    ctx.beginPath();
-    ctx.arc(x, y, 9, 0, Math.PI * 2);
-    ctx.fillStyle = '#fffdf5';
-    ctx.fill();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 4;
-    ctx.stroke();
+  line('#91bdaf', 1, [[today, 28], [today, bottom]], [3, 5]);
+
+  const planned = lanes.filter(lane => lane.upfrontMonths !== null && lane.debtFreeMonths !== null);
+  planned.sort((a, b) => Number(a.letter === selected) - Number(b.letter === selected));
+  for (const lane of planned) {
+    const isSelected = lane.letter === selected;
+    const startMortgage = y(pastMonths + lane.upfrontMonths!);
+    const finishMortgage = y(pastMonths + lane.debtFreeMonths!);
+    const waypointY = y(pastMonths + (lane.waypoint?.offset ?? 0));
+    const color = isSelected ? selectedColor : '#a7a2b0';
+    const path: [number, number][] = [[today, y(pastMonths)]];
+    if (lane.waypoint) path.push([detour, waypointY]);
+    path.push([mortgage, startMortgage], [finish, finishMortgage]);
+    line('#fff', isSelected ? 8 : 5, path);
+    line(color, isSelected ? 4.5 : 2, path);
+    stop(mortgage, startMortgage, color, isSelected ? 5 : 3);
+    stop(finish, finishMortgage, color, isSelected ? 5 : 3);
+    if (lane.waypoint) stop(detour, waypointY, color, isSelected ? 4 : 2.5);
+    if (isSelected) {
+      const elapsed = pastMonths + lane.debtFreeMonths!;
+      label(elapsed % 12 ? `${Math.floor(elapsed / 12)}y ${elapsed % 12}m` : `${elapsed / 12} years`,
+        finish + 4, finishMortgage - 13, color, true, 'right');
+      if (lane.waypoint) label(lane.waypoint.label, detour, waypointY - 14, color, true, 'center');
+    }
   }
+  line(doneColor, 4.5, [[start, y(0)], [today, y(pastMonths)]]);
+  stop(start, y(0), doneColor);
+  stop(today, y(pastMonths), doneColor, 6);
+  label(width < 450 ? 'Today' : `Today · year ${pastMonths / 12}`, today, y(pastMonths) - 14, doneColor, true, 'center');
+  label('Start saving', start - 10, height - 20, '#302447', true);
+  label(width < 430 ? 'Mortgage' : 'Start mortgage', mortgage, height - 20, '#302447', true, 'center');
+  label(width < 430 ? 'Paid off' : 'Mortgage paid off', width - 11, height - 20, '#302447', true, 'right');
 }

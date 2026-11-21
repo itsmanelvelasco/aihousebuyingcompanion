@@ -12,7 +12,7 @@
     "start:habits": "node apps/habits-agent/server.ts",
     "package:team-plugin": "node scripts/package-team-plugin.ts",
     "setup:app": "npm --prefix demo-plugin ci",
-    "build:app": "npm --prefix demo-plugin run build",
+    "build:app": "npm run build:mcp-ui && npm --prefix demo-plugin run build",
     "check:app": "npm --prefix demo-plugin run check",
     "test:app": "npm --prefix demo-plugin test",
     "dev:stack": "npm run build:app && node scripts/dev-stack.ts",

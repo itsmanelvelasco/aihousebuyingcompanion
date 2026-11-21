@@ -1,0 +1,908 @@
+{
+  "schemaVersion": 1,
+  "checkedOn": "2026-11-21",
+  "sourcePage": "https://chatgpt.com/space/page_6b017e2667e08191928077fea6d0bc58#bb6889dc-5bb4-4633-91e7-5f9a116ee271",
+  "municipalities": [
+    {
+      "municipalityCode": "080312",
+      "name": "Calaf",
+      "opportunities": [
+        {
+          "id": "calaf-casetes-dels-mestres",
+          "title": "Casetes dels Mestres",
+          "status": "closed",
+          "checkedOn": "2026-11-21",
+          "housingRentEurPerMonth": {
+            "min": 300,
+            "max": 350
+          },
+          "applicationDeadline": "2026-11-16",
+          "reportedDeadlineDates": [],
+          "businessConcessionRequired": false,
+          "baseBusinessFeeEurPerMonth": null,
+          "response": null,
+          "notes": "Four three-bedroom homes, 60–61 m², €300–€350/month. Three years’ continuous registration, household of 2–4 and income requirements. Open day on 29 October. Applications and awards unverified.",
+          "sources": [
+            {
+              "label": "Council notice and housing photo",
+              "url": "https://www.calaf.cat/actualitat/noticies/lajuntament-de-calaf-obre-la-convocatoria-per-adjudicar-quatre-habitatges-de-lloguer-assequible-a-les-casetes-dels-mestres.html"
+            }
+          ],
+          "visualReferences": [
+            {
+              "label": "Council notice and housing photo",
+              "url": "https://www.calaf.cat/actualitat/noticies/lajuntament-de-calaf-obre-la-convocatoria-per-adjudicar-quatre-habitatges-de-lloguer-assequible-a-les-casetes-dels-mestres.html",
+              "reuseRights": "unverified"
+            }
+          ]
+        }
+      ],
+      "connections": {
+        "summary": "Renfe and buses to Barcelona, Igualada and Manresa, school directory, Adamo municipality directory",
+        "sources": [
+          {
+            "label": "Renfe and buses to Barcelona, Igualada and Manresa",
+            "url": "https://www.calaf.cat/municipi/transport-public"
+          },
+          {
+            "label": "school directory",
+            "url": "https://www.calaf.cat/temes/educacio"
+          },
+          {
+            "label": "Adamo municipality directory",
+            "url": "https://adamo.es/es/municipios"
+          }
+        ]
+      },
+      "rentalSearch": {
+        "status": "incomplete",
+        "verifiedWholeHomeCount": null,
+        "notes": "Idealista surfaced a room listing and homes for sale. Whole-home long-term inventory remains unverified."
+      },
+      "socialObservations": {
+        "paidAds": {
+          "sourceUrl": "https://business.facebook.com/ads/library",
+          "country": "ES",
+          "resultsReviewed": 30,
+          "verifiedOfferAds": 0,
+          "coverage": "first_page_only"
+        },
+        "publicPosts": []
+      },
+      "contacts": [
+        {
+          "organisation": "Calaf housing office",
+          "email": "calaf@calaf.cat",
+          "sourceUrl": "https://www.calaf.cat/temes/habitatge"
+        }
+      ]
+    },
+    {
+      "municipalityCode": "251180",
+      "name": "Juncosa",
+      "opportunities": [
+        {
+          "id": "juncosa-bar-casal",
+          "title": "Bar Casal plus social rental",
+          "status": "filled",
+          "checkedOn": "2026-11-21",
+          "housingRentEurPerMonth": {
+            "min": 250,
+            "max": 350
+          },
+          "applicationDeadline": null,
+          "reportedDeadlineDates": [],
+          "businessConcessionRequired": true,
+          "baseBusinessFeeEurPerMonth": null,
+          "response": {
+            "metric": "reported_requests",
+            "approximateCount": 30
+          },
+          "notes": "€250–€350/month reported for housing. Around 30 requests reported in August. The selected family moved and the bar reopened.",
+          "sources": [
+            {
+              "label": "Original call and bar imagery",
+              "url": "https://www.3cat.cat/3catinfo/feina-casa-i-escola-juncosa-busca-families-per-reobrir-lunic-bar-del-poble/noticia/3425856/"
+            },
+            {
+              "label": "follow-up",
+              "url": "https://www.3cat.cat/3catinfo/juncosa-troba-familia-per-reobrir-el-bar-a-canvi-dun-lloguer-social-tenim-mes-qualitat-de-vida/noticia/3430288/"
+            }
+          ],
+          "visualReferences": [
+            {
+              "label": "Original call and bar imagery",
+              "url": "https://www.3cat.cat/3catinfo/feina-casa-i-escola-juncosa-busca-families-per-reobrir-lunic-bar-del-poble/noticia/3425856/",
+              "reuseRights": "unverified"
+            }
+          ]
+        },
+        {
+          "id": "juncosa-former-town-hall",
+          "title": "Former town hall rentals",
+          "status": "unverified",
+          "checkedOn": "2026-11-21",
+          "housingRentEurPerMonth": null,
+          "applicationDeadline": null,
+          "reportedDeadlineDates": [],
+          "businessConcessionRequired": false,
+          "baseBusinessFeeEurPerMonth": null,
+          "response": null,
+          "notes": "Four flats in the original spring round at €250–€350/month. Local reporting on 20 October described a planned new round for two remaining flats. A public social search surfaced a post mentioning three. Current count, deadline and eligibility require the current notice. The bar household occupied a unit in this building, so do not add it to the building’s stock.",
+          "sources": [
+            {
+              "label": "Original round",
+              "url": "https://www.somgarrigues.cat/noticies/7604/juncosa-arrenca-el-concurs-pel-lloguer-de-quatre-pisos-a-lantic-ajuntament"
+            },
+            {
+              "label": "October reporting",
+              "url": "https://www.somgarrigues.cat/noticies/7777/juncosa-fara-un-nou-concurs-pel-lloguer-de-pisos-municipals-i-la-granadella-prepara-el-seu"
+            },
+            {
+              "label": "project article with image",
+              "url": "https://www.garriguesaltes.cat/juncosa-obre-les-portes-dels-nous-habitatges-dotacionals-en-el-marc-del-projecte-de-repoblament-de-les-garrigues-altes"
+            }
+          ],
+          "visualReferences": [
+            {
+              "label": "project article with image",
+              "url": "https://www.garriguesaltes.cat/juncosa-obre-les-portes-dels-nous-habitatges-dotacionals-en-el-marc-del-projecte-de-repoblament-de-les-garrigues-altes",
+              "reuseRights": "unverified"
+            }
+          ]
+        }
+      ],
+      "connections": {
+        "summary": "L119 bus to Lleida. The bar recruitment coverage confirms a local school. Address-level broadband unverified.",
+        "sources": [
+          {
+            "label": "L119 bus to Lleida",
+            "url": "https://atmlleida.cat/wp-content/uploads/2026/02/L-119-Lleida-Juncosa-interurbana-2026-02.pdf"
+          }
+        ]
+      },
+      "rentalSearch": {
+        "status": "incomplete",
+        "verifiedWholeHomeCount": null,
+        "notes": "No completed whole-home long-term inventory check."
+      },
+      "socialObservations": {
+        "paidAds": {
+          "sourceUrl": "https://business.facebook.com/ads/library",
+          "country": "ES",
+          "resultsReviewed": 30,
+          "verifiedOfferAds": 0,
+          "coverage": "first_page_only"
+        },
+        "publicPosts": []
+      },
+      "contacts": [
+        {
+          "organisation": "Ajuntament de Juncosa",
+          "email": "ajuntament@juncosa.cat",
+          "sourceUrl": "https://juncosa.ddl.net"
+        },
+        {
+          "organisation": "Les Garrigues housing office",
+          "email": "consell@garrigues.cat",
+          "sourceUrl": "https://ccgarrigues.com/serveis/oficina-local-dhabitatge/"
+        }
+      ]
+    },
+    {
+      "municipalityCode": "431573",
+      "name": "Ulldemolins",
+      "opportunities": [
+        {
+          "id": "ulldemolins-el-centro",
+          "title": "El Centro bar concession with optional municipal housing",
+          "status": "open_in_sources_checked",
+          "checkedOn": "2026-11-21",
+          "housingRentEurPerMonth": null,
+          "applicationDeadline": null,
+          "reportedDeadlineDates": [
+            "2026-12-09",
+            "2026-12-13"
+          ],
+          "businessConcessionRequired": true,
+          "baseBusinessFeeEurPerMonth": 250,
+          "response": {
+            "metric": "reported_people_interested",
+            "greaterThan": 200,
+            "reportedOn": "2026-11-16"
+          },
+          "notes": "Four-year initial term. Base bar fee €250/month with a conditional first-year waiver. Housing rent is set separately and tenancy is tied to the concession. Council and tender indexes point to 13 December, while Cadena SER reported 9 December. Check the tender before relying on the cutoff. More than 200 interested reported on 16 November. Bid count unknown.",
+          "sources": [
+            {
+              "label": "Council notice",
+              "url": "https://www.ulldemolins.cat/municipi/noticies"
+            },
+            {
+              "label": "official tender",
+              "url": "https://contractaciopublica.cat/ca/detall-publicacio/33414849-03ee-488b-8ff4-5efd0c6426cc/300938684"
+            },
+            {
+              "label": "venue footage",
+              "url": "https://canalreus.cat/noticies/societat/ambit-social/ulldemolins-centro/"
+            },
+            {
+              "label": "town views",
+              "url": "https://ulldemolins.org/"
+            }
+          ],
+          "visualReferences": [
+            {
+              "label": "venue footage",
+              "url": "https://canalreus.cat/noticies/societat/ambit-social/ulldemolins-centro/",
+              "reuseRights": "unverified"
+            },
+            {
+              "label": "town views",
+              "url": "https://ulldemolins.org/",
+              "reuseRights": "unverified"
+            }
+          ]
+        }
+      ],
+      "connections": {
+        "summary": "Bus to Falset via Cornudella and Poboleda, Escola Montsant, Adamo coverage lookup",
+        "sources": [
+          {
+            "label": "Bus to Falset via Cornudella and Poboleda",
+            "url": "https://www.priorat.cat/que-es-el-consell-comarcal-del-priorat/linia-ulldemolins-cornudella-poboleda-falset"
+          },
+          {
+            "label": "Escola Montsant",
+            "url": "https://ulldemolins.org/"
+          },
+          {
+            "label": "Adamo coverage lookup",
+            "url": "https://adamo.es/es/municipios/fibra-movil-ulldemolins"
+          }
+        ]
+      },
+      "rentalSearch": {
+        "status": "incomplete",
+        "verifiedWholeHomeCount": null,
+        "notes": "Idealista surfaced sale listings. Whole-home long-term inventory remains unverified."
+      },
+      "socialObservations": {
+        "paidAds": {
+          "sourceUrl": "https://business.facebook.com/ads/library",
+          "country": "ES",
+          "resultsReviewed": 30,
+          "verifiedOfferAds": 0,
+          "coverage": "first_page_only"
+        },
+        "publicPosts": [
+          {
+            "label": "public Ulldemolins media reposts",
+            "url": "https://www.facebook.com/diaridetarragona/videos/-un-poble-del-priorat-ofereix-un-pis-de-quatre-habitacions-i-un-any-de-lloguer-g/988876083685286/"
+          }
+        ]
+      },
+      "contacts": [
+        {
+          "organisation": "Priorat housing office",
+          "email": "sterritori@priorat.cat",
+          "sourceUrl": "https://www.priorat.cat/serveis/oficina-comarcal-dhabitatge"
+        },
+        {
+          "organisation": "Immobles Priorat",
+          "sourceUrl": "https://www.immoblespriorat.com/"
+        }
+      ]
+    }
+  ],
+  "historicalResearch": {
+    "opportunities": [
+      {
+        "name": "La Granadella",
+        "municipalityCode": "251018",
+        "title": "Two affordable municipal rentals, one for families and one for young people",
+        "status": "closed",
+        "housingCost": "€400/month",
+        "eligibility": "Household category confirmed. Prior residency requirement unverified.",
+        "deadline": "9 November 2026",
+        "sources": [
+          {
+            "label": "Council notice",
+            "url": "https://www.lagranadella.cat/noticies/173/lloguer-assequible-de-dos-habitatges-dotacionals"
+          }
+        ]
+      },
+      {
+        "name": "Vallfogona de Ripollès",
+        "municipalityCode": "171707",
+        "title": "Can Rafart primary-residence rental for a family",
+        "status": "filled",
+        "housingCost": "Unverified",
+        "eligibility": "Family expected to live there and enrol children in the village school",
+        "deadline": "Not applicable",
+        "sources": [
+          {
+            "label": "Local report on the call",
+            "url": "https://www.ripollesdigital.cat/noticia/270729/vallfogona-de-ripolles-busca-una-familia-que-vulgui-anar-a-viure-al-poble"
+          },
+          {
+            "label": "award reported by 3Cat",
+            "url": "https://www.3cat.cat/3catinfo/lloguer-assequible-per-retenir-veins-i-salvar-escoles-els-micropobles-combaten-el-despoblament/noticia/3425810/"
+          }
+        ]
+      },
+      {
+        "name": "Alpens",
+        "municipalityCode": "080044",
+        "title": "Possible conversion of the rectory into up to eight affordable primary homes",
+        "status": "proposed",
+        "housingCost": "Unverified",
+        "eligibility": "Eligibility and application process pending",
+        "deadline": "Unannounced",
+        "sources": [
+          {
+            "label": "3Cat project coverage",
+            "url": "https://www.3cat.cat/3catinfo/rectories-vives-un-projecte-per-convertir-les-que-estan-desus-en-habitatge-assequible/noticia/3440434/"
+          }
+        ]
+      }
+    ],
+    "welcomeOnly": [
+      {
+        "name": "Maldà",
+        "municipalityCode": "251305",
+        "sourceUrl": "https://viurearural.cat/municipis-dacollida/"
+      }
+    ]
+  },
+  "sourceDirectories": [
+    {
+      "name": "Associació Repoblem POBLE",
+      "url": "https://app.associaciorepoblem.cat/"
+    },
+    {
+      "name": "Reempresa",
+      "url": "https://reempresa.org/marketplace/"
+    },
+    {
+      "name": "Poblem.cat",
+      "url": "https://poblem.cat/"
+    }
+  ],
+  "scopeNotes": [
+    "The main dataset covers Calaf, Juncosa and Ulldemolins. Earlier leads are retained separately.",
+    "Live long-term rental inventories and photo reuse rights remain unverified. Visual references link to the source pages.",
+    "The repo’s incentive catalogue is included as a reference. Presence in the catalogue does not establish eligibility for any town or household."
+  ],
+  "publicDataSnapshot": {
+    "sourceCommit": "bf0b5c6d81ba1535ace622e4da565afbecb8f170",
+    "version": "catalonia-pilot-2026-11-21-10b5fbf0",
+    "generatedOn": "2026-11-21",
+    "sourceUrls": [
+      "https://github.com/itsmanelvelasco/aihousebuyingcompanion/blob/bf0b5c6d81ba1535ace622e4da565afbecb8f170/data/towns.json",
+      "https://github.com/itsmanelvelasco/aihousebuyingcompanion/blob/bf0b5c6d81ba1535ace622e4da565afbecb8f170/data/incentives.json"
+    ],
+    "municipalities": [
+      {
+        "code": "080312",
+        "name": "Calaf",
+        "comarca": "Anoia",
+        "recommendable": true,
+        "identity": {
+          "observedAt": "2026-11-21",
+          "sourceUrl": "https://api.idescat.cat/emex/v1/nodes.json?lang=ca"
+        },
+        "centre": {
+          "latitude": 41.73401913,
+          "longitude": 1.510944003,
+          "observedAt": "2024-11-27",
+          "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/wpyq-we8x",
+          "name": "Calaf"
+        },
+        "rural": {
+          "observedAt": "2026-10-06",
+          "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/7gqm-722r",
+          "category": "not_listed",
+          "effectiveFrom": null
+        }
+      },
+      {
+        "code": "251180",
+        "name": "Juncosa",
+        "comarca": "Garrigues",
+        "recommendable": true,
+        "identity": {
+          "observedAt": "2026-11-21",
+          "sourceUrl": "https://api.idescat.cat/emex/v1/nodes.json?lang=ca"
+        },
+        "centre": {
+          "latitude": 41.37156183,
+          "longitude": 0.775369774,
+          "observedAt": "2024-11-27",
+          "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/wpyq-we8x",
+          "name": "Juncosa"
+        },
+        "rural": {
+          "observedAt": "2026-10-06",
+          "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/7gqm-722r",
+          "category": "special_attention",
+          "effectiveFrom": "2026-02-24",
+          "legalUrl": "https://dogc.gencat.cat/ca/document-del-dogc/?documentId=1037694"
+        }
+      },
+      {
+        "code": "431573",
+        "name": "Ulldemolins",
+        "comarca": "Priorat",
+        "recommendable": true,
+        "identity": {
+          "observedAt": "2026-11-21",
+          "sourceUrl": "https://api.idescat.cat/emex/v1/nodes.json?lang=ca"
+        },
+        "centre": {
+          "latitude": 41.32259103,
+          "longitude": 0.876395017,
+          "observedAt": "2024-11-27",
+          "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/wpyq-we8x",
+          "name": "Ulldemolins"
+        },
+        "rural": {
+          "observedAt": "2026-10-06",
+          "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/7gqm-722r",
+          "category": "special_attention",
+          "effectiveFrom": "2026-02-24",
+          "legalUrl": "https://dogc.gencat.cat/ca/document-del-dogc/?documentId=1037694"
+        }
+      }
+    ],
+    "townMetrics": {
+      "251180": [
+        {
+          "observedAt": "2025",
+          "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=538&geo=mun:251180",
+          "kind": "population",
+          "value": 379,
+          "unit": "residents",
+          "geography": "municipality",
+          "geographyName": "Juncosa"
+        },
+        {
+          "observedAt": "2025",
+          "sourceUrl": "https://www.idescat.cat/pub/?id=lh&n=22999&geo=mun:251180",
+          "kind": "rent_contracts",
+          "value": 1,
+          "unit": "contracts",
+          "geography": "municipality",
+          "geographyName": "Juncosa"
+        },
+        {
+          "observedAt": "2025",
+          "sourceUrl": "https://www.idescat.cat/pub/?id=atureg&n=4302&geo=mun:251180",
+          "kind": "registered_unemployment",
+          "value": 9.3,
+          "unit": "people (annual average)",
+          "geography": "municipality",
+          "geographyName": "Juncosa"
+        },
+        {
+          "observedAt": "10/2026 (p)",
+          "sourceUrl": "https://www.idescat.cat/pub/?id=afi&n=8604&geo=mun:251180",
+          "kind": "resident_social_security_affiliates",
+          "value": 165,
+          "unit": "people",
+          "geography": "municipality",
+          "geographyName": "Juncosa"
+        },
+        {
+          "observedAt": "2023",
+          "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+          "kind": "retail_establishments",
+          "value": 5,
+          "unit": "establishments",
+          "geography": "municipality",
+          "geographyName": "Juncosa"
+        },
+        {
+          "observedAt": "2023",
+          "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+          "kind": "retail_per_1000",
+          "value": 12.47,
+          "unit": "establishments/1,000 residents",
+          "geography": "municipality",
+          "geographyName": "Juncosa"
+        }
+      ],
+      "431573": [
+        {
+          "observedAt": "2025",
+          "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=538&geo=mun:431573",
+          "kind": "population",
+          "value": 390,
+          "unit": "residents",
+          "geography": "municipality",
+          "geographyName": "Ulldemolins"
+        },
+        {
+          "observedAt": "2025",
+          "sourceUrl": "https://www.idescat.cat/pub/?id=lh&n=22999&geo=mun:431573",
+          "kind": "rent_contracts",
+          "value": 3,
+          "unit": "contracts",
+          "geography": "municipality",
+          "geographyName": "Ulldemolins"
+        },
+        {
+          "observedAt": "2025",
+          "sourceUrl": "https://www.idescat.cat/pub/?id=atureg&n=4302&geo=mun:431573",
+          "kind": "registered_unemployment",
+          "value": 5.8,
+          "unit": "people (annual average)",
+          "geography": "municipality",
+          "geographyName": "Ulldemolins"
+        },
+        {
+          "observedAt": "10/2026 (p)",
+          "sourceUrl": "https://www.idescat.cat/pub/?id=afi&n=8604&geo=mun:431573",
+          "kind": "resident_social_security_affiliates",
+          "value": 150,
+          "unit": "people",
+          "geography": "municipality",
+          "geographyName": "Ulldemolins"
+        },
+        {
+          "observedAt": "2023",
+          "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+          "kind": "retail_establishments",
+          "value": 6,
+          "unit": "establishments",
+          "geography": "municipality",
+          "geographyName": "Ulldemolins"
+        },
+        {
+          "observedAt": "2023",
+          "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+          "kind": "retail_per_1000",
+          "value": 14.67,
+          "unit": "establishments/1,000 residents",
+          "geography": "municipality",
+          "geographyName": "Ulldemolins"
+        }
+      ],
+      "080312": [
+        {
+          "observedAt": "2025",
+          "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=538&geo=mun:080312",
+          "kind": "population",
+          "value": 3627,
+          "unit": "residents",
+          "geography": "municipality",
+          "geographyName": "Calaf"
+        },
+        {
+          "observedAt": "2025",
+          "sourceUrl": "https://www.idescat.cat/pub/?id=lh&n=22999&geo=mun:080312",
+          "kind": "rent_eur_per_month",
+          "value": 474.4,
+          "unit": "EUR/month",
+          "geography": "municipality",
+          "geographyName": "Calaf"
+        },
+        {
+          "observedAt": "2025",
+          "sourceUrl": "https://www.idescat.cat/pub/?id=lh&n=22999&geo=mun:080312",
+          "kind": "rent_contracts",
+          "value": 56,
+          "unit": "contracts",
+          "geography": "municipality",
+          "geographyName": "Calaf"
+        },
+        {
+          "observedAt": "2025",
+          "sourceUrl": "https://www.idescat.cat/pub/?id=atureg&n=4302&geo=mun:080312",
+          "kind": "registered_unemployment",
+          "value": 161.8,
+          "unit": "people (annual average)",
+          "geography": "municipality",
+          "geographyName": "Calaf"
+        },
+        {
+          "observedAt": "10/2026 (p)",
+          "sourceUrl": "https://www.idescat.cat/pub/?id=afi&n=8604&geo=mun:080312",
+          "kind": "resident_social_security_affiliates",
+          "value": 1490,
+          "unit": "people",
+          "geography": "municipality",
+          "geographyName": "Calaf"
+        },
+        {
+          "observedAt": "2025",
+          "sourceUrl": "https://habitatge.gencat.cat/web/.content/home/dades/estadistiques/01_Estadistiques_de_construccio_i_mercat_immobiliari/02_Compravenda_i_preu_de_venda/02_Compravendes_d_habitatges_registrades_i_el_preu_de_venda/2025/Trimestrals_per_municipis_2025.xlsx",
+          "kind": "resale_transactions",
+          "value": 65,
+          "unit": "transactions",
+          "geography": "municipality",
+          "geographyName": "Calaf"
+        },
+        {
+          "observedAt": "2025",
+          "sourceUrl": "https://habitatge.gencat.cat/web/.content/home/dades/estadistiques/01_Estadistiques_de_construccio_i_mercat_immobiliari/02_Compravenda_i_preu_de_venda/02_Compravendes_d_habitatges_registrades_i_el_preu_de_venda/2025/Trimestrals_per_municipis_2025.xlsx",
+          "kind": "resale_eur_per_m2",
+          "value": 984.8,
+          "unit": "EUR/m²",
+          "geography": "municipality",
+          "geographyName": "Calaf"
+        },
+        {
+          "observedAt": "2023",
+          "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+          "kind": "retail_establishments",
+          "value": 43,
+          "unit": "establishments",
+          "geography": "municipality",
+          "geographyName": "Calaf"
+        },
+        {
+          "observedAt": "2023",
+          "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+          "kind": "retail_per_1000",
+          "value": 11.98,
+          "unit": "establishments/1,000 residents",
+          "geography": "municipality",
+          "geographyName": "Calaf"
+        }
+      ]
+    },
+    "comarcaMetrics": {
+      "Anoia": [
+        {
+          "observedAt": "2025",
+          "sourceUrl": "https://habitatge.gencat.cat/web/.content/home/dades/estadistiques/01_Estadistiques_de_construccio_i_mercat_immobiliari/02_Compravenda_i_preu_de_venda/02_Compravendes_d_habitatges_registrades_i_el_preu_de_venda/2025/Trimestrals_per_ambits_2025.xlsx",
+          "kind": "resale_eur_per_m2",
+          "value": 1502.07,
+          "unit": "EUR/m²",
+          "geography": "comarca",
+          "geographyName": "Anoia"
+        }
+      ],
+      "Garrigues": [
+        {
+          "observedAt": "2025",
+          "sourceUrl": "https://habitatge.gencat.cat/web/.content/home/dades/estadistiques/01_Estadistiques_de_construccio_i_mercat_immobiliari/02_Compravenda_i_preu_de_venda/02_Compravendes_d_habitatges_registrades_i_el_preu_de_venda/2025/Trimestrals_per_ambits_2025.xlsx",
+          "kind": "resale_eur_per_m2",
+          "value": 809.49,
+          "unit": "EUR/m²",
+          "geography": "comarca",
+          "geographyName": "Garrigues"
+        }
+      ],
+      "Priorat": [
+        {
+          "observedAt": "2025",
+          "sourceUrl": "https://habitatge.gencat.cat/web/.content/home/dades/estadistiques/01_Estadistiques_de_construccio_i_mercat_immobiliari/02_Compravenda_i_preu_de_venda/02_Compravendes_d_habitatges_registrades_i_el_preu_de_venda/2025/Trimestrals_per_ambits_2025.xlsx",
+          "kind": "resale_eur_per_m2",
+          "value": 1000.6,
+          "unit": "EUR/m²",
+          "geography": "comarca",
+          "geographyName": "Priorat"
+        }
+      ]
+    },
+    "schools": [
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "id": "08014929",
+        "name": "Escola Alta Segarra",
+        "municipalityCode": "080312",
+        "locality": "Calaf",
+        "public": true,
+        "coordinates": {
+          "latitude": 41.73336,
+          "longitude": 1.51575
+        },
+        "stages": [
+          "infantil",
+          "primary"
+        ]
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "id": "08043395",
+        "name": "Institut Alexandre de Riquer",
+        "municipalityCode": "080312",
+        "locality": "Calaf",
+        "public": true,
+        "coordinates": {
+          "latitude": 41.73157,
+          "longitude": 1.513218
+        },
+        "stages": [
+          "eso",
+          "batxillerat",
+          "fp"
+        ]
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "id": "08060587",
+        "name": "Llar d'infants Municipal de Calaf \"la Boireta\"",
+        "municipalityCode": "080312",
+        "locality": "Calaf",
+        "public": true,
+        "coordinates": {
+          "latitude": 41.73348,
+          "longitude": 1.516835
+        },
+        "stages": [
+          "nursery"
+        ]
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "id": "25001916",
+        "name": "Escola L'Espígol - ZER Garrigues Altes",
+        "municipalityCode": "251180",
+        "locality": "Juncosa",
+        "public": true,
+        "coordinates": {
+          "latitude": 41.37078,
+          "longitude": 0.777214
+        },
+        "stages": [
+          "nursery",
+          "infantil",
+          "primary"
+        ]
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "id": "43004487",
+        "name": "Escola Montsant - ZER Montsant-Serra de Prades",
+        "municipalityCode": "431573",
+        "locality": "Ulldemolins",
+        "public": true,
+        "coordinates": {
+          "latitude": 41.32092,
+          "longitude": 0.87995
+        },
+        "stages": [
+          "nursery",
+          "infantil",
+          "primary"
+        ]
+      }
+    ],
+    "schoolDirectory": {
+      "observedAt": "2026-10-09",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4"
+    },
+    "incentiveCatalogue": [
+      {
+        "version": "2026-11-21",
+        "beneficiary": "household",
+        "authority": "Agència Tributària de Catalunya",
+        "effectiveFrom": "2026-01-01",
+        "effectiveThrough": "2026-12-31",
+        "mechanism": "tax_deduction",
+        "sourceUrl": "https://atc.gencat.cat/ca/tributs/irpf/deduccions-tram-irpf/",
+        "lastVerified": "2026-11-21",
+        "id": "irpf_move",
+        "title": "Catalan IRPF deduction for moving to a rural municipality",
+        "intent": "move",
+        "legalUrl": "https://www.boe.es/eli/es-ct/l/2025/07/30/8/con#a5-9",
+        "benefit": "Rural €750; special attention €1,000. Official single-parent families: €1,500 and €2,000 respectively.",
+        "notes": [
+          "For tax year 2026, filed in 2027. The Catalan ATC page and law agree on €1,000 for special-attention moves; the Spanish guidance showed a different amount."
+        ]
+      },
+      {
+        "version": "2026-11-21",
+        "beneficiary": "household",
+        "authority": "Agència Tributària de Catalunya",
+        "effectiveFrom": "2026-01-01",
+        "effectiveThrough": "2026-12-31",
+        "mechanism": "tax_deduction",
+        "sourceUrl": "https://atc.gencat.cat/ca/tributs/irpf/deduccions-tram-irpf/",
+        "lastVerified": "2026-11-21",
+        "id": "irpf_buy",
+        "title": "Catalan IRPF deduction for buying a rural primary home",
+        "intent": "buy",
+        "legalUrl": "https://www.boe.es/eli/es-ct/l/2025/07/30/8/con#a5-10",
+        "benefit": "15% rural or 20% special attention on a maximum annual eligible base of €6,000.",
+        "notes": [
+          "The 2026 rules distinguish individually computed tax bases from joint filing totals. Dwelling occupancy, investment and transitional deduction rules apply."
+        ]
+      },
+      {
+        "version": "2026-11-21",
+        "beneficiary": "household",
+        "authority": "Agència Tributària de Catalunya",
+        "effectiveFrom": "2026-01-01",
+        "effectiveThrough": "2026-12-31",
+        "mechanism": "tax_deduction",
+        "sourceUrl": "https://atc.gencat.cat/ca/tributs/irpf/deduccions-tram-irpf/",
+        "lastVerified": "2026-11-21",
+        "id": "irpf_rent",
+        "title": "Catalan IRPF deduction for renting a rural primary home",
+        "intent": "rent",
+        "legalUrl": "https://www.boe.es/eli/es-ct/l/2025/07/30/8/con#a6-3",
+        "benefit": "15% rural or 20% special attention, generally capped at €600 individual or €1,200 joint; shared-dwelling allocation rules apply.",
+        "notes": [
+          "Landlord identification is required on the tax return. This tool accepts only confirmation of the criterion."
+        ]
+      },
+      {
+        "version": "2026-11-21",
+        "beneficiary": "household",
+        "authority": "Agència Tributària de Catalunya",
+        "effectiveFrom": "2026-01-01",
+        "effectiveThrough": "2026-12-31",
+        "mechanism": "tax_deduction",
+        "sourceUrl": "https://atc.gencat.cat/ca/tributs/irpf/deduccions-tram-irpf/",
+        "lastVerified": "2026-11-21",
+        "id": "irpf_renovate",
+        "title": "Catalan IRPF deduction for rehabilitating a rural primary home",
+        "intent": "renovate",
+        "legalUrl": "https://www.boe.es/eli/es-ct/l/2025/07/30/8/con#a5-11",
+        "benefit": "15% rural or 20% special attention on a maximum annual eligible base of €6,000, with applicable subsidy adjustments.",
+        "notes": [
+          "The dwelling must predate 1 January 1970. Structural work, occupancy, investment and compatibility conditions apply."
+        ]
+      },
+      {
+        "version": "2026-11-21",
+        "beneficiary": "household",
+        "authority": "Agència Tributària de Catalunya",
+        "effectiveFrom": "2025-08-20",
+        "effectiveThrough": "2029-07-16",
+        "mechanism": "reduced_tax_rate",
+        "sourceUrl": "https://atc.gencat.cat/ca/tributs/itpajd/tpo/tarifes-tipus/",
+        "lastVerified": "2026-11-21",
+        "id": "itp_buy",
+        "title": "Reduced ITP on a rural primary-home purchase (TMR / TEA)",
+        "intent": "buy",
+        "legalUrl": "https://www.boe.es/eli/es-ct/l/2025/07/30/8/con#a6-4",
+        "benefit": "4% rural TMR rate or 3% special-attention TEA rate on qualifying ITP/TPO acquisitions.",
+        "notes": [
+          "Confirm the prior household tax base, acquisition right, and schooling and occupancy rules with ATC."
+        ]
+      },
+      {
+        "version": "2026-11-21",
+        "beneficiary": "household",
+        "authority": "Agència de l’Habitatge de Catalunya",
+        "effectiveFrom": "2026-05-18",
+        "effectiveThrough": "2026-09-10",
+        "mechanism": "grant",
+        "sourceUrl": "https://tramits.gencat.cat/ca/tramits/tramits-temes/Rehabilitacio_entorn_rural",
+        "lastVerified": "2026-11-21",
+        "id": "renovation_grant_2026",
+        "title": "2026 rural and mountain housing rehabilitation grant",
+        "intent": "renovate",
+        "legalUrl": "https://dogc.gencat.cat/ca/document-del-dogc?documentId=1043506",
+        "benefit": "The subsidy rate and cap depend on municipality, beneficiary and intended use (own residence or affordable rental).",
+        "notes": [
+          "Household/private-owner pathway only. See the official municipality and rates table at https://agenciahabitatge.gencat.cat/monrural2026. The 2026 application window ended at 14:00 local time on September 10."
+        ],
+        "municipalityCodes": [
+          "250024",
+          "250371",
+          "250621",
+          "251180",
+          "251569",
+          "251902",
+          "252154",
+          "252206",
+          "252347",
+          "252402",
+          "252542",
+          "259046",
+          "431573"
+        ]
+      }
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-# Relocat implementation plan
+# relo.cat implementation plan
 
 This is the hackathon roadmap, based on the project brief dated 21 November 2026. Unchecked items are planned work, not completed features.
 
@@ -10,6 +10,9 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 
 ## Delivered integration and remaining product boundaries
 
+- [x] Preserve the supplied relocation pilot research export for three towns and four opportunities in `data/relocat-pilot-data.json`, with historical leads and a separately dated public-data snapshot.
+- [x] Join relocation research to official town codes and expose it through MCP profiles and recommendations, with separate coverage, source status, check dates, deadline conflicts and unresolved eligibility.
+- [ ] Expand detailed opportunity research beyond Calaf, Juncosa and Ulldemolins; 14 other recommendation candidates and the Lleida transport destination currently have no loaded research.
 - [x] Integrate the plugin branch with the profile API; map demo personas to persisted users and save grouped interview inputs.
 - [x] Add the profile adapter, missing screening questions, upfront target and emergency reserve inputs.
 - [x] Convert cents/euros explicitly and count debt once; keep live balances separate from declared purchase savings.
@@ -17,6 +20,7 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 - [x] Expose `get_applicable_incentives` with optional household checks, and retain `check_housing_incentives` for eligibility and exclusions.
 - [x] Preserve existing profile paths and expose municipality, bank-read and board tools through one connected MCP endpoint.
 - [x] Add a synthetic background worker, durable cursor-based bank events, authenticated polling tools, stack launcher and per-area development guides.
+- [x] Add `search_homes` for live treg web searches of Idealista examples, with bounded costs, explicit provider failures and unverified location/filter/availability labels. Runtime access requires `TREG_TOKEN`.
 - [ ] Verify bedroom counts and actual property availability against authorized listing evidence. Town screens deliberately retain these as unresolved property checks.
 - [ ] Complete human visual/voice rehearsal in the target ChatGPT client; automated transport tests do not establish client widget visibility.
 

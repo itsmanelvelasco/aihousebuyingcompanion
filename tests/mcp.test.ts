@@ -1,3 +1,4 @@
+import { homeSearchResult } from "../packages/contracts/listings.ts";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { after, before, test } from "node:test";
@@ -13,7 +14,7 @@ import { loadTownExplorerPage } from "../apps/mcp-server/town-explorer.ts";
 
 const { snapshot, policies, travelEstimates } = loadData();
 const server = createHttpServer(snapshot, policies, {
-  today: () => "2026-11-21", travelEstimates, townExplorerPage: loadTownExplorerPage(),
+  today: () => "2026-11-21", travelEstimates, listings: {}, townExplorerPage: loadTownExplorerPage(),
 });
 const client = new Client({ name: "relocat-tests", version: "1.0.0" });
 let base: URL;
@@ -45,7 +46,7 @@ async function tool(name: string, args: Record<string, unknown>) {
 test("discovers schemas and exposes sourced profiles, schools and business indicators", async () => {
   assert.equal(client.getServerVersion()?.name, "relocat");
   const listed = await client.listTools();
-  assert.equal(listed.tools.length, 14);
+  assert.equal(listed.tools.length, 15);
   assert(listed.tools.every(tool => tool.inputSchema && tool.outputSchema && tool.annotations?.readOnlyHint));
   const profileTool = listed.tools.find(tool => tool.name === "recommend_towns_for_profile");
   assert.deepEqual(Object.keys(profileTool?.inputSchema.properties ?? {}).sort(), ["limit", "profile"]);
@@ -292,4 +293,46 @@ test("checks health and rejects unexpected browser origins", async () => {
   assert.equal((await health.json()).snapshot.version, snapshot.version);
   const crossOrigin = await fetch(new URL("/mcp", base), { method: "POST", headers: { Origin: "https://example.com" } });
   assert.equal(crossOrigin.status, 403);
+});
+
+test("returns joined relocation research through MCP profiles and recommendations", async () => {
+  const profile = profileResult.parse(await tool("get_town_profile", { municipalityCode: "251180" }));
+  assert.equal(profile.relocation.coverage, "researched");
+  assert.equal(profile.relocation.research?.opportunities.length, 2);
+  assert(profile.metrics.length > 0);
+  assert(profile.relocation.research?.opportunities.every(offer => offer.sources.length));
+  const calaf = recommendationResult.parse(await tool("recommend_towns", { comarca: "Anoia" }));
+  assert.equal(calaf.towns.find(t => t.municipality.code === "080312")?.relocation.research?.opportunities[0].id,
+    "calaf-casetes-dels-mestres");
+  const ager = profileResult.parse(await tool("get_town_profile", { municipalityCode: "250024" }));
+  assert.equal(ager.relocation.coverage, "not_researched");
+  assert.equal(ager.relocation.research, null);
+});
+
+
+test("MCP advertises live search and reports missing provider access without fabricating listings", async () => {
+  const response = await tool("search_homes", { municipalityCodes: ["080312"], operation: "buy" });
+  const parsed = homeSearchResult.parse(response);
+  assert.equal(parsed.searches[0].status, "provider_unavailable");
+  assert.deepEqual(parsed.searches[0].examples, []);
+  const invalid = await client.callTool({ name: "search_homes", arguments: { municipalityCodes: ["999999"], operation: "buy" } });
+  assert(invalid.isError);
+});
+
+test("local test UI runs real tools and rejects foreign origins and disallowed tools", async () => {
+  const page = await fetch(new URL('/test', base));
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /Try your move/);
+  const config = await (await fetch(new URL('/test/config', base))).json();
+  assert.equal(config.towns.length, 18);
+  assert.equal(config.liveSearchConfigured, false);
+  assert(!JSON.stringify(config).includes('TREG_TOKEN'));
+  const request = (tool: string, origin = base.origin) => fetch(new URL('/test/run', base), {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ tool, args: { municipalityCode: '080312' } }),
+  });
+  const result = await (await request('get_town_profile')).json();
+  assert.equal(result.structuredContent.municipality.name, 'Calaf');
+  assert.equal((await request('get_town_profile', 'https://example.com')).status, 403);
+  assert.equal((await request('update_demo')).status, 400);
 });

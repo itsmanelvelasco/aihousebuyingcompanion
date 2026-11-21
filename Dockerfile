@@ -20,7 +20,7 @@ COPY --chown=node:node apps/interviewer ./apps/interviewer
 COPY --from=widget --chown=node:node /app/apps/mcp-server/dist ./apps/mcp-server/dist
 COPY --chown=node:node apps/profile-api/finance.ts ./apps/profile-api/
 COPY --chown=node:node packages ./packages
-COPY --chown=node:node data/towns.json data/incentives.json data/travel-estimates.json ./data/
+COPY --chown=node:node data/towns.json data/incentives.json data/travel-estimates.json data/relocat-pilot-data.json ./data/
 
 USER node
 EXPOSE 8787

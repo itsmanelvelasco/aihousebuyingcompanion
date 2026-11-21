@@ -7,6 +7,8 @@ import { getTown, missingMetrics, snapshotInfo } from "./data.ts";
 import { evaluateIncentives } from "./eligibility.ts";
 import { nextSchoolDay, normalizedName } from "./geography.ts";
 
+import { getRelocationResearch } from "./relocation.ts";
+
 type Result = z.infer<typeof recommendationResult>;
 type ProfileResult = z.infer<typeof profileRecommendationResult>;
 type Weight = keyof NonNullable<RecommendationInput["weights"]>;
@@ -190,6 +192,7 @@ export function recommendTowns(
       municipality, score, matchReasons, tradeoffs, metrics, housingEstimate: housingEstimate ?? null,
       schools: [...new Map(schoolMatches.map(journey => [journey.school.id, journey])).values()],
       commute: commute ?? null, incentives, dataMissing,
+      relocation: getRelocationResearch(snapshot, municipality.code, asOf),
     });
   }
 

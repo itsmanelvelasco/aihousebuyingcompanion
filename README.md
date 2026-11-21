@@ -1,14 +1,14 @@
-# Relocat — AI House Buying Companion
+# relo.cat — AI House Buying Companion
 
 *Find where you belong. We'll help you get there.*
 
-Relocat is a ChatGPT-native housing and homeownership companion focused on Catalonia. The immediate demo helps people compare suitable municipalities, school and transport access, and verified housing incentives. Financial coaching and property listings are complementary capabilities.
+relo.cat is a ChatGPT-native housing and homeownership companion focused on Catalonia. The immediate demo helps people compare suitable municipalities, school and transport access, and verified housing incentives. Financial coaching and property listings are complementary capabilities.
 
 ## Source of truth
 
 The [DevDays 2026 — AI Housing Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003) is authoritative for product decisions. This repository records implementation and mirrors the Space; when product descriptions disagree, follow the latest explicit Space decision. Check actual code and tests for implementation status rather than treating a planned feature as delivered.
 
-Key references: [MCP architecture and contracts](https://chatgpt.com/space/page_692ac01a0a3c81918ab65c4a0052783f), [product scope](https://chatgpt.com/space/page_047fba29065c819193b15243a7e3ccd8) and [listings integration](https://chatgpt.com/space/page_5cb6c5414e088191827364cd0e43b847). The overview calls the product **Relocat**; older pages, code and the plugin prototype still use **Arrela**. These refer to the same project; existing identifiers are retained until coordinated with their owners.
+Key references: [MCP architecture and contracts](https://chatgpt.com/space/page_692ac01a0a3c81918ab65c4a0052783f), [product scope](https://chatgpt.com/space/page_047fba29065c819193b15243a7e3ccd8) and [listings integration](https://chatgpt.com/space/page_5cb6c5414e088191827364cd0e43b847). The overview calls the product **relo.cat**; older pages, code and the plugin prototype still use **Arrela**. These refer to the same project; existing identifiers are retained until coordinated with their owners.
 
 ## Project status
 
@@ -103,6 +103,8 @@ Run `npm run start:mcp` from the repository root. The service exposes Streamable
 
 The MCP backend lives in `apps/mcp-server/`. Its tools share Zod schemas in `packages/contracts/` and use the data loading, matching and eligibility code in `packages/places/`. The versioned fixtures in `data/towns.json` and `data/incentives.json` cover 18 municipalities, including Calaf, Juncosa, Ulldemolins and the FGC Lleida–La Pobla de Segur corridor. Tools compute household-specific recommendations and eligibility from the local snapshot.
 
+[Relocation pilot research](data/relocat-pilot-data.json) preserves the supplied 21 November 2026 export: four opportunities across Calaf, Juncosa and Ulldemolins, source and visual links, connections, rental-search observations and public contacts. Join `municipalities[].municipalityCode` to `data/towns.json`'s `municipalities[].code` as six-character strings. Extend each town's `opportunities` array with stable IDs, source links and check dates. Earlier leads remain in `historicalResearch`; `publicDataSnapshot` retains its own source commit and dates and does not replace the runtime fixtures. `get_town_profile` and each `recommend_towns` result now include a `relocation` section joined at load time. It contains research, opportunity checks, source/check dates and explicit `researched` or `not_researched` coverage. Official runtime statistics and incentive rules retain their original provenance; the bundled public-data snapshot and historical leads are not imported into those results. Opportunity research does not alter ranking or hard budget filters. Preserve closed, filled and unverified statuses, conflicting deadlines and unknown rents; listings, visual reuse rights and household incentive eligibility are not established by this export.
+
 The core demo calls `recommend_towns`, `get_town_profile`, and `get_applicable_incentives`. Additional tools cover schools, rail, business indicators, municipality lookup, and household eligibility detail. Town results include official codes, match reasons, trade-offs, evidence dates and URLs, and missing data. Incentives include separate application and eligibility statuses.
 
 Start from household and lifestyle facts with [`recommend_towns_for_profile`](apps/mcp-server/README.md#recommend-towns-from-a-household-profile). It uses the same municipality snapshot to return a shortlist, follow-up questions and checks for individual homes.
@@ -125,3 +127,7 @@ The [Town Explorer sample plugin](apps/mcp-server/README.md#town-explorer-sample
 ## Demo definition of done
 
 A single ChatGPT conversation calls the municipality MCP backend, shows three sourced Catalan town recommendations, compares schools and transport, and explains one actual housing incentive with its source and application status. Keep a browser or recorded fallback. Savings timelines and authorized property opportunities extend this core journey.
+
+### Idealista property examples
+
+The MCP tool `search_homes` searches live through treg for indexed Idealista property examples in up to three pilot towns. Set `TREG_TOKEN` in the server environment and restart. It returns source links and timestamps, with explicit unknown availability and unverified town/budget/bedroom matches. It is web-search discovery, not a verified inventory feed; missing credentials or provider failures are reported separately from empty searches. See [setup, costs and limitations](apps/mcp-server/README.md#live-idealista-example-search-through-treg).
