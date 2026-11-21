@@ -18,7 +18,8 @@ RUN npm ci --omit=dev
 COPY --chown=node:node apps/mcp-server ./apps/mcp-server
 COPY --chown=node:node apps/interviewer ./apps/interviewer
 COPY --from=widget --chown=node:node /app/apps/mcp-server/dist ./apps/mcp-server/dist
-COPY --chown=node:node apps/profile-api/finance.ts ./apps/profile-api/
+COPY --chown=node:node apps/profile-api/finance.ts apps/profile-api/store.ts ./apps/profile-api/
+COPY --chown=node:node apps/habits-agent/agent.ts apps/habits-agent/contracts.ts ./apps/habits-agent/
 COPY --chown=node:node packages ./packages
 COPY --chown=node:node data/towns.json data/incentives.json data/travel-estimates.json data/relocat-pilot-data.json ./data/
 

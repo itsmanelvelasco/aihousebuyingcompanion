@@ -1,3 +1,4 @@
+import { handleConnectPage } from '../apps/mcp-server/connect-page.ts';
 import { handleTestUi } from '../apps/mcp-server/test-ui.ts';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -9,7 +10,7 @@ import { getView, openDemo, openSchema, updateDemo, updateSchema } from './demo.
 import { validateAnswers } from './intake.ts';
 import { profileConnection, ProfileBridge, connectedAnswers } from './profiles.ts';
 import { createMcpServer as createPlacesMcpServer } from '../apps/mcp-server/tools.ts';
-import { registerInterviewerTools } from '../apps/interviewer/mcp-tools.ts';
+import { interviewerRouting, registerInterviewerTools } from '../apps/interviewer/mcp-tools.ts';
 import { loadData } from '../packages/places/data.ts';
 import { registerBankTools } from '../apps/mcp-server/bank-tools.ts';
 
@@ -77,7 +78,7 @@ async function reply(name: string, input: unknown) {
 
 function createMcpServer() {
   const legacyServer = () => new McpServer({ name: 'relo.cat', version: '0.1.0' }, {
-    instructions: 'When the user says “relo.cat, start” (or the old “Arrela, start”), call open_demo with no arguments immediately. The browser and chat share one live board. ' +
+    instructions: interviewerRouting + ' When the user says “relo.cat, start” (or the old “Arrela, start”), call open_demo with no arguments immediately. The browser and chat share one live board. ' +
       'Do not ask for a code, run ID, or persona to start. Present boardUrl as a clickable link if the widget is hidden; do not read URLs aloud. ' +
       'Use the runId returned by open_demo for subsequent writes. Pass persona to switch when asked. ' +
       'Speak as a warm, concise game guide. The board labels the rehearsal data, so skip repeated spoken labels. ' +
@@ -154,6 +155,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const path = url.pathname;
   try {
+    if (handleConnectPage(req, res)) return;
     if (path === '/test' || path.startsWith('/test/')) {
       const { snapshot, policies } = loadData();
       if (await handleTestUi(req, res, snapshot, policies)) return;
