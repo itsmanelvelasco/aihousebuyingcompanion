@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-232",
+  "name": "Fictional household 232",
+  "age": 22,
+  "householdType": "couple_with_children",
+  "householdSize": 5,
+  "dependants": 3,
+  "dependantAges": [
+    3,
+    2,
+    2
+  ],
+  "currentMunicipality": "La Seu d’Urgell",
+  "province": "Lleida",
+  "employmentStatus": "permanent_employee",
+  "monthlyIncomeCents": 212200,
+  "incomeScope": "whole_household",
+  "workMunicipality": "La Seu d’Urgell",
+  "remoteWorkDaysPerWeek": 3,
+  "currentHousing": "shared_rental",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "past_missed_payments",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "past_missed_payments",
+      "non_positive_monthly_cashflow"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "past_missed_payments",
+    "non_positive_monthly_cashflow"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}

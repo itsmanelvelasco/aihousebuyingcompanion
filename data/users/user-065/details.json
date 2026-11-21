@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-065",
+  "name": "Fictional household 065",
+  "age": 48,
+  "householdType": "couple",
+  "householdSize": 2,
+  "dependants": 0,
+  "dependantAges": [],
+  "currentMunicipality": "Tarragona",
+  "province": "Tarragona",
+  "employmentStatus": "temporary_employee",
+  "monthlyIncomeCents": 191700,
+  "incomeScope": "whole_household",
+  "workMunicipality": "Tarragona",
+  "remoteWorkDaysPerWeek": 0,
+  "currentHousing": "living_with_family",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "no_reported_credit_issue",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "income_instability"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "income_instability"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-112",
+  "name": "Fictional household 112",
+  "age": 26,
+  "householdType": "couple_with_children",
+  "householdSize": 4,
+  "dependants": 2,
+  "dependantAges": [
+    1,
+    7
+  ],
+  "currentMunicipality": "Mataró",
+  "province": "Barcelona",
+  "employmentStatus": "part_time_employee",
+  "monthlyIncomeCents": 307700,
+  "incomeScope": "whole_household",
+  "workMunicipality": "Mataró",
+  "remoteWorkDaysPerWeek": 3,
+  "currentHousing": "shared_rental",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "past_missed_payments",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "past_missed_payments"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "past_missed_payments"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}

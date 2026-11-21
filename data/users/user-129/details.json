@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-129",
+  "name": "Fictional household 129",
+  "age": 59,
+  "householdType": "couple_with_children",
+  "householdSize": 4,
+  "dependants": 2,
+  "dependantAges": [
+    1,
+    0
+  ],
+  "currentMunicipality": "Manresa",
+  "province": "Barcelona",
+  "employmentStatus": "temporary_employee",
+  "monthlyIncomeCents": 314000,
+  "incomeScope": "whole_household",
+  "workMunicipality": "Manresa",
+  "remoteWorkDaysPerWeek": 5,
+  "currentHousing": "shared_rental",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "irregular_income_documentation",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "irregular_income_documentation",
+      "income_instability"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "irregular_income_documentation",
+    "income_instability"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}

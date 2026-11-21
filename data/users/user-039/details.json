@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-039",
+  "name": "Fictional household 039",
+  "age": 55,
+  "householdType": "multigenerational",
+  "householdSize": 5,
+  "dependants": 2,
+  "dependantAges": [
+    3,
+    15
+  ],
+  "currentMunicipality": "Terrassa",
+  "province": "Barcelona",
+  "employmentStatus": "permanent_employee",
+  "monthlyIncomeCents": 342300,
+  "incomeScope": "whole_household",
+  "workMunicipality": "Terrassa",
+  "remoteWorkDaysPerWeek": 2,
+  "currentHousing": "shared_rental",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "irregular_income_documentation",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "irregular_income_documentation"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "irregular_income_documentation"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-217",
+  "name": "Fictional household 217",
+  "age": 61,
+  "householdType": "multigenerational",
+  "householdSize": 6,
+  "dependants": 3,
+  "dependantAges": [
+    10,
+    0,
+    16
+  ],
+  "currentMunicipality": "Reus",
+  "province": "Tarragona",
+  "employmentStatus": "self_employed",
+  "monthlyIncomeCents": 277700,
+  "incomeScope": "whole_household",
+  "workMunicipality": "Reus",
+  "remoteWorkDaysPerWeek": 2,
+  "currentHousing": "private_rental",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "past_missed_payments",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "past_missed_payments",
+      "income_instability"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "past_missed_payments",
+    "income_instability"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}

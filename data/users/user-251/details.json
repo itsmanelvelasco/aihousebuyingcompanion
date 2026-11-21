@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-251",
+  "name": "Fictional household 251",
+  "age": 46,
+  "householdType": "couple",
+  "householdSize": 2,
+  "dependants": 0,
+  "dependantAges": [],
+  "currentMunicipality": "Vic",
+  "province": "Barcelona",
+  "employmentStatus": "unemployed",
+  "monthlyIncomeCents": 185200,
+  "incomeScope": "whole_household",
+  "workMunicipality": null,
+  "remoteWorkDaysPerWeek": 0,
+  "currentHousing": "private_rental",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "limited_history",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "limited_history",
+      "income_instability",
+      "non_positive_monthly_cashflow"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "limited_history",
+    "income_instability",
+    "non_positive_monthly_cashflow"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}

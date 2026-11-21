@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-406",
+  "name": "Fictional household 406",
+  "age": 52,
+  "householdType": "couple_with_children",
+  "householdSize": 5,
+  "dependants": 3,
+  "dependantAges": [
+    15,
+    5,
+    2
+  ],
+  "currentMunicipality": "Lleida",
+  "province": "Lleida",
+  "employmentStatus": "self_employed",
+  "monthlyIncomeCents": 307500,
+  "incomeScope": "whole_household",
+  "workMunicipality": "Lleida",
+  "remoteWorkDaysPerWeek": 1,
+  "currentHousing": "shared_rental",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "limited_history",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "limited_history",
+      "income_instability"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "limited_history",
+    "income_instability"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}

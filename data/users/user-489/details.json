@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-489",
+  "name": "Fictional household 489",
+  "age": 46,
+  "householdType": "multigenerational",
+  "householdSize": 5,
+  "dependants": 2,
+  "dependantAges": [
+    17,
+    11
+  ],
+  "currentMunicipality": "Olot",
+  "province": "Girona",
+  "employmentStatus": "part_time_employee",
+  "monthlyIncomeCents": 229900,
+  "incomeScope": "whole_household",
+  "workMunicipality": "Olot",
+  "remoteWorkDaysPerWeek": 3,
+  "currentHousing": "shared_rental",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "irregular_income_documentation",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "irregular_income_documentation",
+      "non_positive_monthly_cashflow"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "irregular_income_documentation",
+    "non_positive_monthly_cashflow"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}

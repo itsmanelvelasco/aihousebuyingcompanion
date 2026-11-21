@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-346",
+  "name": "Fictional household 346",
+  "age": 28,
+  "householdType": "couple",
+  "householdSize": 2,
+  "dependants": 0,
+  "dependantAges": [],
+  "currentMunicipality": "Tortosa",
+  "province": "Tarragona",
+  "employmentStatus": "seasonal_worker",
+  "monthlyIncomeCents": 283100,
+  "incomeScope": "whole_household",
+  "workMunicipality": "Tortosa",
+  "remoteWorkDaysPerWeek": 0,
+  "currentHousing": "living_with_family",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "limited_history",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "limited_history",
+      "income_instability",
+      "non_positive_monthly_cashflow"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "limited_history",
+    "income_instability",
+    "non_positive_monthly_cashflow"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}

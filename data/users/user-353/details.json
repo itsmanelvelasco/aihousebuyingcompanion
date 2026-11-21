@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-353",
+  "name": "Fictional household 353",
+  "age": 56,
+  "householdType": "couple_with_children",
+  "householdSize": 5,
+  "dependants": 3,
+  "dependantAges": [
+    16,
+    2,
+    17
+  ],
+  "currentMunicipality": "Olot",
+  "province": "Girona",
+  "employmentStatus": "part_time_employee",
+  "monthlyIncomeCents": 327700,
+  "incomeScope": "whole_household",
+  "workMunicipality": "Olot",
+  "remoteWorkDaysPerWeek": 3,
+  "currentHousing": "living_with_family",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "high_existing_debt",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "high_existing_debt"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "high_existing_debt"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}

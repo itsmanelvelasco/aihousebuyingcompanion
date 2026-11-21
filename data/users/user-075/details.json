@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-075",
+  "name": "Fictional household 075",
+  "age": 56,
+  "householdType": "couple_with_children",
+  "householdSize": 5,
+  "dependants": 3,
+  "dependantAges": [
+    11,
+    15,
+    4
+  ],
+  "currentMunicipality": "Balaguer",
+  "province": "Lleida",
+  "employmentStatus": "seasonal_worker",
+  "monthlyIncomeCents": 255100,
+  "incomeScope": "whole_household",
+  "workMunicipality": "Balaguer",
+  "remoteWorkDaysPerWeek": 0,
+  "currentHousing": "private_rental",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "no_reported_credit_issue",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "income_instability"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "income_instability"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}

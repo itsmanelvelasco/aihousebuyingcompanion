@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "userId": "user-292",
+  "goal": "buy_primary_home",
+  "region": "Catalunya",
+  "targetPurchasePriceCents": 13300000,
+  "housingBudgetCents": 13300000,
+  "minimumBedrooms": 3,
+  "preferredPropertyType": "flat",
+  "schoolStages": [
+    "post_compulsory",
+    "primary"
+  ],
+  "hasCar": true,
+  "requiresPublicTransport": false,
+  "maxCommuteMinutes": 50,
+  "workTripsPerWeek": 0,
+  "ruralPreference": "no_preference",
+  "priorities": [
+    "local_jobs",
+    "school_access"
+  ],
+  "incentiveEligibility": "needs_verification",
+  "relocationWithinMonths": 17,
+  "mortgageApprovalStatus": "not_assessed"
+}

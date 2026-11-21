@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-328",
+  "name": "Fictional household 328",
+  "age": 40,
+  "householdType": "multigenerational",
+  "householdSize": 4,
+  "dependants": 1,
+  "dependantAges": [
+    1
+  ],
+  "currentMunicipality": "Balaguer",
+  "province": "Lleida",
+  "employmentStatus": "permanent_employee",
+  "monthlyIncomeCents": 265900,
+  "incomeScope": "whole_household",
+  "workMunicipality": "Balaguer",
+  "remoteWorkDaysPerWeek": 4,
+  "currentHousing": "living_with_family",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "high_existing_debt",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "high_existing_debt",
+      "non_positive_monthly_cashflow"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "high_existing_debt",
+    "non_positive_monthly_cashflow"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}

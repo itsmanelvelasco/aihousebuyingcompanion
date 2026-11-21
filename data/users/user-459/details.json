@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-459",
+  "name": "Fictional household 459",
+  "age": 26,
+  "householdType": "single_parent",
+  "householdSize": 4,
+  "dependants": 3,
+  "dependantAges": [
+    2,
+    6,
+    8
+  ],
+  "currentMunicipality": "Girona",
+  "province": "Girona",
+  "employmentStatus": "seasonal_worker",
+  "monthlyIncomeCents": 119300,
+  "incomeScope": "whole_household",
+  "workMunicipality": "Girona",
+  "remoteWorkDaysPerWeek": 0,
+  "currentHousing": "living_with_family",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "irregular_income_documentation",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "irregular_income_documentation",
+      "income_instability",
+      "non_positive_monthly_cashflow"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "irregular_income_documentation",
+    "income_instability",
+    "non_positive_monthly_cashflow"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}

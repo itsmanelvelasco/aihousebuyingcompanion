@@ -1,0 +1,7 @@
+.git
+node_modules
+.env*
+*.tmp
+data/users/
+data/runtime-users/
+data/synthetic-users.*

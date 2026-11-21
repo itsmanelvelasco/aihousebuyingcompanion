@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "snapshotDate": "2026-11-21",
+  "id": "user-315",
+  "name": "Fictional household 315",
+  "age": 43,
+  "householdType": "multigenerational",
+  "householdSize": 5,
+  "dependants": 2,
+  "dependantAges": [
+    13,
+    15
+  ],
+  "currentMunicipality": "L'Hospitalet de Llobregat",
+  "province": "Barcelona",
+  "employmentStatus": "self_employed",
+  "monthlyIncomeCents": 373000,
+  "incomeScope": "whole_household",
+  "workMunicipality": "L'Hospitalet de Llobregat",
+  "remoteWorkDaysPerWeek": 4,
+  "currentHousing": "private_rental",
+  "purchaseGoal": "primary_residence",
+  "creditHistory": {
+    "status": "no_reported_credit_issue",
+    "barriers": [
+      "insufficient_upfront_savings",
+      "income_instability"
+    ],
+    "assessmentType": "fictional_scenario_not_lender_assessment",
+    "numericScore": null
+  },
+  "financialBarriers": [
+    "insufficient_upfront_savings",
+    "income_instability"
+  ],
+  "accessibilityNeeds": [],
+  "demographicProvenance": "data/users/README.md"
+}
