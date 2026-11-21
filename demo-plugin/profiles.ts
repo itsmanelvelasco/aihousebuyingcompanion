@@ -3,6 +3,7 @@ import { loadData } from '../packages/places/data.ts';
 import { recommendTowns } from '../packages/places/recommend.ts';
 import { resolveInputs, buildRecommendationInput, inputSchema } from '../packages/contracts/inputs.ts';
 import type { DemoView } from './demo.ts';
+import { basicGroups } from './intake.ts';
 
 export const connectedAnswers = z.object({
   town: z.string().trim().min(1).max(80).optional(), bedrooms: z.number().int().min(1).max(20).optional(),
@@ -127,6 +128,7 @@ export class ProfileBridge {
     const data = context.resolved.data;
     const answers: Record<string, unknown> = 'answers' in view ? { ...view.answers } : {};
     const fill = (key: string, value: unknown) => { if (value !== undefined && value !== null) answers[key] = value; };
+    if (answers.town === undefined) fill('town', data.location?.selectedMunicipalityCode);
     fill('household', data.household?.size); fill('employment', data.household?.employmentStatus);
     fill('bedrooms', data.housing?.minimumBedrooms); fill('budget', data.housing?.budgetCents == null ? null : data.housing.budgetCents / 100);
     fill('floorArea', data.housing?.homeSizeM2); fill('destinationCode', data.transport?.destinationCode); fill('maxCommuteMinutes', data.transport?.maxCommuteMinutes);
@@ -173,16 +175,21 @@ export class ProfileBridge {
       const required = ['budget', 'floorArea', 'destinationCode', 'maxCommuteMinutes', 'schoolStages', ...(Array.isArray(answers.schoolStages) && answers.schoolStages.length ? ['schoolMode'] : []), 'allowComarcaEstimate', 'upfrontTarget', 'emergencyReserve'];
       const prompts: Record<string, string> = { budget: 'Maximum purchase budget in EUR?', floorArea: 'Required floor area in m²?', destinationCode: 'Six-digit municipality code for the commute destination?', maxCommuteMinutes: 'Maximum one-way commute in minutes?', schoolStages: 'Required stages as a comma-separated list (empty means none)?', schoolMode: 'School travel mode: car_free or rail?', allowComarcaEstimate: 'May we use clearly labelled comarca purchase-price estimates? true or false', upfrontTarget: 'Confirmed upfront cash target in EUR, including your deposit, tax and fee assumptions?', emergencyReserve: 'How much savings in EUR must remain as an emergency reserve?' };
       const examples: Record<string, string> = { budget: '130000', floorArea: '85', destinationCode: '251207', maxCommuteMinutes: '120', schoolStages: 'eso', schoolMode: 'rail', allowComarcaEstimate: 'false', upfrontTarget: '54000' };
-      const group = { title: 'Complete the municipality screening', questions: required.filter(key => answers[key] === undefined || answers[key] === null).map(key => ({ id: key, label: prompts[key], min: 0, max: 10000000, money: ['budget', 'upfrontTarget', 'emergencyReserve'].includes(key), prompt: prompts[key], example: examples[key] ?? '0', kind: ['budget', 'floorArea', 'maxCommuteMinutes', 'upfrontTarget', 'emergencyReserve'].includes(key) ? 'number' : 'text' })) };
+      const hasAnswer = (key: string) => answers[key] != null;
+      const tracked = [...basicGroups.flatMap(section => section.questions.map(question => question.id)), ...required];
+      const screening = { title: 'Complete the municipality screening', questions: required.filter(key => !hasAnswer(key)).map(key => ({ id: key, label: prompts[key], min: 0, max: 10000000, money: ['budget', 'upfrontTarget', 'emergencyReserve'].includes(key), prompt: prompts[key], example: examples[key] ?? '0', kind: ['budget', 'floorArea', 'maxCommuteMinutes', 'upfrontTarget', 'emergencyReserve'].includes(key) ? 'number' : 'text' })) };
+      const group = screening.questions.length ? screening : basicGroups
+        .map(section => ({ title: section.title, questions: section.questions.filter(question => !hasAnswer(question.id)) }))
+        .find(section => section.questions.length) ?? null;
       const saved = typeof answers.savings === 'number' ? answers.savings : null;
       const monthly = summary.averageMonthlySavingsCents === null ? null : summary.averageMonthlySavingsCents / 100;
       const target = typeof answers.upfrontTarget === 'number' ? answers.upfrontTarget : null;
       const available = saved === null || data.finance?.emergencyReserveCents == null ? null : Math.max(0, saved - data.finance.emergencyReserveCents / 100);
       const months = available !== null && target !== null && monthly !== null ? (available >= target ? 0 : monthly > 0 ? Math.ceil((target - available) / monthly) : null) : null;
-      return { ...view, ...extra, answers, group: group.questions.length ? group : null, totalQuestions: Object.keys(answers).length + group.questions.length,
+      return { ...view, ...extra, answers, group, answeredBasic: tracked.filter(hasAnswer).length, totalQuestions: tracked.length,
         bank: accounts.accounts.length ? { currency: 'EUR', savings: saved, income: answers.income, spending: answers.spending, discretionary: 0, insight: 'Runtime ledger balances are loaded. Historical cash-flow estimates retain their stated period and assumptions.' } : null,
         plan: !view.firstScenario && available !== null && target !== null && monthly !== null ? { saved: available, monthly, target, upfrontMonths: months, termMonths: 240, debtFreeMonths: months === null ? null : months + 240 } : null,
-        message: group.questions.length ? group.questions.map(q => q.prompt).join(' ') : 'Profile saved. Compare the sourced municipality screen; property-level bedroom requirements remain unverified.' };
+        message: group ? group.questions.map(q => q.prompt).join(' ') : 'Profile saved. Compare the sourced municipality screen; property-level bedroom requirements remain unverified.' };
     }
     // Legacy scenes remain scripted illustrations, visibly separated from runtime data.
     return { ...view, ...extra, message: `${view.message} This scene is scripted; connected profile and bank facts are shown separately.` };

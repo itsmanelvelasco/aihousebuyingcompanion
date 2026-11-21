@@ -53,9 +53,14 @@ function laiaInterview(view: Extract<DemoView, { answers: unknown }>) {
     ['Monthly take-home pay', profile?.confirmedSalary == null ? null : euro.format(profile.confirmedSalary)],
     ['Monthly spending', profile?.confirmedSpending == null ? null : euro.format(profile.confirmedSpending)],
     ['Cash-flow notes', profile?.cashFlowNotes],
+    ...(!scenario ? [
+      ['Upfront savings target', profile?.target == null ? null : euro.format(profile.target)],
+      ['Set aside for the purchase', profile?.saved == null ? null : euro.format(profile.saved)],
+      ['Monthly contribution', profile?.monthly == null ? null : euro.format(profile.monthly)],
+    ] : []),
   ].filter(([, value]) => value != null);
   return `<section class="panel hero laia-voice"><h1>Plan a home with Laia</h1>
-    <p>${view.interview ? 'Pick up where you left off in her interview.' : 'Start with a fictional bank statement, a sample CSV or spoken estimates.'}</p>
+    <p>${view.interview ? 'Continue Laia’s interview.' : 'Choose a fictional bank statement, a sample CSV or spoken estimates.'} When you finish, confirmed answers and monthly totals appear on this shared board.</p>
     <div class="actions">${button(view.interview ? 'Resume talking' : 'Start talking', 'laia_voice', '', 'talk')}</div></section>
     ${scenario && profile ? `<section class="panel laia-scenario"><h2>Laia’s first savings scenario</h2>
       <p class="amount">${scenario.baselineMonths === null ? 'No timeline at this contribution' : scenario.baselineMonths === 0 ? 'Upfront goal reached' : displayMonths(scenario.baselineMonths) + ' to the upfront goal'}</p>

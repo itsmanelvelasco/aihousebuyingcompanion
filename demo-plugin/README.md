@@ -70,7 +70,7 @@ Use fictional details on the shared demo board and stop the public tunnel when y
 
 Open **Laia · Getting started** and click **Start talking** to begin the bank-first interview in the browser. On the same demo server, set `OPENAI_API_KEY` for live voice and `PUBLIC_ORIGIN` to its public HTTPS origin for hosted voice and links from ChatGPT. The local connected stack loads the key from the root `.env`. If a microphone is unavailable, **Conversation options → Guided interview** follows the same flow. Use fictional figures on this shared rehearsal.
 
-After confirming her household and preferences, enter the upfront target, savings set aside for the purchase and monthly contribution. **Save to Laia’s board** shares the confirmed fields and monthly statement totals with the run. Return to the board to see her first savings scenario. In native ChatGPT, ask “Open Laia’s interview” to open the board and continue by voice or text. Rehearsals are stored in the demo server’s memory.
+After confirming her household and preferences, enter the upfront target, savings set aside for the purchase and monthly contribution. Select **End conversation** or finish the guided interview to sync confirmed fields and monthly statement totals to the run. Return to the board to see her first savings scenario. In native ChatGPT, ask “Open Laia’s interview” to open the board and continue by voice or text. Rehearsals are stored in the demo server’s memory.
 
 | Persona | What to say in ChatGPT | What to show |
 | --- | --- | --- |
