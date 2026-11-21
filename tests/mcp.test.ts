@@ -46,7 +46,7 @@ async function tool(name: string, args: Record<string, unknown>) {
 test("discovers schemas and exposes sourced profiles, schools and business indicators", async () => {
   assert.equal(client.getServerVersion()?.name, "relocat");
   const listed = await client.listTools();
-  assert.equal(listed.tools.length, 15);
+  assert.equal(listed.tools.length, 16);
   assert(listed.tools.every(tool => tool.inputSchema && tool.outputSchema && tool.annotations?.readOnlyHint));
   const profileTool = listed.tools.find(tool => tool.name === "recommend_towns_for_profile");
   assert.deepEqual(Object.keys(profileTool?.inputSchema.properties ?? {}).sort(), ["limit", "profile"]);
@@ -72,12 +72,26 @@ test("serves the fictional interviewer cash-flow card and compares a savings hab
   const start = await tool("start_homebuying_interview", {});
   assert(typeof start === "object" && start !== null && "openingQuestion" in start);
   assert.match(String(start.openingQuestion), /bank CSV.*fictional demo bank account.*monthly income and spending/);
+  const launcher = (await client.listTools()).tools.find(entry => entry.name === "start_homebuying_interview");
+  assert.match(launcher?.description ?? "", /I want to buy a new home/);
+  assert.match(client.getInstructions() ?? "", /call start_homebuying_interview before asking/);
+  const voiceUri = "ui://homebuying/start-talking.html";
+  assert.deepEqual(launcher?._meta?.ui, { resourceUri: voiceUri });
+  const voiceCard = (await client.readResource({ uri: voiceUri })).contents[0];
+  assert.equal(voiceCard.mimeType, "text/html;profile=mcp-app");
+  assert("text" in voiceCard);
+  assert.match(voiceCard.text, /Start talking/);
   assert.match(JSON.stringify(start), /how many people will live in the home/);
   const sample = await tool("sample_cash_flow", {});
   assert(typeof sample === "object" && sample !== null && "monthlyNetCashFlow" in sample);
   assert.equal(sample.monthlyNetCashFlow, 854.33);
   const resource = await client.readResource({ uri: "ui://homebuying/cash-flow.html" });
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
+  const input = { target: 30_000, saved: 6_000, monthly: 600, currency: "EUR" };
+  const first = await tool("generate_home_savings_scenario", input);
+  assert.deepEqual(first, { currency: "EUR", remaining: 24_000, baselineMonths: 40, suggestions: [] });
+  const demo = await tool("generate_home_savings_scenario", { ...input, useDemoBank: true });
+  assert.match(JSON.stringify(demo), /Weekly money check-in/);
   const plan = await tool("compare_home_savings", { target: 30_000, saved: 6_000, monthly: 600, habit: 75 });
   assert.deepEqual(plan, { remaining: 24_000, baselineMonths: 40, withHabitMonths: 36 });
 });

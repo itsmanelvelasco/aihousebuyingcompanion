@@ -19,7 +19,7 @@ The plugin server's `INTERVIEWER_BASE_URL` defaults to `http://127.0.0.1:3003`. 
 
 1. Click **Start talking** and allow microphone access. You can start before sharing any financial data. Try “I’d like a flat in Madrid, near a park and a supermarket. I’m open to nearby towns with a train.”
 2. Say “I’d like to connect a bank” or open **Add bank data**. Choose **Connect a bank** and confirm the demo account to load three months of fictional euro transactions, or choose **Upload CSV** and select the statement’s currency. You can do this mid-conversation. The interviewer receives the new summary without restarting.
-3. Confirm pay and expenses, then give a cash savings goal, current savings and your typical contribution. Pick one habit to try. Ask to open **Your plan** to compare the timelines. A €30,000 cash target with €6,000 saved and €600 contributed monthly takes 40 months. Saving another €75 per month reduces the estimate to 36 months.
+3. Confirm pay and expenses, then give a cash savings goal, current savings and your typical contribution. The interviewer generates the first scenario automatically. A €30,000 target with €6,000 saved and €600 contributed monthly takes 40 months. With the fictional demo account, the habits rules also return optional suggestions for review without adding assumed savings to the timeline. Open **Your plan** to see the result.
 
 The live interview keeps the screen focused on listening and speaking. **Conversation options** lets you show captions, type a reply, or start a **Guided interview** without API calls. **Your plan** also lets you review and edit saved answers. The raw CSV stays in the browser. The saved summary and answers persist locally and are shared along with microphone audio when voice is active.
 

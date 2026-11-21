@@ -42,6 +42,10 @@ After installation/update, start a new chat/session so the bundled skills can lo
 
 ## Teammate acceptance check
 
+To hear the interview, select ChatGPT's **Voice** icon before invoking Relocat. The MCP tool starts the interview in the current chat mode.
+
+In text chat, ask **@Relocat Team** to start the homebuying interview to show its green **Start talking** card. The card shows the ChatGPT Live steps by default. Set `RELOCAT_VOICE_URL` on the MCP server to the HTTPS page of a separately deployed voice interviewer if the card should open that page instead. Refresh the MCP connection after deploying the card.
+
 For the bank-first interview, update Relocat Team to version 1.1.0 and connect the deployment that exposes `start_homebuying_interview`. Start a new ChatGPT Live voice conversation and say “Use Relocat Team to start my homebuying interview.” ChatGPT asks whether to use a CSV, the fictional demo bank, or spoken estimates. Attach any CSV in the chat. Live availability and plugin access depend on the account and workspace. The same entry point also works in a text chat.
 
 1. Confirm the bundle name/version and SHA-256 match the team's chosen artifact.

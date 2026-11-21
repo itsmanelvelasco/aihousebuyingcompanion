@@ -13,6 +13,7 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 - [x] Add a local management website for profile documents, multi-source input CRUD, resolved conflicts, bank movements and synthetic feed controls, with an interviewer entry button.
 - [x] Run the interviewer backend separately on port 3003 and proxy its bounded routes through the local app and management website.
 - [ ] Deploy the management website to the existing Netlify project for `relo.cat`; verify persistent backend hosting, paid-route authentication, domain routing and HTTPS before claiming it live.
+- [x] Add `/connect`, a branded agent setup guide with official client documentation, copyable configurations and explicit local/remote and unverified-client states.
 
 - [x] Preserve the supplied relocation pilot research export for three towns and four opportunities in `data/relocat-pilot-data.json`, with historical leads and a separately dated public-data snapshot.
 - [x] Join relocation research to official town codes and expose it through MCP profiles and recommendations, with separate coverage, source status, check dates, deadline conflicts and unresolved eligibility.
