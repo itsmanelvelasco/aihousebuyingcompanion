@@ -1,8 +1,31 @@
 {
   "schemaVersion": 1,
-  "version": "catalonia-fgc-2026-11-21-6b26b9f9",
+  "version": "catalonia-pilot-2026-11-21-10b5fbf0",
   "generatedOn": "2026-11-21",
   "municipalities": [
+    {
+      "code": "080312",
+      "name": "Calaf",
+      "comarca": "Anoia",
+      "recommendable": true,
+      "identity": {
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://api.idescat.cat/emex/v1/nodes.json?lang=ca"
+      },
+      "centre": {
+        "latitude": 41.73401913,
+        "longitude": 1.510944003,
+        "observedAt": "2024-11-27",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/wpyq-we8x",
+        "name": "Calaf"
+      },
+      "rural": {
+        "observedAt": "2026-10-06",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/7gqm-722r",
+        "category": "not_listed",
+        "effectiveFrom": null
+      }
+    },
     {
       "code": "250024",
       "name": "Àger",
@@ -112,6 +135,30 @@
         "observedAt": "2024-11-27",
         "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/wpyq-we8x",
         "name": "Camarasa"
+      },
+      "rural": {
+        "observedAt": "2026-10-06",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/7gqm-722r",
+        "category": "special_attention",
+        "effectiveFrom": "2026-02-24",
+        "legalUrl": "https://dogc.gencat.cat/ca/document-del-dogc/?documentId=1037694"
+      }
+    },
+    {
+      "code": "251180",
+      "name": "Juncosa",
+      "comarca": "Garrigues",
+      "recommendable": true,
+      "identity": {
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://api.idescat.cat/emex/v1/nodes.json?lang=ca"
+      },
+      "centre": {
+        "latitude": 41.37156183,
+        "longitude": 0.775369774,
+        "observedAt": "2024-11-27",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/wpyq-we8x",
+        "name": "Juncosa"
       },
       "rural": {
         "observedAt": "2026-10-06",
@@ -350,6 +397,30 @@
         "observedAt": "2024-11-27",
         "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/wpyq-we8x",
         "name": "Guàrdia de Noguera"
+      },
+      "rural": {
+        "observedAt": "2026-10-06",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/7gqm-722r",
+        "category": "special_attention",
+        "effectiveFrom": "2026-02-24",
+        "legalUrl": "https://dogc.gencat.cat/ca/document-del-dogc/?documentId=1037694"
+      }
+    },
+    {
+      "code": "431573",
+      "name": "Ulldemolins",
+      "comarca": "Priorat",
+      "recommendable": true,
+      "identity": {
+        "observedAt": "2026-11-21",
+        "sourceUrl": "https://api.idescat.cat/emex/v1/nodes.json?lang=ca"
+      },
+      "centre": {
+        "latitude": 41.32259103,
+        "longitude": 0.876395017,
+        "observedAt": "2024-11-27",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/wpyq-we8x",
+        "name": "Ulldemolins"
       },
       "rural": {
         "observedAt": "2026-10-06",
@@ -711,6 +782,62 @@
         "unit": "establishments/1,000 residents",
         "geography": "municipality",
         "geographyName": "Camarasa"
+      }
+    ],
+    "251180": [
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=538&geo=mun:251180",
+        "kind": "population",
+        "value": 379,
+        "unit": "residents",
+        "geography": "municipality",
+        "geographyName": "Juncosa"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=lh&n=22999&geo=mun:251180",
+        "kind": "rent_contracts",
+        "value": 1,
+        "unit": "contracts",
+        "geography": "municipality",
+        "geographyName": "Juncosa"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=atureg&n=4302&geo=mun:251180",
+        "kind": "registered_unemployment",
+        "value": 9.3,
+        "unit": "people (annual average)",
+        "geography": "municipality",
+        "geographyName": "Juncosa"
+      },
+      {
+        "observedAt": "10/2026 (p)",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=afi&n=8604&geo=mun:251180",
+        "kind": "resident_social_security_affiliates",
+        "value": 165,
+        "unit": "people",
+        "geography": "municipality",
+        "geographyName": "Juncosa"
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail_establishments",
+        "value": 5,
+        "unit": "establishments",
+        "geography": "municipality",
+        "geographyName": "Juncosa"
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail_per_1000",
+        "value": 12.47,
+        "unit": "establishments/1,000 residents",
+        "geography": "municipality",
+        "geographyName": "Juncosa"
       }
     ],
     "251207": [
@@ -1398,9 +1525,170 @@
         "geography": "municipality",
         "geographyName": "Castell de Mur"
       }
+    ],
+    "431573": [
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=538&geo=mun:431573",
+        "kind": "population",
+        "value": 390,
+        "unit": "residents",
+        "geography": "municipality",
+        "geographyName": "Ulldemolins"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=lh&n=22999&geo=mun:431573",
+        "kind": "rent_contracts",
+        "value": 3,
+        "unit": "contracts",
+        "geography": "municipality",
+        "geographyName": "Ulldemolins"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=atureg&n=4302&geo=mun:431573",
+        "kind": "registered_unemployment",
+        "value": 5.8,
+        "unit": "people (annual average)",
+        "geography": "municipality",
+        "geographyName": "Ulldemolins"
+      },
+      {
+        "observedAt": "10/2026 (p)",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=afi&n=8604&geo=mun:431573",
+        "kind": "resident_social_security_affiliates",
+        "value": 150,
+        "unit": "people",
+        "geography": "municipality",
+        "geographyName": "Ulldemolins"
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail_establishments",
+        "value": 6,
+        "unit": "establishments",
+        "geography": "municipality",
+        "geographyName": "Ulldemolins"
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail_per_1000",
+        "value": 14.67,
+        "unit": "establishments/1,000 residents",
+        "geography": "municipality",
+        "geographyName": "Ulldemolins"
+      }
+    ],
+    "080312": [
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=538&geo=mun:080312",
+        "kind": "population",
+        "value": 3627,
+        "unit": "residents",
+        "geography": "municipality",
+        "geographyName": "Calaf"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=lh&n=22999&geo=mun:080312",
+        "kind": "rent_eur_per_month",
+        "value": 474.4,
+        "unit": "EUR/month",
+        "geography": "municipality",
+        "geographyName": "Calaf"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=lh&n=22999&geo=mun:080312",
+        "kind": "rent_contracts",
+        "value": 56,
+        "unit": "contracts",
+        "geography": "municipality",
+        "geographyName": "Calaf"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=atureg&n=4302&geo=mun:080312",
+        "kind": "registered_unemployment",
+        "value": 161.8,
+        "unit": "people (annual average)",
+        "geography": "municipality",
+        "geographyName": "Calaf"
+      },
+      {
+        "observedAt": "10/2026 (p)",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=afi&n=8604&geo=mun:080312",
+        "kind": "resident_social_security_affiliates",
+        "value": 1490,
+        "unit": "people",
+        "geography": "municipality",
+        "geographyName": "Calaf"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://habitatge.gencat.cat/web/.content/home/dades/estadistiques/01_Estadistiques_de_construccio_i_mercat_immobiliari/02_Compravenda_i_preu_de_venda/02_Compravendes_d_habitatges_registrades_i_el_preu_de_venda/2025/Trimestrals_per_municipis_2025.xlsx",
+        "kind": "resale_transactions",
+        "value": 65,
+        "unit": "transactions",
+        "geography": "municipality",
+        "geographyName": "Calaf"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://habitatge.gencat.cat/web/.content/home/dades/estadistiques/01_Estadistiques_de_construccio_i_mercat_immobiliari/02_Compravenda_i_preu_de_venda/02_Compravendes_d_habitatges_registrades_i_el_preu_de_venda/2025/Trimestrals_per_municipis_2025.xlsx",
+        "kind": "resale_eur_per_m2",
+        "value": 984.8,
+        "unit": "EUR/m²",
+        "geography": "municipality",
+        "geographyName": "Calaf"
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail_establishments",
+        "value": 43,
+        "unit": "establishments",
+        "geography": "municipality",
+        "geographyName": "Calaf"
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail_per_1000",
+        "value": 11.98,
+        "unit": "establishments/1,000 residents",
+        "geography": "municipality",
+        "geographyName": "Calaf"
+      }
     ]
   },
   "comarcaMetrics": {
+    "Anoia": [
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://habitatge.gencat.cat/web/.content/home/dades/estadistiques/01_Estadistiques_de_construccio_i_mercat_immobiliari/02_Compravenda_i_preu_de_venda/02_Compravendes_d_habitatges_registrades_i_el_preu_de_venda/2025/Trimestrals_per_ambits_2025.xlsx",
+        "kind": "resale_eur_per_m2",
+        "value": 1502.07,
+        "unit": "EUR/m²",
+        "geography": "comarca",
+        "geographyName": "Anoia"
+      }
+    ],
+    "Garrigues": [
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://habitatge.gencat.cat/web/.content/home/dades/estadistiques/01_Estadistiques_de_construccio_i_mercat_immobiliari/02_Compravenda_i_preu_de_venda/02_Compravendes_d_habitatges_registrades_i_el_preu_de_venda/2025/Trimestrals_per_ambits_2025.xlsx",
+        "kind": "resale_eur_per_m2",
+        "value": 809.49,
+        "unit": "EUR/m²",
+        "geography": "comarca",
+        "geographyName": "Garrigues"
+      }
+    ],
     "Noguera": [
       {
         "observedAt": "2025",
@@ -1423,6 +1711,17 @@
         "geographyName": "Pallars Jussà"
       }
     ],
+    "Priorat": [
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://habitatge.gencat.cat/web/.content/home/dades/estadistiques/01_Estadistiques_de_construccio_i_mercat_immobiliari/02_Compravenda_i_preu_de_venda/02_Compravendes_d_habitatges_registrades_i_el_preu_de_venda/2025/Trimestrals_per_ambits_2025.xlsx",
+        "kind": "resale_eur_per_m2",
+        "value": 1000.6,
+        "unit": "EUR/m²",
+        "geography": "comarca",
+        "geographyName": "Priorat"
+      }
+    ],
     "Segrià": [
       {
         "observedAt": "2025",
@@ -1436,6 +1735,144 @@
     ]
   },
   "schools": [
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "08014929",
+      "name": "Escola Alta Segarra",
+      "municipalityCode": "080312",
+      "locality": "Calaf",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.73336,
+        "longitude": 1.51575
+      },
+      "stages": [
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "08016082",
+      "name": "Escola Sant Roc - ZER Vent d'Avall",
+      "municipalityCode": "080608",
+      "locality": "Castellfollit de Riubregós",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.77604,
+        "longitude": 1.437588
+      },
+      "stages": [
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "08016291",
+      "name": "Escola Quatre Vents - ZER Vent d'Avall",
+      "municipalityCode": "080713",
+      "locality": "Copons",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.63647,
+        "longitude": 1.519112
+      },
+      "stages": [
+        "nursery",
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "08023141",
+      "name": "Escola Mare de Déu del Portal - ZER Vent d'Avall",
+      "municipalityCode": "081705",
+      "locality": "Els Prats de Rei",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.70477,
+        "longitude": 1.542217
+      },
+      "stages": [
+        "nursery",
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "08027021",
+      "name": "Escola Font de l'Anoia - ZER Vent d'Avall",
+      "municipalityCode": "082286",
+      "locality": "Sant Martí Sesgueioles",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.7012,
+        "longitude": 1.491084
+      },
+      "stages": [
+        "nursery",
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "08043395",
+      "name": "Institut Alexandre de Riquer",
+      "municipalityCode": "080312",
+      "locality": "Calaf",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.73157,
+        "longitude": 1.513218
+      },
+      "stages": [
+        "eso",
+        "batxillerat",
+        "fp"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "08060587",
+      "name": "Llar d'infants Municipal de Calaf \"la Boireta\"",
+      "municipalityCode": "080312",
+      "locality": "Calaf",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.73348,
+        "longitude": 1.516835
+      },
+      "stages": [
+        "nursery"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "08064507",
+      "name": "Llar d'infants d'Els Prats de Rei",
+      "municipalityCode": "081705",
+      "locality": "Els Prats de Rei",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.70454,
+        "longitude": 1.539076
+      },
+      "stages": [
+        "nursery"
+      ]
+    },
     {
       "observedAt": "2026/2027",
       "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
@@ -1474,6 +1911,24 @@
     {
       "observedAt": "2026/2027",
       "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25000146",
+      "name": "Escola Mare de Déu de Montserrat - ZER Vall de l'Aranyó",
+      "municipalityCode": "250061",
+      "locality": "Albagés, l'",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.44817,
+        "longitude": 0.741267
+      },
+      "stages": [
+        "nursery",
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
       "id": "25000158",
       "name": "Escola Sant Salvador",
       "municipalityCode": "250077",
@@ -1501,6 +1956,24 @@
         "longitude": 0.657626
       },
       "stages": [
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25000171",
+      "name": "Escola Els Aubis - ZER Riu Set",
+      "municipalityCode": "250096",
+      "locality": "Albi, l'",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.42376,
+        "longitude": 0.939301
+      },
+      "stages": [
+        "nursery",
         "infantil",
         "primary"
       ]
@@ -1872,6 +2345,24 @@
     {
       "observedAt": "2026/2027",
       "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25001126",
+      "name": "Escola Vallmajor - ZER Elaia",
+      "municipalityCode": "250560",
+      "locality": "Bovera",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.32542,
+        "longitude": 0.638488
+      },
+      "stages": [
+        "nursery",
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
       "id": "25001229",
       "name": "Escola Dos Rius - ZER El Jonc",
       "municipalityCode": "250621",
@@ -1890,6 +2381,23 @@
     {
       "observedAt": "2026/2027",
       "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25001254",
+      "name": "Escola Timorell - ZER Vall de l'Aranyó",
+      "municipalityCode": "250674",
+      "locality": "Castelldans",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.49607,
+        "longitude": 0.765255
+      },
+      "stages": [
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
       "id": "25001278",
       "name": "Escola Santa Maria - ZER Serra Llarga",
       "municipalityCode": "250693",
@@ -1898,6 +2406,24 @@
       "coordinates": {
         "latitude": 41.82086,
         "longitude": 0.729221
+      },
+      "stages": [
+        "nursery",
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25001333",
+      "name": "Escola El Cérvol - ZER Riu Set",
+      "municipalityCode": "250735",
+      "locality": "Cervià de les Garrigues",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.42576,
+        "longitude": 0.863724
       },
       "stages": [
         "nursery",
@@ -1943,6 +2469,24 @@
     {
       "observedAt": "2026/2027",
       "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25001710",
+      "name": "Escola de la Granadella - ZER Elaia",
+      "municipalityCode": "251018",
+      "locality": "La Granadella",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.35676,
+        "longitude": 0.662404
+      },
+      "stages": [
+        "nursery",
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
       "id": "25001795",
       "name": "Escola Sant Sebastià - ZER Serra Llarga",
       "municipalityCode": "251121",
@@ -1968,6 +2512,24 @@
       "coordinates": {
         "latitude": 42.1161,
         "longitude": 1.04328
+      },
+      "stages": [
+        "nursery",
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25001916",
+      "name": "Escola L'Espígol - ZER Garrigues Altes",
+      "municipalityCode": "251180",
+      "locality": "Juncosa",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.37078,
+        "longitude": 0.777214
       },
       "stages": [
         "nursery",
@@ -2655,6 +3217,24 @@
     {
       "observedAt": "2026/2027",
       "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25003676",
+      "name": "Escola Els Set Focs - ZER Elaia",
+      "municipalityCode": "251706",
+      "locality": "Bellaguarda",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.33716,
+        "longitude": 0.737971
+      },
+      "stages": [
+        "nursery",
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
       "id": "25003688",
       "name": "Escola Els Raiers",
       "municipalityCode": "251713",
@@ -2716,6 +3296,24 @@
         "longitude": 0.592819
       },
       "stages": [
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25004231",
+      "name": "Escola del Soleràs - ZER Garrigues Altes",
+      "municipalityCode": "252069",
+      "locality": "El Soleràs",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.41264,
+        "longitude": 0.682487
+      },
+      "stages": [
+        "nursery",
         "infantil",
         "primary"
       ]
@@ -2938,6 +3536,24 @@
       "coordinates": {
         "latitude": 41.69092,
         "longitude": 0.727233
+      },
+      "stages": [
+        "nursery",
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25005107",
+      "name": "Escola Sant Bonifaci - ZER Riu Set",
+      "municipalityCode": "252555",
+      "locality": "Vinaixa",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.42929,
+        "longitude": 0.97241
       },
       "stages": [
         "nursery",
@@ -3492,6 +4108,38 @@
     {
       "observedAt": "2026/2027",
       "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25007037",
+      "name": "Llar d'infants Les Garrigues",
+      "municipalityCode": "251018",
+      "locality": "La Granadella",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.3567,
+        "longitude": 0.662343
+      },
+      "stages": [
+        "nursery"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25007062",
+      "name": "Llar d'infants Municipal",
+      "municipalityCode": "252555",
+      "locality": "Vinaixa",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.42931,
+        "longitude": 0.972347
+      },
+      "stages": [
+        "nursery"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
       "id": "25007074",
       "name": "Llar d'infants El Patufet",
       "municipalityCode": "250404",
@@ -3633,6 +4281,22 @@
       },
       "stages": [
         "nursery"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25007499",
+      "name": "Institut l'Olivera",
+      "municipalityCode": "251018",
+      "locality": "La Granadella",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.35674,
+        "longitude": 0.662377
+      },
+      "stages": [
+        "eso"
       ]
     },
     {
@@ -3829,6 +4493,22 @@
       "coordinates": {
         "latitude": 41.6944,
         "longitude": 0.634778
+      },
+      "stages": [
+        "nursery"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25008431",
+      "name": "Llar d'infants Municipal de l'Albi",
+      "municipalityCode": "250096",
+      "locality": "Albi, l'",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.42421,
+        "longitude": 0.939236
       },
       "stages": [
         "nursery"
@@ -4082,6 +4762,22 @@
         "nursery",
         "infantil",
         "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25008947",
+      "name": "Llar d'infants Plou i Fa Sol",
+      "municipalityCode": "250674",
+      "locality": "Castelldans",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.49615,
+        "longitude": 0.765824
+      },
+      "stages": [
+        "nursery"
       ]
     },
     {
@@ -4654,6 +5350,22 @@
     {
       "observedAt": "2026/2027",
       "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "25009988",
+      "name": "Llar d'infants del Soleràs",
+      "municipalityCode": "252069",
+      "locality": "El Soleràs",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.41391,
+        "longitude": 0.682483
+      },
+      "stages": [
+        "nursery"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
       "id": "25010000",
       "name": "Llar d'infants d'Isona i Conca Dellà",
       "municipalityCode": "251155",
@@ -4949,6 +5661,130 @@
         "longitude": 0.6353374393
       },
       "stages": [
+        "eso"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "43000676",
+      "name": "Escola El Castell - ZER Montsant",
+      "municipalityCode": "430350",
+      "locality": "Cabacés",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.24698,
+        "longitude": 0.732817
+      },
+      "stages": [
+        "nursery",
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "43002053",
+      "name": "Escola Garbí - ZER Montsant-Serra de Prades",
+      "municipalityCode": "431129",
+      "locality": "Poboleda",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.23268,
+        "longitude": 0.845094
+      },
+      "stages": [
+        "nursery",
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "43004487",
+      "name": "Escola Montsant - ZER Montsant-Serra de Prades",
+      "municipalityCode": "431573",
+      "locality": "Ulldemolins",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.32092,
+        "longitude": 0.87995
+      },
+      "stages": [
+        "nursery",
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "43005339",
+      "name": "Escola Montsant - ZER Montsant",
+      "municipalityCode": "430271",
+      "locality": "La Bisbal de Falset",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.28037,
+        "longitude": 0.721905
+      },
+      "stages": [
+        "nursery",
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "43010839",
+      "name": "Escola Serra Major - ZER L'Aglà",
+      "municipalityCode": "431747",
+      "locality": "La Vilella Baixa",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.21841,
+        "longitude": 0.764027
+      },
+      "stages": [
+        "nursery",
+        "infantil",
+        "primary"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "43012502",
+      "name": "Llar d'infants de Cornudella de Montsant",
+      "municipalityCode": "430496",
+      "locality": "Cornudella de Montsant",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.26475,
+        "longitude": 0.905033
+      },
+      "stages": [
+        "nursery"
+      ]
+    },
+    {
+      "observedAt": "2026/2027",
+      "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+      "id": "43013087",
+      "name": "Institut Escola Corbatera",
+      "municipalityCode": "430496",
+      "locality": "Cornudella de Montsant",
+      "public": true,
+      "coordinates": {
+        "latitude": 41.26123,
+        "longitude": 0.904166
+      },
+      "stages": [
+        "infantil",
+        "primary",
         "eso"
       ]
     }

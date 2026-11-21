@@ -136,7 +136,7 @@ export function recommendTowns(snapshot: Snapshot, policies: Policy[], input: Re
 
   towns.sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || a.municipality.name.localeCompare(b.municipality.name, "ca"));
   const limitations = [
-    "Pilot coverage is limited to selected Catalan municipalities along the FGC Lleida–La Pobla corridor.",
+    "Recommendations cover the selected Catalan municipalities in the pilot. Scheduled rail coverage is limited to the FGC Lleida–La Pobla corridor.",
     "Scores rank only known preference signals. The dated snapshot provides estimates and scheduled access.",
   ];
   if (!railwayCoverage(snapshot, travelDate)) limitations.push("The requested travel date is outside the cached FGC timetable.");
