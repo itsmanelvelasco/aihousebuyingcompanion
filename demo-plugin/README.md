@@ -4,26 +4,67 @@ Four fictional Catalan homeownership stories in one MCP plugin. The persona butt
 
 This is an isolated prototype for the [team’s AI Housing Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003). It reuses Homebound's Dot map, percentage bars and achievements, plus Clara's unread-update and relevance mechanics. It uses the team’s Catalonia and simulated banking approach. All accounts, offers, regulation changes, benefits, listings, payments and leaderboard entries are scripted. The rural scene illustrates verifying a Catalan program, school and transport access.
 
-## Start locally
+## Get the code
 
-Install Node.js 22.18+ with npm, then run from the repository:
+You need access to the team’s GitHub repository and a GitHub SSH key for the clone command below. If you use HTTPS for GitHub, substitute the HTTPS clone URL shown in the repository’s **Code** menu. If you're connecting to a teammate’s running server, skip to [Connect to ChatGPT](#connect-to-chatgpt).
+
+For a fresh checkout:
 
 ```sh
+git clone --branch hackathon/arrela-demo-plugin git@github.com:itsmanelvelasco/aihousebuyingcompanion.git
+cd aihousebuyingcompanion/demo-plugin
+```
+
+If you already cloned the repository, start from its root:
+
+```sh
+git fetch origin
+git switch hackathon/arrela-demo-plugin
+git pull --ff-only origin hackathon/arrela-demo-plugin
 cd demo-plugin
+```
+
+## Install and run locally
+
+Install [Node.js](https://nodejs.org/en/download) 22.18 or newer with npm. If your shell says `npm: command not found`, install Node.js and open a new terminal. From `demo-plugin/`:
+
+```sh
+node --version
+npm --version
 npm ci
 npm start
 ```
 
-Open [localhost:8787/preview](http://localhost:8787/preview) for the full browser rehearsal. It uses the same scenario functions and board as ChatGPT. The live board opens the shared run and updates after tool calls. Start another terminal for the tunnel or tests. To use a different port, set `PORT`, for example `PORT=8788 npm start`.
+Open [localhost:8787/preview](http://localhost:8787/preview) to check the board. The local preview works on its own. To connect it to ChatGPT on the web, continue with the HTTPS setup. If port 8787 is in use, choose a different port with `PORT=8788 npm start` and forward that same port in the next step.
+
+## Give ChatGPT an HTTPS endpoint
+
+If you're hosting the demo, [install `cloudflared`](https://developers.cloudflare.com/tunnel/downloads/), leave the server running, and start a [Cloudflare Quick Tunnel](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) in a second terminal:
+
+```sh
+cloudflared tunnel --url http://127.0.0.1:8787
+```
+
+Copy the printed HTTPS origin, such as `https://your-tunnel-host.trycloudflare.com`. Keep the tunnel running. Stop the local server with **Ctrl+C** and restart it from `demo-plugin/` with that origin so the plugin can link to the shared board:
+
+```sh
+PUBLIC_ORIGIN=https://your-tunnel-host.trycloudflare.com npm start
+```
+
+Replace the example hostname with your actual tunnel hostname. If you changed the port, include the same `PORT` setting when restarting. Use the HTTPS origin plus **`/mcp`** as the ChatGPT Server URL, and the origin plus **`/preview`** for the browser board. Share the current MCP URL with teammates who want to connect to your running server. The tunnel URL can change when restarted.
 
 ## Connect to ChatGPT
 
-1. With the server running, expose the port through an HTTPS tunnel. If you already have [ngrok](https://ngrok.com/) configured, run `ngrok http 8787` in a second terminal. Copy the HTTPS forwarding address. Restart the server with `PUBLIC_ORIGIN=https://your-tunnel-host npm start` so the plugin can return live board links. Append `/mcp` to the forwarding address for the ChatGPT connection.
-2. In [ChatGPT Plugins](https://chatgpt.com/plugins), choose **+ → Add custom MCP server**. Name it **Arrela Demo**, enter the tunnel URL ending in `/mcp`, and select **No authentication** for this fictional demo. Review the permissions and create the plugin.
-3. Install it from your personal Plugins list. In a fresh ChatGPT Work conversation, type `@`, choose **Arrela Demo**, and use the prompts below. If the connection was already installed and you change the tools, refresh its connection. Update the server URL when the tunnel URL changes.
-4. Use **Expand** on the board if the host offers fullscreen. For a voice rehearsal, leave the live browser board beside the conversation. Say **“Arrela, start.”** The browser and chat share the board automatically. The browser follows completed tool calls and persona switches. If you opened the chat first, ask for its live board link. Refresh the installed connection after upgrading to this version so the new inputs and widget are available.
+Use the active HTTPS MCP URL from the server you started or from a teammate.
 
-See OpenAI’s [MCP server and UI quickstart](https://developers.openai.com/plugins/build/app-quickstart) and [plugin connection guide](https://developers.openai.com/plugins/quickstart) for current setup screens. Custom plugin access depends on ChatGPT workspace settings. Leave a publicly reachable tunnel up only while testing with fictional details.
+1. Open [ChatGPT Plugins](https://chatgpt.com/plugins) in your own account and choose **+ → Add custom MCP server**.
+2. Name it **Arrela Demo**. Enter the HTTPS Server URL ending in `/mcp`, then select **No authentication**. Review the connection and choose **Create as a plugin**.
+3. Open **Arrela Demo** under your personal plugins and select **+** to install it.
+4. Start a new **Work** chat, type `@`, select **Arrela Demo**, and send **“Arrela, start.”** Then try **“Show Marc.”** If the widget is hidden, open the server's `/preview` URL beside the chat. The board follows the same session without a pairing code.
+
+If **Add custom MCP server** is missing, check that your account or workspace allows custom MCP connections. If ChatGPT cannot connect, check the active tunnel and the HTTPS URL ending in `/mcp`. After updating the server, open the plugin connection, choose **Refresh**, and test in a new chat. If the tunnel address changed, update the connection URL first.
+
+Use fictional details on the shared demo board and stop the public tunnel when you finish testing. See [OpenAI’s plugin connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt) for setup and refresh details.
 
 ## Rehearse the four scenes
 

@@ -6,7 +6,11 @@ Arrela is a hackathon project for a ChatGPT-native homeownership and relocation 
 
 ## Project status
 
-This repository currently documents the product and proposed implementation. The capabilities and architecture below are planned, not implemented. This description follows the implementation plan dated 21 November 2026 in the [DevDays 2026 — AI Housing Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003).
+The four-persona Arrela prototype lives in [`demo-plugin/`](demo-plugin/) on the `hackathon/arrela-demo-plugin` branch. The product and architecture below describe the broader roadmap from the [DevDays 2026 — AI Housing Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003).
+
+## Try the ChatGPT demo
+
+Follow the [demo setup guide](demo-plugin/README.md) to check out the branch, start the server, and install Arrela in your own ChatGPT account. If a teammate already has a server running, ask for its HTTPS MCP URL and go straight to [Connect to ChatGPT](demo-plugin/README.md#connect-to-chatgpt).
 
 ## The problem
 
