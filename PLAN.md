@@ -10,6 +10,8 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 
 ## Delivered integration and remaining product boundaries
 
+- [x] Preserve the supplied relocation pilot research export for three towns and four opportunities in `data/relocat-pilot-data.json`, with historical leads and a separately dated public-data snapshot.
+- [ ] Integrate relocation opportunity research into MCP results with explicit status, freshness and unresolved eligibility checks; the export currently remains reference data.
 - [x] Integrate the plugin branch with the profile API; map demo personas to persisted users and save grouped interview inputs.
 - [x] Add the profile adapter, missing screening questions, upfront target and emergency reserve inputs.
 - [x] Convert cents/euros explicitly and count debt once; keep live balances separate from declared purchase savings.
