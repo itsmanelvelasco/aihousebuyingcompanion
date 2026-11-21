@@ -5,7 +5,7 @@ import type { Snapshot } from "../../packages/contracts/places.ts";
 import { getTown } from "../../packages/places/data.ts";
 import { explorerInput, explorerResult } from "./town-explorer-contract.ts";
 
-const widgetUri = "ui://relocat/town-explorer-v1.html";
+const widgetUri = "ui://relocat/town-explorer-v2.html";
 
 export function loadTownExplorerPage() {
   let bundle: string;

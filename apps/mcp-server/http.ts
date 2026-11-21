@@ -28,7 +28,7 @@ export function createHttpServer(
       response.writeHead(302, { Location: "/connect" }).end();
       return;
     }
-    if (handleConnectPage(request, response)) return;
+    if (await handleConnectPage(request, response)) return;
     if (await handleTestUi(request, response, snapshot, policies, options.listings, options.travelEstimates)) return;
     if (path === "/health" && request.method === "GET") {
       response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });

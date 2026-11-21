@@ -13,7 +13,7 @@ You describe your needs in a conversation. ReloCat uses sourced local data and f
 - **Find places that fit your life.** Compare Catalan towns using your budget, household needs, school stages and transport requirements.
 - **Understand the trade-offs.** See housing indicators, school information and travel estimates, with sources, dates and gaps in the evidence.
 - **Explore housing support.** Check relevant public measures and distinguish whether applications are open from whether your household meets the known criteria.
-- **Make a savings plan.** Explore how your savings, monthly contribution and cash target affect the time needed to prepare for a purchase.
+- **Make a savings plan.** Explore how your savings, monthly contribution and cash target affect the time needed to prepare for a purchase. Choose **Try the Savings Coach** on the homepage to try a plan with fictional data.
 - **Talk through your needs.** Use the homebuying interview, with a guided option and optional voice.
 
 For example, you could ask:
@@ -40,7 +40,7 @@ The public deployment and local development branches can contain different featu
 
 This is a working hackathon prototype. Its municipality pilot includes **18 town profiles, 238 education centres, 86 rail trips and six policy records**, drawn from dated datasets. Coverage is limited: one profile is the Lleida transport destination, and detailed relocation opportunity research currently covers three towns.
 
-The **500 household profiles and demo bank movements are fictional**. They let the team test different needs and financial barriers without using anyone's real bank account. Live property searches are an optional integration; returned links are examples whose availability, location and details still need verification.
+The **500 household profiles and demo bank movements are fictional**. They let the team test different needs and financial barriers without using anyone's real bank account. On a Town Explorer profile, choose **Find homes for sale** or **Find homes to rent**. Relocat shows dated Idealista examples when the live search provider is available and offers a link to continue the search on Idealista. Verify each property's availability, location and details before relying on it.
 
 ReloCat does not approve mortgages, guarantee grants or submit applications. School presence does not establish vacancies, a travel sample is not a live journey guarantee, and a town's average housing price is not a property listing. Missing information stays visible rather than becoming an assumed answer.
 

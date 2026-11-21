@@ -1,14 +1,17 @@
 import { readFile } from "node:fs/promises";
+import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { compareSavings, summarizeCsv } from "./finances.mjs";
-import { firstScenarioInput, firstScenarioOutput, generateFirstScenario } from "./scenario.ts";
+import { firstScenarioInput, firstScenarioOutput, savingsComparisonInput, savingsComparisonOutput } from "./savings-contract.ts";
+import { generateFirstScenario } from "./scenario.ts";
+import { registerSavingsCoach } from "./savings-coach.ts";
 import { renderVoiceCard } from "./voice-card.mjs";
 
 const widgetUri = "ui://homebuying/cash-flow.html";
-const voiceCardUri = "ui://homebuying/start-talking.html";
-const widgetType = "text/html;profile=mcp-app";
+const voiceCardUri = "ui://homebuying/start-talking-v2.html";
+const voiceCardScript = new URL("../../apps/mcp-server/dist/voice-card.js", import.meta.url);
 const widgetPath = new URL("./cash-flow-widget.html", import.meta.url);
 const demoPath = new URL("./demo.csv", import.meta.url);
 const readOnly = { readOnlyHint: true, openWorldHint: false, destructiveHint: false, idempotentHint: true };
@@ -24,12 +27,6 @@ const cashSummary = z.object({
   monthlyNetCashFlow: z.number(),
   monthlyExpenses: z.record(z.string(), z.number()),
 });
-const savingsResult = z.object({
-  remaining: z.number().nonnegative(),
-  baselineMonths: z.number().int().nonnegative().nullable(),
-  withHabitMonths: z.number().int().nonnegative().nullable(),
-});
-
 function result(data: object): CallToolResult {
   return {
     structuredContent: { ...data },
@@ -52,14 +49,13 @@ export function registerInterviewerTools(server: McpServer) {
     }
   }
   const launchHref = launchUrl?.href ?? null;
-  server.registerResource("Relocat Start talking", voiceCardUri, {
-    mimeType: widgetType,
+  registerAppResource(server, "Relocat Start talking", voiceCardUri, {
     description: "Green voice interview card for starting the Relocat homebuying interview.",
-  }, () => ({
+  }, async () => ({
     contents: [{
       uri: voiceCardUri,
-      mimeType: widgetType,
-      text: renderVoiceCard(launchHref),
+      mimeType: RESOURCE_MIME_TYPE,
+      text: renderVoiceCard(launchHref, await readFile(voiceCardScript, "utf8")),
       _meta: {
         ui: { prefersBorder: true },
         ...(launchUrl && { "openai/widgetCSP": { redirect_domains: [launchUrl.origin] } }),
@@ -67,7 +63,7 @@ export function registerInterviewerTools(server: McpServer) {
     }],
   }));
 
-  server.registerTool("start_homebuying_interview", {
+  registerAppTool(server, "start_homebuying_interview", {
     title: "Start the bank-first homebuying interview",
     description: interviewerRouting + " If the user requests voice from a text chat, share voiceSetup. Otherwise ask the returned opening question and wait for the user to choose a transaction source.",
     annotations: readOnly,
@@ -102,10 +98,10 @@ export function registerInterviewerTools(server: McpServer) {
   }));
 
   server.registerResource("Homebuying cash flow", widgetUri, {
-    mimeType: widgetType,
+    mimeType: RESOURCE_MIME_TYPE,
     description: "Monthly income and spending for the fictional homebuying demo.",
   }, async () => ({
-    contents: [{ uri: widgetUri, mimeType: widgetType, text: await readFile(widgetPath, "utf8") }],
+    contents: [{ uri: widgetUri, mimeType: RESOURCE_MIME_TYPE, text: await readFile(widgetPath, "utf8") }],
   }));
 
   server.registerTool("sample_cash_flow", {
@@ -146,12 +142,8 @@ export function registerInterviewerTools(server: McpServer) {
   server.registerTool("compare_home_savings", {
     description: "Compare baseline and habit-adjusted months to a confirmed cash savings goal. All values must use the same currency. Monthly contribution can be negative.",
     annotations: readOnly,
-    inputSchema: {
-      target: z.number().positive(),
-      saved: z.number().nonnegative(),
-      monthly: z.number(),
-      habit: z.number().nonnegative(),
-    },
-    outputSchema: savingsResult,
+    inputSchema: savingsComparisonInput,
+    outputSchema: savingsComparisonOutput,
   }, input => result(compareSavings(input)));
+  registerSavingsCoach(server);
 }

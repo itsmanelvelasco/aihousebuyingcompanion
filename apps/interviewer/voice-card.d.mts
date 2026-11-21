@@ -1,1 +1,1 @@
-export function renderVoiceCard(launchUrl: string | null): string;
+export function renderVoiceCard(launchUrl: string | null, script: string): string;

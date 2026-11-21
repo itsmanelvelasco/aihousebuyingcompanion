@@ -3,6 +3,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { homeSearchResult } from "../../packages/contracts/listings.ts";
+import type { HomeSearchInput } from "../../packages/contracts/listings.ts";
 import { municipalityListResult, profileRecommendationResult, profileResult, recommendationResult } from "../../packages/contracts/places.ts";
 import { explorerResult } from "./town-explorer-contract.ts";
 import type { ExplorerResult } from "./town-explorer-contract.ts";
@@ -32,6 +34,7 @@ const resultsButton = document.querySelector<HTMLButtonElement>("#show-results")
 document.querySelector<HTMLElement>(".hero-art")!.style.backgroundImage = `url("${landscapeUrl}")`;
 const euros = new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const sampleDay = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" });
+const searchTime = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Madrid" });
 const schoolStages = { nursery: "Nursery", infantil: "Infantil", primary: "Primary", eso: "ESO", batxillerat: "Batxillerat", fp: "Vocational" };
 const transitModes = { train: "Train", bus: "Bus", bus_and_train: "Bus + train" };
 const eligibility = { eligible: "Eligible on supplied facts", ineligible: "Ineligible on supplied facts", needs_verification: "Eligibility needs verification" };
@@ -115,6 +118,13 @@ function renderProfile(profile: Profile, match?: Match) {
       </div>
     </div>
     ${match ? renderMatch(match) : ""}
+    <section class="evidence property-examples">
+      <h3>Idealista examples</h3>
+      <p class="muted">Check each listing on Idealista for its location, price and availability.</p>
+      <button class="retry" id="find-homes" type="button">Find homes for sale</button>
+      <p id="listing-status" class="muted" role="status"></p>
+      <div id="listing-results"></div>
+    </section>
     <section class="evidence">
       <h3 id="travel-heading">Travel times</h3>
       <p class="muted">Approximate times from the town centre. Driving uses a road model. Public transport uses dated timetable samples.</p>
@@ -131,6 +141,38 @@ function renderProfile(profile: Profile, match?: Match) {
         ${measures ? `<ul class="items">${measures}</ul>` : "<p class='muted'>No measures listed in this snapshot.</p>"}
       </section>
     </div>`;
+}
+
+function wireListingSearch(call: CallTool, input: HomeSearchInput) {
+  const button = profileView.querySelector<HTMLButtonElement>("#find-homes")!;
+  const feedback = profileView.querySelector<HTMLParagraphElement>("#listing-status")!;
+  const results = profileView.querySelector<HTMLDivElement>("#listing-results")!;
+  if (input.operation === "rent") button.textContent = "Find homes to rent";
+  button.onclick = async () => {
+    button.disabled = true;
+    feedback.textContent = "Searching for indexed examples…";
+    results.replaceChildren();
+    try {
+      const response = homeSearchResult.parse(await readTool(call, "search_homes", input));
+      const search = response.searches.find(item => item.municipalityCode === input.municipalityCodes[0]);
+      if (!search) throw new Error("Missing search results for this town");
+      const count = search.examples.length;
+      const states = {
+        ok: `${count} indexed ${count === 1 ? "example" : "examples"} · searched ${searchTime.format(new Date(response.searchedAt))} (Madrid time)`,
+        no_indexed_examples: "The search found no indexed examples for this town.",
+        provider_unavailable: "Live listing search is unavailable on this server.",
+        provider_error: "The listing provider could not complete the search. Try again or open the search results.",
+      };
+      feedback.textContent = states[search.status];
+      const cards = search.examples.map(example =>
+        `<li>${sourceLink(example.url, example.title)}<small>Open on Idealista</small></li>`).join("");
+      results.innerHTML = `${cards ? `<ul class="items">${cards}</ul>` : ""}${sourceLink(search.searchUrl, "Open search results")}`;
+    } catch {
+      feedback.textContent = "Could not load listing examples. Try again.";
+    } finally {
+      button.disabled = false;
+    }
+  };
 }
 
 async function readTool(call: CallTool, name: string, args: Record<string, unknown>) {
@@ -243,6 +285,11 @@ async function start() {
       }));
       if (selection !== latestSelection) return;
       renderProfile(profile, match);
+      const housing = match && recommendation?.tool === "recommend_towns" ? recommendation.arguments.housing : undefined;
+      wireListingSearch(call, {
+        municipalityCodes: [code], operation: housing?.tenure ?? "buy", limitPerTown: 3,
+        ...(housing ? { maxPriceEur: housing.maxBudgetEur } : {}),
+      });
       status.textContent = "";
     } catch {
       if (selection !== latestSelection) return;

@@ -11,6 +11,7 @@ import {
 import { loadData } from "../packages/places/data.ts";
 import { createHttpServer } from "../apps/mcp-server/http.ts";
 import { loadTownExplorerPage } from "../apps/mcp-server/town-explorer.ts";
+import { savingsCoachOutput } from "../apps/interviewer/savings-contract.ts";
 
 const { snapshot, policies, travelEstimates } = loadData();
 const server = createHttpServer(snapshot, policies, {
@@ -46,7 +47,7 @@ async function tool(name: string, args: Record<string, unknown>) {
 test("discovers schemas and exposes sourced profiles, schools and business indicators", async () => {
   assert.equal(client.getServerVersion()?.name, "relocat");
   const listed = await client.listTools();
-  assert.equal(listed.tools.length, 16);
+  assert.equal(listed.tools.length, 17);
   assert(listed.tools.every(tool => tool.inputSchema && tool.outputSchema && tool.annotations?.readOnlyHint));
   const profileTool = listed.tools.find(tool => tool.name === "recommend_towns_for_profile");
   assert.deepEqual(Object.keys(profileTool?.inputSchema.properties ?? {}).sort(), ["limit", "profile"]);
@@ -75,12 +76,13 @@ test("serves the fictional interviewer cash-flow card and compares a savings hab
   const launcher = (await client.listTools()).tools.find(entry => entry.name === "start_homebuying_interview");
   assert.match(launcher?.description ?? "", /I want to buy a new home/);
   assert.match(client.getInstructions() ?? "", /call start_homebuying_interview before asking/);
-  const voiceUri = "ui://homebuying/start-talking.html";
+  const voiceUri = "ui://homebuying/start-talking-v2.html";
   assert.deepEqual(launcher?._meta?.ui, { resourceUri: voiceUri });
   const voiceCard = (await client.readResource({ uri: voiceUri })).contents[0];
   assert.equal(voiceCard.mimeType, "text/html;profile=mcp-app");
   assert("text" in voiceCard);
   assert.match(voiceCard.text, /Start talking/);
+  assert.match(voiceCard.text, /ui\/notifications\/initialized/);
   assert.match(JSON.stringify(start), /how many people will live in the home/);
   const sample = await tool("sample_cash_flow", {});
   assert(typeof sample === "object" && sample !== null && "monthlyNetCashFlow" in sample);
@@ -94,6 +96,22 @@ test("serves the fictional interviewer cash-flow card and compares a savings hab
   assert.match(JSON.stringify(demo), /Weekly money check-in/);
   const plan = await tool("compare_home_savings", { target: 30_000, saved: 6_000, monthly: 600, habit: 75 });
   assert.deepEqual(plan, { remaining: 24_000, baselineMonths: 40, withHabitMonths: 36 });
+});
+
+test("opens the fictional Savings Coach and compares the same plan through the savings tool", async () => {
+  const launcher = (await client.listTools()).tools.find(entry => entry.name === "show_savings_coach");
+  const uri = "ui://homebuying/savings-coach-v1.html";
+  assert.deepEqual(launcher?._meta?.ui, { resourceUri: uri, visibility: ["model"] });
+  const { contents: [widget] } = await client.readResource({ uri });
+  assert.equal(widget.mimeType, "text/html;profile=mcp-app");
+  assert("text" in widget);
+  assert.match(widget.text, /This demo uses fictional data/);
+  const plan = savingsCoachOutput.parse(await tool("show_savings_coach", {}));
+  assert.equal(plan.baselineMonths, 20);
+  assert(plan.suggestions.some(habit => habit.title === "Weekly money check-in"));
+  assert.deepEqual(await tool("compare_home_savings", { target: plan.target, saved: plan.saved, monthly: plan.monthly, habit: 100 }), {
+    remaining: 10_000, baselineMonths: 20, withHabitMonths: 17,
+  });
 });
 
 test("serves the read-only Town Explorer widget and preserves headless municipality tools", async () => {
@@ -129,6 +147,7 @@ test("serves the read-only Town Explorer widget and preserves headless municipal
   assert.equal(widget.mimeType, "text/html;profile=mcp-app");
   assert("text" in widget);
   assert.match(widget.text, /<title>Relocat Town Explorer<\/title>/);
+  assert.match(widget.text, /Idealista examples/);
   assert.doesNotMatch(widget.text, /<!-- WIDGET -->/);
   const preview = await fetch(new URL("/preview", base));
   assert.equal(preview.status, 200);
@@ -356,6 +375,8 @@ test("serves the illustrated homepage and preserves its demo links", async () =>
   assert.equal(html.match(/"data:image\/(png|svg\+xml|webp);base64,/g)?.length, 8);
   assert.match(html, /<input id="endpoint" type="url" value="https:\/\/relo\.cat\/mcp"/);
   assert.match(html, /href="\/preview"/);
+  assert.match(html, /href="#savings-coach"/);
+  assert.match(html, /id="savings-coach-data" type="application\/json"/);
   assert.match(html, /href="https:\/\/github.com\/itsmanelvelasco\/aihousebuyingcompanion\/blob\/main\/apps\/mcp-server\/README.md#data-and-refresh"/);
 });
 

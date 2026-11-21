@@ -155,6 +155,8 @@ For example, call `get_town_profile` with `{"municipalityCode":"251180"}` to rec
 
 ## Live Idealista example search through treg
 
+In Town Explorer, open a town and choose **Find homes for sale** or **Find homes to rent**. The action searches one town and displays indexed links and a search timestamp. The fallback search link also appears when the provider returns an empty or unavailable result.
+
 `search_homes` runs an on-demand Google search through treg's `treg.google.serp.organic` route, constrained to Idealista listing URLs. It returns **indexed examples, not verified live inventory**. Search results can be stale or refer to another town; each example therefore keeps `municipalityCode: null`, `locationConfidence: unknown`, `availability: unknown` and `filtersVerified: false`. Price and bedroom criteria are search hints. The tool does not infer structured prices or bedrooms from snippets, and examples must not be used to satisfy hard household constraints without checking the listing.
 
 Set `TREG_TOKEN` to a valid treg API key in the environment of the server process, then restart it. This works with both `npm run start:mcp` and the connected `npm run dev:stack`. The ChatGPT treg connector's OAuth session is separate from the app's credentials. If using a personal sign-in token, also set `TREG_ORG` to the intended team slug. No Idealista API key is required for this web-search route. For Docker, pass the variables with `--env TREG_TOKEN` and, if needed, `--env TREG_ORG`; never bake them into the image. Environment files are not automatically loaded by these scripts.

@@ -20,6 +20,15 @@
         ],
         "createdAt": "2026-11-21T14:49:13.095Z",
         "reason": "Agent used the warm paper tones in the user-provided village and mascot illustrations to tie the homepage to the existing Town Explorer."
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "apps/interviewer/savings-coach.html"
+        ],
+        "createdAt": "2026-11-21T15:21:05.197Z",
+        "reason": "Agent verified in Chromium: the coach section has 18 px of padding at 320 px, 19.5 px at 390 px, and 44 px at 1280 px on all sides."
       }
     ]
   }

@@ -155,7 +155,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const path = url.pathname;
   try {
-    if (handleConnectPage(req, res)) return;
+    if (await handleConnectPage(req, res)) return;
     if (path === '/test' || path.startsWith('/test/')) {
       const { snapshot, policies } = loadData();
       if (await handleTestUi(req, res, snapshot, policies)) return;

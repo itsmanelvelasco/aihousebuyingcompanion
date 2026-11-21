@@ -1,22 +1,8 @@
 import { readFile } from "node:fs/promises";
-import { z } from "zod";
+import type { z } from "zod";
 import { suggestHabits } from "../habits-agent/agent.ts";
 import { compareSavings, summarizeCsv } from "./finances.mjs";
-
-export const firstScenarioInput = z.object({
-  target: z.number().positive(),
-  saved: z.number().nonnegative(),
-  monthly: z.number(),
-  currency: z.enum(["EUR", "USD", "GBP"]),
-  useDemoBank: z.boolean().default(false),
-}).strict();
-
-export const firstScenarioOutput = z.object({
-  currency: z.enum(["EUR", "USD", "GBP"]),
-  remaining: z.number().nonnegative(),
-  baselineMonths: z.number().int().nonnegative().nullable(),
-  suggestions: z.array(z.object({ title: z.string(), action: z.string(), category: z.string() })),
-});
+import type { firstScenarioInput } from "./savings-contract.ts";
 
 export async function generateFirstScenario(input: z.infer<typeof firstScenarioInput>) {
   const { remaining, baselineMonths } = compareSavings({ ...input, habit: 0 });

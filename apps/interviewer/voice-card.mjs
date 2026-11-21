@@ -1,41 +1,7 @@
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-const launchScript = `
-  if (window.parent !== window) {
-    const send = (method, params, id) =>
-      window.parent.postMessage({ jsonrpc: '2.0', method, params, id }, '*');
-    window.addEventListener('message', event => {
-      if (event.source !== window.parent || event.data?.jsonrpc !== '2.0' ||
-          event.data.id !== 1 || !event.data.result) return;
-      send('ui/notifications/initialized', {});
-      new ResizeObserver(() => send('ui/notifications/size-changed', {
-        width: document.documentElement.scrollWidth,
-        height: document.querySelector('main').offsetHeight,
-      })).observe(document.querySelector('main'));
-    });
-    send('ui/initialize', {
-      appInfo: { name: 'Relocat Start talking', version: '1.0.0' },
-      appCapabilities: {},
-      protocolVersion: '2026-01-26',
-    }, 1);
-  }
-
-  document.querySelector('.launch')?.addEventListener('click', event => {
-    if (typeof window.openai?.openExternal !== 'function') return;
-    event.preventDefault();
-    const link = event.currentTarget;
-    try {
-      Promise.resolve(window.openai.openExternal({ href: link.href, redirectUrl: false }))
-        .catch(showLaunchError);
-    } catch { showLaunchError(); }
-    function showLaunchError() {
-      document.querySelector('#launch-help').hidden = false;
-    }
-  });
-`;
-
-export function renderVoiceCard(launchUrl) {
+export function renderVoiceCard(launchUrl, script) {
   const instructions = 'Select the Voice icon in ChatGPT, then say “Use Relocat Team to start my homebuying interview.”';
   const control = launchUrl
     ? h('div', null,
@@ -73,6 +39,6 @@ export function renderVoiceCard(launchUrl) {
   [hidden] { display:none !important; }
 </style>
 ${renderToStaticMarkup(card)}
-<script>${launchScript}</script>
+<script>${script.replace(/<\/script/gi, '<\\/script')}</script>
 </html>`;
 }

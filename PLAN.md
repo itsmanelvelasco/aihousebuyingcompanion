@@ -116,6 +116,8 @@ Agree shared contracts first, then assign separate file ownership. Household req
 - [x] Return official municipality codes, `matchReasons`, `tradeoffs`, `metrics` with `observedAt` and `sourceUrl`, and `dataMissing`.
 - [x] Supply incentives with separate `callStatus`, `eligibilityStatus`, missing criteria and official legal sources.
 - [x] Add a read-only Town Explorer widget with linked map pins and shortlist cards. Its separate render tool passes the original recommendation criteria to the same municipality tools as chat.
+- [x] Add an on-demand Idealista examples section in Town Explorer with original links, search dates and provider status.
+- [x] Add a fictional Savings Coach MCP widget and a homepage demo using the existing savings tools and habit rules.
 - [ ] Optionally connect `get_ownership_plan`/`simulate_ownership` and update the target/timeline after selection once the core flow works.
 - [ ] Show synthetic-data labels, assumptions, evidence links, data freshness and missing-data messages in the UI.
 - [ ] Run the MCP endpoint and widget together; document the actual run instructions.

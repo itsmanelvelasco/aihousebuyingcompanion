@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { savingsCoachDemoMarkup } from '../interviewer/savings-coach.ts';
 
 const directory = new URL('../../apps/mcp-server/', import.meta.url);
 const illustrations = {
@@ -28,8 +29,9 @@ const page = Object.entries(illustrations).reduce((html, [key, file]) => {
 }, readFileSync(new URL('connect.html', directory), 'utf8'))
   .replace('{{agent-icons}}', JSON.stringify(agentIcons));
 
-export function handleConnectPage(req: IncomingMessage, res: ServerResponse): boolean {
+export async function handleConnectPage(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
   if (req.url?.split('?')[0] !== '/connect' || req.method !== 'GET') return false;
+  const coach = await savingsCoachDemoMarkup().catch(() => '<p id="savings-coach">The Savings Coach demo is temporarily unavailable.</p>');
   res.writeHead(200, {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-cache',
@@ -37,6 +39,6 @@ export function handleConnectPage(req: IncomingMessage, res: ServerResponse): bo
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
   });
-  res.end(page);
+  res.end(page.replace('<!-- SAVINGS COACH -->', () => coach));
   return true;
 }
