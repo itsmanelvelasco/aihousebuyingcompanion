@@ -1,4 +1,4 @@
-# Arrela implementation plan
+# relo.cat implementation plan
 
 This is the proposed hackathon roadmap, based on the project brief dated 21 November 2026. The repository is currently documentation-only; unchecked items are planned work, not completed features.
 

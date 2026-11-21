@@ -27,6 +27,13 @@ test('onboarding batches answers atomically and separates the upfront and payoff
   const next = updateDemo({ runId, action: 'sample_bank' });
   assert.ok('plan' in next);
   assert.deepEqual(next.plan, { saved: 18400, target: 54000, monthly: 720, upfrontMonths: 50, termMonths: 240, debtFreeMonths: 290 });
+  const refined = updateDemo({ runId, action: 'answer_batch', answers: {
+    budget: 160000, homeSize: 85, schoolStages: 'ESO', commuteTime: 45, debtPayments: 100, reserve: 5000,
+  } });
+  assert.ok('answers' in refined);
+  assert.equal(refined.answers.homeSize, 85);
+  assert.deepEqual(refined.plan, { saved: 13400, target: 48000, monthly: 620, upfrontMonths: 56, termMonths: 240, debtFreeMonths: 296 });
+  assert.throws(() => updateDemo({ runId, action: 'answer_batch', answers: { cashTarget: 0 } }), /whole number/);
 });
 
 test('MCP transport serves the widget and supports each of the four scenarios', async t => {
@@ -36,14 +43,14 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   const port = /localhost:(\d+)\/preview/.exec(line.toString())?.[1];
   assert.ok(port, 'The test server reports its bound port.');
   const origin = `http://127.0.0.1:${port}`;
-  const client = new Client({ name: 'arrela-test', version: '1.0.0' });
+  const client = new Client({ name: 'relo-cat-test', version: '1.0.0' });
   const transport = new StreamableHTTPClientTransport(new URL('/mcp', origin));
   await client.connect(transport);
   t.after(() => client.close());
   const tools = (await client.listTools()).tools;
   const ui = tools.find(tool => tool.name === 'open_demo')?._meta?.ui as { resourceUri?: string } | undefined;
-  assert.equal(ui?.resourceUri, 'ui://arrela/journey-v4.html');
-  const resource = await client.readResource({ uri: 'ui://arrela/journey-v4.html' });
+  assert.equal(ui?.resourceUri, 'ui://arrela/journey-v5.html');
+  const resource = await client.readResource({ uri: 'ui://arrela/journey-v5.html' });
   const [widget] = resource.contents;
   assert.equal(widget.mimeType, 'text/html;profile=mcp-app');
   assert.ok('text' in widget);
@@ -83,16 +90,25 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   assert.equal((progress.progress as { rank: number }).rank, 2);
   assert.match(String(progress.message), /Level up/);
   assert.equal(((await update('join_quest')).progress as { xp: number }).xp, 450);
+  const accepted = await update('adopt_habit', { habit: 'coffee' });
+  assert.equal((accepted.progress as { estimate: number }).estimate, 12);
+  const checked = await update('complete_habit', { habit: 'coffee' });
+  assert.equal((checked.progress as { xp: number }).xp, 550);
+  assert.equal((checked.progress as { estimate: number }).estimate, 22);
+  assert.equal((checked.progress as { saved: number }).saved, 32400);
+  assert.equal(((await update('complete_habit', { habit: 'coffee' })).progress as { xp: number }).xp, 550);
 
   const unread = await open('shortcuts');
   assert.equal(unread.unread, 5);
   assert.deepEqual(unread.inbox, []);
   const read = await update('read_inbox');
   assert.equal(read.unread, 0);
-  const inbox = read.inbox as { id: string; upfrontMonths: number; debtFreeMonths: number }[];
+  assert.equal(read.pastMonths, 24);
+  const inbox = read.inbox as { id: string; upfrontMonths: number; debtFreeMonths: number; waypoint: { label: string; offset: number } }[];
   assert.equal(inbox.length, 5);
   assert.equal(inbox.find(item => item.id === 'rule')?.upfrontMonths, 0);
   assert.equal(inbox.find(item => item.id === 'rule')?.debtFreeMonths, 240);
+  assert.deepEqual(inbox.find(item => item.id === 'job')?.waypoint, { label: 'Change jobs', offset: 4 });
   assert.deepEqual(inbox.slice(0, 3).map(item => item.id), ['rule', 'listing', 'job']);
   const previewed = await update('preview_shortcut', { opportunity: 'listing' });
   assert.equal(previewed.previewed, 'listing');

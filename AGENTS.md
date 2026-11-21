@@ -2,7 +2,7 @@
 
 ## Purpose and current state
 
-Build Arrela, a ChatGPT-native companion connecting a realistic homeownership savings plan with evidence-backed recommendations for Catalan municipalities. Read `README.md` for product scope and `PLAN.md` for implementation milestones when present.
+Build relo.cat, a ChatGPT-native companion connecting a realistic homeownership savings plan with evidence-backed recommendations for Catalan municipalities. Read `README.md` for product scope and `PLAN.md` for implementation milestones when present.
 
 The repository starts as documentation only. The TypeScript workspace, MCP server, widgets and datasets described in the README are proposed. Inspect the actual files before assuming a component or command exists. Update documentation as implementation lands.
 

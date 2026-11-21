@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Arrela · Homeownership trail</title>
+<title>relo.cat · Homeownership trail</title>
 <style>
 :root{font:16px/1.45 system-ui,sans-serif;color:#262140;background:#f4f1fb;--muted:#58536e;--purple:#6247c8;--line:#ded8ee;--gold:#ffe29a}
 *{box-sizing:border-box}body{margin:0}button,input{font:inherit}button{cursor:pointer}button:disabled{cursor:wait;opacity:.6}button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid #7357df;outline-offset:3px}
@@ -55,11 +55,47 @@ button{border:1px solid var(--line);border-radius:9px;background:#fff;color:#452
 }
 @keyframes credit-enter {from {opacity:0;transform:translateY(8px)} to {opacity:1;transform:translateY(0)}}
 @media(max-width:550px) {.route-options{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.preferences fieldset {margin:10px 0 0;border:1px solid var(--line);border-radius:9px;padding:8px 11px 11px;min-width:0}
+.preferences legend {font-size:.85rem;font-weight:750;padding:0 4px}
+.habits {background:linear-gradient(130deg,#fffcf1,#fff)}
+.habits-header,.journey-head {display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+.habit-total,.journey-gain {display:inline-block;background:#ece5ff;color:#4b309c;border-radius:18px;padding:5px 10px;font-size:.76rem;font-weight:800}
+.habit {display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px;margin-top:9px;padding:11px;border:1px solid var(--line);border-radius:10px;background:white}
+.habit-done {border-color:#bfdcc7;background:#f3fbf4}
+.habit-icon {width:44px;height:44px;display:grid;place-items:center;border-radius:11px;background:#f6ebcd;font-size:1.35rem}
+.habit p {font-size:.86rem}
+.habit-spend {display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:.76rem}
+.habit-spend span {background:#f4f0fd;padding:3px 7px;border-radius:5px;color:#503779}
+.habit-spend strong {background:#e3f5e9;padding:3px 7px;border-radius:5px;color:#1e5948}
+.journey-chart canvas {width:100%;height:clamp(225px,48vw,355px);display:block;border:1px solid #e3dcee;border-radius:8px;margin-top:9px}
+.journey-legend {display:flex;gap:7px 14px;flex-wrap:wrap;margin-top:9px;font-size:.73rem;color:#655b74}
+.journey-legend span::before {content:'';display:inline-block;width:13px;height:3px;border-radius:3px;margin-right:4px;vertical-align:middle;background:#a7a2b0}
+.journey-legend .past::before {background:#137865}
+.journey-legend .selected-line::before {background:#653ec8}
+.credits {position:relative;background:#22173e}
+.victory {position:relative;isolation:isolate;text-align:center;border-radius:12px;overflow:hidden;padding:16px 10px 21px;background:radial-gradient(ellipse at center,#7947ac,#291c51 69%);border:1px solid #ffffff28}
+.victory h1 {position:relative;margin-top:8px;font-size:clamp(2.2rem,7.8vw,4.7rem);color:#ffe79a;text-shadow:0 3px #46254e}
+.victory p {color:#f5e8fe}
+.victory-medal {position:relative;display:grid;place-items:center;width:78px;height:78px;margin:0 auto 9px;border-radius:50%;background:radial-gradient(circle,#fff6c4,#ffc964);border:4px solid #fff0bb;box-shadow:0 0 30px #ffad5b;font-size:2.65rem}
+.victory-banner {display:inline-block;margin-top:9px;color:#35204d;background:#ffe497;border-radius:5px;padding:4px 11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;font-size:.75rem}
+.celebration {position:absolute;inset:0;z-index:-1;pointer-events:none}
+.celebration span {position:absolute;left:50%;top:44%;font-size:clamp(15px,4vw,30px);opacity:0}
+@media (prefers-reduced-motion:no-preference) {
+  .victory-medal {animation:medal-pop .65s cubic-bezier(.2,1.3,.5,1) both}
+  .celebration span {animation:firework 2.5s var(--delay) ease-out both}
+}
+@keyframes medal-pop {from {transform:scale(.4) rotate(-32deg)} to {transform:scale(1) rotate(0)}}
+@keyframes firework {
+  0% {opacity:0;transform:translate(-50%,-50%) scale(.5)}
+  18%,55% {opacity:1}
+  100% {opacity:0;transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) rotate(80deg)}
+}
 </style>
 </head>
 <body>
 <main>
-<header><div class="brand"><span class="logo" aria-hidden="true">⌂</span> Arrela</div><span class="pill">Hackathon · fictional data</span></header>
+<header><div class="brand"><span class="logo" aria-hidden="true">⌂</span> relo.cat</div><span class="pill">Hackathon · fictional data</span></header>
 <div class="pair"><span id="connection">Starting live board</span><a id="board-link" target="_blank" rel="noopener noreferrer" hidden>Open browser board</a></div>
 <nav class="nav" id="personas" aria-label="Demo personas"></nav>
 <div id="status" role="status" aria-live="polite"></div>

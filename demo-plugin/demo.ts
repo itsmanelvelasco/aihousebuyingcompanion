@@ -1,5 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { answersSchema, answerValue, basicGroups, extraGroups, questionId, validateAnswers } from './intake.ts';
+import type { Answers } from './intake.ts';
 
 const people = {
   onboarding: { name: 'Laia', label: 'Getting started' },
@@ -11,29 +13,9 @@ const people = {
 export const personaSchema = z.enum(['onboarding', 'progress', 'shortcuts', 'payoff']);
 type Persona = z.infer<typeof personaSchema>;
 
-const questions = [
-  { id: 'town', prompt: 'Where would you like to buy?', example: 'Manresa', kind: 'text' },
-  { id: 'bedrooms', prompt: 'How many bedrooms do you need?', example: '2', kind: 'number' },
-  { id: 'household', prompt: 'How many people are in your household, including you?', example: '3', kind: 'number' },
-  { id: 'employment', prompt: 'What is your employment situation?', example: 'Full-time employee', kind: 'text' },
-  { id: 'income', prompt: 'What is your monthly take-home income in euros?', example: '2900', kind: 'number' },
-  { id: 'spending', prompt: 'What are your monthly expenses, including rent and debt payments, in euros?', example: '2180', kind: 'number' },
-  { id: 'savings', prompt: 'How much have you already saved, in euros?', example: '18400', kind: 'number' },
-] as const;
-const questionId = z.enum(['town', 'bedrooms', 'household', 'employment', 'income', 'spending', 'savings']);
-type QuestionId = z.infer<typeof questionId>;
-const intakeGroups = [
-  { title: 'Tell me about the home you want', keys: ['town', 'bedrooms', 'household'] },
-  { title: 'Give me the financial picture', keys: ['employment', 'income', 'spending', 'savings'] },
-] as const;
-const answerValue = z.union([z.string().trim().min(1).max(80), z.number().int().nonnegative().max(10_000_000)]);
-const answersSchema = z.strictObject({
-  town: answerValue.optional(), bedrooms: answerValue.optional(), household: answerValue.optional(),
-  employment: answerValue.optional(), income: answerValue.optional(), spending: answerValue.optional(), savings: answerValue.optional(),
-});
 const termMonths = 240;
 const bank = {
-  currency: 'EUR', savings: 18400, income: 2900, spending: 2180, discretionary: 280,
+  currency: 'EUR', savings: 18400, income: 2900, spending: 2180, debtPayments: 0, discretionary: 280,
   insight: 'At the sample spending rate you have €720 left each month. Two fewer paid outings would free up another estimated €40.',
 };
 const initialTarget = 54000;
@@ -57,6 +39,23 @@ const opportunities = [
 ] as const;
 const opportunityId = z.enum(['rule', 'job', 'rural', 'listing', 'friends']);
 type Opportunity = z.infer<typeof opportunityId>;
+const routeSteps: Record<Opportunity, { label: string; offset: number }> = {
+  rule: { label: 'Review deposit rules', offset: 0 },
+  listing: { label: 'Move to Manresa', offset: 8 },
+  job: { label: 'Change jobs', offset: 4 },
+  rural: { label: 'Move to Solsona', offset: 6 },
+  friends: { label: 'Try cheaper outings', offset: 1 },
+};
+const habits = [
+  { id: 'coffee', icon: '☕', title: 'Switch your coffee stop', badge: 'Coffee Saver', before: 20, after: 10, xp: 100,
+    action: 'Buy your four coffees at the sample station café for €2.50 each instead of €5. Try the cheaper café on your next coffee run.' },
+  { id: 'takeout', icon: '🍲', title: 'Cook once instead of ordering in', badge: 'Home Chef', before: 36, after: 22, xp: 85,
+    action: 'Replace one €36 delivery meal each month with a €22 grocery basket. Put Friday on your calendar as the first cook-at-home night.' },
+  { id: 'picnic', icon: '🧺', title: 'Swap a cinema trip for a park picnic', badge: 'Good Neighbor', before: 12, after: 0, xp: 100,
+    action: 'Invite another first-time buyer to the free park picnic in place of one €12 cinema ticket this month.' },
+] as const;
+const habitId = z.enum(['coffee', 'takeout', 'picnic']);
+type HabitId = z.infer<typeof habitId>;
 const routeLetter: Record<Opportunity, string> = { rule: 'A', listing: 'B', job: 'C', rural: 'D', friends: 'E' };
 const credits = {
   title: 'A place of your own',
@@ -82,19 +81,20 @@ export const openSchema = z.object({
 });
 export const updateSchema = z.object({
   runId: z.uuid(),
-  action: z.enum(['answer', 'answer_batch', 'sample_bank', 'restart_persona', 'restart_all', 'join_quest',
+  action: z.enum(['answer', 'answer_batch', 'sample_bank', 'restart_persona', 'restart_all', 'join_quest', 'adopt_habit', 'complete_habit',
     'switch_persona', 'read_inbox', 'preview_shortcut', 'choose_shortcut', 'keep_route', 'replay_payment', 'final_payment', 'show_credits', 'hide_credits']),
   persona: personaSchema.optional(),
   question: questionId.optional(),
   answer: answerValue.optional(),
   answers: answersSchema.optional().describe('Every onboarding answer given this turn, as one object.'),
   opportunity: opportunityId.optional(),
+  habit: habitId.optional(),
 });
 
 function seed() {
   return {
-    answers: {} as Partial<Record<QuestionId, string | number>>,
-    bankConnected: false, joinedQuest: false, inboxRead: false,
+    answers: {} as Answers,
+    bankConnected: false, habitStatus: {} as Partial<Record<HabitId, 'adopted' | 'complete'>>, inboxRead: false,
     chosen: null as Opportunity | null,
     previewed: null as Opportunity | null,
     paid: true, creditsVisible: false,
@@ -106,7 +106,7 @@ let stageId: string | undefined;
 
 function getRun(id: string) {
   const run = runs.get(id);
-  if (!run) throw new Error('This run expired. Say ‘Arrela, start’ to reopen the live board.');
+  if (!run) throw new Error('This run expired. Say ‘relo.cat, start’ to reopen the live board.');
   return run;
 }
 
@@ -128,33 +128,56 @@ export function getView(runId: string, message?: string) {
     goal: 'Own the home outright, with no mortgage or other demo debt.',
   };
   if (persona === 'onboarding') {
-    const group = intakeGroups.map(({ title, keys }) => ({
-      title, questions: questions.filter(question =>
-        keys.some(key => key === question.id) && state.answers[question.id] === undefined),
+    const group = basicGroups.map(({ title, questions }) => ({
+      title, questions: questions.filter(question => state.answers[question.id] === undefined),
     })).find(group => group.questions.length) ?? null;
-    const { income, spending, savings } = state.answers;
-    const plan = typeof income === 'number' && typeof spending === 'number' && typeof savings === 'number'
-      ? { monthly: income - spending, saved: savings, target: initialTarget, ...routeTimeline(timeToGoal(savings, initialTarget, income - spending)) }
-      : null;
-    return { ...base, answers: { ...state.answers }, group, totalQuestions: questions.length,
+    const { income, spending, savings, debtPayments, reserve, cashTarget, budget } = state.answers;
+    let plan = null;
+    if (typeof income === 'number' && typeof spending === 'number' && typeof savings === 'number') {
+      const monthly = income - spending - (typeof debtPayments === 'number' ? debtPayments : 0);
+      const emergencyReserve = typeof reserve === 'number' ? reserve : 0;
+      const available = Math.max(0, savings - emergencyReserve);
+      const target = typeof cashTarget === 'number' ? cashTarget
+        : typeof budget === 'number' && budget > 0 ? Math.ceil(budget * .3) : initialTarget;
+      plan = { monthly, saved: available, target, ...routeTimeline(timeToGoal(available, target, monthly)) };
+    }
+    const basicQuestions = basicGroups.flatMap(group => group.questions);
+    return { ...base, answers: { ...state.answers }, group, extraGroups, totalQuestions: basicQuestions.length,
+      answeredBasic: basicQuestions.filter(question => state.answers[question.id] !== undefined).length,
+      financeNote: [
+        typeof cashTarget === 'number' ? 'Uses your custom upfront goal.'
+          : typeof budget === 'number' && budget > 0 ? 'Models 30% of the purchase budget for deposit and buying costs.'
+          : 'Uses the €54,000 sample upfront goal.',
+        typeof reserve === 'number' ? 'Your emergency reserve stays out of the buying fund.' : '',
+        typeof debtPayments === 'number' ? '' : 'Monthly saving is before any unreported debt payments.',
+      ].filter(Boolean).join(' '),
       bank: state.bankConnected ? bank : null, plan,
       message: message || (group
         ? `${group.title}. Ask for these in one natural prompt: ${group.questions.map(question => question.prompt).join(' ')}`
-        : 'Laia’s intake is complete. Show the upfront milestone and the full path to debt-free homeownership.'),
+        : 'Laia’s core details are saved. Offer to refine the plan with home size, price, commute, school, rural preferences, debt and emergency savings.'),
     } as const;
   }
   if (persona === 'progress') {
-    const xp = state.joinedQuest ? 450 : 350;
-    const coach = state.joinedQuest
-      ? { headline: 'Level up! Good Neighbor unlocked.', milestone: 'You earned 100 XP and moved from third to second place.', next: 'Keep your savings streak going for another month.' }
-      : { headline: 'Marc, you’re past halfway!', milestone: 'Four months on a savings streak earned you the Steady Saver badge.', next: 'Join the first buyers’ picnic to reach Level 4 and earn Good Neighbor.' };
+    const quests = habits.map(habit => ({
+      ...habit, status: state.habitStatus[habit.id] ?? 'available', saving: habit.before - habit.after,
+    }));
+    const completed = quests.filter(quest => quest.status === 'complete');
+    const next = quests.find(quest => quest.status !== 'complete');
+    const xp = completed.reduce((total, quest) => total + quest.xp, 350);
+    const estimate = completed.reduce((total, quest) => total + quest.saving, 0);
+    const leaderboard = [{ name: 'Cami', xp: 505 }, { name: 'Sol', xp: 400 }, { name: 'Marc · You', xp }, { name: 'Nico', xp: 220 }]
+      .sort((a, b) => b.xp - a.xp);
+    const coach = {
+      headline: completed.length ? 'You’re building habits that stick.' : 'Marc, you’re past halfway!',
+      milestone: completed.length ? `${completed.length} quests checked off. Keep them up to free up €${estimate} a month.`
+        : 'You’ve saved four months in a row. Your next quest could make each month count a little more.',
+      next: next ? `${next.title}. ${next.action} That can free up €${next.saving} a month.` : 'Keep the new habits going for another month.',
+    };
     return { ...base, progress: { saved: 32400, target: initialTarget, percent: 60, monthly: 900,
-      ...routeTimeline(timeToGoal(32400, initialTarget, 900)), level: state.joinedQuest ? 4 : 3, xp, xpGoal: 550,
-      checkpoint: state.joinedQuest ? 2 : 1, streak: 4, rank: state.joinedQuest ? 2 : 3, coach,
-      badges: state.joinedQuest ? ['Trailblazer', 'Steady Saver', 'Good Neighbor'] : ['Trailblazer', 'Steady Saver'],
-      leaderboard: [{ name: 'Cami', xp: 505 }, { name: 'Sol', xp: 400 }, { name: 'Marc · You', xp }, { name: 'Nico', xp: 220 }]
-        .sort((a, b) => b.xp - a.xp),
-      joinedQuest: state.joinedQuest },
+      ...routeTimeline(timeToGoal(32400, initialTarget, 900)), level: 3 + completed.length, xp, xpGoal: 650,
+      checkpoint: completed.length ? 2 : 1, streak: 4, rank: 1 + leaderboard.findIndex(person => person.name === 'Marc · You'), coach,
+      badges: ['Trailblazer', 'Steady Saver', ...completed.map(quest => quest.badge)],
+      leaderboard, quests, estimate },
       message: message || `${coach.headline} ${coach.milestone} ${coach.next}`,
     } as const;
   }
@@ -164,12 +187,13 @@ export function getView(runId: string, message?: string) {
     const baseline = timeToGoal(saved, initialTarget, monthly)!;
     const inbox = opportunities.map(item => {
       const months = timeToGoal(saved, item.target, monthly + item.extra)!;
-      return { ...item, letter: routeLetter[item.id], ...routeTimeline(months), fasterBy: baseline - months };
+      return { ...item, letter: routeLetter[item.id], ...routeTimeline(months), fasterBy: baseline - months,
+        waypoint: { ...routeSteps[item.id], offset: Math.min(months, routeSteps[item.id].offset) } };
     }).sort((a, b) => a.letter.localeCompare(b.letter));
     const unread = state.inboxRead ? 0 : inbox.length;
     const preview = inbox.find(item => item.id === state.previewed);
     const currentRoute = inbox.find(item => item.id === state.chosen);
-    return { ...base, unread, baseline: routeTimeline(baseline), saved, inbox: state.inboxRead ? inbox : [],
+    return { ...base, unread, baseline: routeTimeline(baseline), pastMonths: 24, saved, inbox: state.inboxRead ? inbox : [],
       chosen: state.chosen, previewed: state.previewed,
       message: message || (unread
         ? `Núria has ${unread} unread route updates. Ask if she wants to see the alternatives.`
@@ -196,7 +220,7 @@ export type DemoView = ReturnType<typeof getView>;
 export function openDemo({ runId, pairCode, persona, newRun }: z.infer<typeof openSchema>) {
   if (pairCode) {
     runId = [...runs].find(([, run]) => run.pairCode === pairCode)?.[0];
-    if (!runId) throw new Error('That board code expired. Say ‘Arrela, start’ to open the live board without a code.');
+    if (!runId) throw new Error('That board code expired. Say ‘relo.cat, start’ to open the live board without a code.');
   }
   const existing = runId ?? (newRun ? undefined : stageId);
   if (existing) {
@@ -222,22 +246,7 @@ export function openDemo({ runId, pairCode, persona, newRun }: z.infer<typeof op
   return getView(id);
 }
 
-function validatedAnswer(question: QuestionId, answer: string | number) {
-  if (question === 'town' || question === 'employment') {
-    if (typeof answer !== 'string') throw new Error(`${question} needs a short text answer.`);
-    return answer;
-  }
-  const number = Number(answer);
-  const isCount = question === 'bedrooms' || question === 'household';
-  const minimum = isCount ? 1 : 0;
-  const maximum = isCount ? 12 : 10_000_000;
-  if (!Number.isInteger(number) || number < minimum || number > maximum) {
-    throw new Error(`${question} needs a whole number between ${minimum} and ${maximum}.`);
-  }
-  return number;
-}
-
-export function updateDemo({ runId, action, persona: nextPersona, question, answer, answers, opportunity }: z.infer<typeof updateSchema>) {
+export function updateDemo({ runId, action, persona: nextPersona, question, answer, answers, opportunity, habit }: z.infer<typeof updateSchema>) {
   const run = getRun(runId);
   const { persona, state } = run;
   let message: string | undefined;
@@ -251,23 +260,34 @@ export function updateDemo({ runId, action, persona: nextPersona, question, answ
       if (persona !== 'onboarding') throw new Error('Open Laia’s onboarding first.');
       const fields = action === 'answer' && question && answer !== undefined ? { [question]: answer } : answers;
       if (!fields || !Object.keys(fields).length) throw new Error('Provide the answers the user gave.');
-      const validated = Object.entries(fields).map(([key, value]) => {
-        const id = questionId.parse(key);
-        return [id, validatedAnswer(id, answerValue.parse(value))] as const;
-      });
-      for (const [id, value] of validated) state.answers[id] = value;
+      Object.assign(state.answers, validateAnswers(fields));
       break;
     }
     case 'sample_bank':
       if (persona !== 'onboarding') throw new Error('Open Laia’s onboarding first.');
       state.bankConnected = true;
-      Object.assign(state.answers, { income: bank.income, spending: bank.spending, savings: bank.savings });
+      Object.assign(state.answers, { income: bank.income, spending: bank.spending, savings: bank.savings, debtPayments: bank.debtPayments });
       break;
     case 'join_quest':
+    case 'adopt_habit':
+    case 'complete_habit': {
       if (persona !== 'progress') throw new Error('Open Marc’s progress first.');
-      state.joinedQuest = true;
-      message = 'Level up, Marc! You earned 100 XP, unlocked Good Neighbor, and jumped to second place.';
+      const quest = habits.find(item => item.id === (action === 'join_quest' ? 'picnic' : habit));
+      if (!quest) throw new Error('Choose a habit quest first.');
+      if (action === 'adopt_habit') {
+        state.habitStatus[quest.id] ??= 'adopted';
+        message = `Quest accepted: ${quest.title}. Check in once you’ve tried it.`;
+      } else if (state.habitStatus[quest.id] === 'complete') {
+        message = `${quest.title} is already checked off.`;
+      } else {
+        if (action === 'complete_habit' && state.habitStatus[quest.id] !== 'adopted') {
+          throw new Error('Accept this quest before checking in.');
+        }
+        state.habitStatus[quest.id] = 'complete';
+        message = `Level up, Marc! You earned ${quest.xp} XP and unlocked ${quest.badge}.`;
+      }
       break;
+    }
     case 'read_inbox':
       if (persona !== 'shortcuts') throw new Error('Open Núria’s shortcuts first.');
       state.inboxRead = true;
@@ -309,7 +329,7 @@ export function updateDemo({ runId, action, persona: nextPersona, question, answ
       if (persona === 'onboarding') {
         state.answers = initial.answers;
         state.bankConnected = false;
-      } else if (persona === 'progress') state.joinedQuest = false;
+      } else if (persona === 'progress') state.habitStatus = initial.habitStatus;
       else if (persona === 'shortcuts') {
         state.inboxRead = false;
         state.chosen = null;

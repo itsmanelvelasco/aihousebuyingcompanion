@@ -6,7 +6,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { getView, openDemo, openSchema, updateDemo, updateSchema } from './demo.ts';
 
-const widgetUri = 'ui://arrela/journey-v4.html';
+const widgetUri = 'ui://arrela/journey-v5.html';
 const publicOrigin = process.env.PUBLIC_ORIGIN ? new URL(process.env.PUBLIC_ORIGIN).origin : null;
 
 function withBoardLink(view: ReturnType<typeof getView>) {
@@ -35,24 +35,24 @@ function reply(name: string, input: unknown) {
 }
 
 function createMcpServer() {
-  const server = new McpServer({ name: 'arrela-demo', version: '0.1.0' }, {
-    instructions: 'When the user says “Arrela, start”, call open_demo with no arguments immediately. The browser and chat share one live board. ' +
+  const server = new McpServer({ name: 'relo.cat', version: '0.1.0' }, {
+    instructions: 'When the user says “relo.cat, start” (or the old “Arrela, start”), call open_demo with no arguments immediately. The browser and chat share one live board. ' +
       'Do not ask for a code, run ID, or persona to start. Present boardUrl as a clickable link if the widget is hidden; do not read URLs aloud. ' +
       'Use the runId returned by open_demo for subsequent writes. Pass persona to switch when asked. ' +
       'Speak as a warm, concise game guide. The board labels the rehearsal data, so skip repeated spoken labels. ' +
       'If asked about real-world applicability, explain what needs verification. ' +
       'For Laia, group missing home details or finances into a natural prompt. Extract all answers from each spoken or typed reply ' +
-      'and save them in one update_demo answer_batch call. Ask only for details still missing; do not make the user repeat answers. ' +
+      'and save them in one update_demo answer_batch call. Ask only for details still missing. Once the basics are saved, offer the extra profile groups. ' +
       'The board updates when the tool saves the turn. Offer boardUrl as a clickable link if the voice host does not show the widget. ' +
       'Only claim the widget is visible if you have confirmed it. For Marc, lead with the win and the next quest from progress.coach; ' +
-      'offer financial details if asked. For Núria, ask before opening the inbox. Then pitch routes A/B/C briefly and ask which to preview. ' +
+      'offer a concrete quest with its spending swap and estimated monthly benefit. Use adopt_habit on acceptance and complete_habit only after a check-in. For Núria, ask before opening the inbox. Then pitch routes A/B/C briefly and ask which to preview. ' +
       'Use preview_shortcut to highlight a route on the map without switching. Route A = rule, B = listing, C = job, D = rural, E = friends. ' +
       'Only call choose_shortcut after explicit confirmation. Import the sample bank or replay a payment only on request. ' +
       'Jordi starts debt-free. Celebrate and ask whether to roll the credits; on yes, call update_demo with action show_credits and briefly recap. ' +
       'Always separate the upfront milestone from owning outright; the comparison assumes 20 years of repayments after purchase readiness.',
   });
 
-  registerAppResource(server, 'Arrela journey board', widgetUri, {}, async () => ({
+  registerAppResource(server, 'relo.cat journey board', widgetUri, {}, async () => ({
     contents: [{
       uri: widgetUri, mimeType: RESOURCE_MIME_TYPE, text: page,
       _meta: {
@@ -63,8 +63,8 @@ function createMcpServer() {
   }));
 
   registerAppTool(server, 'open_demo', {
-    title: 'Show Arrela demo',
-    description: 'Call with no arguments when the user says “Arrela, start” or “start Arrela”. Opens the shared live board without a code. ' +
+    title: 'Show relo.cat demo',
+    description: 'Call with no arguments when the user says “relo.cat, start” or “start relo.cat”. Opens the shared live board without a code. ' +
       'Pass persona only when asked to show Laia (onboarding), Marc (progress), Núria (shortcuts), or Jordi (payoff). ' +
       'Return the board link in chat if the host does not display the widget. Use newRun only for an explicitly separate rehearsal.',
     inputSchema: openSchema.shape,
@@ -73,9 +73,10 @@ function createMcpServer() {
   }, input => reply('open_demo', input));
 
   server.registerTool('update_demo', {
-    title: 'Update Arrela demo',
-    description: 'Update Arrela by runId. Use answer_batch with answers containing all provided fields (town, bedrooms, ' +
-      'household, employment, income, spending, savings). Accept them in any order and ask only for missing fields. ' +
+    title: 'Update relo.cat demo',
+    description: 'Update relo.cat by runId. Use answer_batch with answers containing all provided fields (town, bedrooms, ' +
+      'household, employment, income, spending, savings, currentTown, budget, homeSize, dependants, rural, commuteTo, commuteTime, transport, schoolStages, debtPayments, reserve, cashTarget). ' +
+      'Use adopt_habit or complete_habit with habit ID coffee, takeout, or picnic; adoption comes before check-in. ' +
       'Use preview_shortcut to highlight A (rule), B (listing), C (job), D (rural), or E (friends) via opportunity ID without changing the active route. ' +
       'After confirmation use choose_shortcut, or keep_route to dismiss the preview. Use show_credits on yes to Jordi’s credits and hide_credits to close. ' +
       'Also supports sample_bank, switch_persona, join_quest, read_inbox, replay_payment, final_payment, restart_persona and restart_all.',
@@ -136,7 +137,7 @@ const server = createServer(async (req, res) => {
       return;
     }
     if (req.method === 'GET' && path === '/health') {
-      send(res, 200, 'Arrela demo is ready');
+      send(res, 200, 'relo.cat demo is ready');
       return;
     }
     if (req.method === 'POST' && path === '/preview/action') {
@@ -157,6 +158,6 @@ const server = createServer(async (req, res) => {
 server.listen(port, host, () => {
   const address = server.address();
   const boundPort = address && typeof address === 'object' ? address.port : port;
-  console.log('Arrela preview: http://localhost:%d/preview', boundPort);
+  console.log('relo.cat preview: http://localhost:%d/preview', boundPort);
   console.log('MCP endpoint:   http://localhost:%d/mcp', boundPort);
 });
