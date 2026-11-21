@@ -6,7 +6,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { getView, openDemo, openSchema, updateDemo, updateSchema } from './demo.ts';
 
-const widgetUri = 'ui://arrela/journey-v5.html';
+const widgetUri = 'ui://arrela/journey-v7.html';
 const publicOrigin = process.env.PUBLIC_ORIGIN ? new URL(process.env.PUBLIC_ORIGIN).origin : null;
 
 function withBoardLink(view: ReturnType<typeof getView>) {
@@ -15,8 +15,16 @@ function withBoardLink(view: ReturnType<typeof getView>) {
 }
 const template = readFileSync(new URL('./widget.html', import.meta.url), 'utf8');
 const bundle = readFileSync(new URL('./dist/widget.js', import.meta.url), 'utf8');
-const page = template.replace('<!-- WIDGET -->', () =>
-  '<script>' + bundle.replace(/<\/script/gi, '<\\/script') + '</script>');
+const styles = readFileSync(new URL('./widget.css', import.meta.url), 'utf8');
+const artwork = ['laia', 'savings', 'scout', 'keys'] as const;
+const artFiles = new Map(artwork.map(name => [`/assets/deck/${name}.gif`,
+  readFileSync(new URL(`./assets/deck/${name}.gif`, import.meta.url))]));
+const posters = Object.fromEntries(artwork.map(name => [name,
+  'data:image/jpeg;base64,' + readFileSync(new URL(`./assets/deck/${name}.jpg`, import.meta.url), 'base64')]));
+const page = template
+  .replace('<!-- STYLES -->', () => '<style>' + styles + '</style>')
+  .replace('<!-- POSTERS -->', () => '<script type="application/json" id="deck-posters">' + JSON.stringify(posters) + '</script>')
+  .replace('<!-- WIDGET -->', () => '<script>' + bundle.replace(/<\/script/gi, '<\\/script') + '</script>');
 
 function reply(name: string, input: unknown) {
   try {
@@ -52,12 +60,13 @@ function createMcpServer() {
       'Always separate the upfront milestone from owning outright; the comparison assumes 20 years of repayments after purchase readiness.',
   });
 
+  const domains = publicOrigin ? [publicOrigin] : [];
   registerAppResource(server, 'relo.cat journey board', widgetUri, {}, async () => ({
     contents: [{
       uri: widgetUri, mimeType: RESOURCE_MIME_TYPE, text: page,
       _meta: {
-        ui: { prefersBorder: true, csp: { connectDomains: publicOrigin ? [publicOrigin] : [] } },
-        'openai/widgetCSP': { connect_domains: publicOrigin ? [publicOrigin] : [], resource_domains: [] },
+        ui: { prefersBorder: true, csp: { connectDomains: domains, resourceDomains: domains } },
+        'openai/widgetCSP': { connect_domains: domains, resource_domains: domains },
       },
     }],
   }));
@@ -114,6 +123,12 @@ const server = createServer(async (req, res) => {
       res.once('close', () => { void mcp.close(); });
       await mcp.connect(transport);
       await transport.handleRequest(req, res);
+      return;
+    }
+    const art = artFiles.get(path);
+    if (req.method === 'GET' && art) {
+      res.writeHead(200, { 'Content-Type': 'image/gif', 'Cache-Control': 'public, max-age=86400',
+        'X-Content-Type-Options': 'nosniff' }).end(art);
       return;
     }
     if (req.method === 'GET' && (path === '/' || path === '/preview')) {

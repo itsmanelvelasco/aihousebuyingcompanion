@@ -49,12 +49,21 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   t.after(() => client.close());
   const tools = (await client.listTools()).tools;
   const ui = tools.find(tool => tool.name === 'open_demo')?._meta?.ui as { resourceUri?: string } | undefined;
-  assert.equal(ui?.resourceUri, 'ui://arrela/journey-v5.html');
-  const resource = await client.readResource({ uri: 'ui://arrela/journey-v5.html' });
+  assert.equal(ui?.resourceUri, 'ui://arrela/journey-v7.html');
+  const resource = await client.readResource({ uri: ui.resourceUri });
   const [widget] = resource.contents;
   assert.equal(widget.mimeType, 'text/html;profile=mcp-app');
   assert.ok('text' in widget);
   assert.match(widget.text, /Demo personas/);
+  assert.match(widget.text, /data:image\/jpeg;base64,/);
+  assert.deepEqual(widget._meta?.ui, { prefersBorder: true,
+    csp: { connectDomains: ['https://arrela.example'], resourceDomains: ['https://arrela.example'] } });
+  const illustration = await fetch(origin + '/assets/deck/laia.gif');
+  assert.equal(illustration.status, 200);
+  assert.equal(illustration.headers.get('Content-Type'), 'image/gif');
+  const imageBytes = Buffer.from(await illustration.arrayBuffer());
+  assert.equal(imageBytes.subarray(0, 6).toString(), 'GIF89a');
+  assert.equal((await fetch(origin + '/assets/deck/unknown.gif')).status, 404);
   const preview = await fetch(origin + '/preview');
   assert.equal(preview.status, 200);
   await preview.arrayBuffer();

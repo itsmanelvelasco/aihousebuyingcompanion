@@ -85,8 +85,8 @@ export function drawWorld(canvas: HTMLCanvasElement, completed: number, program 
   }
   for (let index = 0; index < completed; index++) {
     const segment = nextSegment(index, program === 'accepted');
-    line(segment, '#7456d6', 8);
-    line(segment, '#b9a0ff', 2);
+    line(segment, '#1f6450', 8);
+    line(segment, '#c6e6d7', 2);
   }
 
   for (const [x, y, size] of [[15,126,1.1], [31,134,.85], [59,156,.8], [88,115,.6], [104,77,.8], [68,82,.7], [265,79,1], [284,83,.73], [303,68,.65], [163,212,.9], [181,216,.65], [224,238,1], [244,243,.7], [334,222,.95], [353,228,.7], [363,200,.64], [473,114,1.1], [457,133,.7], [25,233,.7]]) tree(x,y,size);
@@ -111,7 +111,7 @@ export function drawWorld(canvas: HTMLCanvasElement, completed: number, program 
     context.arc(x, y, index === completed ? 8 : 6, 0, 2 * Math.PI);
     context.fillStyle = index <= completed ? '#ffe28a' : '#fef8ed';
     context.fill();
-    context.strokeStyle = index <= completed ? '#5635b1' : '#896f83';
+    context.strokeStyle = index <= completed ? '#1f6450' : '#896f83';
     context.lineWidth = 2;
     context.stroke();
   });
@@ -144,8 +144,8 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
   const top = 39;
   const horizon = Math.max(300, ...lanes.map(lane => pastMonths + (lane.debtFreeMonths ?? 0))) + 4;
   const y = (months: number) => bottom - months / horizon * (bottom - top);
-  const selectedColor = '#653ec8';
-  const doneColor = '#137865';
+  const selectedColor = '#9e3b23';
+  const doneColor = '#17735b';
 
   function line(color: string, weight: number, points: [number, number][], dash: number[] = []) {
     if (!ctx) return;
@@ -179,18 +179,18 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
     ctx.stroke();
   }
 
-  ctx.fillStyle = '#f9f7fc';
+  ctx.fillStyle = '#faf8ee';
   ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = '#eaf6f0';
+  ctx.fillStyle = '#e6f1e7';
   ctx.fillRect(left, 25, today - left, bottom - 25);
-  ctx.fillStyle = '#f1edfb';
+  ctx.fillStyle = '#fff1d4';
   ctx.fillRect(mortgage, 25, width - mortgage, bottom - 25);
-  label('Years on the journey', 14, 17, '#574872', true);
+  label('Years on the journey', 14, 17, '#365b50', true);
   for (let years = 0; years * 12 <= horizon; years += 5) {
     const level = y(years * 12);
-    label(`${years}y`, 9, level, '#685f77');
-    if (years === 0) line('#e7deef', 1, [[left, level], [width - 14, level]]);
-    else line('#d2c6df', 1, [[left, level], [left + 8, level]]);
+    label(`${years}y`, 9, level, '#456356');
+    if (years === 0) line('#ccd9cf', 1, [[left, level], [width - 14, level]]);
+    else line('#bacabe', 1, [[left, level], [left + 8, level]]);
   }
   line('#91bdaf', 1, [[today, 28], [today, bottom]], [3, 5]);
 
@@ -201,7 +201,7 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
     const startMortgage = y(pastMonths + lane.upfrontMonths!);
     const finishMortgage = y(pastMonths + lane.debtFreeMonths!);
     const waypointY = y(pastMonths + (lane.waypoint?.offset ?? 0));
-    const color = isSelected ? selectedColor : '#a7a2b0';
+    const color = isSelected ? selectedColor : '#8a928b';
     const path: [number, number][] = [[today, y(pastMonths)]];
     if (lane.waypoint) path.push([detour, waypointY]);
     path.push([mortgage, startMortgage], [finish, finishMortgage]);
@@ -221,7 +221,7 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
   stop(start, y(0), doneColor);
   stop(today, y(pastMonths), doneColor, 6);
   label(width < 450 ? 'Today' : `Today · year ${pastMonths / 12}`, today, y(pastMonths) - 14, doneColor, true, 'center');
-  label('Start saving', start - 10, height - 20, '#302447', true);
-  label(width < 430 ? 'Mortgage' : 'Start mortgage', mortgage, height - 20, '#302447', true, 'center');
-  label(width < 430 ? 'Paid off' : 'Mortgage paid off', width - 11, height - 20, '#302447', true, 'right');
+  label('Start saving', start - 10, height - 20, '#13362d', true);
+  label(width < 430 ? 'Mortgage' : 'Start mortgage', mortgage, height - 20, '#13362d', true, 'center');
+  label(width < 430 ? 'Paid off' : 'Mortgage paid off', width - 11, height - 20, '#13362d', true, 'right');
 }

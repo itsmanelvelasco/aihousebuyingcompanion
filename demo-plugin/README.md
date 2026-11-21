@@ -91,3 +91,7 @@ The tests exercise the actual Streamable HTTP MCP endpoint, resource registratio
 The prototype has no API key requirement. ChatGPT supplies the language model, while TypeScript calculates and stores the demo state. A production connection would use separately consented read-only open banking, authenticated persistent state, verified sources and opt-in alerts.
 
 Laia’s optional fields follow the team’s shared profile contract on `main`. The demo collects those preferences in memory. The purchase budget uses a 30% planning assumption unless you enter a custom upfront goal, and the emergency reserve stays outside the cash available for the purchase.
+
+## Deck artwork
+
+The four animated illustrations in `assets/deck/` come from the team's `ReloCat-DevDays-2026-Animated.pptx`. The GIFs match the deck's embedded artwork from slides 3 (Laia), 6 (savings), 4 (route scout), and 7 (keys). The JPEGs are first-frame previews for reduced motion and for widgets without a configured public asset origin.

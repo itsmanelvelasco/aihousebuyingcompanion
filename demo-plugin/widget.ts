@@ -24,8 +24,20 @@ function button(label: string, action: string, key = '', style = 'primary') {
   return `<button type="button" class="${style}" data-action="${action}" data-key="${key}">${label}</button>`;
 }
 
-function hero(label: string, heading: string, text: string) {
-  return `<section class="hero panel"><span class="label">${label}</span><h1>${heading}</h1><p>${text}</p></section>`;
+type Artwork = 'laia' | 'savings' | 'scout' | 'keys';
+const posters = JSON.parse(byId('deck-posters').textContent!) as Record<Artwork, string>;
+
+function artwork(scene: Artwork) {
+  const assetPath = `/assets/deck/${scene}.gif`;
+  const animated = !app ? assetPath : active?.boardUrl ? new URL(assetPath, active.boardUrl).href : null;
+  const poster = posters[scene];
+  return `<picture class="hero-art"><source media="(prefers-reduced-motion: reduce)" srcset="${poster}">
+    <img src="${animated ?? poster}" alt="" width="336" height="392"></picture>`;
+}
+
+function hero(scene: Artwork, label: string, heading: string, text: string, extra = '') {
+  return `<section class="hero panel"><div class="hero-copy"><span class="label">${label}</span>
+    <h1>${heading}</h1><p>${text}</p>${extra}</div>${artwork(scene)}</section>`;
 }
 
 function meter(label: string, percent: number, detail: string) {
@@ -59,7 +71,7 @@ function onboarding(view: Extract<DemoView, { answers: unknown }>) {
     `<label>${field.label}<input name="${field.id}" type="${field.kind}"
       ${field.kind === 'number' ? `min="${field.min}" max="${field.max}" step="1"` : 'maxlength="80"'}
       placeholder="${field.example}" value="${prefill ? safe(answers[field.id] ?? '') : ''}"></label>`).join('');
-  return hero('01 · Intake', 'Let’s chart your route, Laia.', 'Tell us what works for your household. Start with the basics, then add the details that could change where you live.') +
+  return hero('laia', '01 · Intake', 'Let’s chart your route, Laia.', 'Tell us what works for your household. Start with the basics, then add the details that could change where you live.') +
     `<section class="panel"><span class="label">${view.answeredBasic} of ${view.totalQuestions} basics saved</span>
       ${group ? `<h2>${group.title}</h2>
         <form class="intake"><div class="fields">${inputs(group.questions, false)}</div><div class="actions"><button class="primary">Save answers</button>
@@ -92,10 +104,9 @@ function world(checkpoint: number) {
 
 function progress(view: Extract<DemoView, { progress: unknown }>) {
   const p = view.progress;
-  return `<section class="hero panel coach"><div><span class="label">02 · Journey check-in</span>
-    <h1>${p.coach.headline}</h1><p>${p.coach.milestone}</p></div>
-    <div class="level-mark" aria-label="Level ${p.level}"><span>LEVEL</span><strong>${p.level}</strong></div></section>
-    <div class="momentum"><div><strong>${p.streak} months</strong><span>Savings streak</span></div>
+  return hero('savings', '02 · Journey check-in', p.coach.headline, p.coach.milestone,
+    `<span class="level-mark">LEVEL <strong>${p.level}</strong></span>`) +
+    `    <div class="momentum"><div><strong>${p.streak} months</strong><span>Savings streak</span></div>
       <div><strong>${p.badges.length} badges</strong><span>Achievements earned</span></div>
       <div><strong>#${p.rank}</strong><span>Trail leaderboard</span></div></div>
     <section class="panel habits" aria-label="Habit quests">
@@ -127,7 +138,7 @@ function progress(view: Extract<DemoView, { progress: unknown }>) {
 }
 
 function shortcuts(view: Extract<DemoView, { inbox: unknown }>) {
-  if (view.unread) return hero('03 · Route alert', `${view.unread} unread route updates`,
+  if (view.unread) return hero('scout', '03 · Route alert', `${view.unread} unread route updates`,
     'There may be a faster way to reach your goal. Want to compare routes?') +
     `<div class="actions">${button('Compare routes', 'read_inbox')}</div>`;
 
@@ -140,7 +151,7 @@ function shortcuts(view: Extract<DemoView, { inbox: unknown }>) {
      <span>${route.fasterBy} months sooner</span><small>${route.title}</small></button>`;
   const routes = view.inbox.slice(0, 3);
   const secondary = view.inbox.slice(3);
-  return hero('03 · Route comparison', 'Same destination. Different journeys.', 'Pick a route to see what changes between today and owning your home outright.') +
+  return hero('scout', '03 · Route comparison', 'Same destination. Different journeys.', 'Pick a route to see what changes between today and owning your home outright.') +
     `<div class="route-options" aria-label="Routes to owning outright">
       <button type="button" class="route-chip" data-action="preview_shortcut" aria-pressed="${!preview}">
         <strong>Current route</strong><span>${current ? `Route ${current.letter}` : `${view.baseline.upfrontMonths} months upfront`}</span>
@@ -188,10 +199,10 @@ function payoff(view: Extract<DemoView, { payoff: unknown }>) {
     return `<section class="credits panel" aria-label="Journey credits">
       <div class="victory">
         ${celebrate()}
-        <div class="victory-medal" aria-hidden="true">🔑</div>
-        <span class="label">Final achievement unlocked</span>
+        <div class="hero-copy"><span class="label">Final achievement unlocked</span>
         <h1>${credits.title}</h1><p>Jordi owns his home outright.</p>
-        <strong class="victory-banner">Mortgage-free</strong>
+        <strong class="victory-banner">Mortgage-free</strong></div>
+        ${artwork('keys')}
       </div>
       <div class="credit-stats">${credits.stats.map(stat => `<div><strong>${stat.value}</strong><span>${stat.label}</span></div>`).join('')}</div>
       <ol class="credit-milestones">${credits.milestones.map(milestone =>
@@ -201,7 +212,7 @@ function payoff(view: Extract<DemoView, { payoff: unknown }>) {
       <div class="actions">${button('Back to the finish', 'hide_credits', '', 'gold')}</div>
     </section>`;
   }
-  return `<div class="payoff">${hero('04 · Journey complete', p.paid ? '★ Jordi owns his home outright!' : 'Replay Jordi’s final installment.',
+  return `<div class="payoff">${hero('keys', '04 · Journey complete', p.paid ? '★ Jordi owns his home outright!' : 'Replay Jordi’s final installment.',
     p.paid ? 'Dot reached the finish line. Want to see the credits?'
       : 'One €620 installment to go on the replay.')}</div>
     ${world(p.paid ? 5 : 4)}
