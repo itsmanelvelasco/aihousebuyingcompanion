@@ -343,6 +343,21 @@ test("MCP advertises live search and reports missing provider access without fab
   assert(invalid.isError);
 });
 
+test("serves the illustrated homepage and preserves its demo links", async () => {
+  const root = await fetch(base, { redirect: "manual" });
+  assert.equal(root.status, 302);
+  assert.equal(root.headers.get("Location"), "/connect");
+
+  const homepage = await fetch(new URL("/connect", base));
+  assert.equal(homepage.status, 200);
+  assert.match(homepage.headers.get("Content-Security-Policy") ?? "", /img-src data:/);
+  const html = await homepage.text();
+  assert.equal(html.match(/src="data:image\/jpeg;base64,/g)?.length, 3);
+  assert.equal(html.match(/"data:image\/(png|svg\+xml|webp);base64,/g)?.length, 8);
+  assert.match(html, /href="\/preview"/);
+  assert.match(html, /href="https:\/\/github.com\/itsmanelvelasco\/aihousebuyingcompanion\/blob\/main\/apps\/mcp-server\/README.md#data-and-refresh"/);
+});
+
 test("local test UI runs real tools and rejects foreign origins and disallowed tools", async () => {
   const page = await fetch(new URL('/test', base));
   assert.equal(page.status, 200);

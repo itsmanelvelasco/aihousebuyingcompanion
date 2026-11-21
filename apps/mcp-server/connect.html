@@ -1,40 +1,617 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Give your AI agent access to relo.cat’s Catalonia town research, schools, transport and housing opportunities through MCP."><title>relo.cat · Bring your own agent</title>
-<style>
-:root{--ink:#262140;--blue:#6247c8;--pale:#f4f1fb;--line:#ded8ee;--muted:#58536e;--white:#fff;font-family:"Avenir Next",Avenir,Arial,sans-serif;color:var(--ink);background:var(--pale)}*{box-sizing:border-box}body{margin:0}a{color:var(--blue);text-underline-offset:4px}button,input{font:inherit}button,a,input{touch-action:manipulation}:focus-visible{outline:3px solid #b57513;outline-offset:4px}header{background:white;border-bottom:1px solid var(--line)}nav{max-width:1200px;margin:auto;padding:23px 28px;display:flex;justify-content:space-between;align-items:center;gap:20px}.brand{font-size:27px;letter-spacing:-1.5px;font-weight:700;text-decoration:none;color:var(--ink)}nav div{display:flex;gap:25px;font-size:14px}main{max-width:1200px;margin:auto;padding:0 28px}.hero{display:grid;grid-template-columns:1.15fr 1fr;gap:70px;align-items:center;padding:72px 0 55px}h1{font-size:clamp(44px,5.2vw,68px);line-height:1.05;letter-spacing:-3px;font-weight:600;margin:0 0 24px}p{line-height:1.65;max-width:65ch}.lead{font-size:19px;color:var(--muted)}.button,button{border:0;cursor:pointer;border-radius:8px;padding:13px 20px;min-height:44px;background:var(--blue);color:white;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:10px}.hero .button{margin-top:12px}.diagram{background:#ece4ff;border-radius:24px;padding:28px;text-align:center}.agent-orbit{display:flex;justify-content:center;gap:17px}.agent-orbit img{width:46px;height:46px;object-fit:contain;background:white;border-radius:12px;padding:9px}.connector-line{width:1px;height:26px;background:#b7a7df;margin:auto}.data-node{background:var(--blue);color:white;padding:22px;border-radius:12px}.data-node strong{font-size:30px;letter-spacing:-1px}.data-node p{font-size:14px;margin:5px auto 0}.source-row{display:flex;justify-content:center;gap:14px;font-size:12px}.source-row span{background:white;padding:10px;border-radius:6px}.diagram figcaption{font-size:12px;color:var(--muted);margin-top:22px}.section-head{display:flex;align-items:end;justify-content:space-between;gap:20px;margin:25px 0}h2{font-size:32px;letter-spacing:-1px;font-weight:600;margin:0}h3{font-size:22px;margin:0 0 12px}.section-head p{margin:0;color:var(--muted);font-size:14px}.setup{display:grid;grid-template-columns:290px minmax(0,1fr);background:white;border:1px solid var(--line);border-radius:16px;overflow:hidden;scroll-margin-top:24px}.agents{padding:18px;border-right:1px solid var(--line);background:#faf8fd;display:flex;flex-direction:column;gap:5px}.agent{background:transparent;color:var(--ink);justify-content:start;text-align:left;padding:12px;font-weight:500;border:1px solid transparent}.agent[aria-pressed=true]{border-color:#a994dc;background:#eee7fc;font-weight:650}.agent img{height:29px;width:29px;object-fit:contain}.agent small{display:block;font-size:11px;font-weight:400;color:var(--muted)}.agent .generic{width:29px;text-align:center;font-size:22px}.detail{padding:34px 38px;min-width:0}.detail-head{display:flex;gap:14px;align-items:center}.detail-head img{width:42px;height:42px;object-fit:contain}.detail-head h3{margin:0}.subtle{color:var(--muted);font-size:14px}.endpoint{margin:25px 0;background:var(--pale);padding:18px;border-radius:10px}label{display:block;font-size:13px;font-weight:600;margin-bottom:8px}.input-row{display:flex;gap:8px}input{min-width:0;width:100%;background:white;border:1px solid #b4a4d2;border-radius:6px;padding:11px;font-size:14px;color:var(--ink)}.input-row button{padding:10px 15px}.notice{font-size:13px;margin:12px 0 0;line-height:1.5;color:var(--muted)}ol{padding-left:23px;line-height:1.6}li{padding:5px 0 5px 6px}pre{font-size:13px;line-height:1.6;background:#292247;color:#f4efff;padding:20px;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.9em}.small-button{padding:9px 14px;font-size:13px}.tool-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;margin:35px 0 60px}.tool-grid h3{font-size:20px}.tool-grid p{font-size:14px;color:var(--muted)}.tool-grid code{display:block;font-size:12px;margin-top:8px;color:var(--blue);overflow-wrap:anywhere}.questions{background:#ece4ff;border-radius:18px;padding:34px;display:grid;grid-template-columns:1fr 1.5fr;gap:40px}.questions h2{max-width:10ch}.prompt{border:0;border-bottom:1px solid #d2c5ea;background:transparent;text-align:left;color:var(--ink);border-radius:0;padding:17px 0;width:100%;justify-content:space-between;font-weight:500;line-height:1.5}.prompt:first-child{padding-top:0}.prompt span{font-size:12px;color:var(--blue);margin-left:16px}.notes{margin:48px 0;display:grid;grid-template-columns:1fr 1fr;gap:40px}.notes p{font-size:14px;color:var(--muted)}details{margin:20px 0}summary{cursor:pointer;font-weight:600;padding:10px 0}footer{border-top:1px solid var(--line);padding:25px 0 35px;display:flex;justify-content:space-between;font-size:12px;color:var(--muted);gap:20px}#feedback{min-height:22px;font-size:13px;color:var(--blue);margin:12px 0 0}[hidden]{display:none!important}@media(max-width:800px){.hero{gap:30px;grid-template-columns:1fr;padding:40px 0 28px}.hero figure{margin:0}.diagram{max-width:530px}.setup{grid-template-columns:minmax(0,1fr)}.agents{min-width:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-right:0;border-bottom:1px solid var(--line);padding:10px}.agent{font-size:13px;padding:9px;gap:8px}.agent small{display:none}.agent img{width:25px;height:25px}.detail{padding:25px}.tool-grid{grid-template-columns:1fr;gap:18px}.questions,.notes{grid-template-columns:1fr;gap:20px}.questions h2{max-width:none}.section-head{align-items:start;flex-direction:column;gap:8px}h1{letter-spacing:-2px}nav{padding:18px}nav div{gap:14px}main{padding:0 18px}.input-row{flex-wrap:wrap}.input-row input{flex-basis:100%}footer{flex-direction:column;gap:8px}}
-@media(max-width:450px){.agents{grid-template-columns:repeat(2,minmax(0,1fr))}.agent{min-width:0}.detail{padding:22px 18px}nav{flex-wrap:wrap}nav div{font-size:12px}.source-row{gap:5px}.source-row span{padding:8px 5px}.diagram{padding:20px}.agent-orbit{gap:10px}}
-</style></head>
-<body><header><nav aria-label="Main navigation"><a class="brand" href="/connect">relo.cat</a><div><a href="/test">Try the data</a><a href="/preview">Consumer demo</a><a href="https://github.com/itsmanelvelasco/aihousebuyingcompanion">GitHub</a></div></nav></header>
-<main><section class="hero"><div><h1>Your agent.<br>A local perspective.</h1><p class="lead">Bring Catalonia’s towns, schools and housing opportunities into the conversations you already have.</p><p>Connect relo.cat through MCP. Your agent asks the questions; relo.cat brings sourced data, practical comparisons and the gaps you should know about.</p><a class="button" href="#setup">Connect your agent</a></div><figure class="diagram"><div class="agent-orbit" id="orbit" aria-label="ChatGPT, Claude, Hermes and OpenClaw"></div><div class="connector-line"></div><div class="data-node"><strong>relo.cat</strong><p>One connection to local knowledge</p></div><div class="connector-line"></div><div class="source-row"><span>Town data</span><span>relo.cation research</span><span>Home examples</span></div><figcaption>Model Context Protocol connects your agent to our tools.</figcaption></figure></section>
-<div class="section-head"><h2>Make yourself at home.</h2><p>Choose an agent for its connection instructions.</p></div>
-<section class="setup" id="setup" aria-label="Agent setup"><div class="agents" id="agents" aria-label="Choose an agent"></div><div class="detail"><div class="detail-head"><img id="selected-logo" alt=""><h3 id="agent-title"></h3></div><p class="subtle" id="agent-intro"></p><div class="endpoint" id="endpoint-box"><label for="endpoint">relo.cat MCP server URL</label><div class="input-row"><input id="endpoint" type="url" spellcheck="false" autocomplete="off" aria-describedby="endpoint-note"><button id="copy-url" type="button">Copy URL</button></div><p id="endpoint-note" class="notice"></p></div><div id="instructions"></div><p id="feedback" role="status" aria-live="polite"></p><a id="docs" target="_blank" rel="noopener noreferrer">Official setup guide</a><p class="subtle">Availability and setup controls depend on your agent version and workspace permissions.</p></div></section>
-<div class="section-head" style="margin-top:55px"><h2>Local knowledge, with receipts.</h2><p>18 municipalities in the pilot. Detailed relocation research in 3.</p></div><section class="tool-grid"><article><h3>Find somewhere that fits</h3><p>Compare towns against your budget, school needs and transport constraints. See why each town matches and where evidence is missing.</p><code>recommend_towns</code><code>get_town_profile</code></article><article><h3>See everyday life</h3><p>Explore nearby schools, stored transport connections and housing support. Sources and dates travel with the answer.</p><code>get_nearby_schools</code><code>get_transport_options</code><code>get_applicable_incentives</code></article><article><h3>Look for a home</h3><p>Find Idealista example links through live treg search. Availability, location, price and bedrooms still need checking on the listing.</p><code>search_homes</code><p>Live search requires the server operator’s treg key and may incur provider charges.</p></article></section>
-<section class="questions"><div><h2>Start with a real question.</h2><p class="subtle">Connect relo.cat, then copy a prompt into your agent.</p></div><div id="prompts"></div></section>
-<section class="notes"><div><h3>Know what’s behind the answer.</h3><p>Official municipal snapshots and researched opportunities are combined by town code. Coverage is a pilot, not all of Catalonia. Historical housing averages are not available listings; school locations do not confirm places or walking routes. Incentive eligibility and application status are separate checks.</p></div><div><h3>Running relo.cat yourself?</h3><p>This checkout has a local demo endpoint with no MCP sign-in. Use fictional profiles for the connected demo. A public service needs authentication and access controls before sharing it broadly.</p><details><summary>Local server and key setup</summary><pre>npm run dev:stack</pre><p>The MCP endpoint is <code>http://127.0.0.1:8787/mcp</code>. Cloud agents need an operator-provided HTTPS URL, or a supported private tunnel. A local address only works for agents running on the same machine.</p><p>Set <code>TREG_TOKEN</code> in the server environment before starting it to enable live home searches. This is a provider key for the server—not a credential to paste into your agent. Town research works without it.</p></details></div></section>
-<footer><span>relo.cat · Find your place in Catalonia.</span><span>Independent integration guide. Agent logos belong to their owners. Checked 21 November 2026.</span></footer></main>
-<script>
-const bf=(domain,type='icon')=>`https://cdn.brandfetch.io/${domain}/h/80/theme/dark/fallback/404${type==='symbol'?'/type/symbol':''}?c=1idWLNtz2TYwlzOIyv5`;
-const hermes='https://web-assets.nousresearch.com/marketing/583113a9ab48fe4a6dc125cf7226c9d50e658bf0/assets/hermes-agent/icon.png';
-const agents=[
-{id:'chatgpt',name:'ChatGPT',logo:bf('openai.com','symbol'),kind:'Cloud connection',docs:'https://developers.openai.com/plugins/deploy/connect-chatgpt',intro:'Add relo.cat as a custom MCP plugin to use its tools in your conversations.',steps:['Open ChatGPT’s Plugins page. Select the plus button, then “Add custom MCP server”.','Name it relo.cat. Choose a public URL connection and paste your operator’s HTTPS MCP URL, including /mcp. A configured Secure MCP Tunnel is another option.','Use the authentication settings supplied by the operator. Review the tools and create the plugin.','Install it, start a new chat, and type @ to select relo.cat. Try one of the prompts below.']},
-{id:'claude',name:'Claude',logo:bf('claude.ai','symbol'),kind:'Cloud connection',docs:'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',intro:'Add a custom connector in Claude. Remote connectors connect from Claude’s cloud, including in Claude Desktop.',steps:['Open Customize → Connectors. Choose “+ Add”, then “Add custom connector”.','Name the connector relo.cat and paste the public HTTPS MCP URL, including /mcp.','Review the detected authentication and follow your operator’s settings. Team or Enterprise users may need an administrator to add it first.','Enable relo.cat from the chat’s + menu → Connectors, then ask about a town.']},
-{id:'hermes',name:'Hermes',logo:hermes,kind:'Local or remote',docs:'https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp',intro:'Add relo.cat to the MCP servers in your active Hermes profile. Localhost works when Hermes and relo.cat run on the same machine.',steps:['Merge this entry into mcp_servers in your active profile’s config.yaml (default: ~/.hermes/config.yaml). Preserve your existing servers.','Start a fresh Hermes session and ask it to use relo.cat’s town tools.'],snippet:url=>`mcp_servers:\n  relocat:\n    url: ${JSON.stringify(url)}`},
-{id:'openclaw',name:'OpenClaw',logo:'https://openclaw.ai/brand/openclaw-mascot.svg',kind:'Local or remote',docs:'https://docs.openclaw.ai/tools/mcp',intro:'Register relo.cat as a Streamable HTTP MCP server in OpenClaw.',steps:['Run the command below in the environment where OpenClaw runs.','Probe the connection, then ask your agent to use relo.cat. A remote OpenClaw installation cannot reach your laptop’s localhost.'],snippet:url=>`openclaw mcp add relocat --url '${url}' --transport streamable-http\nopenclaw mcp doctor relocat --probe`},
-{id:'codex',name:'Codex',logo:bf('chatgpt.com'),kind:'Local or remote',docs:'https://developers.openai.com/codex/mcp',intro:'Add relo.cat to Codex’s MCP configuration using the CLI.',steps:['Run the command below on the machine where Codex runs.','Start a new session, check that relo.cat’s tools are available, and ask a town question.'],snippet:url=>`codex mcp add relocat --url '${url}'`},
-{id:'cursor',name:'Cursor',logo:bf('cursor.com'),kind:'Local or remote',docs:'https://cursor.com/docs/context/mcp',intro:'Give Cursor Agent access to relo.cat’s tools through an MCP server entry.',steps:['Merge this entry into .cursor/mcp.json for this project, or ~/.cursor/mcp.json for your account. Preserve other servers.','Enable relo.cat in Cursor’s MCP settings, then use it from Agent.'],snippet:url=>JSON.stringify({mcpServers:{relocat:{url}}},null,2)},
-{id:'gemini',name:'Gemini CLI',logo:bf('gemini.google.com'),kind:'Local or remote',docs:'https://geminicli.com/docs/tools/mcp-server/',intro:'Connect the Gemini terminal agent using a Streamable HTTP endpoint. These instructions are for Gemini CLI.',steps:['Merge this into your Gemini CLI settings.json under mcpServers. Keep any existing servers.','Start a new CLI session and use /mcp to inspect the available tools.'],snippet:url=>JSON.stringify({mcpServers:{relocat:{httpUrl:url}}},null,2)},
-{id:'muse',name:'Muse',logo:'https://lookaside.fbsbx.com/elementpath/media/?media_id=1251723253746824&transcode_extension=webp&version=1793911304',kind:'Meta · setup unverified',docs:'https://ai.meta.com/muse/',intro:'Meta’s personal agent. A custom MCP connection path for the consumer Muse app is not verified.',steps:['Meta documents connections to apps and services, but we have not verified an official way to add an arbitrary MCP server to the personal agent.','Use relo.cat’s test page to explore the data today, or select another agent above for documented MCP setup.']},
-{id:'other',name:'Another agent',kind:'Streamable HTTP',docs:'https://modelcontextprotocol.io/docs/learn/client-concepts',intro:'Use any MCP client that supports Streamable HTTP and can reach your relo.cat server.',steps:['Add a server named relo.cat in your agent’s MCP settings.','Select Streamable HTTP and enter the MCP URL below. Use the authentication required by your server operator.','Connect, list the available tools, and try get_town_profile or recommend_towns. Client configuration formats differ; follow your client’s documentation.']}
-];
-const $=id=>document.getElementById(id);let active=agents[0];
-const endpoint=location.origin+'/mcp';
-$('endpoint').value=endpoint;
-function safeUrl(){try{const u=new URL($('endpoint').value);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||/[\s'"`\\]/.test($('endpoint').value))return null;return u.href}catch{return null}}
-async function copy(text){try{await navigator.clipboard.writeText(text);$('feedback').textContent='Copied. Paste it into your agent.'}catch{$('feedback').textContent='Copy unavailable in this browser. Select the text and copy it manually.'}}
-function render(){document.querySelectorAll('.agent').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.id===active.id)));$('agent-title').textContent=active.name;$('selected-logo').hidden=!active.logo;if(active.logo)$('selected-logo').src=active.logo;$('agent-intro').textContent=active.intro;$('docs').href=active.docs;$('endpoint-box').hidden=active.id==='muse';$('instructions').replaceChildren();const ol=document.createElement('ol');active.steps.forEach(s=>{const li=document.createElement('li');li.textContent=s;ol.append(li)});$('instructions').append(ol);const url=safeUrl();let isLocal=false;try{isLocal=['localhost','127.0.0.1','[::1]'].includes(new URL(url).hostname)}catch{};$('endpoint-note').textContent=!url?'Enter a valid HTTP(S) server URL without embedded credentials.':isLocal?'Local development URL. ChatGPT and Claude remote connections need a public HTTPS endpoint or supported tunnel. Ask your server operator for that address.':'Use an operator-provided endpoint. Editing this field does not deploy or test a server. This checkout has no MCP sign-in; a hosted service may require it.';$('copy-url').disabled=!url;if(active.snippet&&url){const pre=document.createElement('pre');pre.textContent=active.snippet(url);const b=document.createElement('button');b.className='small-button';b.textContent='Copy configuration';b.onclick=()=>copy(pre.textContent);$('instructions').append(pre,b)}$('feedback').textContent=''}
-agents.forEach(a=>{const b=document.createElement('button');b.className='agent';b.dataset.id=a.id;b.type='button';if(a.logo){const img=document.createElement('img');img.src=a.logo;img.alt='';b.append(img)}else{const icon=document.createElement('span');icon.className='generic';icon.textContent='＋';b.append(icon)}const label=document.createElement('span');label.textContent=a.name;const small=document.createElement('small');small.textContent=a.kind;label.append(small);b.append(label);b.onclick=()=>{active=a;render()};$('agents').append(b)});
-for(const a of agents.slice(0,4)){const img=document.createElement('img');img.src=a.logo;img.alt=a.name;$('orbit').append(img)}
-for(const text of ['Use relo.cat to find towns where I could rent for €700 a month and reach a primary school without a car. Explain the trade-offs.','Compare Calaf, Juncosa and Ulldemolins. Show sources, research dates and anything that still needs checking.','Look for Idealista examples in Calaf. Separate search results from verified available homes.']){const b=document.createElement('button');b.className='prompt';b.textContent=text;const label=document.createElement('span');label.textContent='Copy';b.append(label);b.onclick=async()=>{try{await navigator.clipboard.writeText(text);label.textContent='Copied'}catch{label.textContent='Select text to copy'}};$('prompts').append(b)}
-$('endpoint').addEventListener('input',render);$('copy-url').onclick=()=>{const url=safeUrl();if(url)copy(url)};render();
-</script></body></html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Discover places to live in Catalonia. Compare towns, schools, transport and housing support with relo.cat.">
+  <meta name="theme-color" content="#fcf7ee">
+  <title>relo.cat · Find your place in Catalonia</title>
+  <style>
+    :root {
+      --paper: #fcf7ee;
+      --cream: #faf0df;
+      --white: #fffcf7;
+      --leaf: #124c36;
+      --ink: #24372c;
+      --muted: #506054;
+      --violet: #663e91;
+      --lilac: #eee2f7;
+      --line: #dcd5c4;
+      --serif: Georgia, ui-serif, serif;
+      font: 1rem/1.6 "Avenir Next", "Segoe UI", system-ui, sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      color-scheme: light;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; }
+    h1, h2, h3, p, figure, dl, dd { margin: 0; }
+    a { color: var(--leaf); text-underline-offset: .19em; }
+    a:hover { color: var(--violet); }
+    button, input, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: default; opacity: .52; }
+    :focus-visible { outline: 3px solid var(--violet); outline-offset: 4px; }
+    ::selection { color: var(--ink); background: #f9d979; }
+    .wrap { width: min(100% - 64px, 1272px); margin-inline: auto; }
+    .skip {
+      position: absolute;
+      z-index: 3;
+      top: 12px;
+      left: 12px;
+      padding: 8px 12px;
+      background: var(--white);
+      transform: translateY(-150%);
+    }
+    .skip:focus { transform: none; }
+    .masthead { min-height: 75px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+    .wordmark { font-size: 1.7rem; font-weight: 850; letter-spacing: -.04em; text-decoration: none; white-space: nowrap; }
+    .wordmark span { color: var(--violet); }
+    .site-nav { display: flex; align-items: center; gap: 18px; }
+    .nav-link { font-size: .94rem; font-weight: 700; text-decoration: none; }
+    .nav-link:hover { text-decoration: underline; }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 9px 18px;
+      border: 1px solid var(--leaf);
+      border-radius: 10px;
+      background: var(--leaf);
+      color: #fffdf4;
+      text-decoration: none;
+      font-weight: 730;
+    }
+    .button:hover:enabled, a.button:hover { background: #1d6547; color: #fff; }
+    .button.secondary { background: var(--white); color: var(--leaf); }
+    .button.secondary:hover { background: #e7f0dc; color: var(--leaf); }
+    .button.compact { min-height: 41px; padding-inline: 14px; font-size: .91rem; }
+    .hero {
+      position: relative;
+      display: flex;
+      align-items: center;
+      isolation: isolate;
+      overflow: hidden;
+      min-height: clamp(420px, 39vw, 540px);
+      border: 1px solid #e8d7b9;
+      border-radius: 20px;
+      background: #fbefdc;
+    }
+    .village {
+      position: absolute;
+      z-index: -1;
+      inset: 0 0 0 auto;
+      width: 74%;
+      height: 100%;
+      object-fit: cover;
+      object-position: 60% 62%;
+      mask-image: linear-gradient(90deg, transparent 2%, #000 39%);
+    }
+    .hero-copy { padding: 44px clamp(28px, 4.6vw, 64px); }
+    h1, h2 { font-family: var(--serif); letter-spacing: -.035em; }
+    h1 { color: #163d2b; font-size: clamp(3.1rem, 6vw, 5.35rem); line-height: .98; }
+    h1 span { display: block; color: var(--violet); font-style: italic; }
+    .hero-copy p {
+      max-width: 33ch;
+      margin: 22px 0 24px;
+      color: #304e3d;
+      font-size: clamp(1rem, 1.5vw, 1.2rem);
+      line-height: 1.52;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .body-section { margin: clamp(48px, 6.2vw, 88px) auto; }
+    .body-section h2 { color: #173b2b; font-size: clamp(2.15rem, 4vw, 3.45rem); line-height: 1.05; }
+    .section-intro { margin-top: 11px; color: var(--muted); max-width: 60ch; }
+    .discover {
+      display: grid;
+      grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr);
+      column-gap: clamp(32px, 7vw, 106px);
+      align-items: start;
+      padding-inline: clamp(0px, 3vw, 42px);
+    }
+    .discover h2 { max-width: 12ch; }
+    .mascot { display: block; width: 100%; height: auto; mix-blend-mode: darken; filter: brightness(1.05); user-select: none; }
+    .welcome { width: clamp(118px, 15vw, 195px); margin: 14px 0 0 1px; }
+    .storylines { margin-top: 2px; border-top: 1px solid var(--line); }
+    .storylines > div { padding: 15px 0; border-bottom: 1px solid var(--line); }
+    .storylines dt { color: var(--leaf); font-size: 1.05rem; font-weight: 800; }
+    .storylines dd { margin-top: 3px; color: var(--muted); }
+    .discovery-link { display: inline-block; margin-top: 14px; font-weight: 730; }
+    #setup { scroll-margin-top: 18px; }
+    .setup-heading { margin-bottom: 18px; }
+    .setup-panel {
+      display: grid;
+      grid-template-columns: minmax(205px, .37fr) minmax(0, 1fr);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--white);
+      overflow: clip;
+    }
+    .agent-list { display: grid; align-content: start; padding: 14px; gap: 3px; border-right: 1px solid #e3d9ea; background: #f6edf9; }
+    .agent {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      min-height: 43px;
+      padding: 6px 12px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      text-align: left;
+      font-weight: 650;
+    }
+    .agent:hover { background: var(--white); }
+    .agent[aria-pressed="true"] { border-color: #c9a8e3; background: var(--lilac); color: #45236a; font-weight: 790; }
+    .agent-mark {
+      display: inline-grid;
+      flex: none;
+      place-items: center;
+      width: 27px;
+      height: 27px;
+      border: 1px solid #e7dfe9;
+      border-radius: 7px;
+      background: #fff;
+    }
+    .agent-mark img { width: 74%; height: 74%; object-fit: contain; }
+    .generic-mark::before, .generic-mark::after { content: ""; grid-area: 1 / 1; width: 10px; height: 2px; border-radius: 1px; background: var(--violet); }
+    .generic-mark::after { transform: rotate(90deg); }
+    .agent-detail { min-width: 0; padding: clamp(19px, 3vw, 36px); }
+    .agent-heading { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+    .agent-heading .agent-mark { width: 39px; height: 39px; border-radius: 9px; }
+    .agent-heading h3 { font-size: 1.55rem; line-height: 1.15; }
+    #agent-kind, .meta { color: var(--muted); font-size: .9rem; }
+    #agent-intro { margin-top: 8px; }
+    .endpoint { margin-top: 18px; padding: 14px; border: 1px solid #e4dac7; border-radius: 12px; background: var(--cream); }
+    .endpoint label, .agent-picker label { display: block; margin-bottom: 5px; font-size: .92rem; font-weight: 750; }
+    .agent-picker { display: none; }
+    .endpoint-row { display: flex; gap: 8px; align-items: stretch; }
+    .endpoint input, .agent-picker select {
+      display: block;
+      min-width: 0;
+      min-height: 43px;
+      padding: 7px 10px;
+      border: 1px solid #ada693;
+      border-radius: 8px;
+      background: var(--white);
+    }
+    .endpoint input { flex: 1 1 auto; width: 100%; }
+    .endpoint input[aria-invalid="true"] { border-color: #983723; }
+    .endpoint .button { flex: 0 0 auto; }
+    #endpoint-note { margin-top: 8px; }
+    .instructions ol { margin: 15px 0 0; padding-inline-start: 22px; }
+    .instructions li { margin-bottom: 5px; padding-inline-start: 4px; }
+    pre {
+      max-width: 100%;
+      padding: 10px 12px;
+      background: #f4edf8;
+      color: #462f5d;
+      border-radius: 8px;
+      overflow: auto;
+      font: .875rem/1.5 ui-monospace, monospace;
+    }
+    code { font: .88em ui-monospace, monospace; overflow-wrap: anywhere; }
+    .copy-status { color: var(--leaf); font-size: .93rem; font-weight: 680; }
+    .copy-status:not(:empty) { margin-top: 8px; }
+    .agent-footer { margin-top: 13px; }
+    .agent-footer a { font-weight: 700; }
+    .agent-footer p { margin-top: 5px; }
+    .questions {
+      display: grid;
+      grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+      gap: clamp(20px, 5vw, 76px);
+      align-items: center;
+      padding: clamp(22px, 4vw, 48px);
+      border-radius: 16px;
+      background: var(--cream);
+    }
+    .guide { width: clamp(126px, 18vw, 225px); margin-top: 10px; }
+    .prompt-list { border-top: 1px solid #e0d1b5; }
+    .prompt {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid #e0d1b5;
+    }
+    .prompt button { min-width: 76px; }
+    .site-footer { background: #e8efdf; padding: 30px 0 22px; }
+    .footer-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px 44px; }
+    .footer-content h2 { font-family: inherit; font-size: 1.05rem; font-weight: 800; line-height: 1.26; letter-spacing: normal; }
+    .footer-content p { margin-top: 6px; }
+    .footer-content a { font-weight: 680; }
+    .footer-content summary { cursor: pointer; color: var(--leaf); font-weight: 750; margin-top: 8px; }
+    .footer-bottom { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-top: 24px; padding-top: 15px; border-top: 1px solid #c9d6c2; }
+    .footer-bottom .wordmark { font-size: 1.42rem; }
+    .footer-links { display: flex; flex-wrap: wrap; gap: 12px; font-size: .9rem; }
+    @media (max-width: 920px) {
+      .wrap { width: calc(100% - 38px); }
+      .village { width: 77%; mask-image: linear-gradient(90deg, transparent 3%, #000 49%); }
+    }
+    @media (max-width: 720px) {
+      .hero { display: grid; min-height: 0; }
+      .hero-copy { padding: 26px 24px 9px; position: relative; z-index: 1; }
+      .village { position: relative; grid-row: 2; width: 100%; height: clamp(195px, 48vw, 294px); mask-image: linear-gradient(180deg, transparent, #000 23%); }
+      h1 { font-size: clamp(2.8rem, 8.8vw, 4.05rem); }
+      .hero-copy p { margin: 13px 0 16px; }
+      .discover, .questions { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+      .discover h2 { max-width: none; }
+      .discovery-intro, .question-intro { display: grid; grid-template-columns: minmax(0, 1fr) 102px; column-gap: 8px; align-items: center; }
+      .welcome, .guide { width: 100%; margin: 0; }
+      .setup-panel { display: block; }
+      .agent-list { display: none; }
+      .agent-picker { display: block; margin-bottom: 16px; }
+      .agent-picker select { width: 100%; margin-top: 4px; }
+    }
+    @media (max-width: 420px) {
+      .wrap { width: calc(100% - 26px); }
+      .masthead { min-height: 61px; }
+      .site-nav { gap: 9px; }
+      .site-nav .nav-link, .site-nav .button { font-size: .82rem; }
+      .wordmark { font-size: 1.39rem; }
+      .hero-copy { padding-inline: 17px; }
+      h1 { font-size: clamp(2.3rem, 10vw, 2.64rem); }
+      .actions .button { min-height: 43px; padding-inline: 10px; font-size: .9rem; }
+      .footer-content { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (max-width: 340px) {
+      .site-nav .button { padding-inline: 7px; }
+      .discovery-intro, .question-intro { grid-template-columns: minmax(0, 1fr) 78px; }
+      .endpoint-row { flex-wrap: wrap; }
+      .endpoint-row .button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="masthead wrap">
+    <a class="wordmark" href="/connect" aria-label="relo.cat home">relo<span>.cat</span></a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a class="nav-link" href="/preview">Town demo</a>
+      <a class="button compact secondary" href="#setup">Connect an agent</a>
+    </nav>
+  </header>
+
+  <main class="wrap" id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <img class="village" src="{{village}}" alt="" fetchpriority="high">
+      <div class="hero-copy">
+        <h1 id="hero-title">Find your place <span>in Catalonia.</span></h1>
+        <p>Compare towns, school journeys and housing support before you decide where to move.</p>
+        <div class="actions">
+          <a class="button" href="/preview">Explore towns</a>
+          <a class="button secondary" href="#setup">Connect your agent</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="body-section discover" aria-labelledby="discover-title">
+      <div class="discovery-intro">
+        <div>
+          <h2 id="discover-title">Get a feel for everyday life.</h2>
+          <p class="section-intro">Start with 18 Catalan municipalities in the pilot.</p>
+        </div>
+        <img class="mascot welcome" src="{{welcome}}" alt="" width="227" height="208" loading="lazy">
+      </div>
+      <div>
+        <dl class="storylines">
+          <div><dt>Find towns that fit</dt><dd>Compare towns against your budget, school needs and transport constraints. See which requirements each town meets and what still needs checking.</dd></div>
+          <div><dt>Compare the school run and commute</dt><dd>Check nearby schools and dated travel estimates. Sources and sample dates help you decide which journeys to verify.</dd></div>
+          <div><dt>Explore housing support and homes</dt><dd>Check published incentives and their application status. When live listing search is enabled, follow example links to confirm the price, bedrooms and availability.</dd></div>
+        </dl>
+        <a class="discovery-link" href="https://github.com/itsmanelvelasco/aihousebuyingcompanion/blob/main/apps/mcp-server/README.md#data-and-refresh">See the data sources</a>
+      </div>
+    </section>
+
+    <section class="body-section" id="setup" aria-labelledby="setup-title">
+      <div class="setup-heading">
+        <h2 id="setup-title">Bring relo.cat into your chat.</h2>
+        <p class="section-intro">Choose your AI agent for step-by-step connection instructions.</p>
+      </div>
+      <div class="setup-panel">
+        <div class="agent-list" id="agents" role="group" aria-label="Choose an agent"></div>
+        <div class="agent-detail">
+          <div class="agent-picker">
+            <label for="agent-select">Choose an agent</label>
+            <select id="agent-select"></select>
+          </div>
+          <div class="agent-heading">
+            <span id="selected-agent-mark"></span>
+            <h3 id="agent-title">ChatGPT</h3>
+            <span id="agent-kind"></span>
+          </div>
+          <p id="agent-intro"></p>
+          <div class="endpoint" id="endpoint-box">
+            <label for="endpoint">relo.cat MCP server URL</label>
+            <div class="endpoint-row">
+              <input id="endpoint" type="url" spellcheck="false" autocomplete="off" aria-describedby="endpoint-note">
+              <button class="button compact" id="copy-url" type="button">Copy URL</button>
+            </div>
+            <p id="endpoint-note" class="meta"></p>
+          </div>
+          <div class="instructions" id="instructions"></div>
+          <p class="copy-status" id="feedback" role="status"></p>
+          <div class="agent-footer">
+            <a id="docs" target="_blank" rel="noopener noreferrer">Official setup guide</a>
+            <p class="meta">Available settings depend on your agent version and workspace permissions.</p>
+          </div>
+          <noscript>Enable JavaScript to choose an agent and generate its configuration.</noscript>
+        </div>
+      </div>
+    </section>
+
+    <section class="body-section questions" aria-labelledby="questions-title">
+      <div class="question-intro">
+        <div>
+          <h2 id="questions-title">What would you ask?</h2>
+          <p class="section-intro">Copy a question into your agent after connecting relo.cat.</p>
+        </div>
+        <img class="mascot guide" src="{{guide}}" alt="" width="289" height="221" loading="lazy">
+      </div>
+      <div>
+        <div class="prompt-list" id="prompts"></div>
+        <p class="copy-status" id="prompt-feedback" role="status"></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="footer-content">
+        <div>
+          <h2>About the data</h2>
+          <p>Sources include official municipal statistics and dated relocation research for three pilot towns. Housing averages describe the local market. Check listing availability, school admissions and walkability separately. Incentives show application status and household eligibility separately.</p>
+        </div>
+        <div>
+          <h2>Running relo.cat yourself?</h2>
+          <p>Use fictional profiles for the local connected demo. Add authentication and access controls before sharing a public deployment.</p>
+          <details>
+            <summary>Local server and live listing setup</summary>
+            <pre>npm run dev:stack</pre>
+            <p>The local MCP endpoint is <code>http://127.0.0.1:8787/mcp</code>. Cloud agents need an HTTPS URL from your server operator or a supported private tunnel.</p>
+            <p>Set <code>TREG_TOKEN</code> in the server environment to enable live example links. The provider may charge for searches. Town research runs without the key.</p>
+          </details>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <a class="wordmark" href="/connect" aria-label="relo.cat home">relo<span>.cat</span></a>
+        <nav class="footer-links" aria-label="Footer navigation">
+          <a href="/preview">Town demo</a>
+          <a href="https://github.com/itsmanelvelasco/aihousebuyingcompanion">GitHub</a>
+        </nav>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const agentIcons = {{agent-icons}};
+    const agents = [
+      {
+        id: 'chatgpt',
+        name: 'ChatGPT',
+        kind: 'Cloud connection',
+        docs: 'https://developers.openai.com/plugins/deploy/connect-chatgpt',
+        intro: 'Add relo.cat as a custom MCP plugin to use its tools in your conversations.',
+        steps: ['Open ChatGPT’s Plugins page. Select the plus button, then “Add custom MCP server”.','Name it relo.cat. Choose a public URL connection and paste your operator’s HTTPS MCP URL, including /mcp. A configured Secure MCP Tunnel is another option.','Use the authentication settings supplied by the operator. Review the tools and create the plugin.','Install it, start a new chat, and type @ to select relo.cat. Try one of the prompts below.']
+      },
+      {
+        id: 'claude',
+        name: 'Claude',
+        kind: 'Cloud connection',
+        docs: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
+        intro: 'Add a custom connector in Claude. Remote connectors connect from Claude’s cloud, including in Claude Desktop.',
+        steps: ['Open Customize → Connectors. Choose “+ Add”, then “Add custom connector”.','Name the connector relo.cat and paste the public HTTPS MCP URL, including /mcp.','Review the detected authentication and follow your operator’s settings. Team or Enterprise users may need an administrator to add it first.','Enable relo.cat from the chat’s + menu → Connectors, then ask about a town.']
+      },
+      {
+        id: 'hermes',
+        name: 'Hermes',
+        kind: 'Local or remote',
+        docs: 'https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp',
+        intro: 'Add relo.cat to the MCP servers in your active Hermes profile. Localhost works when Hermes and relo.cat run on the same machine.',
+        steps: ['Merge this entry into mcp_servers in your active profile’s config.yaml (default: ~/.hermes/config.yaml). Preserve your existing servers.','Start a fresh Hermes session and ask it to use relo.cat’s town tools.'],
+        snippet: url=>`mcp_servers:\n  relocat:\n    url: ${JSON.stringify(url)}`
+      },
+      {
+        id: 'openclaw',
+        name: 'OpenClaw',
+        kind: 'Local or remote',
+        docs: 'https://docs.openclaw.ai/tools/mcp',
+        intro: 'Register relo.cat as a Streamable HTTP MCP server in OpenClaw.',
+        steps: ['Run the command below in the environment where OpenClaw runs.','Probe the connection, then ask your agent to use relo.cat. A remote OpenClaw installation cannot reach your laptop’s localhost.'],
+        snippet: url=>`openclaw mcp add relocat --url '${url}' --transport streamable-http\nopenclaw mcp doctor relocat --probe`
+      },
+      {
+        id: 'codex',
+        name: 'Codex',
+        kind: 'Local or remote',
+        docs: 'https://developers.openai.com/codex/mcp',
+        intro: 'Add relo.cat to Codex’s MCP configuration using the CLI.',
+        steps: ['Run the command below on the machine where Codex runs.','Start a new session, check that relo.cat’s tools are available, and ask a town question.'],
+        snippet: url=>`codex mcp add relocat --url '${url}'`
+      },
+      {
+        id: 'cursor',
+        name: 'Cursor',
+        kind: 'Local or remote',
+        docs: 'https://cursor.com/docs/context/mcp',
+        intro: 'Give Cursor Agent access to relo.cat’s tools through an MCP server entry.',
+        steps: ['Merge this entry into .cursor/mcp.json for this project, or ~/.cursor/mcp.json for your account. Preserve other servers.','Enable relo.cat in Cursor’s MCP settings, then use it from Agent.'],
+        snippet: url=>JSON.stringify({mcpServers:{relocat:{url}}},null,2)
+      },
+      {
+        id: 'gemini',
+        name: 'Gemini CLI',
+        kind: 'Local or remote',
+        docs: 'https://geminicli.com/docs/tools/mcp-server/',
+        intro: 'Connect the Gemini terminal agent using a Streamable HTTP endpoint. These instructions are for Gemini CLI.',
+        steps: ['Merge this into your Gemini CLI settings.json under mcpServers. Keep any existing servers.','Start a new CLI session and use /mcp to inspect the available tools.'],
+        snippet: url=>JSON.stringify({mcpServers:{relocat:{httpUrl:url}}},null,2)
+      },
+      {
+        id: 'muse',
+        name: 'Muse',
+        kind: 'Meta · setup unverified',
+        docs: 'https://ai.meta.com/muse/',
+        intro: 'Meta’s personal agent. A custom MCP connection path for the consumer Muse app is not verified.',
+        steps: ['Meta documents connections to apps and services, but we have not verified an official way to add an arbitrary MCP server to the personal agent.','Try the town demo or choose another agent for documented MCP setup.']
+      },
+      {
+        id: 'other',
+        name: 'Another agent',
+        kind: 'Streamable HTTP',
+        docs: 'https://modelcontextprotocol.io/docs/learn/client-concepts',
+        intro: 'Use any MCP client that supports Streamable HTTP and can reach your relo.cat server.',
+        steps: ['Add a server named relo.cat in your agent’s MCP settings.','Select Streamable HTTP and enter the MCP URL below. Use the authentication required by your server operator.','Connect, list the available tools, and try get_town_profile or recommend_towns. Client configuration formats differ; follow your client’s documentation.']
+      }
+    ];
+
+    const get = id => document.getElementById(id);
+    const endpoint = get("endpoint");
+    const instructions = get("instructions");
+    const agentSelect = get("agent-select");
+    const feedback = get("feedback");
+    let active = agents[0];
+    endpoint.value = location.origin + "/mcp";
+
+    function safeUrl() {
+      try {
+        const url = new URL(endpoint.value);
+        const allowed = url.protocol === "http:" || url.protocol === "https:";
+        if (!allowed || url.username || url.password || /[\s'"\x60\\]/.test(endpoint.value)) return null;
+        return url;
+      } catch {
+        return null;
+      }
+    }
+
+    async function copy(text, status, selectText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        status.textContent = "Copied.";
+      } catch {
+        selectText();
+        status.textContent = "Clipboard access is unavailable. Copy the selected text manually.";
+      }
+    }
+
+    function selectContents(element) {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    function agentMark(id) {
+      const mark = document.createElement("span");
+      mark.className = "agent-mark";
+      mark.setAttribute("aria-hidden", "true");
+      const src = agentIcons[id];
+      if (src) {
+        const image = document.createElement("img");
+        image.alt = "";
+        image.src = src;
+        mark.append(image);
+      } else {
+        mark.classList.add("generic-mark");
+      }
+      return mark;
+    }
+
+    function renderEndpoint() {
+      const url = safeUrl();
+      const local = url && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+      endpoint.setAttribute("aria-invalid", String(!url));
+      get("copy-url").disabled = !url;
+      get("endpoint-note").textContent = !url
+        ? "Enter a valid HTTP or HTTPS URL without credentials."
+        : local
+          ? "This address works for local agents. ChatGPT and Claude need an HTTPS URL they can reach or a supported tunnel."
+          : "Use the address and authentication settings from your server operator.";
+
+      const config = get("config");
+      config.hidden = !url || !active.snippet;
+      if (!config.hidden) config.querySelector("pre").textContent = active.snippet(url.href);
+      feedback.textContent = "";
+    }
+
+    function renderAgent() {
+      agentSelect.value = active.id;
+      get("agents").querySelectorAll("button").forEach(button => {
+        button.setAttribute("aria-pressed", String(button.dataset.id === active.id));
+      });
+      get("agent-title").textContent = active.name;
+      get("selected-agent-mark").replaceChildren(agentMark(active.id));
+      get("agent-kind").textContent = active.kind;
+      get("agent-intro").textContent = active.intro;
+      get("docs").href = active.docs;
+      get("endpoint-box").hidden = active.id === "muse";
+
+      const steps = document.createElement("ol");
+      for (const text of active.steps) {
+        const step = document.createElement("li");
+        step.textContent = text;
+        steps.append(step);
+      }
+
+      const config = document.createElement("div");
+      config.id = "config";
+      const pre = document.createElement("pre");
+      const copyConfig = document.createElement("button");
+      copyConfig.type = "button";
+      copyConfig.className = "button compact secondary";
+      copyConfig.textContent = "Copy configuration";
+      copyConfig.onclick = () => copy(pre.textContent, feedback, () => selectContents(pre));
+      config.append(pre, copyConfig);
+      instructions.replaceChildren(steps, config);
+      renderEndpoint();
+    }
+
+    for (const agent of agents) {
+      const button = document.createElement("button");
+      button.className = "agent";
+      button.dataset.id = agent.id;
+      button.type = "button";
+      button.append(agentMark(agent.id), agent.name);
+      button.onclick = () => {
+        active = agent;
+        renderAgent();
+      };
+      get("agents").append(button);
+      agentSelect.add(new Option(agent.name, agent.id));
+    }
+
+    for (const text of [
+      "Use relo.cat to find towns where I could rent for €700 a month and reach a primary school without a car. Explain the trade-offs.",
+      "Compare Calaf, Juncosa and Ulldemolins. Show sources, research dates and anything that still needs checking.",
+      "Look for Idealista examples in Calaf. Separate search results from verified available homes.",
+    ]) {
+      const row = document.createElement("div");
+      row.className = "prompt";
+      const question = document.createElement("p");
+      question.textContent = text;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button compact secondary";
+      button.textContent = "Copy";
+      button.setAttribute("aria-label", "Copy question: " + text);
+      button.onclick = () => copy(text, get("prompt-feedback"), () => selectContents(question));
+      row.append(question, button);
+      get("prompts").append(row);
+    }
+
+    agentSelect.onchange = () => {
+      active = agents.find(agent => agent.id === agentSelect.value);
+      renderAgent();
+    };
+    endpoint.addEventListener("input", renderEndpoint);
+    get("copy-url").onclick = () => {
+      const url = safeUrl();
+      if (url) void copy(url.href, feedback, () => { endpoint.focus(); endpoint.select(); });
+    };
+    renderAgent();
+  </script>
+</body>
+</html>
