@@ -1,6 +1,6 @@
 # relocat places MCP
 
-The relocat backend compares Catalan municipalities for a household considering a move. Its TypeScript MCP server screens housing budgets and school or rail access, returns sourced municipal profiles, and checks a small catalogue of housing incentives from a local snapshot. The pilot covers 14 candidate municipalities along the FGC Lleida–La Pobla de Segur corridor and includes Lleida as a transport destination.
+The relocat backend compares Catalan municipalities for a household considering a move. Its TypeScript MCP server screens housing budgets and school or rail access, returns sourced municipal profiles, and checks a small catalogue of housing incentives from a local snapshot. The pilot covers 17 candidates, including Calaf, Juncosa, Ulldemolins and towns along the FGC Lleida–La Pobla de Segur corridor. Lleida serves as a transport destination.
 
 ## Run locally
 
@@ -24,7 +24,7 @@ The tools are read-only. The application processes supplied household criteria i
 | --- | --- |
 | `list_catalonia_municipalities` | Search pilot coverage by name, comarca or six-digit Idescat code. |
 | `recommend_towns` | Apply hard constraints first, then rank with weighted affordability, school, commute and rural preferences. Read `excluded` for constraint failures or missing evidence. |
-| `get_town_profile` | Read municipal and comarca indicators, map coordinates, school access, dated rail evidence and geographically relevant policies. |
+| `get_town_profile` | Read municipal and comarca indicators, map coordinates, school access, dated rail evidence, sample travel estimates and geographically relevant policies. |
 | `get_nearby_schools` | Find authorized school stages within the municipality or nearby. Filter by stage, estimated journey time or a scheduled rail option. |
 | `get_transport_options` | Find dated, direct FGC services between two pilot municipalities and count departures in a requested window. |
 | `get_business_activity` | Read resident Social Security, unemployment and historical retail census indicators. |
@@ -53,6 +53,16 @@ Call `recommend_towns` with these arguments to screen an 85 m² purchase up to �
 
 The committed snapshot returns Térmens, Vallfogona de Balaguer and Vilanova de la Barca. Vallfogona has a published municipal resale price. The other two use their respective comarca prices. Call `get_town_profile` for one of the returned codes, then `get_applicable_incentives` with intent `buy` and any confirmed household facts. Use `check_housing_incentives` to explain exclusions as well.
 
+### Quick travel comparisons
+
+`get_town_profile` returns `travelEstimates` for all 18 mapped municipalities. The endpoints are Lleida-Pirineus and its bus station, Barcelona Sants, Barcelona Airport T1 and T2, Girona railway station, and Girona-Costa Brava Airport.
+
+Car estimates use an OpenStreetMap-based road model from the town centre, rounded to five minutes. Traffic and parking can change the time. [FOSSGIS OSRM service and OpenStreetMap attribution](https://routing.openstreetmap.de/about.html)
+
+Public transport estimates use published journeys from November 23, 2026. The rounded time includes sampled transfer waits and starts at the first station or bus stop. Each result includes the mode, sample count and sources. The T1 estimate adds an allowance for walking and the published shuttle from T2. A null value means this snapshot lacks a verified sample for that destination and mode. Treat the estimates as comparisons and use a current timetable to plan a specific journey. [Aena terminal shuttle](https://www.aena.es/en/josep-tarradellas-barcelona-el-prat/airport-services/free-transport-between-terminals.html)
+
+The samples live in `data/travel-estimates.json`. Town snapshot refreshes run independently of the travel samples.
+
 ## Data and refresh
 
 | Snapshot data | Provenance |
@@ -70,4 +80,4 @@ npm run data:validate
 
 Refresh downloads the public sources and validates identifiers, metric scopes and rail references before replacing `data/towns.json` atomically. A failed source refresh leaves the previous snapshot available. The annual resale workbook defaults to 2025. Use `SALES_YEAR` for a published annual workbook. The server loads the published fixture at startup. Restart or redeploy after refreshing it. Policy changes are reviewed against the linked official rules and updated in `data/incentives.json` and `packages/places/eligibility.ts`.
 
-The committed FGC service calendar covers November 19 through December 31, 2026. Outside those dates the tools report unavailable schedule coverage. School journeys use the official directory’s geographic coordinates and FGC stop times, with estimated walks based on straight-line distance from town centres. Admissions, school transport, precise walking routes, disruptions and round trips require separate checks. Missing price and indicator data are reported explicitly. Resale estimates describe historical averages, and retail figures retain their census year. Grant call status is independent of household eligibility.
+The committed FGC RL1/RL2 service calendar covers November 19 through December 31, 2026. Calaf, Juncosa and Ulldemolins have school directory coverage. Their local transport schedules are outside the current feed. School journeys use the official directory’s geographic coordinates and FGC stop times, with estimated walks based on straight-line distance from town centres. Admissions, school transport, precise walking routes, disruptions and round trips require separate checks. Missing price and indicator data are reported explicitly. Resale estimates describe historical averages, and retail figures retain their census year. Grant call status is independent of household eligibility.

@@ -13,7 +13,12 @@ export const accountSchema = z.object({
 }).strict();
 const ledgerSchema = z.object({
   schemaVersion: z.literal(1), synthetic: z.literal(true), updatedAt: z.string(),
-  accounts: z.array(accountSchema).max(20), transactions: z.array(transactionSchema).max(10000)
+  accounts: z.array(accountSchema).max(20), transactions: z.array(transactionSchema).max(10000),
+  revision: z.number().int().nonnegative().default(0),
+  events: z.array(z.object({
+    sequence: z.number().int().positive(), occurredAt: z.string(), type: z.literal('bank.updated'),
+    accountCount: z.number().int().nonnegative(), transactionCount: z.number().int().nonnegative(), synthetic: z.literal(true)
+  })).max(500).default([])
 }).strict();
 export type Ledger = z.infer<typeof ledgerSchema>;
 const importSchema = z.object({ transactions: z.array(transactionSchema).min(1).max(500) }).strict();
@@ -25,7 +30,7 @@ export function createBankStore(root: string) {
     try { return ledgerSchema.parse(JSON.parse(await readFile(join(root, userId.parse(id), 'bank-ledger.json'), 'utf8'))); }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      return { schemaVersion: 1, synthetic: true, updatedAt: '', accounts: [], transactions: [] };
+      return { schemaVersion: 1, synthetic: true, updatedAt: '', accounts: [], transactions: [], revision: 0, events: [] };
     }
   }
   function validate(ledger: Ledger) {
@@ -41,8 +46,13 @@ export function createBankStore(root: string) {
     const previous = locks.get(id) ?? Promise.resolve();
     const operation = previous.catch(() => {}).then(async () => {
       const ledger = await read(id);
+      const previousContent = JSON.stringify([ledger.accounts, ledger.transactions]);
       const result = change(ledger);
+      if (previousContent === JSON.stringify([ledger.accounts, ledger.transactions])) return { result, ledger };
       ledger.updatedAt = new Date().toISOString();
+      ledger.revision++;
+      ledger.events.push({ sequence: ledger.revision, occurredAt: ledger.updatedAt, type: 'bank.updated', accountCount: ledger.accounts.length, transactionCount: ledger.transactions.length, synthetic: true });
+      ledger.events = ledger.events.slice(-500);
       validate(ledger);
       const target = join(root, id, 'bank-ledger.json');
       const temporary = `${target}.${randomUUID()}.tmp`;
@@ -56,6 +66,14 @@ export function createBankStore(root: string) {
   }
   return {
     read,
+    async events(id: string, after: number, limit: number) {
+      const ledger = await read(id);
+      const oldest = ledger.events[0]?.sequence ?? ledger.revision + 1;
+      const requiresRefresh = after > ledger.revision || after < oldest - 1;
+      const selected = ledger.events.filter(event => event.sequence > after).slice(0, limit);
+      const nextCursor = requiresRefresh && after > ledger.revision ? ledger.revision : selected.at(-1)?.sequence ?? after;
+      return { synthetic: true, events: selected, latestRevision: ledger.revision, nextCursor, requiresRefresh, hasMore: nextCursor < ledger.revision };
+    },
     async createAccount(id: string, input: unknown) {
       const account = accountSchema.parse(input);
       return mutate(id, ledger => {

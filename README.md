@@ -12,9 +12,23 @@ Key references: [MCP architecture and contracts](https://chatgpt.com/space/page_
 
 ## Project status
 
-The project includes a local TypeScript profile/bank API, deterministic transaction cash-flow analysis and savings scenarios, 500 synthetic household profiles in per-user JSON and combined JSON/CSV formats, and a municipality MCP backend. The municipality backend covers town matching, school access, FGC schedules and housing incentives. ChatGPT widget and conversational finance integration remain planned.
+The project includes a connected ChatGPT plugin/live board, local profile/bank API, deterministic financial analysis, 500 synthetic profiles and a sourced municipality backend. Connected mode persists grouped interview answers, reads bank runtime changes and prepares provisional municipality screens. Property bedroom checks remain explicitly unverified until actual listing evidence is available.
 
-The separate `hackathon/arrela-demo-plugin` branch contains a scripted four-persona MCP/widget prototype. It is not merged into `main` and does not yet consume the profile API. Its fictional incentives and listings do not satisfy the sourced municipality demo requirement.
+The plugin work is integrated under `demo-plugin/`. With `PROFILE_API_URL` and `PROFILE_API_TOKEN`, one `/mcp` endpoint exposes municipality, bank-read and demo-board tools. Without configuration it runs the original scripted rehearsal. Scripted scenes remain visibly separate from sourced town/incentive results; backend errors never silently switch to scripted data.
+
+## Connected demo and development areas
+
+```powershell
+npm ci
+npm run setup:app
+npm run dev:stack
+```
+
+Open `http://127.0.0.1:8787/preview`; use `http://127.0.0.1:8787/mcp` as the single local MCP endpoint. The launcher starts the profile API on port 3001, keeps its credential in process memory and enables a clearly synthetic background feed for `user-001`. `DEMO_BANK_USERS` overrides the list (empty disables all feeds). `PROFILE_API_PORT` and `APP_PORT` override ports. Ctrl+C stops the stack. Expose the app through your chosen HTTPS host/tunnel for ChatGPT; the local launcher does not deploy it.
+
+See [the monorepo development map](docs/README.md) for each area's entry points, owners, contracts and checks. `npm run typecheck`, `npm test`, `npm run data:validate`, `npm run check:app` and `npm run test:app` verify the combined code. Runtime bank events persist in the ledger; timers run only while the profile service is running and clients poll for updates. They do not wake ChatGPT or send unsolicited messages.
+
+The separate [habits service](apps/habits-agent/README.md) runs with `npm run start:habits` on port 3002 after setting `HABITS_API_TOKEN`. Local suggestions, goals and check-ins work without an API key. Optional `gpt-6.2-sol` suggestions use server-side `OPENAI_API_KEY`, bounded on-demand calls and no paid background loop. It is not automatically wired into the board or started by `dev:stack`.
 
 ## Voice interviewer demo
 
@@ -87,9 +101,11 @@ Full bank OAuth, coverage of every municipality and government submissions are o
 
 Run `npm run start:mcp` from the repository root. The service exposes Streamable HTTP at `http://127.0.0.1:8787/mcp`. See the [MCP setup, demo request and data sources](apps/mcp-server/README.md).
 
-The MCP backend lives in `apps/mcp-server/`. Its tools share Zod schemas in `packages/contracts/` and use the data loading, matching and eligibility code in `packages/places/`. The versioned fixtures in `data/towns.json` and `data/incentives.json` cover 15 municipalities along the FGC Lleida–La Pobla de Segur corridor. Tools compute household-specific recommendations and eligibility from the local snapshot.
+The MCP backend lives in `apps/mcp-server/`. Its tools share Zod schemas in `packages/contracts/` and use the data loading, matching and eligibility code in `packages/places/`. The versioned fixtures in `data/towns.json` and `data/incentives.json` cover 18 municipalities, including Calaf, Juncosa, Ulldemolins and the FGC Lleida–La Pobla de Segur corridor. Tools compute household-specific recommendations and eligibility from the local snapshot.
 
 The core demo calls `recommend_towns`, `get_town_profile`, and `get_applicable_incentives`. Additional tools cover schools, rail, business indicators, municipality lookup, and household eligibility detail. Town results include official codes, match reasons, trade-offs, evidence dates and URLs, and missing data. Incentives include separate application and eligibility statuses.
+
+All 18 municipality profiles include [sample travel estimates](apps/mcp-server/README.md#quick-travel-comparisons) to major stations and airports, with public transport times where the sample timetable supports a journey.
 
 ## Trust and privacy requirements
 

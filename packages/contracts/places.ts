@@ -229,12 +229,31 @@ export const recommendationResult = z.object({
 });
 
 export const profileInput = z.object({ municipalityCode, travelDate: isoDate.optional() }).strict();
+export const destinationTravelEstimate = z.object({
+  destinationId: z.enum(["lleida", "barcelona", "bcn_t1", "bcn_t2", "girona", "girona_airport"]),
+  destination: z.string().min(1),
+  car: source.extend({
+    durationMinutes: z.number().int().positive().describe("Approximate driving time from the town centre from a road network model without live traffic"),
+  }),
+  publicTransport: z.object({
+    mode: z.enum(["train", "bus", "bus_and_train"]),
+    durationMinutes: z.number().int().positive().describe("Approximate duration from sampled published journeys, including transfer waits where applicable"),
+    sampleDate: isoDate,
+    sampleCount: z.number().int().positive(),
+    summary: z.string().min(1),
+    sourceUrls: z.array(z.url()).nonempty(),
+  }).nullable().describe("Null means the demo has no verified public transport sample to this destination"),
+});
+export const travelEstimateData = z.record(municipalityCode, z.array(destinationTravelEstimate).nonempty());
+export type TravelEstimateData = z.infer<typeof travelEstimateData>;
+
 export const profileResult = z.object({
   snapshot: snapshotInfo,
   municipality,
   metrics: z.array(metric),
   comarcaMetrics: z.array(metric),
   nearbySchools: schoolResult,
+  travelEstimates: z.array(destinationTravelEstimate).describe("Dated comparison estimates for selected demo towns"),
   railway: source.extend({
     stops: z.array(railStop),
     validThrough: isoDate,

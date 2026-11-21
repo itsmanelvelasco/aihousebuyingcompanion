@@ -1,13 +1,20 @@
 import { createServer } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import type { Policy, Snapshot } from "../../packages/contracts/places.ts";
+import type { Policy, Snapshot, TravelEstimateData } from "../../packages/contracts/places.ts";
 import { snapshotInfo } from "../../packages/places/data.ts";
 import { createMcpServer } from "./tools.ts";
+import { registerBankTools } from "./bank-tools.ts";
+import type { BankToolConfig } from "./bank-tools.ts";
 
 export function createHttpServer(
   snapshot: Snapshot,
   policies: Policy[],
-  options: { allowedOrigins?: Set<string>; today?: () => string } = {},
+  options: {
+    allowedOrigins?: Set<string>;
+    today?: () => string;
+    bankApi?: BankToolConfig;
+    travelEstimates?: TravelEstimateData;
+  } = {},
 ) {
   return createServer(async (request, response) => {
     const path = request.url?.split("?")[0];
@@ -27,7 +34,8 @@ export function createHttpServer(
       return;
     }
 
-    const server = createMcpServer(snapshot, policies, options.today);
+    const server = createMcpServer(snapshot, policies, options.today, options.travelEstimates);
+    if (options.bankApi) registerBankTools(server, options.bankApi);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     try {
       await server.connect(transport);

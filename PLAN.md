@@ -8,14 +8,17 @@ The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539
 
 The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_applicable_incentives`. Bank-informed coaching and [authorized property listings](https://chatgpt.com/space/page_5cb6c5414e088191827364cd0e43b847) are complementary streams, not prerequisites for demo success.
 
-## Integration gaps to resolve
+## Delivered integration and remaining product boundaries
 
-- [ ] Coordinate with the frontend/setup team on `hackathon/arrela-demo-plugin`; its four scripted personas and in-memory state are not yet connected to the 500-user API on `main`.
-- [ ] Agree a profile adapter: stable user ID; household size and school needs; bedrooms, commute and transport; purchase budget; explicit unknowns.
-- [ ] Convert integer EUR cents from profile storage to the plugin's euro values at the boundary. Its total spending must include `monthlyExpensesCents + debtPaymentsCents` exactly once.
-- [ ] Replace scripted policy/listing examples with sourced results before presenting them as actual opportunities; retain fictional labels for demo scenes.
+- [x] Integrate the plugin branch with the profile API; map demo personas to persisted users and save grouped interview inputs.
+- [x] Add the profile adapter, missing screening questions, upfront target and emergency reserve inputs.
+- [x] Convert cents/euros explicitly and count debt once; keep live balances separate from declared purchase savings.
+- [x] Return sourced municipality screens and incentives separately from explicitly scripted scene opportunities.
 - [x] Expose `get_applicable_incentives` with optional household checks, and retain `check_housing_incentives` for eligibility and exclusions.
-- [ ] Keep existing profile storage paths; agree shared contracts and the town/MCP layout with team owners before moving files.
+- [x] Preserve existing profile paths and expose municipality, bank-read and board tools through one connected MCP endpoint.
+- [x] Add a synthetic background worker, durable cursor-based bank events, authenticated polling tools, stack launcher and per-area development guides.
+- [ ] Verify bedroom counts and actual property availability against authorized listing evidence. Town screens deliberately retain these as unresolved property checks.
+- [ ] Complete human visual/voice rehearsal in the target ChatGPT client; automated transport tests do not establish client widget visibility.
 
 ## Delivered profile foundation
 

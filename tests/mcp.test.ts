@@ -9,8 +9,8 @@ import {
 import { loadData } from "../packages/places/data.ts";
 import { createHttpServer } from "../apps/mcp-server/http.ts";
 
-const { snapshot, policies } = loadData();
-const server = createHttpServer(snapshot, policies, { today: () => "2026-11-21" });
+const { snapshot, policies, travelEstimates } = loadData();
+const server = createHttpServer(snapshot, policies, { today: () => "2026-11-21", travelEstimates });
 const client = new Client({ name: "relocat-tests", version: "1.0.0" });
 let base: URL;
 const travelDate = "2026-11-23";
@@ -50,6 +50,7 @@ test("discovers schemas and exposes sourced profiles, schools and business indic
   assert.equal(profile.municipality.name, "Térmens");
   assert(profile.dataMissing.includes("rent_eur_per_month"));
   assert(profile.metrics.every(metric => metric.observedAt && metric.sourceUrl.startsWith("https:")));
+  assert(profile.travelEstimates.some(estimate => estimate.destinationId === "lleida" && estimate.publicTransport));
   assert.equal(profile.railway.sampleConnectionToLleida?.scheduleCoverage, "covered");
 
   const schools = schoolResult.parse(await tool("get_nearby_schools", { municipalityCode: termens, stage: "eso", mode: "rail", travelDate }));
@@ -86,6 +87,51 @@ test("screens a three-town rural rail shortlist and requires opt-in to comarca p
 
   const invalid = await client.callTool({ name: "recommend_towns", arguments: { housing: { tenure: "buy", maxBudgetEur: 100_000 } } });
   assert(invalid.isError);
+});
+
+test("serves Calaf, Juncosa and Ulldemolins from the fixed demo snapshot", async () => {
+  const towns = [
+    { code: "080312", name: "Calaf", esoCode: "080312", rural: "not_listed", hasMunicipalResale: true },
+    { code: "251180", name: "Juncosa", esoCode: "251018", rural: "special_attention", hasMunicipalResale: false },
+    { code: "431573", name: "Ulldemolins", esoCode: "430496", rural: "special_attention", hasMunicipalResale: false },
+  ];
+  for (const { code, name, esoCode, rural, hasMunicipalResale } of towns) {
+    const profile = profileResult.parse(await tool("get_town_profile", { municipalityCode: code, travelDate }));
+    assert.equal(profile.municipality.code, code);
+    assert.equal(profile.municipality.name, name);
+    assert.equal(profile.municipality.rural.category, rural);
+    assert.equal(profile.dataMissing.includes("resale_eur_per_m2"), !hasMunicipalResale);
+    assert(profile.comarcaMetrics.some(metric => metric.kind === "resale_eur_per_m2" && metric.geography === "comarca"));
+    assert.equal(profile.railway.sampleConnectionToLleida, null);
+
+    const eso = schoolResult.parse(await tool("get_nearby_schools", { municipalityCode: code, stage: "eso", travelDate }));
+    const school = eso.schools.find(journey => journey.school.municipalityCode === esoCode);
+    assert(school);
+    assert.equal(school.mode, esoCode === code ? "estimated_walk" : "unknown");
+    const grant = profile.incentives.find(entry => entry.id === "renovation_grant_2026");
+    assert.equal(grant?.callStatus, rural === "special_attention" ? "closed" : undefined);
+  }
+});
+
+test("covers all six travel endpoints for every mapped municipality", async () => {
+  for (const { code } of snapshot.municipalities) {
+    const profile = profileResult.parse(await tool("get_town_profile", { municipalityCode: code, travelDate: "2026-12-05" }));
+    assert.deepEqual(profile.travelEstimates.map(row => row.destinationId), ["lleida", "barcelona", "bcn_t1", "bcn_t2", "girona", "girona_airport"]);
+
+    const barcelona = profile.travelEstimates.find(row => row.destinationId === "barcelona");
+    assert(barcelona);
+    assert(barcelona.car.sourceUrl.startsWith("https:"));
+    const sample = barcelona.publicTransport;
+    if (sample) assert.equal(sample.sampleDate, "2026-11-23");
+    const gironaAirport = profile.travelEstimates.find(row => row.destinationId === "girona_airport");
+    assert(gironaAirport?.car.durationMinutes);
+  }
+  const uncovered = profileResult.parse(await tool("get_town_profile", { municipalityCode: "252154" }));
+  assert(uncovered.travelEstimates.every(row => row.publicTransport === null));
+  const profile = profileResult.parse(await tool("get_town_profile", { municipalityCode: "251180" }));
+  const lleida = profile.travelEstimates.find(row => row.destinationId === "lleida");
+  assert.equal(lleida?.publicTransport?.mode, "bus");
+  assert.equal(lleida?.publicTransport?.sampleCount, 2);
 });
 
 test("uses dated rail trips and reports dates outside the snapshot", async () => {
