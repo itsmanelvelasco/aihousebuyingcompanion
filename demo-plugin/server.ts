@@ -14,7 +14,7 @@ const connection = profileConnection();
 const bridge = connection ? new ProfileBridge(connection) : null;
 const connectedUpdateSchema = updateSchema.extend({ answers: connectedAnswers.optional() });
 
-const widgetUri = 'ui://arrela/journey-v2.html';
+const widgetUri = 'ui://arrela/journey-v3.html';
 const publicOrigin = process.env.PUBLIC_ORIGIN ? new URL(process.env.PUBLIC_ORIGIN).origin : null;
 
 function withBoardLink(view: ReturnType<typeof getView>) {
@@ -69,15 +69,18 @@ async function reply(name: string, input: unknown) {
 
 function createMcpServer() {
   const legacyServer = () => new McpServer({ name: 'arrela-demo', version: '0.1.0' }, {
-    instructions: 'Arrela uses fictional Catalan housing snapshots. Open the requested persona with open_demo. ' +
+    instructions: 'Open the requested Arrela persona with open_demo. Speak as a warm, concise game guide. The board already labels the rehearsal data, ' +
+      'so do not repeat that label in spoken turns. If asked about real-world applicability, explain what needs verification. ' +
       'If the user gives a board code, use pairCode to join that board. Reuse its runId for all writes and persona switches. ' +
       'For Laia, group missing home details or finances into a natural prompt. Extract all answers from each spoken or typed reply ' +
       'and save them in one update_demo answer_batch call. Ask only for details still missing; do not make the user repeat answers. ' +
       'The board updates when the tool saves the turn. Offer boardUrl as a clickable link if the voice host does not show the widget. ' +
-      'Only claim the widget is visible if you have confirmed it. For Núria, ask before opening the inbox or switching route. ' +
-      'Import the sample bank or replay a payment only on request. Jordi starts debt-free; celebrate immediately. ' +
-      'Always separate the upfront milestone from the finish: owning the home outright, with no mortgage or other demo debt. ' +
-      'The timeline assumes 20 years of mortgage repayment after purchase readiness. Never claim demo rules, offers or payments are real.',
+      'Only claim the widget is visible if you have confirmed it. For Marc, lead with the win and the next quest from progress.coach; ' +
+      'offer financial details if asked. For Núria, ask before opening the inbox. Then pitch routes A/B/C briefly and ask which to preview. ' +
+      'Use preview_shortcut to highlight a route on the map without switching. Route A = rule, B = listing, C = job, D = rural, E = friends. ' +
+      'Only call choose_shortcut after explicit confirmation. Import the sample bank or replay a payment only on request. ' +
+      'Jordi starts debt-free. Celebrate and ask whether to roll the credits; on yes, call update_demo with action show_credits and briefly recap. ' +
+      'Always separate the upfront milestone from owning outright; the comparison assumes 20 years of repayments after purchase readiness.',
   });
   const server = bridge ? (() => { const { snapshot, policies } = loadData(); return createPlacesMcpServer(snapshot, policies); })() : legacyServer();
   if (connection) registerBankTools(server, { baseUrl: connection.baseUrl, token: connection.token });
@@ -105,8 +108,9 @@ function createMcpServer() {
   server.registerTool('update_demo', {
     title: 'Update Arrela demo',
     description: 'Change a fictional demo run by runId. Use answer_batch with all provided fields (town, bedrooms, household, employment, income, spending, savings; in connected mode also budget, floorArea, destinationCode, maxCommuteMinutes, schoolStages, schoolMode, allowComarcaEstimate, upfrontTarget and emergencyReserve in EUR). Spending includes debt. Ask only for missing fields. ' +
-      'Other actions: sample_bank on request, switch_persona with persona, join_quest, read_inbox after yes, choose_shortcut with opportunity ID, ' +
-      'keep_route, replay_payment to queue Jordi’s last installment, final_payment to finish the replay, restart_persona, restart_all. ' +
+      'Use preview_shortcut to highlight A (rule), B (listing), C (job), D (rural), or E (friends) via opportunity ID without changing the active route. ' +
+      'After confirmation use choose_shortcut, or keep_route to dismiss the preview. Use show_credits on yes to Jordi’s credits and hide_credits to close. ' +
+      'Also supports sample_bank, switch_persona, join_quest, read_inbox, replay_payment, final_payment, restart_persona and restart_all. ' +
       'Connected-only actions start_bank_runtime/stop_bank_runtime explicitly control the simulated background feed; refresh_data reads the latest ledger. Returns the updated board, profile context and provisional sourced town screen.',
     inputSchema: (bridge ? connectedUpdateSchema : updateSchema).shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },

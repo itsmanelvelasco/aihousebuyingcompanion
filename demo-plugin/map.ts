@@ -116,3 +116,75 @@ export function drawWorld(canvas: HTMLCanvasElement, completed: number, program 
     context.stroke();
   });
 }
+
+const routePaths: Record<string, { points: number[][]; marker: [number, number] }> = {
+  original: { points: [[45, 182], [102, 182], [164, 211], [260, 211], [335, 142], [400, 142], [435, 65]], marker: [254, 211] },
+  A: { points: [[45, 182], [94, 113], [185, 68], [267, 50], [352, 50], [435, 65]], marker: [245, 55] },
+  B: { points: [[45, 182], [126, 154], [183, 119], [264, 119], [327, 84], [390, 84], [435, 65]], marker: [246, 119] },
+  C: { points: [[45, 182], [118, 182], [163, 165], [264, 165], [313, 117], [376, 117], [435, 65]], marker: [242, 165] },
+  D: { points: [[45, 182], [97, 79], [159, 43], [205, 29], [342, 29], [435, 65]], marker: [241, 29] },
+  E: { points: [[45, 182], [91, 206], [168, 228], [282, 227], [361, 167], [404, 136], [435, 65]], marker: [242, 227] },
+};
+
+export function drawRouteMap(canvas: HTMLCanvasElement, letters: string[], highlighted: string) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const region = (color: string, ...points: [number, number][]) => {
+    ctx.beginPath();
+    ctx.moveTo(...points[0]);
+    for (const point of points.slice(1)) ctx.lineTo(...point);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+  };
+  ctx.fillStyle = '#f0ede3';
+  ctx.fillRect(0, 0, 480, 250);
+  region('#dfebd9', [0, 0], [203, 0], [181, 61], [85, 102], [0, 105]);
+  region('#e5ebd5', [290, 250], [384, 169], [480, 131], [480, 250]);
+  region('#d4e5e8', [0, 128], [122, 48], [187, 17], [290, 0], [315, 0], [195, 26], [133, 62], [0, 145]);
+  ctx.strokeStyle = '#fffdf5';
+  ctx.lineWidth = 4;
+  for (const [start, end] of [[5, 110], [64, 212], [130, 244], [194, 313], [251, 373], [329, 436]]) {
+    ctx.beginPath();
+    ctx.moveTo(start, 6);
+    ctx.lineTo(end, 244);
+    ctx.stroke();
+  }
+
+  const paths = ['original', ...letters].filter(key => routePaths[key]);
+  paths.sort((a, b) => Number(a === highlighted) - Number(b === highlighted));
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const key of paths) {
+    const { points, marker: [x, y] } = routePaths[key];
+    const focused = key === highlighted;
+    const color = focused ? '#5844cc' : '#727b96';
+    ctx.beginPath();
+    ctx.moveTo(points[0][0], points[0][1]);
+    for (const point of points.slice(1)) ctx.lineTo(point[0], point[1]);
+    ctx.strokeStyle = '#fffdf5';
+    ctx.lineWidth = focused ? 13 : 9;
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = focused ? 8 : 4;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, focused ? 12 : 10, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 12px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(key === 'original' ? '•' : key, x, y);
+  }
+  for (const [x, y, color] of [[45, 182, '#493798'], [435, 65, '#453763']] as const) {
+    ctx.beginPath();
+    ctx.arc(x, y, 9, 0, Math.PI * 2);
+    ctx.fillStyle = '#fffdf5';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+  }
+}

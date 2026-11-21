@@ -1,6 +1,6 @@
 import { App } from '@modelcontextprotocol/ext-apps';
 import type { DemoView } from './demo.ts';
-import { drawWorld, nextSegment, stopNames, stops } from './map.ts';
+import { drawRouteMap, drawWorld, nextSegment, stopNames, stops } from './map.ts';
 
 const app = window.parent === window ? null : new App({ name: 'Arrela demo', version: '0.1.0' });
 const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -77,7 +77,18 @@ function world(checkpoint: number) {
 
 function progress(view: Extract<DemoView, { progress: unknown }>) {
   const p = view.progress;
-  return hero('02 · Progress check', 'Marc’s homeownership trail.', `Level ${p.level} · Dot is at ${stopNames[p.checkpoint]}. Destination: debt-free homeownership.`) +
+  return `<section class="hero panel coach"><div><span class="label">02 · Journey check-in</span>
+    <h1>${p.coach.headline}</h1><p>${p.coach.milestone}</p></div>
+    <div class="level-mark" aria-label="Level ${p.level}"><span>LEVEL</span><strong>${p.level}</strong></div></section>
+    <div class="momentum"><div><strong>${p.streak} months</strong><span>Savings streak</span></div>
+      <div><strong>${p.badges.length} badges</strong><span>Achievements earned</span></div>
+      <div><strong>#${p.rank}</strong><span>Trail leaderboard</span></div></div>
+    <section class="panel quest-spotlight ${p.joinedQuest ? 'quest-won' : ''}">
+      <span class="label">${p.joinedQuest ? 'Quest complete' : 'Next quest · +100 XP'}</span><h2>${p.joinedQuest ? 'Good Neighbor unlocked!' : 'First buyers’ park picnic'}</h2>
+      <p>${p.coach.next}</p>
+      ${p.joinedQuest ? '<span class="badge">✓ Joined · +100 XP</span>' : `<div class="actions">${button('Join the picnic · +100 XP', 'join_quest')}</div>`}
+      <details><summary>Show an invite to share</summary><p>“I’m doing the Arrela first-home trail. Want to join the park picnic and swap ideas for saving?”</p></details>
+    </section>` +
     world(p.checkpoint) +
     `<div class="split">${meter('Upfront milestone', p.percent, `${euro.format(p.saved)} / ${euro.format(p.target)}`)}
     ${meter('Quest XP', Math.floor(p.xp * 100 / p.xpGoal), `${p.xp} / ${p.xpGoal} XP`)}</div>
@@ -87,51 +98,80 @@ function progress(view: Extract<DemoView, { progress: unknown }>) {
       <p class="small">Current savings pace is ${euro.format(p.monthly)} per month.</p></section>
     <section class="panel"><h2>Sample leaderboard</h2><ol class="ranks">
       ${p.leaderboard.map(person => `<li class="${person.name.includes('You') ? 'current' : ''}"><div class="rank"><span>${person.name}</span><strong>${person.xp} XP</strong></div></li>`).join('')}
-    </ol><p class="small">Quest XP sets the rank.</p></section></div>
-    <section class="panel"><span class="label">Community quest</span><h2>First buyers’ park picnic</h2>
-      <p>Meet other first-time buyers at a free meetup and compare low-cost weekend plans. The group can also explore towns together.</p>
-      ${p.joinedQuest ? '<span class="badge">✓ Joined · +100 XP</span>' : `<div class="actions">${button('Join sample picnic · +100 XP', 'join_quest')}</div>`}
-      <details><summary>Show an invite to share</summary><p>“I’m doing the Arrela first-home trail. Want to join the park picnic and swap ideas for saving?”</p></details>
-    </section>`;
+    </ol><p class="small">Quest XP sets the rank.</p></section></div>`;
 }
 
 function shortcuts(view: Extract<DemoView, { inbox: unknown }>) {
-  const heading = hero('03 · Shortcuts', view.unread ? `${view.unread} unread route updates` : 'Núria’s route inbox',
-    view.unread ? 'Arrela found five changes that might get you there sooner. Want to read them now?' :
-      'Compare five routes to owning outright. Each assumes the same 20-year mortgage term after reaching the upfront milestone.');
-  if (view.unread) return heading + `<div class="actions">${button('Read 5 updates', 'read_inbox')}</div>`;
-  const selected = view.inbox.find(item => item.id === view.chosen);
-  return heading + (selected
-    ? `<div class="alert"><strong>Route updated · ${selected.fasterBy} months sooner to debt-free ownership</strong><p>${selected.verify}</p></div>`
-    : view.chosen === 'keep' ? '<div class="alert">Current route kept.</div>' : '') + timeline(selected ?? view.baseline) +
-    `<section class="panel stack" aria-label="Five sample opportunities">
-      ${view.inbox.map(item => `<article class="inbox-card ${view.chosen === item.id ? 'selected' : ''}">
-        <span class="label">${item.category}</span><h3>${item.title}</h3>
-        <p class="small">${item.detail}</p><p class="small"><strong>Verify:</strong> ${item.verify}</p>
-        <div class="actions"><span class="badge">${item.fasterBy} months sooner to owning outright</span>
-          <span class="small">${item.upfrontMonths === 0 ? 'Upfront goal met' : `${item.upfrontMonths} months to upfront goal`}</span>
-          ${button(view.chosen === item.id ? 'Selected route' : 'Take this route', 'choose_shortcut', item.id, 'gold')}</div>
-      </article>`).join('')}
-      <div>${button('Keep my original route', 'keep_route', '', '')}</div>
-    </section>`;
+  if (view.unread) return hero('03 · Route alert', `${view.unread} unread route updates`,
+    'There may be a faster way to reach your goal. Want to compare routes?') +
+    `<div class="actions">${button('Compare routes', 'read_inbox')}</div>`;
+
+  const current = view.inbox.find(item => item.id === view.chosen);
+  const preview = view.inbox.find(item => item.id === view.previewed);
+  const highlighted = preview ?? current;
+  const chip = (route: typeof view.inbox[number]) =>
+    `<button type="button" class="route-chip" data-action="preview_shortcut" data-key="${route.id}"
+     aria-pressed="${highlighted?.id === route.id}"><strong>Route ${route.letter}${current?.id === route.id ? ' · Active' : ''}</strong>
+     <span>${route.fasterBy} months sooner</span><small>${route.title}</small></button>`;
+  const routes = view.inbox.slice(0, 3);
+  const secondary = view.inbox.slice(3);
+  return hero('03 · Route comparison', 'Faster routes found.', 'Compare the options, then decide whether to switch.') +
+    `<div class="route-map" role="img" aria-label="Route map highlighting ${highlighted ? `route ${highlighted.letter}` : 'the current route'}">
+      <canvas id="route-map" width="480" height="250" aria-hidden="true"></canvas>
+      <span class="map-start">You are here</span><span class="map-finish">Own outright</span>
+    </div>
+    <div class="route-options" aria-label="Routes to owning outright">
+      <button type="button" class="route-chip" data-action="preview_shortcut" aria-pressed="${!preview}">
+        <strong>Current route</strong><span>${current ? `Route ${current.letter}` : `${view.baseline.upfrontMonths} months upfront`}</span>
+        <small>${current ? current.title : 'Stay with the original plan'}</small></button>
+      ${routes.map(chip).join('')}
+    </div>
+    <section class="panel route-detail" aria-label="Route details">
+      <span class="label">${preview && preview.id !== current?.id ? `Preview · Route ${preview.letter}` : 'Active route'}</span>
+      <h2>${highlighted?.title ?? 'Stay with the current plan'}</h2>
+      ${highlighted ? `<p>${highlighted.detail}</p><p class="small"><strong>Check:</strong> ${highlighted.verify}</p>` :
+        '<p>Keep saving €800 per month toward the €54,000 upfront milestone.</p>'}
+      ${timeline(highlighted ?? view.baseline)}
+      ${preview && preview.id !== current?.id ? `<div class="actions">
+        ${button(`Switch to Route ${preview.letter}`, 'choose_shortcut', preview.id, 'gold')}
+        ${button('Keep current route', 'keep_route', '', '')}</div>`
+        : current ? `<span class="badge">✓ Route ${current.letter} active · ${current.fasterBy} months sooner</span>` : ''}
+    </section>
+    <details class="panel" ${secondary.some(route => route.id === highlighted?.id) ? 'open' : ''}>
+      <summary>More route updates (${secondary.length})</summary>
+      <div class="route-options secondary-routes">${secondary.map(chip).join('')}</div>
+    </details>`;
 }
 
 function payoff(view: Extract<DemoView, { payoff: unknown }>) {
   const p = view.payoff;
-  return `<div class="payoff">${hero('04 · Finish line', p.paid ? '★ Jordi owns his home outright!' : 'Replay Jordi’s final installment.',
-    p.paid ? 'The mortgage is paid off, and there’s no other demo debt. Dot has reached the finish line.'
-      : 'Jordi’s last €620 installment in the fictional mortgage is ready to replay.')}</div>
+  if (view.credits) {
+    const credits = view.credits;
+    return `<section class="credits panel" aria-label="Journey credits">
+      <span class="label">Arrela presents · Journey complete</span>
+      <h1>${credits.title}</h1><p>Jordi’s road to owning his home outright.</p>
+      <div class="credit-stats">${credits.stats.map(stat => `<div><strong>${stat.value}</strong><span>${stat.label}</span></div>`).join('')}</div>
+      <ol class="credit-milestones">${credits.milestones.map(milestone =>
+        `<li><h2>${milestone.title}</h2><p>${milestone.detail}</p></li>`).join('')}</ol>
+      <h2>Achievements unlocked</h2>
+      <p>${credits.achievements.map(badge => `<span class="badge">★ ${badge}</span>`).join('')}</p>
+      <div class="actions">${button('Back to the finish', 'hide_credits', '', 'gold')}</div>
+    </section>`;
+  }
+  return `<div class="payoff">${hero('04 · Journey complete', p.paid ? '★ Jordi owns his home outright!' : 'Replay Jordi’s final installment.',
+    p.paid ? 'Dot reached the finish line. Want to see the credits?'
+      : 'One €620 installment to go on the replay.')}</div>
     ${world(p.paid ? 5 : 4)}
     ${meter('Mortgage repaid', p.percent,
       `${euro.format(p.original - p.remaining)} of ${euro.format(p.original)} · ${euro.format(p.remaining)} mortgage remaining · ${euro.format(p.otherDebt)} other debt`)}
-    <div class="actions">${p.paid ? '<span class="badge">🏆 Mortgage-Free · Journey complete</span>' +
+    <div class="actions">${p.paid ? button('Roll the credits', 'show_credits', '', 'gold') +
       button('Replay the last installment', 'replay_payment', '', 'link')
     : button('Complete the simulated payment', 'final_payment', '', 'gold')}</div>`;
 }
 
 function checkpoint(view: DemoView) {
   if ('progress' in view) return view.progress.checkpoint;
-  if ('payoff' in view) return view.payoff.paid ? 5 : 4;
+  if ('payoff' in view && !view.credits) return view.payoff.paid ? 5 : 4;
   return undefined;
 }
 
@@ -156,6 +196,12 @@ function render(view: BoardView) {
       const frames = nextSegment(previous, false).map(([x, y]) => ({ left: `${x / 4.8}%`, top: `${y / 2.6}%` }));
       byId('dot').animate(frames, { duration: 780, easing: 'ease-in-out' });
     }
+  }
+  if ('inbox' in view && view.inbox.length) {
+    const highlighted = view.inbox.find(route => route.id === (view.previewed ?? view.chosen))?.letter ?? 'original';
+    const primary = view.inbox.slice(0, 3).map(route => route.letter);
+    const shown = highlighted !== 'original' && !primary.includes(highlighted) ? [...primary, highlighted] : primary;
+    drawRouteMap(byId<HTMLCanvasElement>('route-map'), shown, highlighted);
   }
   byId('controls').hidden = false;
   byId('fullscreen').hidden = !app;
@@ -214,7 +260,7 @@ document.addEventListener('click', event => {
   if (!action) return;
   const args: Record<string, unknown> = { runId: active.runId, action };
   if (action === 'switch_persona') args.persona = key;
-  if (action === 'choose_shortcut') args.opportunity = key;
+  if ((action === 'choose_shortcut' || action === 'preview_shortcut') && key) args.opportunity = key;
   if (action === 'example' && 'group' in active && active.group) {
     Object.assign(args, { action: 'answer_batch', answers: parseFormAnswers(Object.fromEntries(
       active.group.questions.map(question => [question.id, question.example]),
