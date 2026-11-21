@@ -4,7 +4,7 @@ const waypoints = [
   [[304, 186], [327, 139]], [[374, 139], [394, 105], [421, 105]]
 ];
 const shortcut = [[344, 106], [371, 76]];
-export const stopNames = ['Start', 'Savings', 'Jobs', 'Community', 'Program', 'Key Town'];
+export const stopNames = ['Start', 'Savings', 'Plan', 'Buy', 'Repay', 'Debt-free'];
 
 export function nextSegment(index: number, useShortcut: boolean) {
   const points = index === 4 && useShortcut ? shortcut : waypoints[index];
