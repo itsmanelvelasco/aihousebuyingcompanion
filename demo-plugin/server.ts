@@ -5,6 +5,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { getView, openDemo, openSchema, updateDemo, updateSchema } from './demo.ts';
+import { profileConnection, ProfileBridge, connectedAnswers } from './profiles.ts';
+import { createMcpServer as createPlacesMcpServer } from '../apps/mcp-server/tools.ts';
+import { loadData } from '../packages/places/data.ts';
+import { registerBankTools } from '../apps/mcp-server/bank-tools.ts';
+
+const connection = profileConnection();
+const bridge = connection ? new ProfileBridge(connection) : null;
+const connectedUpdateSchema = updateSchema.extend({ answers: connectedAnswers.optional() });
 
 const widgetUri = 'ui://arrela/journey-v2.html';
 const publicOrigin = process.env.PUBLIC_ORIGIN ? new URL(process.env.PUBLIC_ORIGIN).origin : null;
@@ -17,15 +25,41 @@ const bundle = readFileSync(new URL('./dist/widget.js', import.meta.url), 'utf8'
 const page = template.replace('<!-- WIDGET -->', () =>
   '<script>' + bundle.replace(/<\/script/gi, '<\\/script') + '</script>');
 
-function reply(name: string, input: unknown) {
+async function reply(name: string, input: unknown) {
   try {
-    const view = name === 'open_demo' ? openDemo(openSchema.parse(input))
-      : name === 'update_demo' ? updateDemo(updateSchema.parse(input)) : null;
+    let view: ReturnType<typeof getView> | null = null;
+    if (name === 'open_demo') view = openDemo(openSchema.parse(input));
+    else if (name === 'update_demo') {
+      if (!bridge) view = updateDemo(updateSchema.parse(input));
+      else {
+        const parsed = connectedUpdateSchema.parse(input);
+        const before = getView(parsed.runId);
+        if (parsed.action === 'sample_bank') {
+          await bridge.connectBank(before);
+          view = updateDemo({ runId: parsed.runId, action: 'refresh_data' });
+        } else if (parsed.action === 'start_bank_runtime' || parsed.action === 'stop_bank_runtime') {
+          await bridge.runtime(before, parsed.action === 'start_bank_runtime');
+          view = updateDemo({ runId: parsed.runId, action: 'refresh_data' });
+        } else if (parsed.action === 'answer_batch') {
+          if (!parsed.answers || !Object.keys(parsed.answers).length) throw new Error('Supply interview answers.');
+          // Persist before changing the visible board. Backend errors never fall back to scripted state.
+          await bridge.save({ ...before, revision: before.revision + 1 }, parsed.answers);
+          const legacy = Object.fromEntries(Object.entries(parsed.answers).filter(([key]) => ['town', 'bedrooms', 'household', 'employment', 'income', 'spending', 'savings'].includes(key)));
+          view = Object.keys(legacy).length ? updateDemo(updateSchema.parse({ ...parsed, answers: legacy })) : updateDemo({ runId: parsed.runId, action: 'refresh_data' });
+        } else if (parsed.action === 'answer') {
+          if (!parsed.question || parsed.answer === undefined) throw new Error('Supply a question and answer.');
+          const answers = connectedAnswers.parse({ [parsed.question]: parsed.answer });
+          await bridge.save({ ...before, revision: before.revision + 1 }, answers);
+          view = updateDemo(updateSchema.parse(parsed));
+        } else view = updateDemo(updateSchema.parse({ ...parsed, answers: undefined }));
+      }
+    }
     if (!view) throw new Error('Unknown demo tool.');
-    const snapshot = withBoardLink(view);
+    const decorated = bridge ? await bridge.decorate(view) : { ...view, connection: { mode: 'scripted_demo' } };
+    const snapshot = { ...decorated, boardUrl: publicOrigin ? `${publicOrigin}/preview?run=${view.runId}` : null };
     const text = name === 'open_demo' && snapshot.boardUrl
-      ? `${view.message} Live board for this same run: ${snapshot.boardUrl}`
-      : view.message;
+      ? `${decorated.message} Live board for this same run: ${snapshot.boardUrl}`
+      : decorated.message;
     return { content: [{ type: 'text' as const, text }], structuredContent: snapshot };
   } catch (error) {
     return { isError: true, content: [{ type: 'text' as const,
@@ -34,7 +68,7 @@ function reply(name: string, input: unknown) {
 }
 
 function createMcpServer() {
-  const server = new McpServer({ name: 'arrela-demo', version: '0.1.0' }, {
+  const legacyServer = () => new McpServer({ name: 'arrela-demo', version: '0.1.0' }, {
     instructions: 'Arrela uses fictional Catalan housing snapshots. Open the requested persona with open_demo. ' +
       'If the user gives a board code, use pairCode to join that board. Reuse its runId for all writes and persona switches. ' +
       'For Laia, group missing home details or finances into a natural prompt. Extract all answers from each spoken or typed reply ' +
@@ -45,6 +79,8 @@ function createMcpServer() {
       'Always separate the upfront milestone from the finish: owning the home outright, with no mortgage or other demo debt. ' +
       'The timeline assumes 20 years of mortgage repayment after purchase readiness. Never claim demo rules, offers or payments are real.',
   });
+  const server = bridge ? (() => { const { snapshot, policies } = loadData(); return createPlacesMcpServer(snapshot, policies); })() : legacyServer();
+  if (connection) registerBankTools(server, { baseUrl: connection.baseUrl, token: connection.token });
 
   registerAppResource(server, 'Arrela journey board', widgetUri, {}, async () => ({
     contents: [{
@@ -68,15 +104,14 @@ function createMcpServer() {
 
   server.registerTool('update_demo', {
     title: 'Update Arrela demo',
-    description: 'Change a fictional demo run by runId. Use answer_batch with answers containing all provided fields (town, bedrooms, ' +
-      'household, employment, income, spending, savings). Accept them in any order and ask only for missing fields. ' +
+    description: 'Change a fictional demo run by runId. Use answer_batch with all provided fields (town, bedrooms, household, employment, income, spending, savings; in connected mode also budget, floorArea, destinationCode, maxCommuteMinutes, schoolStages, schoolMode, allowComarcaEstimate, upfrontTarget and emergencyReserve in EUR). Spending includes debt. Ask only for missing fields. ' +
       'Other actions: sample_bank on request, switch_persona with persona, join_quest, read_inbox after yes, choose_shortcut with opportunity ID, ' +
       'keep_route, replay_payment to queue Jordi’s last installment, final_payment to finish the replay, restart_persona, restart_all. ' +
-      'Returns the updated live board state and the next missing group.',
-    inputSchema: updateSchema.shape,
+      'Connected-only actions start_bank_runtime/stop_bank_runtime explicitly control the simulated background feed; refresh_data reads the latest ledger. Returns the updated board, profile context and provisional sourced town screen.',
+    inputSchema: (bridge ? connectedUpdateSchema : updateSchema).shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     _meta: { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccessible': true },
-  }, input => reply('update_demo', input));
+  }, (input: unknown) => reply('update_demo', input));
   return server;
 }
 
@@ -122,7 +157,9 @@ const server = createServer(async (req, res) => {
         return;
       }
       try {
-        send(res, 200, JSON.stringify(withBoardLink(getView(run.data))), 'application/json; charset=utf-8');
+        const view = getView(run.data);
+        const decorated = bridge ? await bridge.decorate(view) : withBoardLink(view);
+        send(res, 200, JSON.stringify({ ...decorated, boardUrl: publicOrigin ? `${publicOrigin}/preview?run=${view.runId}` : null }), 'application/json; charset=utf-8');
       } catch {
         send(res, 404, 'This demo run expired. Start a fresh board.');
       }
@@ -138,7 +175,7 @@ const server = createServer(async (req, res) => {
         return;
       }
       const { name, args } = await readJson(req);
-      send(res, 200, JSON.stringify(reply(name, args)), 'application/json; charset=utf-8');
+      send(res, 200, JSON.stringify(await reply(name, args)), 'application/json; charset=utf-8');
       return;
     }
     send(res, 404, 'Not found');

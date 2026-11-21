@@ -66,7 +66,7 @@ export const openSchema = z.object({
 export const updateSchema = z.object({
   runId: z.uuid(),
   action: z.enum(['answer', 'answer_batch', 'sample_bank', 'restart_persona', 'restart_all', 'join_quest',
-    'switch_persona', 'read_inbox', 'choose_shortcut', 'keep_route', 'replay_payment', 'final_payment']),
+    'switch_persona', 'read_inbox', 'choose_shortcut', 'keep_route', 'replay_payment', 'final_payment', 'refresh_data', 'start_bank_runtime', 'stop_bank_runtime']),
   persona: personaSchema.optional(),
   question: questionId.optional(),
   answer: answerValue.optional(),

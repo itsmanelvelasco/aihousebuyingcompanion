@@ -9,7 +9,7 @@ const safe = (value: unknown) => String(value).replace(/[&<>"']/g, char =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
 const displayMonths = (months: number | null) =>
   months === null ? 'Budget gap' : months === 0 ? 'Goal reached' : `${months} months`;
-type BoardView = DemoView & { boardUrl?: string | null };
+type BoardView = DemoView & { boardUrl?: string | null; connection?: { mode: string; userId?: string; ledgerRevision?: number; runtime?: { enabled: boolean }; summary?: { netCashflowCents: number; from: string; to: string } }; townScreening?: { ready: boolean; missingFields: string[]; unsupportedFields: string[]; propertyChecks: { field: string; required: number }[]; result: { towns: { municipality: { name: string }; matchReasons: string[]; incentives: { title: string; sourceUrl: string; eligibilityStatus: string; callStatus: string }[] }[] } | null } };
 let active: BoardView | undefined;
 let busy = false;
 let fullscreen = false;
@@ -41,9 +41,9 @@ function timeline(plan: { upfrontMonths: number | null; termMonths: number; debt
 function onboarding(view: Extract<DemoView, { answers: unknown }>) {
   const labels: Record<string, string> = {
     town: 'Target town', bedrooms: 'Bedrooms', household: 'Household size', employment: 'Employment',
-    income: 'Monthly income', spending: 'Monthly spending', savings: 'Saved',
+    income: 'Monthly income', spending: 'Monthly spending (including debt)', savings: 'Saved', budget: 'Purchase budget', floorArea: 'Floor area m²', destinationCode: 'Commute municipality code', maxCommuteMinutes: 'Maximum commute minutes', schoolStages: 'School stages', schoolMode: 'School travel mode', allowComarcaEstimate: 'Allow comarca price estimate',
   };
-  const monetary = new Set(['income', 'spending', 'savings']);
+  const monetary = new Set(['income', 'spending', 'savings', 'budget']);
   const facts = Object.entries(view.answers).map(([id, value]) =>
     `<div><dt>${labels[id]}</dt><dd>${typeof value === 'number' && monetary.has(id) ? euro.format(value) : safe(value)}</dd></div>`).join('');
   const group = view.group;
@@ -136,13 +136,19 @@ function checkpoint(view: DemoView) {
 }
 
 function render(view: BoardView) {
-  if (active?.runId === view.runId && active.revision >= view.revision) return;
+  if (active?.runId === view.runId && active.revision >= view.revision && active.connection?.ledgerRevision === view.connection?.ledgerRevision) return;
   const previous = active?.persona === view.persona ? checkpoint(active) : undefined;
   active = view;
   byId('personas').innerHTML = view.choices.map(person => `<button type="button" data-action="switch_persona"
     data-key="${person.id}" aria-pressed="${view.persona === person.id}"><strong>${person.name}</strong>${person.label}</button>`).join('');
   byId('view').innerHTML = 'answers' in view ? onboarding(view) : 'progress' in view ? progress(view)
     : 'inbox' in view ? shortcuts(view) : payoff(view);
+  if (view.connection?.mode === 'connected_synthetic') {
+    const connection = view.connection;
+    const screen = view.townScreening;
+    byId('view').insertAdjacentHTML('afterbegin', `<section class="panel"><span class="label">Connected fictional profile · ${safe(connection.userId)}</span><h2>Runtime bank feed</h2><p>Ledger revision ${safe(connection.ledgerRevision ?? 0)} · ${connection.runtime?.enabled ? 'Background simulation running' : 'Background simulation stopped'}</p><div class="actions">${button(connection.runtime?.enabled ? 'Stop simulated feed' : 'Start simulated feed', connection.runtime?.enabled ? 'stop_bank_runtime' : 'start_bank_runtime')}${button('Refresh bank data', 'refresh_data', '', 'link')}</div>${connection.summary ? `<p class="small">Observed net cash flow: ${euro.format(connection.summary.netCashflowCents / 100)} (${safe(connection.summary.from)} to ${safe(connection.summary.to)}). Historical totals are not a current-month forecast.</p>` : ''}</section>`);
+    if (screen) byId('view').insertAdjacentHTML('beforeend', `<section class="panel"><h2>Sourced municipality screen</h2><p>Provisional town comparison; this is not a verified property match or mortgage approval.</p>${screen.propertyChecks.map(check => `<p class="small">Property check pending: ${safe(check.required)} bedrooms.</p>`).join('')}${screen.result ? screen.result.towns.map(town => `<article><h3>${safe(town.municipality.name)}</h3><p>${town.matchReasons.map(safe).join(' · ')}</p>${town.incentives.map(policy => `<p><a href="${safe(policy.sourceUrl)}" target="_blank" rel="noopener noreferrer">${safe(policy.title)}</a> · ${safe(policy.callStatus)} · ${safe(policy.eligibilityStatus)}</p>`).join('')}</article>`).join('') : `<p>More information needed: ${screen.missingFields.map(safe).join(', ') || 'resolve profile conflicts'}.</p>`}</section>`);
+  }
   const current = checkpoint(view);
   if (current !== undefined) {
     drawWorld(byId<HTMLCanvasElement>('map'), current);
@@ -193,6 +199,14 @@ async function call(name: string, args: Record<string, unknown>) {
   }
 }
 
+function parseFormAnswers(raw: Record<string, unknown>) {
+  const numeric = new Set(['bedrooms', 'household', 'income', 'spending', 'savings', 'budget', 'floorArea', 'maxCommuteMinutes', 'upfrontTarget', 'emergencyReserve']);
+  return Object.fromEntries(Object.entries(raw).map(([key, value]) => [key,
+    active?.connection?.mode !== 'connected_synthetic' ? value : numeric.has(key) ? Number(value)
+      : key === 'allowComarcaEstimate' ? (String(value).trim().toLowerCase() === 'true' ? true : String(value).trim().toLowerCase() === 'false' ? false : value)
+      : key === 'schoolStages' ? String(value).split(',').map(stage => stage.trim()).filter(Boolean) : value]));
+}
+
 document.addEventListener('click', event => {
   const control = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
   if (!active || !control) return;
@@ -202,9 +216,9 @@ document.addEventListener('click', event => {
   if (action === 'switch_persona') args.persona = key;
   if (action === 'choose_shortcut') args.opportunity = key;
   if (action === 'example' && 'group' in active && active.group) {
-    Object.assign(args, { action: 'answer_batch', answers: Object.fromEntries(
+    Object.assign(args, { action: 'answer_batch', answers: parseFormAnswers(Object.fromEntries(
       active.group.questions.map(question => [question.id, question.example]),
-    ) });
+    )) });
   }
   void call('update_demo', args);
 });
@@ -213,7 +227,7 @@ document.addEventListener('submit', event => {
   const form = event.target as HTMLFormElement;
   if (form.id !== 'answer' || !active || !('group' in active) || !active.group) return;
   event.preventDefault();
-  const answers = Object.fromEntries([...new FormData(form)].filter(([, value]) => String(value).trim()));
+  const answers = parseFormAnswers(Object.fromEntries([...new FormData(form)].filter(([key, value]) => key === 'schoolStages' || String(value).trim())));
   if (!Object.keys(answers).length) {
     byId('status').textContent = 'Enter an answer or use the example answers.';
     return;
