@@ -78,6 +78,30 @@ test("screens a three-town rural rail shortlist and requires opt-in to comarca p
   assert(invalid.isError);
 });
 
+test("serves Calaf, Juncosa and Ulldemolins from the fixed demo snapshot", async () => {
+  const towns = [
+    { code: "080312", name: "Calaf", esoCode: "080312", rural: "not_listed", hasMunicipalResale: true },
+    { code: "251180", name: "Juncosa", esoCode: "251018", rural: "special_attention", hasMunicipalResale: false },
+    { code: "431573", name: "Ulldemolins", esoCode: "430496", rural: "special_attention", hasMunicipalResale: false },
+  ];
+  for (const { code, name, esoCode, rural, hasMunicipalResale } of towns) {
+    const profile = profileResult.parse(await tool("get_town_profile", { municipalityCode: code, travelDate }));
+    assert.equal(profile.municipality.code, code);
+    assert.equal(profile.municipality.name, name);
+    assert.equal(profile.municipality.rural.category, rural);
+    assert.equal(profile.dataMissing.includes("resale_eur_per_m2"), !hasMunicipalResale);
+    assert(profile.comarcaMetrics.some(metric => metric.kind === "resale_eur_per_m2" && metric.geography === "comarca"));
+    assert.equal(profile.railway.sampleConnectionToLleida, null);
+
+    const eso = schoolResult.parse(await tool("get_nearby_schools", { municipalityCode: code, stage: "eso", travelDate }));
+    const school = eso.schools.find(journey => journey.school.municipalityCode === esoCode);
+    assert(school);
+    assert.equal(school.mode, esoCode === code ? "estimated_walk" : "unknown");
+    const grant = profile.incentives.find(entry => entry.id === "renovation_grant_2026");
+    assert.equal(grant?.callStatus, rural === "special_attention" ? "closed" : undefined);
+  }
+});
+
 test("uses dated rail trips and reports dates outside the snapshot", async () => {
   const query = { municipalityCode: termens, destinationCode: balaguer, travelDate, departFrom: "07:45", departBy: "07:50" };
   const response = transportResult.parse(await tool("get_transport_options", query));

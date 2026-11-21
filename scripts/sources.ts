@@ -14,10 +14,11 @@ export const urls = {
     `https://habitatge.gencat.cat/web/.content/home/dades/estadistiques/01_Estadistiques_de_construccio_i_mercat_immobiliari/02_Compravenda_i_preu_de_venda/02_Compravendes_d_habitatges_registrades_i_el_preu_de_venda/${year}/Trimestrals_per_${scope}_${year}.xlsx`,
 };
 
-// The study area follows the RL1/RL2 corridor. Lleida is a destination, not a village candidate.
+// The demo includes the RL1/RL2 corridor and selected municipalities elsewhere in Catalonia.
+// Lleida serves as a transport destination.
 export const recommendableCodes = [
-  "250024", "250122", "250371", "250404", "250621", "251569", "251713",
-  "251902", "252154", "252206", "252347", "252402", "252542", "259046",
+  "080312", "250024", "250122", "250371", "250404", "250621", "251180", "251569", "251713",
+  "251902", "252154", "252206", "252347", "252402", "252542", "259046", "431573",
 ];
 export const lleidaCode = "251207";
 

@@ -83,7 +83,7 @@ Full bank OAuth, coverage of every municipality and government submissions are o
 
 Run `npm run start:mcp` from the repository root. The service exposes Streamable HTTP at `http://127.0.0.1:8787/mcp`. See the [MCP setup, demo request and data sources](apps/mcp-server/README.md).
 
-The MCP backend lives in `apps/mcp-server/`. Its tools share Zod schemas in `packages/contracts/` and use the data loading, matching and eligibility code in `packages/places/`. The versioned fixtures in `data/towns.json` and `data/incentives.json` cover 15 municipalities along the FGC Lleida–La Pobla de Segur corridor. Tools compute household-specific recommendations and eligibility from the local snapshot.
+The MCP backend lives in `apps/mcp-server/`. Its tools share Zod schemas in `packages/contracts/` and use the data loading, matching and eligibility code in `packages/places/`. The versioned fixtures in `data/towns.json` and `data/incentives.json` cover 18 municipalities, including Calaf, Juncosa, Ulldemolins and the FGC Lleida–La Pobla de Segur corridor. Tools compute household-specific recommendations and eligibility from the local snapshot.
 
 The core demo calls `recommend_towns`, `get_town_profile`, and `get_applicable_incentives`. Additional tools cover schools, rail, business indicators, municipality lookup, and household eligibility detail. Town results include official codes, match reasons, trade-offs, evidence dates and URLs, and missing data. Incentives include separate application and eligibility statuses.
 
