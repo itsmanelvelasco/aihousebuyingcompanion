@@ -23,6 +23,8 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 - [x] Store each profile in separate details, preferences and bank-account JSON documents; provide full JSON and flattened CSV exports.
 - [x] Add a token-protected local API to list/read/create users and replace sections, using isolated runtime storage and atomic file writes.
 - [x] Verify dataset/export consistency, API authorization, invalid inputs, persistence and runtime edit preservation with automated tests and TypeScript checks.
+- [x] Add synthetic bank accounts and movement import/correction/deletion with idempotent IDs and serialized atomic ledger persistence.
+- [x] Implement monthly cash-flow/category analysis, recurring-expense candidates and savings scenarios with explicit reserves, assumptions and unknown-data handling.
 - [ ] Project lead selects or customizes a canonical demo persona from the candidate profiles and confirms it with the interviewer team.
 - [ ] Teams agree stricter domain schemas; the API currently validates document provenance and IDs while allowing evolving fields.
 
@@ -89,7 +91,7 @@ Agree shared contracts first, then assign separate file ownership. Household req
 | Finance — owner to assign | Normalize the synthetic feed, exclude internal transfers and calculate savings capacity and purchase cash needs. | Deterministic ownership plan and simulator with explicit assumptions. |
 | Integration/contracts — owner to assign | Agree shared schemas and connect the MCP server, domain functions and widgets. | Working end-to-end conversation and browser-preview fallback. |
 
-- [ ] Make financial calculations pure and deterministic; handle a reached target and zero or negative savings explicitly.
+- [x] Make financial calculations pure and deterministic; handle a reached target and zero or negative savings explicitly.
 - [ ] Keep financial calculations in the complementary track; the core town journey must also work without a bank snapshot.
 - [ ] Mark housing prices as municipal indicators or estimates, distinct from live listings.
 - [ ] Preserve unknown requirements as unresolved rather than silently passing them.
@@ -109,7 +111,7 @@ Agree shared contracts first, then assign separate file ownership. Household req
 
 ## Phase 4 — Verify and rehearse (145–180 minutes)
 
-- [ ] Test finance boundaries: internal transfers, zero savings, target already reached and changed purchase assumptions.
+- [x] Test finance boundaries: internal transfers, zero savings, target already reached and changed purchase assumptions.
 - [ ] Test matching against hard constraints, absent evidence and deterministic ranking ties.
 - [x] Test incentive thresholds, missing household inputs, geographic exceptions and closed deadlines against verified rules.
 - [ ] Validate all demo fixtures against the shared schemas and inspect their source metadata.

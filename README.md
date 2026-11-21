@@ -12,7 +12,7 @@ Key references: [MCP architecture and contracts](https://chatgpt.com/space/page_
 
 ## Project status
 
-The project includes a local TypeScript profile API, 500 synthetic household profiles, and a municipality MCP backend. The backend covers town matching, school access, FGC schedules, and housing incentives. ChatGPT widget and coaching integration are planned.
+The project includes a local TypeScript profile/bank API, deterministic transaction cash-flow analysis and savings scenarios, 500 synthetic household profiles in per-user JSON and combined JSON/CSV formats, and a municipality MCP backend. The municipality backend covers town matching, school access, FGC schedules and housing incentives. ChatGPT widget and conversational finance integration remain planned.
 
 The separate `hackathon/arrela-demo-plugin` branch contains a scripted four-persona MCP/widget prototype. It is not merged into `main` and does not yet consume the profile API. Its fictional incentives and listings do not satisfy the sourced municipality demo requirement.
 
@@ -21,6 +21,7 @@ The separate `hackathon/arrela-demo-plugin` branch contains a scripted four-pers
 - [500 fictional profiles](data/users/README.md): each user has `details.json`, `preferences.json` and `bank-account.json`, with varied needs and financial barriers. Demographic categories are informed by official Idescat sources; the dataset is not statistically representative.
 - [Combined JSON](data/synthetic-users.json) preserves complete profiles; [CSV](data/synthetic-users.csv) provides a flattened summary.
 - [API setup and routes](apps/profile-api/README.md): token-protected local reads, user creation and section replacement. Runtime changes are stored separately from fixture exports.
+- [Bank ledger API](apps/profile-api/BANK_API.md): manage accounts and movements, analyse spending/recurring candidates, and compare savings scenarios. Seed three fictional months on demand for any supplied user; no real bank connection or payments.
 
 Requires Node.js 24+. From the repository root in PowerShell:
 

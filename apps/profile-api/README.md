@@ -58,3 +58,7 @@ npm run generate:users
 # Intentionally regenerate existing fixtures and both exports:
 npm run generate:users -- --overwrite
 ```
+
+## Bank movements and financial scenarios
+
+The same server now exposes a [bank ledger API](BANK_API.md) for synthetic accounts, transactions, cash-flow summaries and savings scenarios. It stores `bank-ledger.json` in each runtime user's folder. It does not automatically modify the original `bank-account.json` snapshot or fixture exports.
