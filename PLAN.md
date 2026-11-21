@@ -115,7 +115,7 @@ Agree shared contracts first, then assign separate file ownership. Household req
 - [x] Add a separate `recommend_towns_for_profile` tool that uses the same evidence and supports lifestyle-first discovery.
 - [x] Return official municipality codes, `matchReasons`, `tradeoffs`, `metrics` with `observedAt` and `sourceUrl`, and `dataMissing`.
 - [x] Supply incentives with separate `callStatus`, `eligibilityStatus`, missing criteria and official legal sources.
-- [x] Add a read-only Town Explorer widget that reads the same municipality tools as chat, with a separate render tool.
+- [x] Add a read-only Town Explorer widget with linked map pins and shortlist cards. Its separate render tool passes the original recommendation criteria to the same municipality tools as chat.
 - [ ] Optionally connect `get_ownership_plan`/`simulate_ownership` and update the target/timeline after selection once the core flow works.
 - [ ] Show synthetic-data labels, assumptions, evidence links, data freshness and missing-data messages in the UI.
 - [ ] Run the MCP endpoint and widget together; document the actual run instructions.

@@ -7,83 +7,282 @@
   <style>
     :root {
       color-scheme: light dark;
-      --text: #172620;
-      --muted: #54645b;
-      --surface: #fff;
-      --soft: #f1f6f2;
-      --line: #d6e0d9;
-      --accent: #1d684b;
-      font: 15px/1.45 system-ui, sans-serif;
+      --paper: light-dark(#fbf6eb, #202720);
+      --card: light-dark(#fffcf5, #2b342c);
+      --ink: light-dark(#24362b, #f7f3e6);
+      --muted: light-dark(#566257, #c1cabd);
+      --line: light-dark(#dedbce, #566155);
+      --forest: light-dark(#185e41, #9de2ba);
+      --violet: light-dark(#623c91, #dfc6ff);
+      --lilac: light-dark(#eee3f7, #3d304e);
+      --sand: light-dark(#fff0b9, #51431e);
+      font: 15px/1.48 ui-sans-serif, system-ui, sans-serif;
     }
-    @media (prefers-color-scheme: dark) { :root { color-scheme: dark; } }
     :root[data-theme="dark"] { color-scheme: dark; }
     :root[data-theme="light"] { color-scheme: light; }
-    :root {
-      --text: light-dark(#172620, #e8f3eb);
-      --muted: light-dark(#54645b, #a9bdb0);
-      --surface: light-dark(#fff, #18241e);
-      --soft: light-dark(#f1f6f2, #22342a);
-      --line: light-dark(#d6e0d9, #43554a);
-      --accent: light-dark(#1d684b, #91dab2);
-    }
     * { box-sizing: border-box; }
-    body { margin: 0; color: var(--text); background: var(--surface); }
-    main { max-width: 860px; margin: auto; padding: clamp(16px, 4vw, 32px); }
-    h1, h2, h3, p { margin: 0; }
-    h1 { font-size: 1.25rem; font-weight: 700; }
-    h2 { font-size: clamp(1.75rem, 7vw, 2.55rem); line-height: 1.1; letter-spacing: -.04em; overflow-wrap: anywhere; }
-    h3 { font-size: 1.05rem; }
-    a { color: var(--accent); text-underline-offset: 3px; overflow-wrap: anywhere; }
-    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-    header { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 24px; justify-content: space-between; }
-    label { display: grid; gap: 4px; font-size: .83rem; font-weight: 650; }
-    select { width: 100%; min-height: 40px; padding: 7px; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; font: inherit; }
-    .chooser { flex: 0 1 255px; max-width: 100%; }
-    .brand { margin-bottom: 2px; color: var(--accent); font-weight: 700; }
-    .muted, small { color: var(--muted); font-size: .85rem; }
-    #status { color: var(--muted); margin-top: 14px; }
-    #status:empty { margin: 0; }
-    .overview { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .82fr); gap: 16px; margin-top: 19px; padding: 17px; border: 1px solid var(--line); border-radius: 14px; background: var(--soft); }
-    .overview p { margin-top: 6px; }
-    .metric { align-self: center; border-inline-start: 1px solid var(--line); padding-inline-start: 16px; }
-    .metric strong { display: block; margin: 3px 0; font-size: 1.2rem; font-variant-numeric: tabular-nums; }
-    section { margin-top: 21px; }
-    section > p { margin-top: 5px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    th, td { padding: 8px 6px; text-align: start; border-bottom: 1px solid var(--line); vertical-align: top; }
+    [hidden] { display: none !important; }
+    body { margin: 0; color: var(--ink); background: var(--paper); }
+    main { max-width: 1120px; padding: 16px; margin: auto; }
+    h1, h2, h3, p, figure { margin: 0; }
+    h2 { font-size: 1.45rem; line-height: 1.15; letter-spacing: -.035em; }
+    h3 { font-size: 1.04rem; }
+    a { color: var(--forest); text-underline-offset: 3px; overflow-wrap: anywhere; }
+    button, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: default; opacity: .45; }
+    :focus-visible { outline: 3px solid var(--violet); outline-offset: 3px; }
+    ::selection { background: var(--lilac); color: var(--ink); }
+    .muted, small { color: var(--muted); }
+    small { font-size: .83rem; }
+    .hero {
+      position: relative;
+      isolation: isolate;
+      display: grid;
+      align-items: center;
+      min-height: 210px;
+      padding: 26px 28px;
+      border: 1px solid #ecddbc;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #fbefdc;
+      color: #203d2c;
+    }
+    .hero-art {
+      position: absolute;
+      z-index: -1;
+      inset: 0 0 0 auto;
+      width: 65%;
+      height: 100%;
+      background-size: cover;
+      background-position: 58% 66%;
+      mask-image: linear-gradient(to right, transparent, #000 24%);
+    }
+    .brand { width: max-content; color: #125d3d; font-size: 1.06rem; font-weight: 850; letter-spacing: -.04em; }
+    .brand span { color: #714499; }
+    .hero h1 {
+      max-width: 10ch;
+      margin: 6px 0;
+      font: 700 3.4rem/.96 ui-serif, Georgia, serif;
+      letter-spacing: -.038em;
+      text-wrap: balance;
+    }
+    .hero .intro { max-width: 25ch; color: #3a5545; font-size: .94rem; }
+    .explorer { margin-top: 22px; }
+    .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; justify-content: space-between; margin-bottom: 11px; }
+    .section-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 9px; }
+    #count { color: var(--muted); font-size: .87rem; white-space: nowrap; }
+    .views { display: flex; gap: 4px; padding: 3px; background: var(--lilac); border-radius: 10px; }
+    .views button, .retry { min-height: 34px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--violet); padding: 4px 9px; font-size: .84rem; font-weight: 730; }
+    .views button[aria-pressed="true"], .views button:hover, .retry:hover { background: var(--card); border-color: var(--line); }
+    .retry { border-color: var(--line); background: var(--lilac); }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1.48fr) minmax(0, 1fr); align-items: start; gap: 12px; }
+    .map-shell { min-width: 0; border: 1px solid #bfc8b0; background: #ece8f3; border-radius: 14px; overflow: hidden; }
+    .map {
+      height: 342px;
+      position: relative;
+      color-scheme: light;
+      color: #302c42;
+      touch-action: manipulation;
+    }
+    .map canvas, #map-pins { position: absolute; inset: 0; width: 100%; height: 100%; }
+    #map-pins { pointer-events: none; }
+    .map-controls { position: absolute; z-index: 4; top: 9px; right: 9px; display: grid; justify-items: end; gap: 5px; }
+    .map-controls button {
+      min-width: 34px;
+      min-height: 34px;
+      padding: 0 6px;
+      border: 1px solid #c7c0cd;
+      border-radius: 8px;
+      background: #fffcf6;
+      font-weight: 750;
+    }
+    .map-controls button:hover:enabled { background: #eee3f7; }
+    .map-controls .zoom { display: flex; gap: 3px; }
+    #fit-map { font-size: .8rem; }
+    .map-key {
+      position: absolute;
+      z-index: 1;
+      top: 12px;
+      left: 11px;
+      color: #405548;
+      font-size: .8rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 6px;
+      background: #fffcf6ea;
+      padding: 3px 7px;
+      pointer-events: none;
+    }
+    .north { display: inline-block; width: 0; height: 0; border-inline: 4px solid transparent; border-bottom: 8px solid #405548; }
+    figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; padding: 5px 10px; background: var(--card); color: var(--muted); font-size: .8rem; border-top: 1px solid var(--line); }
+    #map-selection { color: var(--violet); font-weight: 750; }
+    .map-pin {
+      position: absolute;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      width: 33px;
+      height: 33px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      color: #462b6b;
+      transform: translate(-50%, -50%);
+      pointer-events: auto;
+    }
+    .pin-marker, .rank {
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      width: 30px;
+      height: 30px;
+      border-radius: 50% 50% 50% 9px;
+      background: #e9d6fb;
+      color: #502e79;
+      font-size: .89rem;
+      font-weight: 850;
+      line-height: 1;
+    }
+    .pin-marker { border: 2px solid #fffcf6; box-shadow: 0 2px 4px #41295c38; }
+    .pin-marker:empty { width: 15px; height: 15px; background: #7950a7; }
+    .map-pin:hover, .map-pin:focus-visible, .map-pin[aria-pressed="true"] { z-index: 3; }
+    .map-pin[aria-pressed="true"] .pin-marker, .town-card[aria-pressed="true"] .rank { background: #ffda65; color: #47391c; }
+    .results { min-width: 0; }
+    .town-list { list-style: none; padding: 0 4px 3px; margin: 0 -4px; display: grid; gap: 7px; max-height: 367px; overflow: auto; scrollbar-color: var(--line) transparent; }
+    .town-card {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      text-align: start;
+      width: 100%;
+      min-height: 78px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: var(--card);
+      transition: background-color 160ms ease, border-color 160ms ease;
+    }
+    .town-card:hover, .town-card[aria-pressed="true"] { border-color: var(--violet); background: var(--lilac); }
+    .town-card strong, .town-card small { display: block; overflow-wrap: anywhere; }
+    .town-card strong { font-size: 1.04rem; line-height: 1.15; }
+    .town-card .region { margin-top: 3px; }
+    .town-card .highlight { margin-top: 5px; color: var(--forest); font-size: .84rem; font-weight: 680; line-height: 1.35; }
+    .town-card .access { margin-top: 3px; line-height: 1.35; }
+    .card-arrow { width: 7px; height: 7px; border: solid var(--violet); border-width: 1.5px 1.5px 0 0; transform: rotate(45deg); margin-right: 2px; }
+    .chooser { margin: 0 0 8px; display: grid; gap: 4px; font-size: .82rem; color: var(--muted); font-weight: 700; }
+    select { width: 100%; min-height: 36px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+    .panel-message { padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+    .panel-message:empty { display: none; }
+    .panel-message.hint { padding: 0 0 8px; border: 0; background: transparent; color: var(--muted); font-size: .85rem; }
+    .panel-message + .retry { margin-top: 8px; }
+    .snapshot { margin-top: 8px; color: var(--muted); font-size: .8rem; }
+    #status { color: var(--muted); margin-top: 10px; }
+    #status:empty { display: none; }
+    #profile { margin-top: 24px; scroll-margin-top: 8px; }
+    #profile:empty { display: none; }
+    .overview {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, .65fr);
+      gap: 14px;
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--card);
+      align-items: center;
+    }
+    .overview h2 { font: 700 2rem/1.06 ui-serif, Georgia, serif; letter-spacing: -.03em; overflow-wrap: anywhere; }
+    .overview p { margin-top: 5px; }
+    .metric { border-radius: 9px; padding: 9px 11px; background: var(--sand); }
+    .metric strong { display: block; margin: 2px 0; font-size: 1.24rem; font-variant-numeric: tabular-nums; }
+    .evidence { margin-top: 17px; }
+    .evidence p { margin-top: 5px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    th, td { padding: 7px 5px; text-align: start; border-bottom: 1px solid var(--line); vertical-align: top; }
     thead th { font-size: .82rem; color: var(--muted); }
-    tbody th { width: 48%; font-weight: 600; }
+    tbody th { width: 46%; font-weight: 620; }
     td { font-variant-numeric: tabular-nums; }
-    td small { display: block; }
-    .panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
-    .items { list-style: none; margin: 7px 0 0; padding: 0; }
-    .items li { padding: 9px 0; border-bottom: 1px solid var(--line); }
-    .items small { display: block; }
-    details { margin-top: 10px; }
-    summary { cursor: pointer; color: var(--accent); font-weight: 650; padding: 5px 0; }
-    @media (max-width: 520px) {
-      .panels { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    td small, .items small { display: block; }
+    .panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .items { list-style: none; margin: 5px 0 0; padding: 0; }
+    .items li { padding: 8px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+    .match-list { margin: 4px 0 0; padding-left: 21px; }
+    details { margin-top: 8px; }
+    summary { cursor: pointer; color: var(--forest); font-weight: 650; padding: 5px 0; }
+    @media (min-width: 900px) {
+      main { padding: 22px; }
+      .hero { padding-inline: 34px; min-height: 232px; }
     }
-    @media (max-width: 380px) {
-      .overview { grid-template-columns: minmax(0, 1fr); }
-      .metric { padding: 10px 0 0; border-inline-start: 0; border-top: 1px solid var(--line); }
-      th, td { padding-inline: 4px; }
+    @media (max-width: 630px) {
+      .workspace, .panels { grid-template-columns: minmax(0, 1fr); }
+      .panels { gap: 0; }
+      .map { height: 276px; }
+      .town-list { max-height: 290px; }
     }
+    @media (max-width: 420px) {
+      main { padding: 11px; }
+      .hero { min-height: 170px; padding: 15px 14px; }
+      .hero h1 { font-size: 2.45rem; }
+      .hero .intro { font-size: .88rem; max-width: 17ch; }
+      .hero-art { width: 62%; background-position: 54% 65%; }
+      .map { height: 242px; }
+      .explorer { margin-top: 17px; }
+      .overview { grid-template-columns: minmax(0, 1fr); gap: 9px; }
+    }
+    @media (prefers-reduced-motion: reduce) { .town-card { transition: none; } }
   </style>
 </head>
 <body>
   <main>
-    <header>
+    <header class="hero">
+      <div class="hero-art" aria-hidden="true"></div>
       <div>
-        <p class="brand">Relocat</p>
-        <h1>Town Explorer</h1>
+        <p class="brand">relo<span>.cat</span></p>
+        <h1>Find your town</h1>
+        <p class="intro">Compare places to live in Catalonia.</p>
       </div>
-      <label class="chooser" for="town">Municipality
-        <select id="town" disabled><option value="">Choose a town</option></select>
-      </label>
     </header>
-    <p id="status" role="status">Loading municipalities…</p>
-    <div id="profile"></div>
+    <section class="explorer" aria-labelledby="results-title">
+      <div class="toolbar">
+        <div class="section-label"><h2 id="results-title">Explore Catalonia</h2><span id="count"></span></div>
+        <div class="views" role="group" aria-label="Towns to display" hidden>
+          <button id="show-results" type="button" aria-pressed="false">Results</button>
+          <button id="show-all" type="button" aria-pressed="false">All towns</button>
+        </div>
+      </div>
+      <div class="workspace">
+        <figure class="map-shell" aria-label="Map of the Catalonia pilot">
+          <div id="map" class="map">
+            <canvas aria-hidden="true"></canvas>
+            <div class="map-key"><span class="north" aria-hidden="true"></span>Catalonia</div>
+            <div id="map-pins" role="group" aria-label="Town map pins"></div>
+            <div class="map-controls" role="group" aria-label="Map controls">
+              <div class="zoom">
+                <button id="zoom-out" type="button" aria-label="Zoom out" disabled>−</button>
+                <button id="zoom-in" type="button" aria-label="Zoom in" disabled>+</button>
+              </div>
+              <button id="fit-map" type="button" disabled>Fit towns</button>
+            </div>
+          </div>
+          <figcaption><span>Boundaries adapted from <a id="map-source" target="_blank" rel="noopener noreferrer">ICGC</a> · <a id="map-license" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></span><span id="map-selection"></span></figcaption>
+        </figure>
+        <div class="results">
+          <label class="chooser" for="town" hidden>Jump to a municipality
+            <select id="town" disabled><option value="">Choose a town</option></select>
+          </label>
+          <p id="results-status" class="panel-message" role="status">Loading towns…</p>
+          <button id="retry-results" class="retry" type="button" hidden>Retry</button>
+          <ol id="town-list" class="town-list" aria-label="Town cards"></ol>
+          <p id="snapshot" class="snapshot"></p>
+        </div>
+      </div>
+      <p id="status" role="status"></p>
+      <div id="profile" aria-label="Selected town details"></div>
+    </section>
     <noscript>JavaScript is required to browse the town profiles.</noscript>
   </main>
   <!-- WIDGET -->
