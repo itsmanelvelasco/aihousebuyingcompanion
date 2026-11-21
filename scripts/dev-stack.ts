@@ -59,6 +59,7 @@ try {
   launch('demo-plugin/server.ts', { PORT: String(appPort), HOST: '127.0.0.1', PROFILE_API_URL: baseUrl, PROFILE_API_TOKEN: token, INTERVIEWER_BASE_URL: interviewerUrl });
   console.log(`Connected demo: http://127.0.0.1:${appPort}/preview · profile API ${baseUrl}`);
   console.log(`Test the data: http://127.0.0.1:${appPort}/test`);
+  console.log(`React web/MCP workspace: http://127.0.0.1:${appPort}/workspace`);
   console.log(`Manage inputs: ${baseUrl}/manage/ (use your configured PROFILE_API_TOKEN; generated tokens are not displayed)`);
   console.log(`Interviewer backend: ${interviewerUrl} · connected entry: http://127.0.0.1:${appPort}/interviewer/`);
   console.log('Synthetic background feed enabled for DEMO_BANK_USERS; credentials stay in server process memory. Ctrl+C stops all three services.');

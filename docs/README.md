@@ -8,6 +8,7 @@ The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539
 | [Frontend/plugin](areas/frontend-plugin.md) | `demo-plugin/server.ts`, `widget.ts` | Conversation tools, live board and integrated MCP experience. |
 | [Profiles/inputs](areas/profiles-inputs.md) | `apps/profile-api/server.ts`, `inputs.ts` | Persistent synthetic profiles and multi-source context. |
 | [Input management website](areas/input-management.md) | `apps/profile-api/admin.html`, `admin.mjs` | Local operator workspace and reviewed interviewer handoff. |
+| [React web/MCP workspace](areas/react-mcp-workspace.md) | `apps/mcp-server/workspace-widget.tsx`, `workspace-tools.ts` | Shared React controls inside ChatGPT and the local website. |
 | [Netlify hosting](areas/netlify-hosting.md) | `netlify.toml`, `scripts/build-management-site.mjs` | Website builds, restricted API gateway and remaining deployment configuration. |
 | [Bank/runtime](areas/bank-runtime.md) | `apps/profile-api/bank.ts`, `finance.ts` | Movements, event consumption and deterministic finance. |
 | [Habits agent](areas/habits-agent.md) | `apps/habits-agent/server.ts`, `agent.ts` | User-reviewed goals/check-ins and optional on-demand Sol suggestions. |

@@ -5,6 +5,21 @@ import { drawRouteTimeline, drawWorld, nextSegment, stopNames, stops } from './m
 const app = window.parent === window ? null : new App({ name: 'relo.cat demo', version: '0.1.0' });
 const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 byId('website-interview').hidden = app !== null;
+byId('open-workspace').addEventListener('click', () => {
+  const userId = active?.connection?.userId;
+  if (app) {
+    void app.sendMessage({ role: 'user', content: [{ type: 'text', text:
+      `Open the ReloCat React input workspace${userId ? ` for fictional profile ${userId}` : ''} using open_input_workspace.` }] })
+      .catch(() => { byId('status').textContent = 'Ask ChatGPT to open the ReloCat input workspace.'; });
+    return;
+  }
+  const frame = byId<HTMLIFrameElement>('workspace-frame');
+  const open = frame.hidden;
+  frame.src = open ? '/workspace' + (userId ? `?userId=${encodeURIComponent(userId)}` : '') : 'about:blank';
+  frame.hidden = !open;
+  byId('open-workspace').textContent = open ? 'Close workspace' : 'Open input workspace';
+  byId('open-workspace').setAttribute('aria-expanded', String(open));
+});
 byId('open-interview').addEventListener('click', () => {
   const frame = byId<HTMLIFrameElement>('interview-frame');
   const open = frame.hidden;
@@ -231,6 +246,10 @@ function checkpoint(view: DemoView) {
 function render(view: BoardView) {
   if (active?.runId === view.runId && active.revision >= view.revision && active.connection?.ledgerRevision === view.connection?.ledgerRevision) return;
   if (active && active.persona !== view.persona) {
+    byId<HTMLIFrameElement>('workspace-frame').src = 'about:blank';
+    byId('workspace-frame').hidden = true;
+    byId('open-workspace').textContent = 'Open input workspace';
+    byId('open-workspace').setAttribute('aria-expanded', 'false');
     byId<HTMLIFrameElement>('interview-frame').src = 'about:blank';
     byId('interview-frame').hidden = true;
     byId('open-interview').textContent = 'Start your interview';

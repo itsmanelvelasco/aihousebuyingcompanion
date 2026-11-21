@@ -7,11 +7,11 @@ import type { ListingSearchConfig } from "../../packages/listings/search.ts";
 import { createMcpServer } from "./tools.ts";
 
 const html = readFileSync(new URL("./test-ui.html", import.meta.url), "utf8");
-const allowedTools = new Set(["get_town_profile", "recommend_towns", "search_homes"]);
+const allowedTools = new Set(["get_town_profile", "recommend_towns", "search_homes", "list_catalonia_municipalities"]);
 export async function handleTestUi(req: IncomingMessage, res: ServerResponse, snapshot: Snapshot, policies: Policy[],
   listings: ListingSearchConfig = { token: process.env.TREG_TOKEN, org: process.env.TREG_ORG }, travelEstimates: TravelEstimateData = {}) {
   const path = req.url?.split("?")[0];
-  if (!["/test", "/test/config", "/test/run"].includes(path ?? "")) return false;
+  if (!["/test", "/test/config", "/test/run", "/workspace/tools"].includes(path ?? "")) return false;
   const send = (status: number, body: unknown, isHtml = false) => {
     res.writeHead(status, {
       "Content-Type": isHtml ? "text/html; charset=utf-8" : "application/json",
@@ -31,7 +31,7 @@ export async function handleTestUi(req: IncomingMessage, res: ServerResponse, sn
     send(200, { towns: snapshot.municipalities.map(t => ({ code: t.code, name: t.name, recommendable: t.recommendable })),
       liveSearchConfigured: Boolean(listings.token?.trim()), snapshotDate: snapshot.generatedOn }); return true;
   }
-  if (req.method !== "POST" || path !== "/test/run") { send(405, { error: "Unsupported request." }); return true; }
+  if (req.method !== "POST" || !["/test/run", "/workspace/tools"].includes(path ?? "")) { send(405, { error: "Unsupported request." }); return true; }
   if (!req.headers["content-type"]?.startsWith("application/json")) { send(415, { error: "Expected JSON." }); return true; }
   let client: Client | undefined;
   let server: ReturnType<typeof createMcpServer> | undefined;

@@ -10,6 +10,9 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 
 ## Delivered integration and remaining product boundaries
 
+- [x] Add a shared React web/MCP workspace with app-only profile/input/bank operations, guided interview drafts, sourced municipality tools and the common ReloCat theme.
+- [ ] Verify React workspace rendering and optional microphone permission in the installed target ChatGPT client after refreshing its MCP connection.
+
 - [x] Add a local management website for profile documents, multi-source input CRUD, resolved conflicts, bank movements and synthetic feed controls, with an interviewer entry button.
 - [x] Run the interviewer backend separately on port 3003 and proxy its bounded routes through the local app and management website.
 - [ ] Deploy the management website to the existing Netlify project for `relo.cat`; verify persistent backend hosting, paid-route authentication, domain routing and HTTPS before claiming it live.

@@ -34,6 +34,8 @@ The separate [habits service](apps/habits-agent/README.md) runs with `npm run st
 
 ## Input management website
 
+The [React web/MCP workspace](docs/areas/react-mcp-workspace.md) exposes profiles, reviewed interviews, source inputs, conflicts, bank activity and towns inside ChatGPT through `open_input_workspace`. The same React app is available at `http://127.0.0.1:8787/workspace`; it uses the existing profile API with server-side credentials.
+
 Set `PROFILE_API_TOKEN` to your own local demo token before `npm run dev:stack`, then open `http://127.0.0.1:3001/manage/` and enter that token. The website manages profiles, preferences, bank snapshots, source inputs, conflicts and synthetic ledger activity. The token stays in tab memory. Writes use ignored runtime storage. `PROFILE_API_PORT` changes this website's port.
 
 The **Tell us what you need** button opens Manel's interviewer through the same origin. The stack runs that backend separately on port 3003 (`INTERVIEWER_PORT` overrides it). Voice requires server-side `OPENAI_API_KEY` and consumes API credits only after Start talking; opening the website does not start a session. See [input management](docs/areas/input-management.md) and [Netlify hosting](docs/areas/netlify-hosting.md).

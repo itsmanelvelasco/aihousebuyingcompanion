@@ -1,6 +1,9 @@
 import { handleConnectPage } from '../apps/mcp-server/connect-page.ts';
 import { handleTestUi } from '../apps/mcp-server/test-ui.ts';
 import { handleInterviewerProxy } from '../apps/mcp-server/interviewer-proxy.ts';
+import { handleWorkspaceHttp, registerWorkspaceTools } from '../apps/mcp-server/workspace-tools.ts';
+import { handleWorkspaceVoiceHttp, registerWorkspaceVoiceTool } from '../apps/mcp-server/workspace-voice.ts';
+import { handleWorkspacePage, loadWorkspacePage, workspaceConnection } from '../apps/mcp-server/workspace-page.ts';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -80,7 +83,7 @@ async function reply(name: string, input: unknown) {
 
 function createMcpServer() {
   const legacyServer = () => new McpServer({ name: 'relo.cat', version: '0.1.0' }, {
-    instructions: interviewerRouting + ' For other requests that invoke ReloCat or open/show the app, call open_demo with no arguments before answering to return its UI template. The browser and chat share one live board. ' +
+    instructions: interviewerRouting + ' Use open_input_workspace for the React app when the user asks to manage profiles, preferences, interview inputs, bank movements or runtime feeds. For other requests that invoke ReloCat or open/show the app, call open_demo with no arguments before answering to return its UI template. The browser and chat share one live board. ' +
       'Do not ask for a code, run ID, or persona to start. Present boardUrl as a clickable link if the widget is hidden; do not read URLs aloud. ' +
       'Use the runId returned by open_demo for subsequent writes. Pass persona to switch when asked. ' +
       'Speak as a warm, concise game guide. The board labels the rehearsal data, so skip repeated spoken labels. ' +
@@ -99,7 +102,14 @@ function createMcpServer() {
     const { snapshot, policies, travelEstimates } = loadData();
     return createPlacesMcpServer(snapshot, policies, undefined, travelEstimates);
   })() : legacyServer();
-  if (!bridge) registerInterviewerTools(server);
+  if (!bridge) {
+    registerInterviewerTools(server);
+    const workspacePage = loadWorkspacePage();
+    if (workspacePage) {
+      registerWorkspaceTools(server, workspacePage, workspaceConnection());
+      registerWorkspaceVoiceTool(server);
+    }
+  }
   if (connection) registerBankTools(server, { baseUrl: connection.baseUrl, token: connection.token });
 
   registerAppResource(server, 'relo.cat journey board', widgetUri, {}, async () => ({
@@ -158,6 +168,13 @@ const server = createServer(async (req, res) => {
   const path = url.pathname;
   try {
     if (await handleInterviewerProxy(req, res)) return;
+    if (handleWorkspacePage(req, res, loadWorkspacePage())) return;
+    if (await handleWorkspaceHttp(req, res, workspaceConnection())) return;
+    if (await handleWorkspaceVoiceHttp(req, res)) return;
+    if (path === '/workspace/tools') {
+      const { snapshot, policies } = loadData();
+      if (await handleTestUi(req, res, snapshot, policies)) return;
+    }
     if (handleConnectPage(req, res)) return;
     if (path === '/test' || path.startsWith('/test/')) {
       const { snapshot, policies } = loadData();
