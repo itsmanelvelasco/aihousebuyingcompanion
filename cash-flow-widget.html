@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sample cash flow</title>
+<style>
+  :root { color-scheme: light dark; font: 15px/1.45 system-ui, sans-serif; }
+  body { margin: 0; padding: 16px; color: light-dark(#172e26, #e3ebe3); background: light-dark(#f6f7ee, #18251e); }
+  h2 { font-size: 1.25rem; margin: 0; }
+  p { margin: 0 0 12px; }
+  dl { margin: 12px 0 8px; }
+  dl div { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+  #totals { font-weight: 650; }
+  details { padding-top: 6px; border-top: 1px solid light-dark(#d6dfd2, #425747); }
+  summary { cursor: pointer; }
+</style>
+<main>
+  <h2>Sample monthly cash flow</h2>
+  <p id="coverage" role="status">Loading fictional transaction summary…</p>
+  <dl id="totals"></dl>
+  <details id="breakdown" hidden>
+    <summary>Spending by category</summary>
+    <dl id="expenses"></dl>
+  </details>
+</main>
+<script>
+  const byId = id => document.getElementById(id);
+  const money = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'EUR' });
+  const notify = (method, params) => window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
+
+  function renderRows(id, rows) {
+    byId(id).replaceChildren(...rows.map(([label, amount]) => {
+      const row = document.createElement('div');
+      const name = document.createElement('dt');
+      const value = document.createElement('dd');
+      name.textContent = label;
+      value.textContent = Number.isFinite(amount) ? money.format(amount) : 'Unidentified';
+      row.append(name, value);
+      return row;
+    }));
+  }
+
+  function render(summary) {
+    if (!Array.isArray(summary?.observedMonths) || !summary.monthlyExpenses) return;
+    byId('coverage').textContent = summary.observedMonths.length + ' months of fictional transactions';
+    renderRows('totals', [
+      ['Estimated salary', summary.estimatedMonthlySalary],
+      ['Average spending', summary.monthlyCostOfLiving],
+      ['Net cash flow', summary.monthlyNetCashFlow],
+    ]);
+    const labels = { Rent: 'Housing (rent)', 'Eating out': 'Restaurants and takeout' };
+    renderRows('expenses', Object.entries(summary.monthlyExpenses).map(([name, amount]) => [labels[name] ?? name, amount]));
+    byId('breakdown').hidden = false;
+  }
+
+  window.addEventListener('message', event => {
+    if (event.source !== window.parent || event.data?.jsonrpc !== '2.0') return;
+    const message = event.data;
+    if (message.id === 1 && message.result) notify('ui/notifications/initialized', {});
+    if (message.id === 1 && message.error) byId('coverage').textContent = 'Cash flow preview is unavailable.';
+    if (message.method === 'ui/notifications/tool-result') render(message.params?.structuredContent);
+  });
+  window.parent.postMessage({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'ui/initialize',
+    params: {
+      appInfo: { name: 'Homebuying cash flow', version: '0.1.0' },
+      appCapabilities: {},
+      protocolVersion: '2026-01-26',
+    },
+  }, '*');
+</script>
+</html>
