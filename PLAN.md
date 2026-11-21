@@ -22,7 +22,9 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 - [x] Expose `get_applicable_incentives` with optional household checks, and retain `check_housing_incentives` for eligibility and exclusions.
 - [x] Preserve existing profile paths and expose municipality, bank-read and board tools through one connected MCP endpoint.
 - [x] Add a synthetic background worker, durable cursor-based bank events, authenticated polling tools, stack launcher and per-area development guides.
-- [x] Add `search_homes` for live treg web searches of Idealista examples, with bounded costs, explicit provider failures and unverified location/filter/availability labels. Runtime access requires `TREG_TOKEN`.
+- [x] Add keyless Idealista town links and a Google search to `search_homes` and Town Explorer. Keep Treg as an optional source of dated examples with bounded costs and explicit provider status. Apply filters and check availability on the portal.
+- [x] Show dated Idealista listing cards for five pilot towns and compare municipal housing averages, active measures in the pilot catalogue and listed local schools in Town Explorer.
+- [x] Default the public homepage, savings demo and Town Explorer preview to Catalan, with an English option.
 - [ ] Verify bedroom counts and actual property availability against authorized listing evidence. Town screens deliberately retain these as unresolved property checks.
 - [ ] Complete human visual/voice rehearsal in the target ChatGPT client; automated transport tests do not establish client widget visibility.
 

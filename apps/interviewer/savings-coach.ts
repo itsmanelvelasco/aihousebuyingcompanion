@@ -5,6 +5,9 @@ import { z } from "zod";
 import { savingsCoachOutput } from "./savings-contract.ts";
 import type { SavingsCoach } from "./savings-contract.ts";
 import { generateFirstScenario } from "./scenario.ts";
+import { localizeMarkup } from "../../packages/site/language.ts";
+import type { SiteLanguage } from "../../packages/site/language.ts";
+import { catalanHabits, savingsCoachCopy } from "./savings-coach-copy.ts";
 
 const uri = "ui://homebuying/savings-coach-v1.html";
 
@@ -14,17 +17,22 @@ async function demoPlan(): Promise<SavingsCoach> {
   return { ...plan, ...scenario, fictional: true };
 }
 
-async function coachMarkup(demo?: SavingsCoach) {
+async function coachMarkup(demo?: SavingsCoach, language: SiteLanguage = "en") {
   const [html, script] = await Promise.all([
     readFile(new URL("../../apps/interviewer/savings-coach.html", import.meta.url), "utf8"),
     readFile(new URL("../../apps/mcp-server/dist/savings-coach.js", import.meta.url), "utf8"),
   ]);
   const data = demo ? `<script id="savings-coach-data" type="application/json">${JSON.stringify(demo).replace(/</g, "\\u003c")}</script>` : "";
-  return `${html}${data}<script>${script.replace(/<\/script/gi, "<\\/script")}</script>`;
+  return `${localizeMarkup(html, savingsCoachCopy, language)}${data}<script>${script.replace(/<\/script/gi, "<\\/script")}</script>`;
 }
 
-export async function savingsCoachDemoMarkup() {
-  return coachMarkup(await demoPlan());
+export async function savingsCoachDemoMarkup(language: SiteLanguage) {
+  const demo = await demoPlan();
+  if (language === "ca") demo.suggestions = demo.suggestions.map(item => {
+    const translated = catalanHabits[item.title];
+    return translated ? { ...item, title: translated[0], action: translated[1] } : item;
+  });
+  return coachMarkup(demo, language);
 }
 
 export function registerSavingsCoach(server: McpServer) {

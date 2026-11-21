@@ -7,7 +7,7 @@ import {
   recommendationInput, recommendationResult,
   schoolQuery, schoolResult, transportQuery, transportResult,
 } from "../../packages/contracts/places.ts";
-import type { IncentivesInput, Policy, Snapshot, TravelEstimateData } from "../../packages/contracts/places.ts";
+import type { IncentivesInput, Municipality, Policy, Snapshot, TravelEstimateData } from "../../packages/contracts/places.ts";
 import { getNearbySchools, getTransportOptions } from "../../packages/places/access.ts";
 import { getTown, missingMetrics, snapshotInfo } from "../../packages/places/data.ts";
 import { evaluateIncentives } from "../../packages/places/eligibility.ts";
@@ -34,6 +34,18 @@ function result(summary: string, structuredContent: Record<string, unknown>): Ca
 
 export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = madridDate, travelEstimates: TravelEstimateData = {}, listings: ListingSearchConfig = { token: process.env.TREG_TOKEN, org: process.env.TREG_ORG }) {
   const metadata = snapshotInfo(snapshot);
+  const comparison = (municipalities: Municipality[], asOf: string) => Object.fromEntries(municipalities.map(town => {
+    const metrics = snapshot.townMetrics[town.code];
+    const activeMeasures = evaluateIncentives(policies, town, { municipalityCode: town.code }, asOf)
+      .filter(measure => measure.measureStatus === "active" && (measure.mechanism !== "grant" || measure.callStatus === "open"));
+    return [town.code, {
+      resale: metrics.find(metric => metric.kind === "resale_eur_per_m2") ?? null,
+      rent: metrics.find(metric => metric.kind === "rent_eur_per_month") ?? null,
+      activeHousingMeasures: activeMeasures.filter(measure => measure.geographicStatus === "applies").length,
+      housingMeasuresToVerify: activeMeasures.filter(measure => measure.geographicStatus === "needs_verification").length,
+      localSchools: snapshot.schools.filter(school => school.municipalityCode === town.code).length,
+    }];
+  }));
   const server = new McpServer({ name: "relocat", version: "0.1.0" }, {
     instructions: interviewerRouting + " Use Relocat to compare selected Catalan municipalities from a dated official-data snapshot. Cite evidence URLs. Explain geographic proxies and use the actual school and service dates. Describe sample travel times as approximate, with the transport mode and sample date. Distinguish policy eligibility from application status. Do not infer user finances, schooling, residence or tax facts.",
   });
@@ -49,7 +61,9 @@ export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = 
       [town.name, town.code, town.comarca].some(value => normalizedName(value).includes(query))
       && (!input.ruralOnly || ((town.rural.category === "rural" || town.rural.category === "special_attention")
         && town.rural.effectiveFrom !== null && town.rural.effectiveFrom <= asOf)));
-    return result(`${municipalities.length} municipalities found in the pilot snapshot.`, { snapshot: metadata, municipalities, coverage: placeCoverage });
+    return result(`${municipalities.length} municipalities found in the pilot snapshot.`, {
+      snapshot: metadata, municipalities, comparison: comparison(municipalities, asOf), coverage: placeCoverage,
+    });
   });
 
   server.registerTool("recommend_towns", {
@@ -57,11 +71,12 @@ export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = 
     description: "Return relocation research alongside towns screened against housing, school, rural status and commute requirements before ranking. Ask for floor area with a purchase budget and obtain explicit consent before setting allowComarcaEstimate. Rail results use the cached dated FGC schedule; school and commute walking legs are estimates from town centres.",
     inputSchema: recommendationInput, outputSchema: recommendationResult, annotations: readOnly,
   }, (input) => {
-    const recommendation = recommendTowns(snapshot, policies, input, today());
+    const asOf = today();
+    const recommendation = recommendTowns(snapshot, policies, input, asOf);
     const names = recommendation.towns.map(town => town.municipality.name);
     const summary = names.length ? names.join(", ") + " meet the requested pilot screening criteria."
       : "No towns met all requested screening criteria with the available data.";
-    return result(summary, recommendation);
+    return result(summary, { ...recommendation, comparison: comparison(recommendation.towns.map(town => town.municipality), asOf) });
   });
 
   server.registerTool("recommend_towns_for_profile", {
@@ -69,7 +84,8 @@ export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = 
     description: "Shortlist pilot municipalities from a profile with household type, children, school stages, dog, work mode and town preference. Pass confirmed profile facts and optionally a result limit. Use recommend_towns for budget and detailed journey filters.",
     inputSchema: profileRecommendationInput, outputSchema: profileRecommendationResult, annotations: readOnly,
   }, (input) => {
-    const recommendation = recommendTownsForProfile(snapshot, policies, input, today());
+    const asOf = today();
+    const recommendation = recommendTownsForProfile(snapshot, policies, input, asOf);
     const { status, followUps, verificationNeeded, ignoredCriteria } = recommendation.profileAssessment;
     const names = recommendation.towns.map(town => town.municipality.name).join(", ");
     const summary = status === "ranked" ? `Top pilot matches for the supplied preferences: ${names}.`
@@ -79,7 +95,7 @@ export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = 
     if (ignoredCriteria?.length) {
       messages.push("This profile shortlist skipped extra criteria. Use recommend_towns for budget and detailed journey filters.");
     }
-    return result(messages.join(" "), recommendation);
+    return result(messages.join(" "), { ...recommendation, comparison: comparison(recommendation.towns.map(town => town.municipality), asOf) });
   });
 
   server.registerTool("get_town_profile", {
@@ -165,14 +181,15 @@ export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = 
 
   registerInterviewerTools(server);
   server.registerTool("search_homes", {
-    title: "Find Idealista property examples",
-    description: "Search the web live through treg for Idealista listing examples in up to three pilot towns. Budget and bedrooms are search hints, not verified filters. Returns original links and search timestamps; availability and exact location remain unverified. Costs up to USD 0.01 per town. Requires server-side TREG_TOKEN; otherwise returns provider_unavailable and search links.",
+    title: "Find Idealista search links and property examples",
+    description: "Get dated Idealista listing examples, Idealista town links where available, and Google search links for up to three pilot towns. Check the original sites for current details and availability. When Treg is configured, also search for indexed examples at up to USD 0.01 per town. Budget and bedrooms are hints for indexed examples. Search links and dated examples are independent of Treg.",
     inputSchema: homeSearchInput, outputSchema: homeSearchResult,
     annotations: { readOnlyHint: true, openWorldHint: true, destructiveHint: false, idempotentHint: false },
   }, async input => {
     const response = await searchHomes(snapshot, input, listings);
-    const count = response.searches.reduce((sum, search) => sum + search.examples.length, 0);
-    return result(`${count} indexed property examples returned; inspect per-town search status and verify listing details.`, response);
+    const checked = response.searches.reduce((sum, search) => sum + search.checkedExamples.length, 0);
+    const indexed = response.searches.reduce((sum, search) => sum + search.examples.length, 0);
+    return result(`Search links for ${response.searches.length} town(s), ${checked} dated listing example(s), and ${indexed} indexed example(s). Confirm current price and availability on Idealista.`, response);
   });
 
   return server;

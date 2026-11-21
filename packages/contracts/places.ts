@@ -271,9 +271,17 @@ export const schoolResult = z.object({
   schools: z.array(schoolJourney),
   limitations: z.array(z.string()),
 });
+const townComparison = z.record(municipalityCode, z.object({
+  resale: metric.nullable(),
+  rent: metric.nullable(),
+  activeHousingMeasures: z.number().int().nonnegative().describe("Active measures in the pilot catalogue that cover the municipality. Check household eligibility."),
+  housingMeasuresToVerify: z.number().int().nonnegative().describe("Active measures in the pilot catalogue whose geographic coverage needs verification."),
+  localSchools: z.number().int().nonnegative().describe("Schools listed in the official directory within the municipality."),
+}));
 export const recommendationResult = z.object({
   snapshot: snapshotInfo,
   travelDate: isoDate,
+  comparison: townComparison.optional(),
   towns: z.array(z.object({
     municipality,
     score: z.number().min(0).max(100).nullable(),
@@ -357,6 +365,7 @@ export const municipalityListInput = z.object({
 export const municipalityListResult = z.object({
   snapshot: snapshotInfo,
   municipalities: z.array(municipality),
+  comparison: townComparison.optional(),
   coverage: z.string(),
 });
 

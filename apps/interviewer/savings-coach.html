@@ -54,35 +54,35 @@
   @media (max-width: 660px) { .savings-coach .coach-layout { grid-template-columns: minmax(0, 1fr); } }
 </style>
 <section id="savings-coach" class="savings-coach" aria-labelledby="savings-coach-title">
-  <h2 class="coach-title" id="savings-coach-title">Savings Coach</h2>
-  <p class="coach-intro">Try one habit and see how it could change your home savings timeline. This demo uses fictional data.</p>
+  <h2 class="coach-title" id="savings-coach-title">{{copy.title}}</h2>
+  <p class="coach-intro">{{copy.intro}}</p>
   <div class="coach-layout" id="savings-coach-content" hidden>
     <dl class="coach-plan">
-      <div><dt>Purchase cash target</dt><dd id="coach-target"></dd></div>
-      <div><dt>Already set aside</dt><dd id="coach-saved"></dd></div>
-      <div><dt>Left to save</dt><dd id="coach-remaining"></dd></div>
-      <div><dt>Monthly contribution</dt><dd id="coach-monthly"></dd></div>
-      <div class="coach-months"><dt>At the current pace</dt><dd id="coach-baseline"></dd></div>
+      <div><dt>{{copy.target}}</dt><dd id="coach-target"></dd></div>
+      <div><dt>{{copy.saved}}</dt><dd id="coach-saved"></dd></div>
+      <div><dt>{{copy.remaining}}</dt><dd id="coach-remaining"></dd></div>
+      <div><dt>{{copy.monthly}}</dt><dd id="coach-monthly"></dd></div>
+      <div class="coach-months"><dt>{{copy.pace}}</dt><dd id="coach-baseline"></dd></div>
     </dl>
     <form class="coach-form" id="coach-form">
       <fieldset id="coach-controls">
         <div id="coach-habits">
-          <label for="coach-habit">Choose a habit to try</label>
+          <label for="coach-habit">{{copy.habit}}</label>
           <select id="coach-habit" aria-describedby="coach-action"></select>
           <p id="coach-action" class="coach-action"></p>
         </div>
         <div class="coach-amount">
-          <label for="coach-extra" id="coach-extra-label">Extra monthly savings</label>
+          <label for="coach-extra" id="coach-extra-label">{{copy.extra}}</label>
           <input id="coach-extra" type="number" inputmode="decimal" min="0" step="0.01" required aria-describedby="coach-assumption">
         </div>
-        <button type="submit">Compare timelines</button>
+        <button type="submit">{{copy.compare}}</button>
       </fieldset>
-      <p class="coach-note" id="coach-assumption">Use an amount you think you could set aside each month.</p>
+      <p class="coach-note" id="coach-assumption">{{copy.assumption}}</p>
       <div class="coach-result" id="coach-result" role="status" hidden>
         <strong id="coach-projection"></strong>
         <p id="coach-difference"></p>
       </div>
     </form>
   </div>
-  <p class="coach-status" id="coach-status" role="status">Loading the fictional plan…</p>
+  <p class="coach-status" id="coach-status" role="status">{{copy.loading}}</p>
 </section>

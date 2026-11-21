@@ -12,21 +12,24 @@ const habit = element<HTMLSelectElement>("coach-habit");
 const amount = element<HTMLInputElement>("coach-extra");
 const result = element("coach-result");
 const timeout = 15_000;
+const catalan = document.documentElement.lang === "ca";
+const t = (ca: string, en: string) => catalan ? ca : en;
 
 function duration(months: number | null) {
-  if (months === null) return "No projected timeline";
-  if (months === 0) return "Target reached";
-  return `${months} ${months === 1 ? "month" : "months"}`;
+  if (months === null) return t("Termini sense estimar", "No projected timeline");
+  if (months === 0) return t("Objectiu assolit", "Target reached");
+  return `${months} ${months === 1 ? t("mes", "month") : t("mesos", "months")}`;
 }
 
 function render(plan: SavingsCoach, app?: App) {
-  const money = new Intl.NumberFormat(undefined, { style: "currency", currency: plan.currency, minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  const money = new Intl.NumberFormat(catalan ? "ca-ES" : undefined,
+    { style: "currency", currency: plan.currency, minimumFractionDigits: 0, maximumFractionDigits: 2 });
   element("coach-target").textContent = money.format(plan.target);
   element("coach-saved").textContent = money.format(plan.saved);
   element("coach-remaining").textContent = money.format(plan.remaining);
   element("coach-monthly").textContent = money.format(plan.monthly);
   element("coach-baseline").textContent = duration(plan.baselineMonths);
-  element("coach-extra-label").textContent = `Extra monthly savings (${plan.currency})`;
+  element("coach-extra-label").textContent = `${t("Estalvi mensual addicional", "Extra monthly savings")} (${plan.currency})`;
   element("coach-habits").hidden = !plan.suggestions.length;
   habit.replaceChildren(...plan.suggestions.map((item, index) => new Option(item.title, String(index))));
   function showHabit() {
@@ -40,12 +43,12 @@ function render(plan: SavingsCoach, app?: App) {
     event.preventDefault();
     const input = savingsComparisonInput.safeParse({ target: plan.target, saved: plan.saved, monthly: plan.monthly, habit: amount.valueAsNumber });
     if (!input.success) {
-      status.textContent = "Enter an extra monthly savings amount of zero or more.";
+      status.textContent = t("Introdueix una quantitat igual o superior a zero.", "Enter an extra monthly savings amount of zero or more.");
       return;
     }
     result.hidden = true;
     controls.disabled = true;
-    status.textContent = "Comparing timelines…";
+    status.textContent = t("Comparant terminis…", "Comparing timelines…");
     try {
       const response = app && await app.callServerTool({ name: "compare_home_savings", arguments: input.data }, { timeout });
       if (response?.isError) throw new Error("Savings comparison failed");
@@ -53,15 +56,16 @@ function render(plan: SavingsCoach, app?: App) {
       const { baselineMonths, withHabitMonths } = comparison;
       const difference = baselineMonths === null || withHabitMonths === null ? null : baselineMonths - withHabitMonths;
       element("coach-projection").textContent = duration(withHabitMonths);
+      const extra = money.format(input.data.habit);
       element("coach-difference").textContent = difference !== null && difference > 0
-        ? `${duration(difference)} sooner if you set aside ${money.format(input.data.habit)} more each month.`
-        : difference === 0 ? "This amount keeps the same estimated timeline."
-        : withHabitMonths === null ? "The estimate needs a positive monthly contribution."
-        : "The extra contribution gives this plan a projected timeline.";
+        ? t(`Hi arribaries ${duration(difference)} abans si estalvies ${extra} més cada mes.`, `${duration(difference)} sooner if you set aside ${extra} more each month.`)
+        : difference === 0 ? t("El termini estimat es manté.", "This amount keeps the same estimated timeline.")
+        : withHabitMonths === null ? t("Cal una aportació mensual positiva per estimar el termini.", "The estimate needs a positive monthly contribution.")
+        : t("Amb l’aportació addicional ja podem estimar un termini.", "The extra contribution gives this plan a projected timeline.");
       result.hidden = false;
       status.textContent = "";
     } catch {
-      status.textContent = "The comparison could not load. Try again.";
+      status.textContent = t("No s’ha pogut carregar la comparació. Torna-ho a provar.", "The comparison could not load. Try again.");
     } finally {
       controls.disabled = false;
     }
@@ -95,4 +99,7 @@ async function initialize() {
   }
 }
 
-void initialize().catch(() => { status.textContent = "The Savings Coach could not load. Open it again to retry."; });
+void initialize().catch(() => {
+  status.textContent = t("No s’ha pogut carregar el simulador d’estalvi. Recarrega la pàgina per tornar-ho a provar.",
+    "The Savings Coach could not load. Open it again to retry.");
+});

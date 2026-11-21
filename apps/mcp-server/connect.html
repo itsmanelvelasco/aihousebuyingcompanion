@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{language}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Discover places to live in Catalonia. Compare towns, schools, transport and housing support with relo.cat.">
+  <meta name="description" content="{{copy.description}}">
   <meta name="theme-color" content="#fcf7ee">
-  <title>relo.cat · Find your place in Catalonia</title>
+  <title>{{copy.title}}</title>
   <style>
     :root {
       --paper: #fcf7ee;
@@ -48,7 +48,7 @@
     .masthead { min-height: 75px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
     .wordmark { font-size: 1.7rem; font-weight: 850; letter-spacing: -.04em; text-decoration: none; white-space: nowrap; }
     .wordmark span { color: var(--violet); }
-    .site-nav { display: flex; align-items: center; gap: 18px; }
+    .site-nav { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 18px; }
     .nav-link { font-size: .94rem; font-weight: 700; text-decoration: none; }
     .nav-link:hover { text-decoration: underline; }
     .button {
@@ -100,7 +100,7 @@
       font-size: clamp(1rem, 1.5vw, 1.2rem);
       line-height: 1.52;
     }
-    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; max-inline-size: 35rem; }
     .actions .nav-link { display: inline-flex; align-items: center; min-height: 44px; padding-inline: 8px; }
     .body-section { margin: clamp(48px, 6.2vw, 88px) auto; }
     .body-section h2 { color: #173b2b; font-size: clamp(2.15rem, 4vw, 3.45rem); line-height: 1.05; }
@@ -266,12 +266,13 @@
   </style>
 </head>
 <body>
-  <a class="skip" href="#main">Skip to content</a>
+  <a class="skip" href="#main">{{copy.skip}}</a>
   <header class="masthead wrap">
-    <a class="wordmark" href="/connect" aria-label="relo.cat home">relo<span>.cat</span></a>
-    <nav class="site-nav" aria-label="Main navigation">
-      <a class="nav-link" href="/preview">Town demo</a>
-      <a class="button compact secondary" href="#setup">Connect an agent</a>
+    <a class="wordmark" href="{{copy.homeHref}}" aria-label="{{copy.homeLabel}}">relo<span>.cat</span></a>
+    <nav class="site-nav" aria-label="{{copy.mainNavigation}}">
+      <a class="nav-link" href="{{copy.previewHref}}">{{copy.townDemo}}</a>
+      <a class="button compact secondary" href="#setup" aria-label="{{copy.connectYourAgent}}">{{copy.connectAgent}}</a>
+      <a class="nav-link" href="{{copy.switchHref}}" lang="{{copy.otherLanguage}}" hreflang="{{copy.otherLanguage}}">{{copy.languageName}}</a>
     </nav>
   </header>
 
@@ -279,12 +280,12 @@
     <section class="hero" aria-labelledby="hero-title">
       <img class="village" src="{{village}}" alt="" fetchpriority="high">
       <div class="hero-copy">
-        <h1 id="hero-title">Find your place <span>in Catalonia.</span></h1>
-        <p>Compare towns, school journeys and housing support before you decide where to move.</p>
+        <h1 id="hero-title">{{copy.heroTitle}} <span>{{copy.heroPlace}}</span></h1>
+        <p>{{copy.heroIntro}}</p>
         <div class="actions">
-          <a class="button" href="/preview">Explore towns</a>
-          <a class="button secondary" href="#setup">Connect your agent</a>
-          <a class="nav-link" href="#savings-coach">Try the Savings Coach</a>
+          <a class="button" href="{{copy.previewHref}}">{{copy.exploreTowns}}</a>
+          <a class="button secondary" href="#setup">{{copy.connectYourAgent}}</a>
+          <a class="nav-link" href="#savings-coach">{{copy.trySavings}}</a>
         </div>
       </div>
     </section>
@@ -292,18 +293,18 @@
     <section class="body-section discover" aria-labelledby="discover-title">
       <div class="discovery-intro">
         <div>
-          <h2 id="discover-title">Get a feel for everyday life.</h2>
-          <p class="section-intro">Start with 18 Catalan municipalities in the pilot.</p>
+          <h2 id="discover-title">{{copy.dailyLife}}</h2>
+          <p class="section-intro">{{copy.pilot}}</p>
         </div>
         <img class="mascot welcome" src="{{welcome}}" alt="" width="227" height="208" loading="lazy">
       </div>
       <div>
         <dl class="storylines">
-          <div><dt>Find towns that fit</dt><dd>Compare towns against your budget, school needs and transport constraints. See which requirements each town meets and what still needs checking.</dd></div>
-          <div><dt>Compare the school run and commute</dt><dd>Check nearby schools and dated travel estimates. Sources and sample dates help you decide which journeys to verify.</dd></div>
-          <div><dt>Explore housing support and homes</dt><dd>Check published incentives and their application status. When live listing search is enabled, follow example links to confirm the price, bedrooms and availability.</dd></div>
+          <div><dt>{{copy.townFit}}</dt><dd>{{copy.townFitDetails}}</dd></div>
+          <div><dt>{{copy.journeys}}</dt><dd>{{copy.journeyDetails}}</dd></div>
+          <div><dt>{{copy.housingSupport}}</dt><dd>{{copy.housingSupportDetails}}</dd></div>
         </dl>
-        <a class="discovery-link" href="https://github.com/itsmanelvelasco/aihousebuyingcompanion/blob/main/apps/mcp-server/README.md#data-and-refresh">See the data sources</a>
+        <a class="discovery-link" href="https://github.com/itsmanelvelasco/aihousebuyingcompanion/blob/main/apps/mcp-server/README.md#data-and-refresh">{{copy.sources}}</a>
       </div>
     </section>
 
@@ -311,14 +312,14 @@
 
     <section class="body-section" id="setup" aria-labelledby="setup-title">
       <div class="setup-heading">
-        <h2 id="setup-title">Bring relo.cat into your chat.</h2>
-        <p class="section-intro">Choose your AI agent for step-by-step connection instructions.</p>
+        <h2 id="setup-title">{{copy.setupTitle}}</h2>
+        <p class="section-intro">{{copy.setupIntro}}</p>
       </div>
       <div class="setup-panel">
-        <div class="agent-list" id="agents" role="group" aria-label="Choose an agent"></div>
+        <div class="agent-list" id="agents" role="group" aria-label="{{copy.chooseAgent}}"></div>
         <div class="agent-detail">
           <div class="agent-picker">
-            <label for="agent-select">Choose an agent</label>
+            <label for="agent-select">{{copy.chooseAgent}}</label>
             <select id="agent-select"></select>
           </div>
           <div class="agent-heading">
@@ -328,20 +329,20 @@
           </div>
           <p id="agent-intro"></p>
           <div class="endpoint" id="endpoint-box">
-            <label for="endpoint">relo.cat MCP server URL</label>
+            <label for="endpoint">{{copy.endpointLabel}}</label>
             <div class="endpoint-row">
               <input id="endpoint" type="url" value="https://relo.cat/mcp" spellcheck="false" autocomplete="off" aria-describedby="endpoint-note">
-              <button class="button compact" id="copy-url" type="button">Copy URL</button>
+              <button class="button compact" id="copy-url" type="button">{{copy.copyUrl}}</button>
             </div>
             <p id="endpoint-note" class="meta"></p>
           </div>
           <div class="instructions" id="instructions"></div>
           <p class="copy-status" id="feedback" role="status"></p>
           <div class="agent-footer">
-            <a id="docs" target="_blank" rel="noopener noreferrer">Official setup guide</a>
-            <p class="meta">Available settings depend on your agent version and workspace permissions.</p>
+            <a id="docs" target="_blank" rel="noopener noreferrer">{{copy.officialGuide}}</a>
+            <p class="meta">{{copy.settings}}</p>
           </div>
-          <noscript>Enable JavaScript to choose an agent and generate its configuration.</noscript>
+          <noscript>{{copy.noScript}}</noscript>
         </div>
       </div>
     </section>
@@ -349,8 +350,8 @@
     <section class="body-section questions" aria-labelledby="questions-title">
       <div class="question-intro">
         <div>
-          <h2 id="questions-title">What would you ask?</h2>
-          <p class="section-intro">Copy a question into your agent after connecting relo.cat.</p>
+          <h2 id="questions-title">{{copy.questionTitle}}</h2>
+          <p class="section-intro">{{copy.questionIntro}}</p>
         </div>
         <img class="mascot guide" src="{{guide}}" alt="" width="289" height="221" loading="lazy">
       </div>
@@ -365,24 +366,24 @@
     <div class="wrap">
       <div class="footer-content">
         <div>
-          <h2>About the data</h2>
-          <p>Sources include official municipal statistics and dated relocation research for three pilot towns. Housing averages describe the local market. Check listing availability, school admissions and walkability separately. Incentives show application status and household eligibility separately.</p>
+          <h2>{{copy.aboutData}}</h2>
+          <p>{{copy.dataDetails}}</p>
         </div>
         <div>
-          <h2>Running relo.cat yourself?</h2>
-          <p>Use fictional profiles for the local connected demo. Add authentication and access controls before sharing a public deployment.</p>
+          <h2>{{copy.selfHost}}</h2>
+          <p>{{copy.selfHostDetails}}</p>
           <details>
-            <summary>Local server and live listing setup</summary>
+            <summary>{{copy.serverSetup}}</summary>
             <pre>npm run dev:stack</pre>
-            <p>The local MCP endpoint is <code>http://127.0.0.1:8787/mcp</code>. Cloud agents need an HTTPS URL from your server operator or a supported private tunnel.</p>
-            <p>Set <code>TREG_TOKEN</code> in the server environment to enable live example links. The provider may charge for searches. Town research runs without the key.</p>
+            <p>{{copy.localServer}} <code>http://127.0.0.1:8787/mcp</code>. {{copy.cloudServer}}</p>
+            <p>{{copy.listingKeyStart}} <code>TREG_TOKEN</code> {{copy.listingKeyEnd}}</p>
           </details>
         </div>
       </div>
       <div class="footer-bottom">
-        <a class="wordmark" href="/connect" aria-label="relo.cat home">relo<span>.cat</span></a>
-        <nav class="footer-links" aria-label="Footer navigation">
-          <a href="/preview">Town demo</a>
+        <a class="wordmark" href="{{copy.homeHref}}" aria-label="{{copy.homeLabel}}">relo<span>.cat</span></a>
+        <nav class="footer-links" aria-label="{{copy.footerNavigation}}">
+          <a href="{{copy.previewHref}}">{{copy.townDemo}}</a>
           <a href="https://github.com/itsmanelvelasco/aihousebuyingcompanion">GitHub</a>
         </nav>
       </div>
@@ -391,6 +392,8 @@
 
   <script>
     const agentIcons = {{agent-icons}};
+    const catalanAgents = {{catalan-agents}};
+    const t = (ca, en) => document.documentElement.lang === "ca" ? ca : en;
     const agents = [
       {
         id: 'chatgpt',
@@ -471,6 +474,8 @@
       }
     ];
 
+    if (catalanAgents) for (const agent of agents) Object.assign(agent, catalanAgents[agent.id]);
+
     const get = id => document.getElementById(id);
     const endpoint = get("endpoint");
     const instructions = get("instructions");
@@ -492,10 +497,10 @@
     async function copy(text, status, selectText) {
       try {
         await navigator.clipboard.writeText(text);
-        status.textContent = "Copied.";
+        status.textContent = t("Copiat.", "Copied.");
       } catch {
         selectText();
-        status.textContent = "Clipboard access is unavailable. Copy the selected text manually.";
+        status.textContent = t("No hi ha accés al porta-retalls. Copia el text seleccionat manualment.", "Clipboard access is unavailable. Copy the selected text manually.");
       }
     }
 
@@ -529,10 +534,10 @@
       endpoint.setAttribute("aria-invalid", String(!url));
       get("copy-url").disabled = !url;
       get("endpoint-note").textContent = !url
-        ? "Enter a valid HTTP or HTTPS URL without credentials."
+        ? t("Introdueix una URL HTTP o HTTPS vàlida i sense credencials.", "Enter a valid HTTP or HTTPS URL without credentials.")
         : local
-          ? "This address works for local agents. ChatGPT and Claude need an HTTPS URL they can reach or a supported tunnel."
-          : "Use the address and authentication settings from your server operator.";
+          ? t("Aquesta adreça serveix per als assistents locals. ChatGPT i Claude necessiten una URL HTTPS accessible o un túnel compatible.", "This address works for local agents. ChatGPT and Claude need an HTTPS URL they can reach or a supported tunnel.")
+          : t("Fes servir l’adreça i les dades d’autenticació que t’hagi indicat qui gestiona el servidor.", "Use the address and authentication settings from your server operator.");
 
       const config = get("config");
       config.hidden = !url || !active.snippet;
@@ -565,7 +570,7 @@
       const copyConfig = document.createElement("button");
       copyConfig.type = "button";
       copyConfig.className = "button compact secondary";
-      copyConfig.textContent = "Copy configuration";
+      copyConfig.textContent = t("Copia la configuració", "Copy configuration");
       copyConfig.onclick = () => copy(pre.textContent, feedback, () => selectContents(pre));
       config.append(pre, copyConfig);
       instructions.replaceChildren(steps, config);
@@ -587,9 +592,9 @@
     }
 
     for (const text of [
-      "Use relo.cat to find towns where I could rent for €700 a month and reach a primary school without a car. Explain the trade-offs.",
-      "Compare Calaf, Juncosa and Ulldemolins. Show sources, research dates and anything that still needs checking.",
-      "Look for Idealista examples in Calaf. Separate search results from verified available homes.",
+      t("Fes servir relo.cat per trobar municipis on pugui llogar un habitatge per 700 € al mes i arribar a una escola de primària sense cotxe. Explica els avantatges i inconvenients.", "Use relo.cat to find towns where I could rent for €700 a month and reach a primary school without a car. Explain the trade-offs."),
+      t("Compara Calaf, Juncosa i Ulldemolins. Indica les fonts, les dates de consulta i què queda per comprovar.", "Compare Calaf, Juncosa and Ulldemolins. Show sources, research dates and anything that still needs checking."),
+      t("Mostra’m exemples d’Idealista a Calaf i indica quina disponibilitat queda pendent de comprovar.", "Look for Idealista examples in Calaf. Separate search results from verified available homes."),
     ]) {
       const row = document.createElement("div");
       row.className = "prompt";
@@ -598,8 +603,8 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "button compact secondary";
-      button.textContent = "Copy";
-      button.setAttribute("aria-label", "Copy question: " + text);
+      button.textContent = t("Copia", "Copy");
+      button.setAttribute("aria-label", t("Copia la pregunta: ", "Copy question: ") + text);
       button.onclick = () => copy(text, get("prompt-feedback"), () => selectContents(question));
       row.append(question, button);
       get("prompts").append(row);

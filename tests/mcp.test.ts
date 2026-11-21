@@ -56,6 +56,9 @@ test("discovers schemas and exposes sourced profiles, schools and business indic
 
   const coverage = municipalityListResult.parse(await tool("list_catalonia_municipalities", { query: "termens" }));
   assert.deepEqual(coverage.municipalities.map(town => town.code), [termens]);
+  assert.equal(coverage.comparison?.[termens].resale, null);
+  assert.equal(coverage.comparison?.[termens].activeHousingMeasures, 5);
+  assert.equal(coverage.comparison?.[termens].localSchools, snapshot.schools.filter(school => school.municipalityCode === termens).length);
   const profile = profileResult.parse(await tool("get_town_profile", { municipalityCode: termens, travelDate }));
   assert.equal(profile.municipality.name, "Térmens");
   assert(profile.dataMissing.includes("rent_eur_per_month"));
@@ -147,11 +150,15 @@ test("serves the read-only Town Explorer widget and preserves headless municipal
   assert.equal(widget.mimeType, "text/html;profile=mcp-app");
   assert("text" in widget);
   assert.match(widget.text, /<title>Relocat Town Explorer<\/title>/);
-  assert.match(widget.text, /Idealista examples/);
+  assert.match(widget.text, /Search Google for Idealista listings/);
   assert.doesNotMatch(widget.text, /<!-- WIDGET -->/);
   const preview = await fetch(new URL("/preview", base));
   assert.equal(preview.status, 200);
-  assert.equal(await preview.text(), widget.text);
+  assert.equal(preview.headers.get("Content-Language"), "ca");
+  assert.match(await preview.text(), /<html lang="ca">[\s\S]*Troba el teu municipi/);
+  const englishPreview = await fetch(new URL("/preview?lang=en", base));
+  assert.equal(englishPreview.headers.get("Content-Language"), "en");
+  assert.equal(await englishPreview.text(), widget.text);
 });
 
 test("screens a three-town rural rail shortlist and requires opt-in to comarca purchase prices", async () => {
@@ -353,24 +360,32 @@ test("returns joined relocation research through MCP profiles and recommendation
 });
 
 
-test("MCP advertises live search and reports missing provider access without fabricating listings", async () => {
+test("MCP returns direct Idealista links when indexed search is unavailable", async () => {
   const response = await tool("search_homes", { municipalityCodes: ["080312"], operation: "buy" });
   const parsed = homeSearchResult.parse(response);
   assert.equal(parsed.searches[0].status, "provider_unavailable");
+  assert.equal(parsed.searches[0].idealistaSearchUrl, "https://www.idealista.com/venta-viviendas/calaf-barcelona/");
   assert.deepEqual(parsed.searches[0].examples, []);
+  assert.equal(parsed.searches[0].checkedExamples[0].municipalityCode, "080312");
   const invalid = await client.callTool({ name: "search_homes", arguments: { municipalityCodes: ["999999"], operation: "buy" } });
   assert(invalid.isError);
 });
 
-test("serves the illustrated homepage and preserves its demo links", async () => {
+test("serves the Catalan homepage by default and carries English through demo links", async () => {
   const root = await fetch(base, { redirect: "manual" });
   assert.equal(root.status, 302);
   assert.equal(root.headers.get("Location"), "/connect");
+  const englishRoot = await fetch(new URL("/?lang=en", base), { redirect: "manual" });
+  assert.equal(englishRoot.headers.get("Location"), "/connect?lang=en");
 
   const homepage = await fetch(new URL("/connect", base));
   assert.equal(homepage.status, 200);
+  assert.equal(homepage.headers.get("Content-Language"), "ca");
   assert.match(homepage.headers.get("Content-Security-Policy") ?? "", /img-src data:/);
   const html = await homepage.text();
+  assert.match(html, /<html lang="ca">[\s\S]*Troba el teu lloc/);
+  assert.match(html, /href="\/connect\?lang=en" lang="en" hreflang="en">English/);
+  assert.match(html, /Simulador d’estalvi/);
   assert.equal(html.match(/src="data:image\/jpeg;base64,/g)?.length, 3);
   assert.equal(html.match(/"data:image\/(png|svg\+xml|webp);base64,/g)?.length, 8);
   assert.match(html, /<input id="endpoint" type="url" value="https:\/\/relo\.cat\/mcp"/);
@@ -378,6 +393,9 @@ test("serves the illustrated homepage and preserves its demo links", async () =>
   assert.match(html, /href="#savings-coach"/);
   assert.match(html, /id="savings-coach-data" type="application\/json"/);
   assert.match(html, /href="https:\/\/github.com\/itsmanelvelasco\/aihousebuyingcompanion\/blob\/main\/apps\/mcp-server\/README.md#data-and-refresh"/);
+  const english = await fetch(new URL("/connect?lang=en", base));
+  assert.equal(english.headers.get("Content-Language"), "en");
+  assert.match(await english.text(), /<html lang="en">[\s\S]*Find your place[\s\S]*href="\/preview\?lang=en"/);
 });
 
 test("local test UI runs real tools and rejects foreign origins and disallowed tools", async () => {

@@ -24,7 +24,7 @@ The journey is to confirm your needs, compare a shortlist, inspect the evidence 
 
 ## Try the experience
 
-**Start at [www.relo.cat](https://www.relo.cat).** The public homepage introduces the project and explains how to connect an agent. The main conversational experience uses ChatGPT with the ReloCat MCP connection enabled. You can ask to start a homebuying interview, compare towns or open the Town Explorer map.
+**Start at [www.relo.cat](https://www.relo.cat).** The homepage, browser savings demo and Town Explorer open in Catalan. Choose **English** in the navigation to switch languages. The main conversational experience uses ChatGPT with the ReloCat MCP connection enabled. You can ask to start a homebuying interview, compare towns or open the Town Explorer map.
 
 There are several views of the project:
 
@@ -40,7 +40,7 @@ The public deployment and local development branches can contain different featu
 
 This is a working hackathon prototype. Its municipality pilot includes **18 town profiles, 238 education centres, 86 rail trips and six policy records**, drawn from dated datasets. Coverage is limited: one profile is the Lleida transport destination, and detailed relocation opportunity research currently covers three towns.
 
-The **500 household profiles and demo bank movements are fictional**. They let the team test different needs and financial barriers without using anyone's real bank account. On a Town Explorer profile, choose **Find homes for sale** or **Find homes to rent**. Relocat shows dated Idealista examples when the live search provider is available and offers a link to continue the search on Idealista. Verify each property's availability, location and details before relying on it.
+The **500 household profiles and demo bank movements are fictional**. They let the team test different needs and financial barriers without using anyone's real bank account. Town Explorer compares local resale prices or rents, active housing measures in the pilot catalogue and schools in the official directory. Five pilot towns also have dated Idealista listing cards for sale. Check current prices and availability on Idealista. The listing cards, direct portal links and Google search links work without a Treg key. **Find indexed examples** can surface more links when the optional search provider is available.
 
 ReloCat does not approve mortgages, guarantee grants or submit applications. School presence does not establish vacancies, a travel sample is not a live journey guarantee, and a town's average housing price is not a property listing. Missing information stays visible rather than becoming an assumed answer.
 

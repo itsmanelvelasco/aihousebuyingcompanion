@@ -25,6 +25,7 @@ function measure(points: Point[]) {
 }
 
 export function mountTownMap(onSelect: (code: string) => void) {
+  const catalan = document.documentElement.lang === "ca";
   const frame = document.querySelector<HTMLElement>("#map")!;
   const canvas = frame.querySelector("canvas")!;
   const controls = frame.querySelector<HTMLElement>(".map-controls")!;
@@ -35,7 +36,7 @@ export function mountTownMap(onSelect: (code: string) => void) {
   const mapSource = document.querySelector<HTMLAnchorElement>("#map-source")!;
   const selectedTown = document.querySelector<HTMLElement>("#map-selection")!;
   mapSource.href = geography.source;
-  mapSource.title = `Adapted provincial boundaries · ${geography.dataDate}`;
+  mapSource.title = `${catalan ? "Límits provincials adaptats" : "Adapted provincial boundaries"} · ${geography.dataDate}`;
   document.querySelector<HTMLAnchorElement>("#map-license")!.href = geography.license;
 
   let pins: { town: Town; position: Point; button: HTMLButtonElement }[] = [];
@@ -133,7 +134,7 @@ export function mountTownMap(onSelect: (code: string) => void) {
     zoomIn.disabled = !pins.length || zoom === 3;
     zoomOut.disabled = zoom === 0;
     fit.disabled = !pins.length;
-    fit.textContent = overview ? "Fit towns" : "Overview";
+    fit.textContent = overview ? (catalan ? "Centra els municipis" : "Fit towns") : (catalan ? "Vista general" : "Overview");
   }
 
   zoomIn.addEventListener("click", () => { zoom++; draw(); });
@@ -151,7 +152,7 @@ export function mountTownMap(onSelect: (code: string) => void) {
         button.type = "button";
         button.className = "map-pin";
         button.title = town.name;
-        button.setAttribute("aria-label", `Select ${town.name} on the map`);
+        button.setAttribute("aria-label", catalan ? `Selecciona ${town.name} al mapa` : `Select ${town.name} on the map`);
         const marker = document.createElement("span");
         marker.className = "pin-marker";
         marker.setAttribute("aria-hidden", "true");
