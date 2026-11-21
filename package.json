@@ -12,19 +12,24 @@
     "start:habits": "node apps/habits-agent/server.ts",
     "package:team-plugin": "node scripts/package-team-plugin.ts",
     "setup:app": "npm --prefix demo-plugin ci",
-    "build:app": "npm --prefix demo-plugin run build",
+    "build:app": "npm run build:mcp-ui && npm --prefix demo-plugin run build",
     "check:app": "npm --prefix demo-plugin run check",
     "test:app": "npm --prefix demo-plugin test",
     "dev:stack": "npm run build:app && node scripts/dev-stack.ts",
     "generate:users": "node scripts/generate-users.ts",
     "test": "node --test tests/*.test.ts",
+    "pretest": "npm run build:mcp-ui",
     "typecheck": "tsc --noEmit",
+    "build:mcp-ui": "esbuild apps/mcp-server/town-explorer-widget.ts --bundle --minify --legal-comments=eof --format=iife --target=es2022 --outfile=apps/mcp-server/dist/town-explorer.js",
+    "predev:mcp": "npm run build:mcp-ui",
     "dev:mcp": "node --watch apps/mcp-server/index.ts",
+    "prestart:mcp": "npm run build:mcp-ui",
     "start:mcp": "node apps/mcp-server/index.ts",
     "data:validate": "node scripts/validate-data.ts",
     "data:refresh": "node scripts/refresh-data.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.5",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
@@ -33,6 +38,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "csv-parse": "^7.0.3",
+    "esbuild": "0.28.2",
     "fflate": "^0.8.3",
     "read-excel-file": "^9.3.20",
     "typescript": "^5.9.0"

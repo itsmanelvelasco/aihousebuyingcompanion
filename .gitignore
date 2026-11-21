@@ -1,4 +1,5 @@
 node_modules/
+apps/mcp-server/dist/
 .env
 .env.*
 !.env.example

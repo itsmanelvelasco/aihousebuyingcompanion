@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import { metricKind, policy, snapshotSchema, travelEstimateData } from "../contracts/places.ts";
+import { metricKind, policy, snapshotSchema, travelEstimateData, relocationDataset } from "../contracts/places.ts";
 import type { Policy, Snapshot } from "../contracts/places.ts";
 
 const snapshotPath = new URL("../../data/towns.json", import.meta.url);
@@ -71,6 +71,21 @@ export function readPolicies(): Policy[] {
   return policies;
 }
 
+export function combineRelocationData(snapshot: Snapshot, raw: unknown): Snapshot {
+  // Parse only research fields: the bundled publicDataSnapshot must never overwrite official data.
+  const relocation = relocationDataset.parse(raw);
+  unique(relocation.municipalities.map(town => town.municipalityCode), "relocation municipality");
+  unique(relocation.municipalities.flatMap(town => town.opportunities.map(offer => offer.id)), "opportunity ID");
+  for (const research of relocation.municipalities) {
+    const town = getTown(snapshot, research.municipalityCode);
+    if (town.name !== research.name) throw new Error(`Relocation municipality name mismatch for ${town.code}`);
+    if (research.opportunities.some(offer => offer.checkedOn > relocation.checkedOn)) {
+      throw new Error(`Opportunity check date exceeds dataset date for ${town.code}`);
+    }
+  }
+  return { ...snapshot, relocation };
+}
+
 export function loadData() {
   const snapshot = validateSnapshot(JSON.parse(readFileSync(snapshotPath, "utf8")));
   const travelEstimates = travelEstimateData.parse(JSON.parse(readFileSync(travelEstimatePath, "utf8")));
@@ -78,7 +93,8 @@ export function loadData() {
     getTown(snapshot, code);
     unique(estimates.map(({ destinationId }) => destinationId), `travel destination for ${code}`);
   }
-  return { snapshot, policies: readPolicies(), travelEstimates };
+  const research = JSON.parse(readFileSync(new URL("../../data/relocat-pilot-data.json", import.meta.url), "utf8"));
+  return { snapshot: combineRelocationData(snapshot, research), policies: readPolicies(), travelEstimates };
 }
 
 export function snapshotInfo(snapshot: Snapshot) {

@@ -1,14 +1,19 @@
 import { App } from '@modelcontextprotocol/ext-apps';
 import type { DemoView } from './demo.ts';
-import { drawRouteMap, drawWorld, nextSegment, stopNames, stops } from './map.ts';
+import { drawRouteTimeline, drawWorld, nextSegment, stopNames, stops } from './map.ts';
 
-const app = window.parent === window ? null : new App({ name: 'Arrela demo', version: '0.1.0' });
+const app = window.parent === window ? null : new App({ name: 'relo.cat demo', version: '0.1.0' });
 const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const euro = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 const safe = (value: unknown) => String(value).replace(/[&<>"']/g, char =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
-const displayMonths = (months: number | null) =>
-  months === null ? 'Budget gap' : months === 0 ? 'Goal reached' : `${months} months`;
+function displayMonths(months: number | null) {
+  if (months === null) return 'Budget gap';
+  if (months === 0) return 'Goal reached';
+  if (months < 24) return `${months} ${months === 1 ? 'month' : 'months'}`;
+  const remainder = months % 12;
+  return `${Math.floor(months / 12)} years${remainder ? ` ${remainder} ${remainder === 1 ? 'month' : 'months'}` : ''}`;
+}
 type BoardView = DemoView & { boardUrl?: string | null; connection?: { mode: string; userId?: string; ledgerRevision?: number; runtime?: { enabled: boolean }; summary?: { netCashflowCents: number; from: string; to: string } }; townScreening?: { ready: boolean; missingFields: string[]; unsupportedFields: string[]; propertyChecks: { field: string; required: number }[]; result: { towns: { municipality: { name: string }; matchReasons: string[]; incentives: { title: string; sourceUrl: string; eligibilityStatus: string; callStatus: string }[] }[] } | null } };
 let active: BoardView | undefined;
 let busy = false;
@@ -39,32 +44,42 @@ function timeline(plan: { upfrontMonths: number | null; termMonths: number; debt
 }
 
 function onboarding(view: Extract<DemoView, { answers: unknown }>) {
+  const { group, answers } = view;
+  const allExtras = view.extraGroups.flatMap(section => section.questions);
   const labels: Record<string, string> = {
     town: 'Target town', bedrooms: 'Bedrooms', household: 'Household size', employment: 'Employment',
-    income: 'Monthly income', spending: 'Monthly spending (including debt)', savings: 'Saved', budget: 'Purchase budget', floorArea: 'Floor area m²', destinationCode: 'Commute municipality code', maxCommuteMinutes: 'Maximum commute minutes', schoolStages: 'School stages', schoolMode: 'School travel mode', allowComarcaEstimate: 'Allow comarca price estimate',
+    income: 'Monthly income', spending: 'Monthly spending (including debt)', savings: 'Saved', floorArea: 'Floor area m?', destinationCode: 'Commute municipality code', maxCommuteMinutes: 'Maximum commute minutes', schoolMode: 'School travel mode', allowComarcaEstimate: 'Allow comarca estimate', upfrontTarget: 'Upfront cash target', emergencyReserve: 'Emergency reserve',
+    ...Object.fromEntries(allExtras.map(field => [field.id, field.label])),
   };
-  const monetary = new Set(['income', 'spending', 'savings', 'budget']);
-  const facts = Object.entries(view.answers).map(([id, value]) =>
+  const monetary = new Set(['income', 'spending', 'savings',
+    ...allExtras.filter(field => field.kind === 'number' && field.money).map(field => field.id)]);
+  const facts = Object.entries(answers).map(([id, value]) =>
     `<div><dt>${labels[id]}</dt><dd>${typeof value === 'number' && monetary.has(id) ? euro.format(value) : safe(value)}</dd></div>`).join('');
-  const group = view.group;
-  const count = Object.keys(view.answers).length;
-  const fields = group?.questions.map(question =>
-    `<label>${labels[question.id]}<input name="${question.id}" type="${question.kind}" maxlength="80"
-      ${question.kind === 'number' ? 'min="0" step="1"' : ''} placeholder="${question.example}"></label>`).join('');
-  return hero('01 · Intake', 'Let’s chart your route, Laia.', 'Describe your goal and finances in your own words. Arrela saves everything you share in the same turn.') +
-    `<section class="panel"><span class="label">${count} of ${view.totalQuestions} details saved</span>
+  const inputs = (fields: typeof allExtras, prefill: boolean) => fields.map(field =>
+    `<label>${field.label}<input name="${field.id}" type="${field.kind}"
+      ${field.kind === 'number' ? `min="${field.min}" max="${field.max}" step="1"` : 'maxlength="80"'}
+      placeholder="${field.example}" value="${prefill ? safe(answers[field.id] ?? '') : ''}"></label>`).join('');
+  return hero('01 · Intake', 'Let’s chart your route, Laia.', 'Tell us what works for your household. Start with the basics, then add the details that could change where you live.') +
+    `<section class="panel"><span class="label">${view.answeredBasic} of ${view.totalQuestions} basics saved</span>
       ${group ? `<h2>${group.title}</h2>
-        <form class="intake" id="answer"><div class="fields">${fields}</div><div class="actions"><button class="primary">Save answers</button>
+        <form class="intake"><div class="fields">${inputs(group.questions, false)}</div><div class="actions"><button class="primary">Save answers</button>
         ${button('Use example answers', 'example', '', 'link')}</div></form>`
-        : '<h2>Profile complete</h2><p>Your route is ready. The finish line is owning the home outright.</p>'}
+        : '<h2>Basics complete</h2><p>Refine the route below with your housing, school and travel preferences.</p>'}
       ${facts ? `<dl class="facts">${facts}</dl>` : ''}</section>
+    <details class="panel preferences" id="preferences">
+      <summary>Refine your household and housing profile</summary>
+      <form class="intake">${view.extraGroups.map(section =>
+        `<fieldset><legend>${section.title}</legend><div class="fields">${inputs(section.questions, true)}</div></fieldset>`).join('')}
+        <div class="actions"><button class="primary">Save preferences</button></div>
+      </form>
+    </details>
     <section class="panel"><h2>Sample bank connection</h2>
-      ${view.bank ? `<p><strong>Sample snapshot loaded.</strong> ${view.bank.insight}</p><p class="small">${euro.format(view.bank.discretionary)} in fictional discretionary spending per month.</p>`
-      : `<p>Use a fictional read-only feed to fill income, spending and savings. This replaces any finance answers in Laia’s demo.</p>
+      ${view.bank ? `<p><strong>Sample snapshot loaded.</strong> ${view.bank.insight}</p><p class="small">${euro.format(view.bank.discretionary)} in discretionary spending per month.</p>`
+      : `<p>Use the sample feed to fill income, living expenses, savings and debt payments.</p>
       <div class="actions">${button('Connect sample bank', 'sample_bank')}</div>`}</section>
     ${view.plan ? meter('Upfront milestone', Math.min(100, Math.floor(100 * view.plan.saved / view.plan.target)),
-      `${euro.format(view.plan.saved)} of ${euro.format(view.plan.target)} · ${euro.format(view.plan.monthly)}/mo`) + timeline(view.plan) : ''}
-    <p class="small">The upfront goal includes deposit, taxes and fees. Purchase timing and repayment are illustrative.</p>`;
+      `${euro.format(view.plan.saved)} of ${euro.format(view.plan.target)} · ${euro.format(view.plan.monthly)}/mo`) + timeline(view.plan) +
+      `<p class="small">${view.financeNote} Purchase timing and repayment are illustrative.</p>` : ''}`;
 }
 
 function world(checkpoint: number) {
@@ -83,11 +98,21 @@ function progress(view: Extract<DemoView, { progress: unknown }>) {
     <div class="momentum"><div><strong>${p.streak} months</strong><span>Savings streak</span></div>
       <div><strong>${p.badges.length} badges</strong><span>Achievements earned</span></div>
       <div><strong>#${p.rank}</strong><span>Trail leaderboard</span></div></div>
-    <section class="panel quest-spotlight ${p.joinedQuest ? 'quest-won' : ''}">
-      <span class="label">${p.joinedQuest ? 'Quest complete' : 'Next quest · +100 XP'}</span><h2>${p.joinedQuest ? 'Good Neighbor unlocked!' : 'First buyers’ park picnic'}</h2>
-      <p>${p.coach.next}</p>
-      ${p.joinedQuest ? '<span class="badge">✓ Joined · +100 XP</span>' : `<div class="actions">${button('Join the picnic · +100 XP', 'join_quest')}</div>`}
-      <details><summary>Show an invite to share</summary><p>“I’m doing the Arrela first-home trail. Want to join the park picnic and swap ideas for saving?”</p></details>
+    <section class="panel habits" aria-label="Habit quests">
+      <div class="habits-header"><div><span class="label">Build your savings habits</span><h2>Your weekly quests</h2></div>
+        <span class="habit-total">${p.estimate ? `+${euro.format(p.estimate)}/mo if kept up` : 'Choose a swap to try'}</span></div>
+      ${p.quests.map(quest => `<article class="habit ${quest.status === 'complete' ? 'habit-done' : ''}">
+        <div class="habit-icon" aria-hidden="true">${quest.icon}</div>
+        <div><span class="label">${quest.status === 'complete' ? 'Completed' : quest.status === 'adopted' ? 'In progress' : `+${quest.xp} XP`}</span>
+          <h3>${quest.title}</h3><p>${quest.action}</p>
+          <div class="habit-spend"><span>${euro.format(quest.before)} now</span><span>${euro.format(quest.after)} with the swap</span>
+            <strong>Save ${euro.format(quest.saving)}/mo</strong></div>
+          <div class="actions">${quest.status === 'complete' ? `<span class="badge">✓ ${quest.badge} · +${quest.xp} XP</span>`
+            : quest.status === 'adopted' ? button('I tried it', 'complete_habit', quest.id, 'gold')
+            : button('Try this habit', 'adopt_habit', quest.id)}</div>
+          ${quest.id === 'picnic' ? '<details><summary>Show an invite to share</summary><p>“Want to join me at the free park picnic and swap ideas for saving?”</p></details>' : ''}
+        </div></article>`).join('')}
+      <p class="small">Savings are estimates for repeating each swap. Check-ins earn XP and leave your actual balance unchanged.</p>
     </section>` +
     world(p.checkpoint) +
     `<div class="split">${meter('Upfront milestone', p.percent, `${euro.format(p.saved)} / ${euro.format(p.target)}`)}
@@ -115,17 +140,22 @@ function shortcuts(view: Extract<DemoView, { inbox: unknown }>) {
      <span>${route.fasterBy} months sooner</span><small>${route.title}</small></button>`;
   const routes = view.inbox.slice(0, 3);
   const secondary = view.inbox.slice(3);
-  return hero('03 · Route comparison', 'Faster routes found.', 'Compare the options, then decide whether to switch.') +
-    `<div class="route-map" role="img" aria-label="Route map highlighting ${highlighted ? `route ${highlighted.letter}` : 'the current route'}">
-      <canvas id="route-map" width="480" height="250" aria-hidden="true"></canvas>
-      <span class="map-start">You are here</span><span class="map-finish">Own outright</span>
-    </div>
-    <div class="route-options" aria-label="Routes to owning outright">
+  return hero('03 · Route comparison', 'Same destination. Different journeys.', 'Pick a route to see what changes between today and owning your home outright.') +
+    `<div class="route-options" aria-label="Routes to owning outright">
       <button type="button" class="route-chip" data-action="preview_shortcut" aria-pressed="${!preview}">
         <strong>Current route</strong><span>${current ? `Route ${current.letter}` : `${view.baseline.upfrontMonths} months upfront`}</span>
         <small>${current ? current.title : 'Stay with the original plan'}</small></button>
       ${routes.map(chip).join('')}
     </div>
+<section class="panel journey-chart" aria-label="Homeownership route timeline">
+      <div class="journey-head">
+        <div><span class="label">Núria’s journey</span><h2>From first savings to the last payment</h2></div>
+        <strong class="journey-gain">${highlighted ? `Route ${highlighted.letter} · ${highlighted.fasterBy} months sooner` : 'Original route'}</strong>
+      </div>
+      <canvas id="route-map" role="img" aria-label="Time by stage. ${view.pastMonths / 12} years have passed. ${highlighted
+        ? `Route ${highlighted.letter} is highlighted with ${highlighted.fasterBy} months saved.` : 'The original route is highlighted.'}"></canvas>
+      <div class="journey-legend"><span class="past">Path completed</span><span class="selected-line">Selected future</span><span class="alternative">Other options</span></div>
+    </section>
     <section class="panel route-detail" aria-label="Route details">
       <span class="label">${preview && preview.id !== current?.id ? `Preview · Route ${preview.letter}` : 'Active route'}</span>
       <h2>${highlighted?.title ?? 'Stay with the current plan'}</h2>
@@ -143,13 +173,26 @@ function shortcuts(view: Extract<DemoView, { inbox: unknown }>) {
     </details>`;
 }
 
+function celebrate() {
+  const icons = ['🔑', '🏡', '🎉', '✨', '⭐', '🏆', '💛'];
+  return `<div class="celebration" aria-hidden="true">${Array.from({ length: 18 }, (_, index) => {
+    const angle = index / 18 * Math.PI * 2;
+    return `<span style="--dx:${Math.round(Math.cos(angle) * 340)}px;--dy:${Math.round(Math.sin(angle) * 205)}px;--delay:${index % 6 * 32}ms">${icons[index % icons.length]}</span>`;
+  }).join('')}</div>`;
+}
+
 function payoff(view: Extract<DemoView, { payoff: unknown }>) {
   const p = view.payoff;
   if (view.credits) {
     const credits = view.credits;
     return `<section class="credits panel" aria-label="Journey credits">
-      <span class="label">Arrela presents · Journey complete</span>
-      <h1>${credits.title}</h1><p>Jordi’s road to owning his home outright.</p>
+      <div class="victory">
+        ${celebrate()}
+        <div class="victory-medal" aria-hidden="true">🔑</div>
+        <span class="label">Final achievement unlocked</span>
+        <h1>${credits.title}</h1><p>Jordi owns his home outright.</p>
+        <strong class="victory-banner">Mortgage-free</strong>
+      </div>
       <div class="credit-stats">${credits.stats.map(stat => `<div><strong>${stat.value}</strong><span>${stat.label}</span></div>`).join('')}</div>
       <ol class="credit-milestones">${credits.milestones.map(milestone =>
         `<li><h2>${milestone.title}</h2><p>${milestone.detail}</p></li>`).join('')}</ol>
@@ -177,6 +220,9 @@ function checkpoint(view: DemoView) {
 
 function render(view: BoardView) {
   if (active?.runId === view.runId && active.revision >= view.revision && active.connection?.ledgerRevision === view.connection?.ledgerRevision) return;
+  const preferencesOpen = byId<HTMLDetailsElement>('preferences')?.open;
+  const enteringCredits = 'payoff' in view && !!view.credits && (!active || !('payoff' in active) || !active.credits);
+  if (!app && (enteringCredits || (active && active.persona !== view.persona))) window.scrollTo(0, 0);
   const previous = active?.persona === view.persona ? checkpoint(active) : undefined;
   active = view;
   byId('personas').innerHTML = view.choices.map(person => `<button type="button" data-action="switch_persona"
@@ -197,26 +243,30 @@ function render(view: BoardView) {
       byId('dot').animate(frames, { duration: 780, easing: 'ease-in-out' });
     }
   }
-  if ('inbox' in view && view.inbox.length) {
-    const highlighted = view.inbox.find(route => route.id === (view.previewed ?? view.chosen))?.letter ?? 'original';
-    const primary = view.inbox.slice(0, 3).map(route => route.letter);
-    const shown = highlighted !== 'original' && !primary.includes(highlighted) ? [...primary, highlighted] : primary;
-    drawRouteMap(byId<HTMLCanvasElement>('route-map'), shown, highlighted);
-  }
+  renderRouteTimeline(view);
+  if (preferencesOpen && 'answers' in view) byId<HTMLDetailsElement>('preferences').open = true;
   byId('controls').hidden = false;
   byId('fullscreen').hidden = !app;
-  byId('pair-code').textContent = view.pairCode;
-  byId('connection').textContent = 'Live board · say this code to pair';
+  byId('connection').textContent = 'Live board · synced with chat';
   const link = byId<HTMLAnchorElement>('board-link');
   link.hidden = !app || !view.boardUrl;
   if (view.boardUrl) link.href = view.boardUrl;
   if (!app) {
     const url = new URL(location.href);
     url.searchParams.delete('persona');
-    url.searchParams.set('run', view.runId);
+    if (view.sharedBoard) url.searchParams.delete('run');
+    else url.searchParams.set('run', view.runId);
     history.replaceState(null, '', url);
   }
 }
+
+function renderRouteTimeline(view: DemoView) {
+  if (!('inbox' in view) || !view.inbox.length) return;
+  const highlighted = view.inbox.find(route => route.id === (view.previewed ?? view.chosen));
+  drawRouteTimeline(byId<HTMLCanvasElement>('route-map'), [{ letter: 'original', ...view.baseline }, ...view.inbox],
+    highlighted?.letter ?? 'original', view.pastMonths);
+}
+window.addEventListener('resize', () => { if (active) renderRouteTimeline(active); });
 
 async function call(name: string, args: Record<string, unknown>) {
   if (busy) return;
@@ -235,7 +285,7 @@ async function call(name: string, args: Record<string, unknown>) {
     render(view);
     if (app) {
       void app.updateModelContext({ content: [{ type: 'text',
-        text: `Arrela is showing ${view.person.name} (${view.persona}) in demo run ${view.runId}. ${view.message}` }] }).catch(() => {});
+        text: `relo.cat is showing ${view.person.name} (${view.persona}) in demo run ${view.runId}. ${view.message}` }] }).catch(() => {});
     }
   } catch (error) {
     byId('status').textContent = error instanceof Error ? error.message : 'Something went wrong. Try again.';
@@ -246,7 +296,7 @@ async function call(name: string, args: Record<string, unknown>) {
 }
 
 function parseFormAnswers(raw: Record<string, unknown>) {
-  const numeric = new Set(['bedrooms', 'household', 'income', 'spending', 'savings', 'budget', 'floorArea', 'maxCommuteMinutes', 'upfrontTarget', 'emergencyReserve']);
+  const numeric = new Set(['bedrooms', 'household', 'income', 'spending', 'savings', 'budget', 'floorArea', 'maxCommuteMinutes', 'upfrontTarget', 'emergencyReserve', 'homeSize', 'dependants', 'commuteTime', 'debtPayments', 'reserve', 'cashTarget']);
   return Object.fromEntries(Object.entries(raw).map(([key, value]) => [key,
     active?.connection?.mode !== 'connected_synthetic' ? value : numeric.has(key) ? Number(value)
       : key === 'allowComarcaEstimate' ? (String(value).trim().toLowerCase() === 'true' ? true : String(value).trim().toLowerCase() === 'false' ? false : value)
@@ -260,6 +310,7 @@ document.addEventListener('click', event => {
   if (!action) return;
   const args: Record<string, unknown> = { runId: active.runId, action };
   if (action === 'switch_persona') args.persona = key;
+  if (action === 'adopt_habit' || action === 'complete_habit') args.habit = key;
   if ((action === 'choose_shortcut' || action === 'preview_shortcut') && key) args.opportunity = key;
   if (action === 'example' && 'group' in active && active.group) {
     Object.assign(args, { action: 'answer_batch', answers: parseFormAnswers(Object.fromEntries(
@@ -271,7 +322,7 @@ document.addEventListener('click', event => {
 
 document.addEventListener('submit', event => {
   const form = event.target as HTMLFormElement;
-  if (form.id !== 'answer' || !active || !('group' in active) || !active.group) return;
+  if (!form.classList.contains('intake') || !active || !('answers' in active)) return;
   event.preventDefault();
   const answers = parseFormAnswers(Object.fromEntries([...new FormData(form)].filter(([key, value]) => key === 'schoolStages' || String(value).trim())));
   if (!Object.keys(answers).length) {
@@ -286,14 +337,14 @@ async function refresh() {
   const runId = active.runId;
   const origin = app ? new URL(active.boardUrl!).origin : location.origin;
   const url = new URL('/preview/state', origin);
-  url.searchParams.set('run', runId);
+  if (!active.sharedBoard) url.searchParams.set('run', runId);
   refreshing = true;
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(4000) });
     if (!response.ok) throw new Error('Board unavailable');
     const view = await response.json() as BoardView;
     if (!busy && active.runId === runId) render(view);
-    byId('connection').textContent = 'Live board · say this code to pair';
+    byId('connection').textContent = 'Live board · synced with chat';
   } catch {
     byId('connection').textContent = 'Live sync paused · reconnecting';
   } finally {

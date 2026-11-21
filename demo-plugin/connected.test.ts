@@ -30,7 +30,7 @@ test('connected board persists interview inputs, reads runtime bank data and ser
   await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)));
   t.after(() => client.close());
   const toolNames = (await client.listTools()).tools.map(tool => tool.name);
-  for (const name of ['recommend_towns', 'get_applicable_incentives', 'open_demo', 'update_demo', 'get_bank_updates']) assert(toolNames.includes(name), name);
+  for (const name of ['recommend_towns', 'recommend_towns_for_profile', 'get_applicable_incentives', 'open_demo', 'update_demo', 'get_bank_updates']) assert(toolNames.includes(name), name);
   const town = await client.callTool({ name: 'get_town_profile', arguments: { municipalityCode: '252206' } });
   assert(!town.isError, JSON.stringify(town.content));
   const profile = profileResult.parse(town.structuredContent);
@@ -41,12 +41,24 @@ test('connected board persists interview inputs, reads runtime bank data and ser
   const first = open.structuredContent as Record<string, unknown>;
   const runId = first.runId;
   assert.equal((first.connection as Record<string, unknown>).userId, 'user-001');
-  const update = await client.callTool({ name: 'update_demo', arguments: { runId, action: 'answer_batch', answers: { budget: 130000, floorArea: 85, destinationCode: '251207', maxCommuteMinutes: 120, schoolStages: ['eso'], schoolMode: 'rail', allowComarcaEstimate: true, upfrontTarget: 54000, spending: 2180 } } });
+  const update = await client.callTool({ name: 'update_demo', arguments: { runId, action: 'answer_batch', answers: { budget: 130000, floorArea: 85, destinationCode: '251207', maxCommuteMinutes: 120, schoolStages: ['eso'], schoolMode: 'rail', allowComarcaEstimate: true, upfrontTarget: 54000, spending: 2180, spendingIncludesDebt: true } } });
   assert(!update.isError, JSON.stringify(update.content));
   const context = await (await fetch(`${apiUrl}/users/user-001/context`, { headers: { Authorization: 'Bearer test-token' } })).json();
   assert.equal(context.resolved.data.housing.homeSizeM2, 85);
   assert.equal(context.resolved.data.finance.monthlyExpensesCents, 218000);
   assert.equal(context.resolved.data.finance.debtPaymentsCents, 0);
+  const refined = await client.callTool({ name: 'update_demo', arguments: { runId, action: 'answer_batch', answers: {
+    homeSize: 86, currentTown: 'Barcelona', dependants: 1, commuteTo: 'Lleida', commuteTime: 90,
+    schoolStages: 'Primary and ESO', transport: 'Train, no car', spending: 2000, debtPayments: 100, reserve: 5000, cashTarget: 55000
+  } } });
+  assert(!refined.isError, JSON.stringify(refined.content));
+  const refinedContext = await (await fetch(`${apiUrl}/users/user-001/context`, { headers: { Authorization: 'Bearer test-token' } })).json();
+  assert.equal(refinedContext.resolved.data.housing.homeSizeM2, 86);
+  assert.equal(refinedContext.resolved.data.finance.monthlyExpensesCents, 200000);
+  assert.equal(refinedContext.resolved.data.finance.debtPaymentsCents, 10000);
+  assert.equal(refinedContext.resolved.data.finance.emergencyReserveCents, 500000);
+  assert.equal(refinedContext.resolved.data.transport.destinationCode, '251207');
+  assert.deepEqual(refinedContext.resolved.data.school.stages, ['eso', 'primary']);
   const bank = await client.callTool({ name: 'update_demo', arguments: { runId, action: 'sample_bank' } });
   assert(!bank.isError, JSON.stringify(bank.content));
   const bankView = bank.structuredContent as Record<string, unknown>;
