@@ -60,6 +60,51 @@ export const railFeed = source.extend({
   })).nonempty(),
 });
 
+// Research evidence remains separate from official metrics and policy eligibility.
+const researchLink = z.object({ label: z.string().min(1), url: z.url() });
+export const relocationOpportunity = z.object({
+  id: z.string().min(1), title: z.string().min(1),
+  status: z.enum(["closed", "filled", "unverified", "open_in_sources_checked", "proposed"]),
+  checkedOn: isoDate,
+  housingRentEurPerMonth: z.object({ min: z.number().nonnegative(), max: z.number().nonnegative() })
+    .refine(value => value.min <= value.max, "Invalid rent range").nullable(),
+  applicationDeadline: isoDate.nullable(), reportedDeadlineDates: z.array(isoDate),
+  businessConcessionRequired: z.boolean(), baseBusinessFeeEurPerMonth: z.number().nonnegative().nullable(),
+  response: z.object({
+    metric: z.string(), approximateCount: z.number().nonnegative().optional(),
+    greaterThan: z.number().nonnegative().optional(), reportedOn: isoDate.optional(),
+  }).nullable(),
+  notes: z.string(), sources: z.array(researchLink).nonempty(),
+  visualReferences: z.array(researchLink.extend({ reuseRights: z.literal("unverified") })),
+}).refine(value => new Set(value.reportedDeadlineDates).size <= 1 || value.applicationDeadline === null,
+  "Conflicting deadlines must remain unresolved");
+export const relocationTown = z.object({
+  municipalityCode, name: z.string().min(1), opportunities: z.array(relocationOpportunity),
+  connections: z.object({ summary: z.string(), sources: z.array(researchLink) }),
+  rentalSearch: z.object({ status: z.literal("incomplete"), verifiedWholeHomeCount: z.null(), notes: z.string() }),
+  socialObservations: z.object({
+    paidAds: z.object({ sourceUrl: z.url(), country: z.string(), resultsReviewed: z.number().int().nonnegative(),
+      verifiedOfferAds: z.number().int().nonnegative(), coverage: z.literal("first_page_only") }),
+    publicPosts: z.array(researchLink),
+  }),
+  contacts: z.array(z.object({ organisation: z.string(), email: z.email().optional(), sourceUrl: z.url() })),
+});
+export const relocationDataset = z.object({
+  schemaVersion: z.literal(1), checkedOn: isoDate, sourcePage: z.url(),
+  municipalities: z.array(relocationTown), scopeNotes: z.array(z.string()),
+});
+export const relocationResult = z.object({
+  coverage: z.enum(["researched", "not_researched"]),
+  checkedOn: isoDate.nullable(), sourcePage: z.url().nullable(), asOf: isoDate,
+  research: relocationTown.nullable(),
+  opportunityChecks: z.array(z.object({
+    id: z.string(), availability: z.enum(["closed", "filled", "proposed", "needs_verification"]),
+    eligibilityStatus: z.literal("needs_verification"),
+    checkedBeforeAsOf: z.boolean(), deadlinePassed: z.boolean(), conflictingDeadlines: z.boolean(),
+  })),
+  limitations: z.array(z.string()),
+});
+
 export const snapshotSchema = z.object({
   schemaVersion: z.literal(1),
   version: z.string().min(1),
@@ -70,6 +115,7 @@ export const snapshotSchema = z.object({
   schools: z.array(school),
   schoolDirectory: source,
   rail: railFeed,
+  relocation: relocationDataset.optional(),
 });
 
 export const intent = z.enum(["move", "buy", "rent", "renovate"]);
@@ -223,6 +269,7 @@ export const recommendationResult = z.object({
     commute: z.object({ rail: railRoute, estimatedMinutes: z.number().int().nonnegative() }).nullable(),
     dataMissing: z.array(z.string()),
     incentives: z.array(eligibility),
+    relocation: relocationResult,
   })),
   excluded: z.array(z.object({ municipalityCode, reasons: z.array(z.string()), dataMissing: z.array(z.string()) })),
   limitations: z.array(z.string()),
@@ -235,6 +282,7 @@ export const profileResult = z.object({
   metrics: z.array(metric),
   comarcaMetrics: z.array(metric),
   nearbySchools: schoolResult,
+  relocation: relocationResult,
   railway: source.extend({
     stops: z.array(railStop),
     validThrough: isoDate,

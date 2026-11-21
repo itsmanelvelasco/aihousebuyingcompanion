@@ -13,6 +13,8 @@ import { evaluateIncentives } from "../../packages/places/eligibility.ts";
 import { madridDate, nextSchoolDay, normalizedName } from "../../packages/places/geography.ts";
 import { recommendTowns } from "../../packages/places/recommend.ts";
 
+import { getRelocationResearch } from "../../packages/places/relocation.ts";
+
 const lleidaCode = "251207";
 const placeCoverage = "Selected Catalan municipalities, including the FGC Lleida–La Pobla corridor and Lleida as a transport destination.";
 const fiscalLimitations = [
@@ -48,7 +50,7 @@ export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = 
 
   server.registerTool("recommend_towns", {
     title: "Recommend Catalan towns",
-    description: "Screen towns against housing, school, rural status and commute requirements before ranking. Ask for floor area with a purchase budget and obtain explicit consent before setting allowComarcaEstimate. Rail results use the cached dated FGC schedule; school and commute walking legs are estimates from town centres.",
+    description: "Return relocation research alongside towns screened against housing, school, rural status and commute requirements before ranking. Ask for floor area with a purchase budget and obtain explicit consent before setting allowComarcaEstimate. Rail results use the cached dated FGC schedule; school and commute walking legs are estimates from town centres.",
     inputSchema: recommendationInput, outputSchema: recommendationResult, annotations: readOnly,
   }, (input) => {
     const recommendation = recommendTowns(snapshot, policies, input, today());
@@ -60,7 +62,7 @@ export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = 
 
   server.registerTool("get_town_profile", {
     title: "Read a municipality profile",
-    description: "Retrieve sourced housing, population and economic indicators, map coordinates, nearby schools, FGC stations, a sample connection to Lleida and geographically relevant housing measures.",
+    description: "Retrieve relocation opportunities and research coverage alongside sourced housing, population and economic indicators, map coordinates, nearby schools, FGC stations, a sample connection to Lleida and geographically relevant housing measures.",
     inputSchema: profileInput, outputSchema: profileResult, annotations: readOnly,
   }, (input) => {
     const town = getTown(snapshot, input.municipalityCode);
@@ -72,6 +74,7 @@ export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = 
     return result(`${town.name}, ${town.comarca} · municipal profile from the ${metadata.generatedOn} snapshot.`, {
       snapshot: metadata,
       municipality: town,
+      relocation: getRelocationResearch(snapshot, town.code, asOf),
       metrics: snapshot.townMetrics[town.code],
       comarcaMetrics: snapshot.comarcaMetrics[town.comarca] ?? [],
       nearbySchools: getNearbySchools(snapshot, { municipalityCode: town.code, limit: 6 }, travelDate),

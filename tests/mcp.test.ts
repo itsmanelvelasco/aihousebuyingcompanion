@@ -158,3 +158,17 @@ test("checks health and rejects unexpected browser origins", async () => {
   const crossOrigin = await fetch(new URL("/mcp", base), { method: "POST", headers: { Origin: "https://example.com" } });
   assert.equal(crossOrigin.status, 403);
 });
+
+test("returns joined relocation research through MCP profiles and recommendations", async () => {
+  const profile = profileResult.parse(await tool("get_town_profile", { municipalityCode: "251180" }));
+  assert.equal(profile.relocation.coverage, "researched");
+  assert.equal(profile.relocation.research?.opportunities.length, 2);
+  assert(profile.metrics.length > 0);
+  assert(profile.relocation.research?.opportunities.every(offer => offer.sources.length));
+  const calaf = recommendationResult.parse(await tool("recommend_towns", { comarca: "Anoia" }));
+  assert.equal(calaf.towns.find(t => t.municipality.code === "080312")?.relocation.research?.opportunities[0].id,
+    "calaf-casetes-dels-mestres");
+  const ager = profileResult.parse(await tool("get_town_profile", { municipalityCode: "250024" }));
+  assert.equal(ager.relocation.coverage, "not_researched");
+  assert.equal(ager.relocation.research, null);
+});

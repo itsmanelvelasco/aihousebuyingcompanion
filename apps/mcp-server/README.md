@@ -71,3 +71,17 @@ npm run data:validate
 Refresh downloads the public sources and validates identifiers, metric scopes and rail references before replacing `data/towns.json` atomically. A failed source refresh leaves the previous snapshot available. The annual resale workbook defaults to 2025. Use `SALES_YEAR` for a published annual workbook. The server loads the published fixture at startup. Restart or redeploy after refreshing it. Policy changes are reviewed against the linked official rules and updated in `data/incentives.json` and `packages/places/eligibility.ts`.
 
 The committed FGC RL1/RL2 service calendar covers November 19 through December 31, 2026. Calaf, Juncosa and Ulldemolins have school directory coverage. Their local transport schedules are outside the current feed. School journeys use the official directory’s geographic coordinates and FGC stop times, with estimated walks based on straight-line distance from town centres. Admissions, school transport, precise walking routes, disruptions and round trips require separate checks. Missing price and indicator data are reported explicitly. Resale estimates describe historical averages, and retail figures retain their census year. Grant call status is independent of household eligibility.
+
+## Joined relocation opportunity research
+
+`loadData()` validates `data/relocat-pilot-data.json` and joins its three detailed town records to the official `data/towns.json` snapshot using six-character municipality codes. Duplicate town codes or opportunity IDs, unknown municipalities, name mismatches and malformed evidence fail validation. The export's bundled `publicDataSnapshot` and historical leads never replace runtime statistics or policy rules.
+
+`get_town_profile` and every town in `recommend_towns` return `relocation`:
+
+- `coverage`: `researched` or `not_researched`; missing research is not evidence that no opportunities exist.
+- `checkedOn`, `sourcePage`, `asOf`: research provenance and the tool's evaluation date, separate from official metric dates.
+- `research`: opportunities, sources, rent and business fees, connection evidence, rental-search limitations, visual links and public contacts; null for unresearched towns.
+- `opportunityChecks`: preserved closed/filled/proposed availability, otherwise `needs_verification`, plus unresolved household eligibility, earlier check dates, passed known deadlines and conflicting reported deadlines. Source status is retained in `research`; no live availability is inferred.
+- `limitations`: scope and interpretation constraints.
+
+For example, call `get_town_profile` with `{"municipalityCode":"251180"}` to receive Juncosa's official statistics and two researched opportunities together. Call it with `{"municipalityCode":"250024"}` for Àger's official profile with `not_researched` coverage. Research never overrides housing budget filters, school or transit constraints, recommendation scores or incentive eligibility.
