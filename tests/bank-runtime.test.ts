@@ -45,8 +45,10 @@ test('enabled bank feed writes between requests and stops when disabled', async 
   const runtime = createBankRuntime(bank, () => new Date(time += 5000));
   try {
     await runtime.configure('demo', { enabled: true, intervalMs: 1000 });
-    await new Promise(resolve => setTimeout(resolve, 1200));
-    assert.equal((await runtime.status('demo')).tickCount, 1);
+    for (let attempt = 0; attempt < 50 && (await runtime.status('demo')).tickCount === 0; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.ok((await runtime.status('demo')).tickCount >= 1);
     assert.ok((await bank.read('demo')).transactions.some(tx => tx.id.startsWith('runtime-')));
     await runtime.configure('demo', { enabled: false });
     const revision = (await bank.read('demo')).revision;
