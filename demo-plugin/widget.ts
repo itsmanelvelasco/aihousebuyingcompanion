@@ -199,15 +199,15 @@ function render(view: BoardView) {
   }
   byId('controls').hidden = false;
   byId('fullscreen').hidden = !app;
-  byId('pair-code').textContent = view.pairCode;
-  byId('connection').textContent = 'Live board · say this code to pair';
+  byId('connection').textContent = 'Live board · synced with chat';
   const link = byId<HTMLAnchorElement>('board-link');
   link.hidden = !app || !view.boardUrl;
   if (view.boardUrl) link.href = view.boardUrl;
   if (!app) {
     const url = new URL(location.href);
     url.searchParams.delete('persona');
-    url.searchParams.set('run', view.runId);
+    if (view.sharedBoard) url.searchParams.delete('run');
+    else url.searchParams.set('run', view.runId);
     history.replaceState(null, '', url);
   }
 }
@@ -272,14 +272,14 @@ async function refresh() {
   const runId = active.runId;
   const origin = app ? new URL(active.boardUrl!).origin : location.origin;
   const url = new URL('/preview/state', origin);
-  url.searchParams.set('run', runId);
+  if (!active.sharedBoard) url.searchParams.set('run', runId);
   refreshing = true;
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(4000) });
     if (!response.ok) throw new Error('Board unavailable');
     const view = await response.json() as BoardView;
     if (!busy && active.runId === runId) render(view);
-    byId('connection').textContent = 'Live board · say this code to pair';
+    byId('connection').textContent = 'Live board · synced with chat';
   } catch {
     byId('connection').textContent = 'Live sync paused · reconnecting';
   } finally {

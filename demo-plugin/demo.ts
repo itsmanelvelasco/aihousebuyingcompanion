@@ -78,6 +78,7 @@ export const openSchema = z.object({
   pairCode: z.string().trim().toUpperCase().regex(/^[A-F0-9]{8}$/).optional()
     .describe('Eight-character code printed on the live browser board. Use this to follow the same run.'),
   persona: personaSchema.optional(),
+  newRun: z.boolean().optional().describe('Only use when explicitly asked for a separate rehearsal.'),
 });
 export const updateSchema = z.object({
   runId: z.uuid(),
@@ -101,10 +102,11 @@ function seed() {
 }
 type Run = { persona: Persona; state: ReturnType<typeof seed>; revision: number; pairCode: string };
 const runs = new Map<string, Run>();
+let stageId: string | undefined;
 
 function getRun(id: string) {
   const run = runs.get(id);
-  if (!run) throw new Error('This demo run expired. Open a new demo without a run ID.');
+  if (!run) throw new Error('This run expired. Say ‘Arrela, start’ to reopen the live board.');
   return run;
 }
 
@@ -122,7 +124,7 @@ export function getView(runId: string, message?: string) {
   const person = people[persona];
   const choices = Object.entries(people).map(([id, info]) => ({ id, ...info }));
   const base = {
-    runId, revision, pairCode, persona, person, choices, currency: 'EUR', simulated: true,
+    runId, revision, pairCode, sharedBoard: runId === stageId, persona, person, choices, currency: 'EUR', simulated: true,
     goal: 'Own the home outright, with no mortgage or other demo debt.',
   };
   if (persona === 'onboarding') {
@@ -191,23 +193,24 @@ export function getView(runId: string, message?: string) {
 }
 export type DemoView = ReturnType<typeof getView>;
 
-export function openDemo({ runId, pairCode, persona }: z.infer<typeof openSchema>) {
+export function openDemo({ runId, pairCode, persona, newRun }: z.infer<typeof openSchema>) {
   if (pairCode) {
     runId = [...runs].find(([, run]) => run.pairCode === pairCode)?.[0];
-    if (!runId) throw new Error('That board code is no longer active. Open the live board and use its current code.');
+    if (!runId) throw new Error('That board code expired. Say ‘Arrela, start’ to open the live board without a code.');
   }
-  if (runId) {
-    const run = getRun(runId);
+  const existing = runId ?? (newRun ? undefined : stageId);
+  if (existing) {
+    const run = getRun(existing);
     if (persona && persona !== run.persona) {
       run.persona = persona;
       run.revision += 1;
     }
-    return getView(runId);
+    return getView(existing);
   }
 
   // Demo-only memory, bounded so a publicly reachable tunnel cannot grow it indefinitely.
   if (runs.size >= 200) {
-    const oldest = runs.keys().next().value;
+    const oldest = [...runs.keys()].find(id => id !== stageId);
     if (oldest) runs.delete(oldest);
   }
   const id = randomUUID();
@@ -215,6 +218,7 @@ export function openDemo({ runId, pairCode, persona }: z.infer<typeof openSchema
   do { code = randomBytes(4).toString('hex').toUpperCase(); }
   while ([...runs.values()].some(run => run.pairCode === code));
   runs.set(id, { persona: persona ?? 'onboarding', state: seed(), revision: 0, pairCode: code });
+  if (!newRun) stageId = id;
   return getView(id);
 }
 

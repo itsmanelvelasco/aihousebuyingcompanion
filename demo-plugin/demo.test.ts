@@ -42,8 +42,8 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   t.after(() => client.close());
   const tools = (await client.listTools()).tools;
   const ui = tools.find(tool => tool.name === 'open_demo')?._meta?.ui as { resourceUri?: string } | undefined;
-  assert.equal(ui?.resourceUri, 'ui://arrela/journey-v3.html');
-  const resource = await client.readResource({ uri: 'ui://arrela/journey-v3.html' });
+  assert.equal(ui?.resourceUri, 'ui://arrela/journey-v4.html');
+  const resource = await client.readResource({ uri: 'ui://arrela/journey-v4.html' });
   const [widget] = resource.contents;
   assert.equal(widget.mimeType, 'text/html;profile=mcp-app');
   assert.ok('text' in widget);
@@ -61,20 +61,21 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   const first = await call('open_demo');
   const runId = first.runId;
   assert.equal(first.persona, 'onboarding');
-  assert.equal(first.boardUrl, `https://arrela.example/preview?run=${runId}`);
-  assert.match(String(first.pairCode), /^[A-F0-9]{8}$/);
-  const paired = await call('open_demo', { pairCode: first.pairCode });
-  assert.equal(paired.runId, runId);
+  assert.equal(first.boardUrl, 'https://arrela.example/preview');
+  assert.equal(first.sharedBoard, true);
+  const reopened = await call('open_demo');
+  assert.equal(reopened.runId, runId);
   const update = (action: string, args = {}) => call('update_demo', { runId, action, ...args });
   const open = (persona: string) => call('open_demo', { runId, persona });
 
   const home = await update('answer_batch', { answers: { town: 'Manresa', bedrooms: 2, household: 3 } });
-  const live = await fetch(`${origin}/preview/state?run=${runId}`);
+  const live = await fetch(origin + '/preview/state');
   assert.equal(live.headers.get('Access-Control-Allow-Origin'), '*');
   const synced = await live.json();
   assert.deepEqual(synced.answers, home.answers);
   assert.equal(synced.revision, home.revision);
-  assert.equal((await fetch(origin + '/preview/state')).status, 400);
+  assert.equal(synced.runId, runId);
+  assert.equal((await fetch(origin + '/preview/state?run=invalid')).status, 400);
 
   await open('progress');
   const progress = await update('join_quest');
@@ -120,5 +121,10 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   await update('restart_all');
   assert.equal((await open('shortcuts')).unread, 5);
   assert.equal(((await open('progress')).progress as { xp: number }).xp, 350);
-  assert.notEqual((await call('open_demo')).runId, runId);
+  const separate = await call('open_demo', { newRun: true, persona: 'payoff' });
+  assert.notEqual(separate.runId, runId);
+  assert.equal(separate.sharedBoard, false);
+  const stage = await call('open_demo');
+  assert.equal(stage.runId, runId);
+  assert.equal(stage.persona, 'progress');
 });

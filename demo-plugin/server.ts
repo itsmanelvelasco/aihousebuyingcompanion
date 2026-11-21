@@ -6,11 +6,12 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { getView, openDemo, openSchema, updateDemo, updateSchema } from './demo.ts';
 
-const widgetUri = 'ui://arrela/journey-v3.html';
+const widgetUri = 'ui://arrela/journey-v4.html';
 const publicOrigin = process.env.PUBLIC_ORIGIN ? new URL(process.env.PUBLIC_ORIGIN).origin : null;
 
 function withBoardLink(view: ReturnType<typeof getView>) {
-  return { ...view, boardUrl: publicOrigin ? `${publicOrigin}/preview?run=${view.runId}` : null };
+  const path = view.sharedBoard ? '/preview' : `/preview?run=${view.runId}`;
+  return { ...view, boardUrl: publicOrigin ? publicOrigin + path : null };
 }
 const template = readFileSync(new URL('./widget.html', import.meta.url), 'utf8');
 const bundle = readFileSync(new URL('./dist/widget.js', import.meta.url), 'utf8');
@@ -35,9 +36,11 @@ function reply(name: string, input: unknown) {
 
 function createMcpServer() {
   const server = new McpServer({ name: 'arrela-demo', version: '0.1.0' }, {
-    instructions: 'Open the requested Arrela persona with open_demo. Speak as a warm, concise game guide. The board already labels the rehearsal data, ' +
-      'so do not repeat that label in spoken turns. If asked about real-world applicability, explain what needs verification. ' +
-      'If the user gives a board code, use pairCode to join that board. Reuse its runId for all writes and persona switches. ' +
+    instructions: 'When the user says “Arrela, start”, call open_demo with no arguments immediately. The browser and chat share one live board. ' +
+      'Do not ask for a code, run ID, or persona to start. Present boardUrl as a clickable link if the widget is hidden; do not read URLs aloud. ' +
+      'Use the runId returned by open_demo for subsequent writes. Pass persona to switch when asked. ' +
+      'Speak as a warm, concise game guide. The board labels the rehearsal data, so skip repeated spoken labels. ' +
+      'If asked about real-world applicability, explain what needs verification. ' +
       'For Laia, group missing home details or finances into a natural prompt. Extract all answers from each spoken or typed reply ' +
       'and save them in one update_demo answer_batch call. Ask only for details still missing; do not make the user repeat answers. ' +
       'The board updates when the tool saves the turn. Offer boardUrl as a clickable link if the voice host does not show the widget. ' +
@@ -61,9 +64,9 @@ function createMcpServer() {
 
   registerAppTool(server, 'open_demo', {
     title: 'Show Arrela demo',
-    description: 'Open a fictional persona and live board. Choose onboarding (Laia), progress (Marc), shortcuts (Núria), or payoff (Jordi, already debt-free). ' +
-      'Use pairCode when given a board code. Otherwise keep the current runId when switching personas. ' +
-      'With neither, start a new run. If the widget is not visible, share the returned boardUrl to follow the same run in a browser.',
+    description: 'Call with no arguments when the user says “Arrela, start” or “start Arrela”. Opens the shared live board without a code. ' +
+      'Pass persona only when asked to show Laia (onboarding), Marc (progress), Núria (shortcuts), or Jordi (payoff). ' +
+      'Return the board link in chat if the host does not display the widget. Use newRun only for an explicitly separate rehearsal.',
     inputSchema: openSchema.shape,
     annotations: { readOnlyHint: true, openWorldHint: false },
     _meta: { ui: { resourceUri: widgetUri }, 'openai/outputTemplate': widgetUri },
@@ -117,17 +120,18 @@ const server = createServer(async (req, res) => {
       return;
     }
     if (req.method === 'GET' && path === '/preview/state') {
-      // Read-only access to a fictional run. The UUID is needed even with the widget origin allowed.
+      // No run parameter means the shared demo board; separate rehearsals use their UUID.
       res.setHeader('Access-Control-Allow-Origin', '*');
-      const run = openSchema.shape.runId.safeParse(url.searchParams.get('run'));
-      if (!run.success || !run.data) {
+      const run = openSchema.shape.runId.safeParse(url.searchParams.get('run') ?? undefined);
+      if (!run.success) {
         send(res, 400, 'A valid run ID is required.');
         return;
       }
       try {
-        send(res, 200, JSON.stringify(withBoardLink(getView(run.data))), 'application/json; charset=utf-8');
+        const view = run.data ? getView(run.data) : openDemo({});
+        send(res, 200, JSON.stringify(withBoardLink(view)), 'application/json; charset=utf-8');
       } catch {
-        send(res, 404, 'This demo run expired. Start a fresh board.');
+        send(res, 404, 'This rehearsal expired. Open the shared live board.');
       }
       return;
     }
