@@ -14,9 +14,26 @@ curl http://127.0.0.1:8787/health
 
 The Streamable HTTP endpoint is `http://127.0.0.1:8787/mcp`. In MCP Inspector, select **Streamable HTTP** and enter that URL. Run `npm test` to exercise initialization, tool discovery and every tool through the official client. Run `npm run typecheck` and `npm run data:validate` to check the code and snapshot.
 
-For hosting, use `npm run start:mcp` with `HOST=0.0.0.0` and the platform’s `PORT`, or build the included image with `docker build -t relocat-mcp .` and run it with `docker run --rm -p why 127.0.0.1:8787:8787 relocat-mcp`. The service speaks HTTP behind the host’s TLS proxy. Connect ChatGPT to the resulting HTTPS `/mcp` URL or use Secure MCP Tunnel. Requests from browser origins are rejected unless their exact origin is listed in `ALLOWED_ORIGINS` as a comma-separated value. [OpenAI’s connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt)
+For hosting, use the [Netlify demo](#hosted-demo-on-netlify) or build the included image with `docker build -t relocat-mcp .` and run it with `docker run --rm -p 127.0.0.1:8787:8787 relocat-mcp`. On other Node hosts, run `npm run start:mcp` with `HOST=0.0.0.0` and the platform’s `PORT`. Connect ChatGPT to the resulting HTTPS `/mcp` URL or use Secure MCP Tunnel. Requests from browser origins require their exact origin in `ALLOWED_ORIGINS`, as a comma-separated value. [OpenAI’s connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt)
 
 The tools are read-only. The application processes supplied household criteria in memory for the duration of the call. The schema takes age, tax-base amounts and qualifying facts. It has no fields for identities, tax IDs or bank details.
+
+## Hosted demo on Netlify
+
+Connect over Streamable HTTP at [relo.cat/mcp](https://relo.cat/mcp). The [connection guide](https://relo.cat/connect) gives client-specific setup steps. The [Town Explorer](https://relo.cat/preview?town=080312) opens on Calaf. The [default Netlify endpoint](https://relo-cat-mcp.netlify.app/mcp) is also available.
+
+The Netlify entry uses the standalone MCP with the public municipality snapshot and fictional interviewer tools. Listings use the search-link fallback while Treg credentials are absent. The profile and bank services stay local.
+
+Use `main` as the Netlify production branch. Once the GitHub repository is linked to the project, merges to `main` trigger a Netlify build. The build runs TypeScript, the MCP test suite and snapshot validation before publishing. [Netlify Git setup](https://docs.netlify.com/build/git-workflows/repo-permissions-linking/)
+
+For a manual redeploy, use Node.js 24 and Netlify CLI 27.17 or newer. The production project's `ALLOWED_ORIGINS` Functions variable covers the primary domain, its `www` alias and the default Netlify origin. [Netlify Server guide](https://docs.netlify.com/build/server/get-started/)
+
+```sh
+npm ci
+npx --yes netlify-cli@27.20.1 link --name relo-cat-mcp
+npx --yes netlify-cli@27.20.1 deploy
+npx --yes netlify-cli@27.20.1 deploy --prod
+```
 
 ## Town Explorer sample plugin
 

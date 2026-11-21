@@ -9,8 +9,8 @@ import { renderVoiceCard } from "./voice-card.mjs";
 const widgetUri = "ui://homebuying/cash-flow.html";
 const voiceCardUri = "ui://homebuying/start-talking.html";
 const widgetType = "text/html;profile=mcp-app";
-const widgetPath = new URL("./cash-flow-widget.html", import.meta.url);
-const demoPath = new URL("./demo.csv", import.meta.url);
+const widgetPath = new URL("../../apps/interviewer/cash-flow-widget.html", import.meta.url);
+const demoPath = new URL("../../apps/interviewer/demo.csv", import.meta.url);
 const readOnly = { readOnlyHint: true, openWorldHint: false, destructiveHint: false, idempotentHint: true };
 const cashSummary = z.object({
   observedMonths: z.array(z.string()),

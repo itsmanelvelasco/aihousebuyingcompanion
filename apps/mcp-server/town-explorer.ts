@@ -11,12 +11,12 @@ const widgetUri = "ui://relocat/town-explorer-v1.html";
 export function loadTownExplorerPage() {
   let bundle: string;
   try {
-    bundle = readFileSync(new URL("./dist/town-explorer.js", import.meta.url), "utf8");
+    bundle = readFileSync(new URL("../../apps/mcp-server/dist/town-explorer.js", import.meta.url), "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
-  const template = readFileSync(new URL("./town-explorer.html", import.meta.url), "utf8");
+  const template = readFileSync(new URL("../../apps/mcp-server/town-explorer.html", import.meta.url), "utf8");
   return template.replace("<!-- WIDGET -->", () => `<script>${bundle.replace(/<\/script/gi, "<\\/script")}</script>`);
 }
 
