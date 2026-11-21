@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "apps/mcp-server/connect.html"
+        ],
+        "createdAt": "2026-11-21T14:49:13.059Z",
+        "reason": "Agent verified: the shaded questions section has 22 to 48 px of padding at 320 to 1440 px widths. The unpadded setup wrapper is transparent and borderless."
+      },
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "apps/mcp-server/connect.html"
+        ],
+        "createdAt": "2026-11-21T14:49:13.095Z",
+        "reason": "Agent used the warm paper tones in the user-provided village and mascot illustrations to tie the homepage to the existing Town Explorer."
+      }
+    ]
+  }
+}

@@ -354,6 +354,7 @@ test("serves the illustrated homepage and preserves its demo links", async () =>
   const html = await homepage.text();
   assert.equal(html.match(/src="data:image\/jpeg;base64,/g)?.length, 3);
   assert.equal(html.match(/"data:image\/(png|svg\+xml|webp);base64,/g)?.length, 8);
+  assert.match(html, /<input id="endpoint" type="url" value="https:\/\/relo\.cat\/mcp"/);
   assert.match(html, /href="\/preview"/);
   assert.match(html, /href="https:\/\/github.com\/itsmanelvelasco\/aihousebuyingcompanion\/blob\/main\/apps\/mcp-server\/README.md#data-and-refresh"/);
 });
