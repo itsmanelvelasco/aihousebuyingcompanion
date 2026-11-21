@@ -14,7 +14,7 @@ import { madridDate, nextSchoolDay, normalizedName } from "../../packages/places
 import { recommendTowns } from "../../packages/places/recommend.ts";
 
 const lleidaCode = "251207";
-const placeCoverage = "Selected Catalan municipalities along the FGC Lleida–La Pobla corridor, plus Lleida as an anchor.";
+const placeCoverage = "Selected Catalan municipalities, including the FGC Lleida–La Pobla corridor and Lleida as a transport destination.";
 const fiscalLimitations = [
   "Eligibility is a screening result based on declared facts and the official rules verified in the snapshot.",
   "For tax measures, the measure’s effective dates apply. Call status is unknown because tax claims do not have a grant application window.",
