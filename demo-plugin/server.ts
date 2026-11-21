@@ -5,6 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { getView, openDemo, openSchema, updateDemo, updateSchema } from './demo.ts';
+import { validateAnswers } from './intake.ts';
 import { profileConnection, ProfileBridge, connectedAnswers } from './profiles.ts';
 import { createMcpServer as createPlacesMcpServer } from '../apps/mcp-server/tools.ts';
 import { registerInterviewerTools } from '../apps/interviewer/mcp-tools.ts';
@@ -44,12 +45,16 @@ async function reply(name: string, input: unknown) {
           view = updateDemo({ runId: parsed.runId, action: 'refresh_data' });
         } else if (parsed.action === 'answer_batch') {
           if (!parsed.answers || !Object.keys(parsed.answers).length) throw new Error('Supply interview answers.');
-          // Persist before changing the visible board. Backend errors never fall back to scripted state.
-          await bridge.save({ ...before, revision: before.revision + 1 }, parsed.answers);
+          if (before.persona !== 'onboarding') throw new Error('Open Laia’s onboarding before recording answers.');
           const legacy = Object.fromEntries(Object.entries(parsed.answers).filter(([key]) => ['town', 'bedrooms', 'household', 'employment', 'income', 'spending', 'savings', 'currentTown', 'budget', 'homeSize', 'dependants', 'rural', 'commuteTo', 'commuteTime', 'transport', 'schoolStages', 'debtPayments', 'reserve', 'cashTarget'].includes(key) && !Array.isArray(parsed.answers![key as keyof typeof parsed.answers])));
+          validateAnswers(legacy);
+          // Validate first, then persist before changing the visible board.
+          await bridge.save({ ...before, revision: before.revision + 1 }, parsed.answers);
           view = Object.keys(legacy).length ? updateDemo(updateSchema.parse({ ...parsed, answers: legacy })) : updateDemo({ runId: parsed.runId, action: 'refresh_data' });
         } else if (parsed.action === 'answer') {
           if (!parsed.question || parsed.answer === undefined) throw new Error('Supply a question and answer.');
+          if (before.persona !== 'onboarding') throw new Error('Open Laia’s onboarding before recording answers.');
+          validateAnswers({ [parsed.question]: parsed.answer });
           const answers = connectedAnswers.parse({ [parsed.question]: parsed.answer });
           await bridge.save({ ...before, revision: before.revision + 1 }, answers);
           view = updateDemo(updateSchema.parse(parsed));
