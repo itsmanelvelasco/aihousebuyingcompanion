@@ -73,6 +73,8 @@ test("serves the fictional interviewer cash-flow card and compares a savings hab
   assert(typeof start === "object" && start !== null && "openingQuestion" in start);
   assert.match(String(start.openingQuestion), /bank CSV.*fictional demo bank account.*monthly income and spending/);
   const launcher = (await client.listTools()).tools.find(entry => entry.name === "start_homebuying_interview");
+  assert.match(launcher?.description ?? "", /I want to buy a new home/);
+  assert.match(client.getInstructions() ?? "", /call start_homebuying_interview before asking/);
   const voiceUri = "ui://homebuying/start-talking.html";
   assert.deepEqual(launcher?._meta?.ui, { resourceUri: voiceUri });
   const voiceCard = (await client.readResource({ uri: voiceUri })).contents[0];
