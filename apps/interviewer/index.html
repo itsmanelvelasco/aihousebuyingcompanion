@@ -137,6 +137,7 @@
     <p id="voice-status" role="status">Ready to talk.</p>
     <div class="actions voice-controls">
       <button id="start" class="primary">Start talking</button>
+      <p class="intro">Voice uses configured OpenAI API credits. Starts only when you press Start talking.</p>
       <button id="mute" aria-pressed="false" hidden>Mute mic</button>
       <button id="stop" class="end" hidden>End conversation</button>
     </div>
@@ -201,6 +202,6 @@
   </div>
   <p class="hint">Voice uses your microphone and sends your saved answers and financial summary to OpenAI. Uploaded CSV files are processed in this browser.</p>
 </dialog>
-<script type="module" src="/app.mjs"></script>
+<script type="module" src="./app.mjs"></script>
 </body>
 </html>

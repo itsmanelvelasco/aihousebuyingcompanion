@@ -43,6 +43,7 @@ export function registerInterviewerTools(server: McpServer) {
     title: "Start the bank-first homebuying interview",
     description: "Begin the Relocat homebuying interview in ChatGPT, including Live voice. Call this when a user asks to start the interview. Ask the returned opening question, wait for their answer, and use the indicated tool only after they choose a transaction source.",
     annotations: readOnly,
+    _meta: { ui: { resourceUri: widgetUri }, "openai/outputTemplate": widgetUri },
     inputSchema: z.object({}).strict(),
     outputSchema: z.object({
       openingQuestion: z.string(),

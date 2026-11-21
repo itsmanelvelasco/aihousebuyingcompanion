@@ -1,4 +1,5 @@
 import { handleTestUi } from "./test-ui.ts";
+import { handleInterviewerProxy } from "./interviewer-proxy.ts";
 import { createServer } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Policy, Snapshot, TravelEstimateData } from "../../packages/contracts/places.ts";
@@ -23,6 +24,7 @@ export function createHttpServer(
 ) {
   return createServer(async (request, response) => {
     const path = request.url?.split("?")[0];
+    if (await handleInterviewerProxy(request, response)) return;
     if (await handleTestUi(request, response, snapshot, policies, options.listings, options.travelEstimates)) return;
     if (path === "/health" && request.method === "GET") {
       response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });

@@ -10,6 +10,10 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 
 ## Delivered integration and remaining product boundaries
 
+- [x] Add a local management website for profile documents, multi-source input CRUD, resolved conflicts, bank movements and synthetic feed controls, with an interviewer entry button.
+- [x] Run the interviewer backend separately on port 3003 and proxy its bounded routes through the local app and management website.
+- [ ] Deploy the management website to the existing Netlify project for `relo.cat`; verify persistent backend hosting, paid-route authentication, domain routing and HTTPS before claiming it live.
+
 - [x] Preserve the supplied relocation pilot research export for three towns and four opportunities in `data/relocat-pilot-data.json`, with historical leads and a separately dated public-data snapshot.
 - [x] Join relocation research to official town codes and expose it through MCP profiles and recommendations, with separate coverage, source status, check dates, deadline conflicts and unresolved eligibility.
 - [ ] Expand detailed opportunity research beyond Calaf, Juncosa and Ulldemolins; 14 other recommendation candidates and the Lleida transport destination currently have no loaded research.

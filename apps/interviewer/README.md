@@ -13,6 +13,10 @@ npm.cmd run start:interviewer
 
 Open [the local voice demo](http://localhost:3000) in Chrome or Edge.
 
+The connected `npm run dev:stack` starts this backend separately on **3003** and the main plugin on **8787**. Open `http://127.0.0.1:8787/interviewer/` to use the main app's local same-origin bridge to that backend, or open `http://127.0.0.1:3003/` directly. Override `INTERVIEWER_PORT` for the launcher; it must differ from `PROFILE_API_PORT` and `APP_PORT`. The standalone command retains its default port 3000; to use 3003 in a separate terminal set `$env:INTERVIEWER_PORT = '3003'` before `npm run start:interviewer`.
+
+The plugin server's `INTERVIEWER_BASE_URL` defaults to `http://127.0.0.1:3003`. The bridge forwards only the known interviewer assets and voice/classification routes to a loopback backend. It rejects foreign browser origins and public/tunnel hosts; it does not expose the local OpenAI-backed voice service to the public MCP audience. Its relative asset paths work both directly and under `/interviewer/`. OpenAI credentials stay in the backend's environment; the launcher inherits existing environment values but does not automatically load `.env`. Guided mode and fixture checks require no paid API calls.
+
 1. Click **Start talking** and allow microphone access. You can start before sharing any financial data. Try “I’d like a flat in Madrid, near a park and a supermarket. I’m open to nearby towns with a train.”
 2. Say “I’d like to connect a bank” or open **Add bank data**. Choose **Connect a bank** and confirm the demo account to load three months of fictional euro transactions, or choose **Upload CSV** and select the statement’s currency. You can do this mid-conversation. The interviewer receives the new summary without restarting.
 3. Confirm pay and expenses, then give a cash savings goal, current savings and your typical contribution. Pick one habit to try. Ask to open **Your plan** to compare the timelines. A €30,000 cash target with €6,000 saved and €600 contributed monthly takes 40 months. Saving another €75 per month reduces the estimate to 36 months.

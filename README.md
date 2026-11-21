@@ -32,6 +32,14 @@ The separate [habits service](apps/habits-agent/README.md) runs with `npm run st
 
 ## Voice interviewer demo
 
+## Input management website
+
+Set `PROFILE_API_TOKEN` to your own local demo token before `npm run dev:stack`, then open `http://127.0.0.1:3001/manage/` and enter that token. The website manages profiles, preferences, bank snapshots, source inputs, conflicts and synthetic ledger activity. The token stays in tab memory. Writes use ignored runtime storage. `PROFILE_API_PORT` changes this website's port.
+
+The **Tell us what you need** button opens Manel's interviewer through the same origin. The stack runs that backend separately on port 3003 (`INTERVIEWER_PORT` overrides it). Voice requires server-side `OPENAI_API_KEY` and consumes API credits only after Start talking; opening the website does not start a session. See [input management](docs/areas/input-management.md) and [Netlify hosting](docs/areas/netlify-hosting.md).
+
+## Voice interviewer demo
+
 The complementary [voice interviewer](apps/interviewer/README.md) gathers home preferences, summarizes a demo bank account or CSV, and compares the effect of one savings habit. Run it with `npm run start:interviewer`. The shared MCP server also exposes the sample cash-flow card and savings comparison tools.
 
 ## User profiles and API

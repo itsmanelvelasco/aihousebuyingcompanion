@@ -49,8 +49,8 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   t.after(() => client.close());
   const tools = (await client.listTools()).tools;
   const ui = tools.find(tool => tool.name === 'open_demo')?._meta?.ui as { resourceUri?: string } | undefined;
-  assert.equal(ui?.resourceUri, 'ui://arrela/journey-v5.html');
-  const resource = await client.readResource({ uri: 'ui://arrela/journey-v5.html' });
+  assert.equal(ui?.resourceUri, 'ui://arrela/journey-v6.html');
+  const resource = await client.readResource({ uri: 'ui://arrela/journey-v6.html' });
   const [widget] = resource.contents;
   assert.equal(widget.mimeType, 'text/html;profile=mcp-app');
   assert.ok('text' in widget);
