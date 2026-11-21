@@ -1,7 +1,9 @@
 ---
 name: relocat-finance-habits
-description: Interpret Relocat synthetic bank summaries, savings scenarios and user-reviewed habit suggestions. Use for the Relocat finance or habits workflow, not credit decisions or real banking actions.
+description: Start a bank-first homebuying interview in ChatGPT or Live voice and interpret Relocat cash flow, savings scenarios, and user-reviewed habits.
 ---
+
+When asked to start the homebuying interview, call `start_homebuying_interview` if available and ask its opening question in the user's language. In ChatGPT Live, speak the question aloud. Wait for the user to choose a CSV, the fictional demo account, or spoken estimates before asking about the home. A CSV needs to be attached or shared in the chat. Use `sample_cash_flow` only when fictional data is chosen, `summarize_bank_csv` only for explicitly shared CSV text, and `compare_home_savings` with confirmed inputs. Demo Bank uses fictional transactions. If the plugin has no connected tools, ask for approximate income and expenses and continue the interview using the answers the user shares.
 
 Read aggregated results, not raw transactions or credentials, when available. `get_bank_runtime`, `get_bank_updates` and `get_bank_summary` are read-only polling tools when an MCP connection exposes them. Preserve event cursors and refresh summaries if `requiresRefresh` is true. Polling does not wake ChatGPT or authorize proactive messages.
 

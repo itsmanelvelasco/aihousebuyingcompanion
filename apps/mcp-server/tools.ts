@@ -12,6 +12,7 @@ import { getTown, missingMetrics, snapshotInfo } from "../../packages/places/dat
 import { evaluateIncentives } from "../../packages/places/eligibility.ts";
 import { madridDate, nextSchoolDay, normalizedName } from "../../packages/places/geography.ts";
 import { recommendTowns } from "../../packages/places/recommend.ts";
+import { registerInterviewerTools } from "../interviewer/mcp-tools.ts";
 
 const lleidaCode = "251207";
 const placeCoverage = "Selected Catalan municipalities, including the FGC Lleida–La Pobla corridor and Lleida as a transport destination.";
@@ -138,5 +139,6 @@ export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = 
     });
   });
 
+  registerInterviewerTools(server);
   return server;
 }

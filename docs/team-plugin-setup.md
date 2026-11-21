@@ -1,6 +1,6 @@
 # One Relocat setup for teammates
 
-The canonical team bundle is **`relocat-team` version `1.0.0`**, sourced from `plugins/relocat-team/`. It includes the same three workflows for every teammate: Relocat demo, Relocat development, and synthetic finance/habits. These workflows do not clone somebody else's ChatGPT account, copy third-party plugins, share credentials, change personal permissions or install anything remotely in another account.
+The canonical team bundle is **`relocat-team` version `1.1.0`**, sourced from `plugins/relocat-team/`. It includes the same three workflows for every teammate: Relocat demo, Relocat development, and synthetic finance/habits. These workflows do not clone somebody else's ChatGPT account, copy third-party plugins, share credentials, change personal permissions or install anything remotely in another account.
 
 ## What is ready
 
@@ -20,7 +20,7 @@ npm ci
 npm run package:team-plugin
 ```
 
-Output: `artifacts/team-plugin/relocat-team-1.0.0-skills-only.zip` and its `.sha256` checksum. Artifacts are ignored by Git. The packager deliberately includes only the manifest and Markdown skills/references, not profiles, runtime state, secrets, application code or dependencies. It does not contact an MCP service or spend OpenAI credits.
+Output: `artifacts/team-plugin/relocat-team-1.1.0-skills-only.zip` and its `.sha256` checksum. Artifacts are ignored by Git. The packager deliberately includes only the manifest and Markdown skills/references, not profiles, runtime state, secrets, application code or dependencies. It does not contact an MCP service or spend OpenAI credits.
 
 To include the team's actual deployed endpoint:
 
@@ -41,6 +41,8 @@ For teammates using separate accounts/workspaces, share the same reviewed ZIP/so
 After installation/update, start a new chat/session so the bundled skills can load. Verify **Relocat Team** appears in Installed and that the three skill names are available. For the MCP variant, verify tools in the actual connection before running a demo. A skill's mention of a tool is not proof that the connection provides it.
 
 ## Teammate acceptance check
+
+For the bank-first interview, update Relocat Team to version 1.1.0 and connect the deployment that exposes `start_homebuying_interview`. Start a new ChatGPT Live voice conversation and say “Use Relocat Team to start my homebuying interview.” ChatGPT asks whether to use a CSV, the fictional demo bank, or spoken estimates. Attach any CSV in the chat. Live availability and plugin access depend on the account and workspace. The same entry point also works in a text chat.
 
 1. Confirm the bundle name/version and SHA-256 match the team's chosen artifact.
 2. Confirm all three skills are available in a new session.

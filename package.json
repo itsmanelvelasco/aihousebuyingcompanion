@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "node --watch apps/profile-api/server.ts",
     "start": "node apps/profile-api/server.ts",
+    "start:interviewer": "node --env-file-if-exists=.env apps/interviewer/server.mjs",
     "start:habits": "node apps/habits-agent/server.ts",
     "package:team-plugin": "node scripts/package-team-plugin.ts",
     "setup:app": "npm --prefix demo-plugin ci",

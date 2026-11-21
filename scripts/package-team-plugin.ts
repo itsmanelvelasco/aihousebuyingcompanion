@@ -25,7 +25,10 @@ export async function packageTeamPlugin(options: { root?: string; outputDirector
       const path = join(directory, entry.name);
       if (entry.isSymbolicLink()) throw new Error('Symbolic links are not allowed in the team bundle');
       if (entry.isDirectory()) await collect(path);
-      else if (entry.isFile() && entry.name.endsWith('.md')) entries[relative(source, path).split(sep).join('/')] = new Uint8Array(await readFile(path));
+      else if (entry.isFile() && entry.name.endsWith('.md')) {
+        const markdown = (await readFile(path, 'utf8')).replaceAll('\r\n', '\n');
+        entries[relative(source, path).split(sep).join('/')] = new TextEncoder().encode(markdown);
+      }
       else throw new Error('Only Markdown skill/reference files may be bundled');
     }
   }
