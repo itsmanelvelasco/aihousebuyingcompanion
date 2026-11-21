@@ -22,6 +22,7 @@ The tools are read-only. The application processes supplied household criteria i
 
 | Tool | Use |
 | --- | --- |
+| `search_homes` | Find indexed Idealista examples live through treg; returns links, search timestamps and unverified filter/location status. |
 | `list_catalonia_municipalities` | Search pilot coverage by name, comarca or six-digit Idescat code. |
 | `recommend_towns` | Apply hard constraints first, then rank with weighted affordability, school, commute and rural preferences. Read `excluded` for constraint failures or missing evidence. |
 | `get_town_profile` | Read municipal and comarca indicators, map coordinates, school access, dated rail evidence and geographically relevant policies. |
@@ -85,3 +86,21 @@ The committed FGC RL1/RL2 service calendar covers November 19 through December 3
 - `limitations`: scope and interpretation constraints.
 
 For example, call `get_town_profile` with `{"municipalityCode":"251180"}` to receive Juncosa's official statistics and two researched opportunities together. Call it with `{"municipalityCode":"250024"}` for Àger's official profile with `not_researched` coverage. Research never overrides housing budget filters, school or transit constraints, recommendation scores or incentive eligibility.
+
+## Live Idealista example search through treg
+
+`search_homes` runs an on-demand Google search through treg's `treg.google.serp.organic` route, constrained to Idealista listing URLs. It returns **indexed examples, not verified live inventory**. Search results can be stale or refer to another town; each example therefore keeps `municipalityCode: null`, `locationConfidence: unknown`, `availability: unknown` and `filtersVerified: false`. Price and bedroom criteria are search hints. The tool does not infer structured prices or bedrooms from snippets, and examples must not be used to satisfy hard household constraints without checking the listing.
+
+Set `TREG_TOKEN` to a valid treg API key in the environment of the server process, then restart it. This works with both `npm run start:mcp` and the connected `npm run dev:stack`. The ChatGPT treg connector's OAuth session is separate from the app's credentials. If using a personal sign-in token, also set `TREG_ORG` to the intended team slug. No Idealista API key is required for this web-search route. For Docker, pass the variables with `--env TREG_TOKEN` and, if needed, `--env TREG_ORG`; never bake them into the image. Environment files are not automatically loaded by these scripts.
+
+Example tool input:
+
+```json
+{"municipalityCodes":["080312","251180"],"operation":"buy","maxPriceEur":150000,"minBedrooms":2,"limitPerTown":3}
+```
+
+At most three town queries run per call, each with a USD 0.01 route ceiling and `Cache-Control: no-cache`. Each successful town response includes up to five deduplicated Idealista property URLs, search titles/snippets, the search timestamp and the charge when reported by treg. Missing access returns `provider_unavailable`; authentication, quota, rate limits and transport/schema failures return `provider_error`; a successful search with no accepted links returns `no_indexed_examples`. None means that no properties exist. A Google query link is returned for manual follow-up in every case.
+
+The server forwards only town names/comarcas and the explicit operation, budget and bedroom hints—not profiles, bank data or household identities. It does not fetch listing pages or relay Idealista's official ChatGPT/Claude app. Those apps do not support manual use by other MCP clients. Sources: [treg integration documentation](https://treg.to/llms.txt), [Idealista app documentation](https://idealista.github.io/mcp-app-docs/openai/).
+
+Validation included a live treg search for Calaf on 21 November 2026 (USD 0.00038), followed by adapter normalization of that actual response. Automated tests use injected provider responses and never spend credits. A live end-to-end call from the local server still requires configuring `TREG_TOKEN`.

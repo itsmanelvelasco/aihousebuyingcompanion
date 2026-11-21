@@ -20,6 +20,7 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 - [x] Expose `get_applicable_incentives` with optional household checks, and retain `check_housing_incentives` for eligibility and exclusions.
 - [x] Preserve existing profile paths and expose municipality, bank-read and board tools through one connected MCP endpoint.
 - [x] Add a synthetic background worker, durable cursor-based bank events, authenticated polling tools, stack launcher and per-area development guides.
+- [x] Add `search_homes` for live treg web searches of Idealista examples, with bounded costs, explicit provider failures and unverified location/filter/availability labels. Runtime access requires `TREG_TOKEN`.
 - [ ] Verify bedroom counts and actual property availability against authorized listing evidence. Town screens deliberately retain these as unresolved property checks.
 - [ ] Complete human visual/voice rehearsal in the target ChatGPT client; automated transport tests do not establish client widget visibility.
 

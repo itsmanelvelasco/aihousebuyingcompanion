@@ -117,3 +117,7 @@ The core demo calls `recommend_towns`, `get_town_profile`, and `get_applicable_i
 ## Demo definition of done
 
 A single ChatGPT conversation calls the municipality MCP backend, shows three sourced Catalan town recommendations, compares schools and transport, and explains one actual housing incentive with its source and application status. Keep a browser or recorded fallback. Savings timelines and authorized property opportunities extend this core journey.
+
+### Idealista property examples
+
+The MCP tool `search_homes` searches live through treg for indexed Idealista property examples in up to three pilot towns. Set `TREG_TOKEN` in the server environment and restart. It returns source links and timestamps, with explicit unknown availability and unverified town/budget/bedroom matches. It is web-search discovery, not a verified inventory feed; missing credentials or provider failures are reported separately from empty searches. See [setup, costs and limitations](apps/mcp-server/README.md#live-idealista-example-search-through-treg).

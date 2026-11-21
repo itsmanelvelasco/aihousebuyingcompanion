@@ -4,12 +4,13 @@ import type { Policy, Snapshot } from "../../packages/contracts/places.ts";
 import { snapshotInfo } from "../../packages/places/data.ts";
 import { createMcpServer } from "./tools.ts";
 import { registerBankTools } from "./bank-tools.ts";
+import type { ListingSearchConfig } from "../../packages/listings/search.ts";
 import type { BankToolConfig } from "./bank-tools.ts";
 
 export function createHttpServer(
   snapshot: Snapshot,
   policies: Policy[],
-  options: { allowedOrigins?: Set<string>; today?: () => string; bankApi?: BankToolConfig } = {},
+  options: { allowedOrigins?: Set<string>; today?: () => string; bankApi?: BankToolConfig; listings?: ListingSearchConfig } = {},
 ) {
   return createServer(async (request, response) => {
     const path = request.url?.split("?")[0];
@@ -29,7 +30,7 @@ export function createHttpServer(
       return;
     }
 
-    const server = createMcpServer(snapshot, policies, options.today);
+    const server = createMcpServer(snapshot, policies, options.today, options.listings);
     if (options.bankApi) registerBankTools(server, options.bankApi);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     try {

@@ -1,3 +1,4 @@
+import { homeSearchResult } from "../packages/contracts/listings.ts";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { after, before, test } from "node:test";
@@ -10,7 +11,7 @@ import { loadData } from "../packages/places/data.ts";
 import { createHttpServer } from "../apps/mcp-server/http.ts";
 
 const { snapshot, policies } = loadData();
-const server = createHttpServer(snapshot, policies, { today: () => "2026-11-21" });
+const server = createHttpServer(snapshot, policies, { today: () => "2026-11-21", listings: {} });
 const client = new Client({ name: "relocat-tests", version: "1.0.0" });
 let base: URL;
 const travelDate = "2026-11-23";
@@ -41,7 +42,7 @@ async function tool(name: string, args: Record<string, unknown>) {
 test("discovers schemas and exposes sourced profiles, schools and business indicators", async () => {
   assert.equal(client.getServerVersion()?.name, "relocat");
   const listed = await client.listTools();
-  assert.equal(listed.tools.length, 8);
+  assert.equal(listed.tools.length, 9);
   assert(listed.tools.every(tool => tool.inputSchema && tool.outputSchema && tool.annotations?.readOnlyHint));
 
   const coverage = municipalityListResult.parse(await tool("list_catalonia_municipalities", { query: "termens" }));
@@ -171,4 +172,14 @@ test("returns joined relocation research through MCP profiles and recommendation
   const ager = profileResult.parse(await tool("get_town_profile", { municipalityCode: "250024" }));
   assert.equal(ager.relocation.coverage, "not_researched");
   assert.equal(ager.relocation.research, null);
+});
+
+
+test("MCP advertises live search and reports missing provider access without fabricating listings", async () => {
+  const response = await tool("search_homes", { municipalityCodes: ["080312"], operation: "buy" });
+  const parsed = homeSearchResult.parse(response);
+  assert.equal(parsed.searches[0].status, "provider_unavailable");
+  assert.deepEqual(parsed.searches[0].examples, []);
+  const invalid = await client.callTool({ name: "search_homes", arguments: { municipalityCodes: ["999999"], operation: "buy" } });
+  assert(invalid.isError);
 });

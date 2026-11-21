@@ -12,8 +12,10 @@ import { getTown, missingMetrics, snapshotInfo } from "../../packages/places/dat
 import { evaluateIncentives } from "../../packages/places/eligibility.ts";
 import { madridDate, nextSchoolDay, normalizedName } from "../../packages/places/geography.ts";
 import { recommendTowns } from "../../packages/places/recommend.ts";
-
 import { getRelocationResearch } from "../../packages/places/relocation.ts";
+import { homeSearchInput, homeSearchResult } from "../../packages/contracts/listings.ts";
+import { searchHomes } from "../../packages/listings/search.ts";
+import type { ListingSearchConfig } from "../../packages/listings/search.ts";
 
 const lleidaCode = "251207";
 const placeCoverage = "Selected Catalan municipalities, including the FGC Lleida–La Pobla corridor and Lleida as a transport destination.";
@@ -28,7 +30,7 @@ function result(summary: string, structuredContent: Record<string, unknown>): Ca
   return { content: [{ type: "text", text: summary }], structuredContent };
 }
 
-export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = madridDate) {
+export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = madridDate, listings: ListingSearchConfig = { token: process.env.TREG_TOKEN, org: process.env.TREG_ORG }) {
   const metadata = snapshotInfo(snapshot);
   const server = new McpServer({ name: "relocat", version: "0.1.0" }, {
     instructions: "Use relocat to compare selected Catalan municipalities from a dated official-data snapshot. Cite evidence URLs. Explain geographic proxies, use the actual school and service dates, and distinguish policy eligibility from application status. Do not infer user finances, schooling, residence or tax facts.",
@@ -138,6 +140,17 @@ export function createMcpServer(snapshot: Snapshot, policies: Policy[], today = 
       dataMissing: missingMetrics(snapshot, code).filter(kind => businessKinds.has(kind)),
       limitations: ["Resident affiliates measure employment among residents. The historical retail census describes establishments at the observation date."],
     });
+  });
+
+  server.registerTool("search_homes", {
+    title: "Find Idealista property examples",
+    description: "Search the web live through treg for Idealista listing examples in up to three pilot towns. Budget and bedrooms are search hints, not verified filters. Returns original links and search timestamps; availability and exact location remain unverified. Costs up to USD 0.01 per town. Requires server-side TREG_TOKEN; otherwise returns provider_unavailable and search links.",
+    inputSchema: homeSearchInput, outputSchema: homeSearchResult,
+    annotations: { readOnlyHint: true, openWorldHint: true, destructiveHint: false, idempotentHint: false },
+  }, async input => {
+    const response = await searchHomes(snapshot, input, listings);
+    const count = response.searches.reduce((sum, search) => sum + search.examples.length, 0);
+    return result(`${count} indexed property examples returned; inspect per-town search status and verify listing details.`, response);
   });
 
   return server;
