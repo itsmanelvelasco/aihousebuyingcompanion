@@ -1,10 +1,9 @@
 import { readFileSync } from "node:fs";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-import { municipalityCode } from "../../packages/contracts/places.ts";
 import type { Snapshot } from "../../packages/contracts/places.ts";
 import { getTown } from "../../packages/places/data.ts";
+import { explorerInput, explorerResult } from "./town-explorer-contract.ts";
 
 const widgetUri = "ui://relocat/town-explorer-v1.html";
 
@@ -32,18 +31,20 @@ export function registerTownExplorer(server: McpServer, snapshot: Snapshot, page
 
   registerAppTool(server, "show_town_explorer", {
     title: "Show Relocat Town Explorer",
-    description: "Open an interactive view of the Catalonia pilot to browse towns and inspect sourced housing indicators, travel estimates, schools and housing measures. Optionally open a specific town. Resolve town names with list_catalonia_municipalities first.",
-    inputSchema: z.object({ municipalityCode: municipalityCode.optional() }).strict(),
-    outputSchema: z.object({ municipalityCode: municipalityCode.nullable() }),
+    description: "Open the Catalonia town map and cards. After recommend_towns or recommend_towns_for_profile, call this to visualize the shortlist using the same tool and its exact arguments. Without a recommendation, browse the pilot or open a specific town. Resolve town names with list_catalonia_municipalities first.",
+    inputSchema: explorerInput,
+    outputSchema: explorerResult,
     annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false, idempotentHint: true },
     _meta: { ui: { resourceUri: widgetUri, visibility: ["model"] } },
-  }, ({ municipalityCode: code }) => {
+  }, ({ municipalityCode: code, recommendation }) => {
     const town = code === undefined ? null : getTown(snapshot, code);
     return {
-      content: [{ type: "text", text: town
+      content: [{ type: "text", text: recommendation
+        ? "Opened the Town Explorer map and cards for the supplied shortlist criteria."
+        : town
         ? `Opened Relocat Town Explorer for ${town.name}. Use get_town_profile for the sourced profile in chat.`
         : "Opened Relocat Town Explorer. Pick any covered town, or use list_catalonia_municipalities for pilot coverage in chat." }],
-      structuredContent: { municipalityCode: town?.code ?? null },
+      structuredContent: { municipalityCode: town?.code ?? null, ...(recommendation ? { recommendation } : {}) },
     };
   });
 }
