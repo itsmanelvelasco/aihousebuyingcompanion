@@ -214,7 +214,7 @@ for (const row of schoolRows) {
 }
 
 const output = validateSnapshot({
-  schemaVersion: 1, generatedOn: asOf, version: `catalonia-fgc-${asOf}-${randomUUID().slice(0, 8)}`,
+  schemaVersion: 1, generatedOn: asOf, version: `catalonia-pilot-${asOf}-${randomUUID().slice(0, 8)}`,
   municipalities, townMetrics, comarcaMetrics, schools, schoolDirectory: { observedAt: schoolObserved, sourceUrl: urls.school }, rail,
 });
 const target = new URL("../data/towns.json", import.meta.url);
