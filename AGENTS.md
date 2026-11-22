@@ -27,8 +27,13 @@ The repository includes a connected demo plugin/live board, a profile/bank API w
 
 - One npm package at the repository root. `apps/` holds runnable services, `packages/` holds shared code, `tests/` holds every test.
 - Dependencies point one way: apps import from packages, packages never import from apps, and apps do not import each other. The one exception is `apps/board`, which composes `apps/mcp-server`. `tests/architecture.test.ts` enforces this.
+- `apps/server/index.ts` is the one server: it mounts `/mcp`, `/preview`, `/workspace`, `/connect`, `/api` and `/health` on a single origin (localhost now, `https://www.relo.cat` in production).
 - `createMcpServer` in `apps/mcp-server/tools.ts` is the only place the MCP server is assembled. Add tools there or behind one of its options, not in a second server.
 - Shared building blocks: `packages/contracts` (Zod schemas, including `safeId`), `packages/finance` (all money maths; `monthsToTarget` is the single savings-timeline rule), `packages/http` (JSON bodies, bearer auth, `ApiError`), `packages/config` (environment variables, product name, ports, model IDs) and `packages/profiles` (profile storage).
+- The two core entities live in `packages/model`: a **person** (household, finances, habits) and a **place** (municipality node with indicators, services and benefits). `packages/planner` joins them into months of saving; `packages/contracts/planner.ts` is the contract. A place benefit shortens the timeline only when its cash exists before the purchase and its eligibility is verified.
+- Plug-ins are one file each: a bank in `packages/banks/providers/` (copy `_template.ts`), a data source in `packages/sources/definitions/` (copy `_template.ts`). Both are discovered automatically and declare their own environment variables.
+- Official place data is live but pre-cached: `packages/sources` fetches at start, caches on disk and overlays fresher values on the committed snapshot, which stays the baseline and the fallback.
+- `apps/web` is the React workspace widget shown in ChatGPT; it does no money maths and reads everything through MCP tools.
 - Read environment variables through `packages/config/env.ts` and document new ones in `.env.example`.
 - Biome formats and lints the code: single quotes, semicolons, 120 columns. Run `npm run format` before a handoff; CI runs `npm run lint`.
 
@@ -45,7 +50,7 @@ The repository includes a connected demo plugin/live board, a profile/bank API w
 
 ## Privacy and product boundaries
 
-- Use labelled fictional bank data for the hackathon. Never commit real transactions, credentials, tokens or personal financial records.
+- The demo uses labelled fictional bank data. A bank provider declares whether its records are synthetic and that flag travels with every record and summary; never label real data as synthetic or the reverse. Never commit real transactions, credentials, tokens or personal financial records.
 - Keep secrets in runtime configuration; provide placeholder-only examples when needed. Do not log secrets or expose them through MCP responses or widgets.
 - Prefer aggregated financial insights in model-facing results. Production financial records belong in an authenticated backend.
 - Do not imply mortgage approval or guaranteed aid. Show assumptions, sources and data freshness in user-facing estimates.

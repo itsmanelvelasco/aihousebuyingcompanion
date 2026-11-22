@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import type { BankProvider } from '../../packages/banks/provider.ts';
+import synthetic, { syntheticIntervalMs } from '../../packages/banks/providers/synthetic.ts';
+import { createBankRegistry } from '../../packages/banks/registry.ts';
+import type { BankSync } from '../../packages/banks/sync.ts';
+import { createBankSync } from '../../packages/banks/sync.ts';
 import { safeId } from '../../packages/contracts/ids.ts';
 import { ApiError } from '../../packages/http/server.ts';
 import type { createBankStore } from './bank.ts';
@@ -7,94 +12,90 @@ export const runtimeSettings = z
   .object({ enabled: z.boolean(), intervalMs: z.number().int().min(1000).max(60000).optional() })
   .strict();
 type BankStore = ReturnType<typeof createBankStore>;
-type RuntimeView = {
-  userId: string;
-  synthetic: boolean;
-  enabled: boolean;
-  intervalMs: number;
-  lastTickAt: string | null;
-  lastError: string | null;
-  tickCount: number;
-};
-type State = {
-  enabled: boolean;
-  intervalMs: number;
-  lastTickAt: string | null;
-  lastError: string | null;
-  tickCount: number;
-  timer?: ReturnType<typeof setInterval>;
-  running?: Promise<RuntimeView & { inserted: number; revision: number }>;
-};
 
-export function createBankRuntime(bank: BankStore, clock = () => new Date()) {
-  const states = new Map<string, State>();
-  const fresh = (): State => ({ enabled: false, intervalMs: 5000, lastTickAt: null, lastError: null, tickCount: 0 });
-  function view(id: string, state = states.get(id) ?? fresh()) {
+/** The one connection per user that `/runtime` drives. It is an ordinary synthetic-provider connection. */
+export const runtimeConnectionId = 'synthetic-feed';
+const maxFeeds = 20;
+const failureNote = 'Synthetic feed failed; inspect account dates, profile seed data and ledger capacity.';
+
+/**
+ * Sync-engine hook for the synthetic provider: an empty ledger gets the three scripted months
+ * derived from the profile snapshot before the first fabricated movement is added.
+ */
+export function seedEmptyLedger(bank: BankStore) {
+  return async (userId: string, provider: BankProvider) => {
+    if (provider.id !== synthetic.id) return;
+    const ledger = await bank.read(userId);
+    if (!ledger.accounts.length) await bank.seedDemo(userId);
+  };
+}
+
+/**
+ * The simulated background feed behind `/users/:id/bank/runtime`. It keeps the route's original
+ * shape, but owns no timer and fabricates nothing: it connects the user to the synthetic provider
+ * and lets the sync engine poll it.
+ */
+export function createBankRuntime(bank: BankStore, clock = () => new Date(), sharedEngine?: BankSync) {
+  const engine =
+    sharedEngine ??
+    createBankSync({
+      ledger: bank,
+      registry: createBankRegistry([synthetic], {}),
+      clock,
+      beforeSync: seedEmptyLedger(bank),
+    });
+  /** Users this runtime has touched, so `close` and the feed limit know where to look. */
+  const users = new Set<string>();
+
+  async function view(id: string) {
+    const connection = await engine.connection(id, runtimeConnectionId);
     return {
       userId: id,
       synthetic: true,
-      enabled: state.enabled,
-      intervalMs: state.intervalMs,
-      lastTickAt: state.lastTickAt,
-      lastError: state.lastError,
-      tickCount: state.tickCount,
+      enabled: connection?.polling ?? false,
+      intervalMs: connection?.pollIntervalMs ?? syntheticIntervalMs,
+      lastTickAt: connection?.lastSyncAt ?? null,
+      lastError: connection?.lastError ? failureNote : null,
+      tickCount: connection?.syncCount ?? 0,
     };
   }
-  async function tick(id: string) {
-    safeId.parse(id);
-    const state = states.get(id) ?? fresh();
-    states.set(id, state);
-    if (state.running) return state.running;
-    const operation = (async () => {
-      try {
-        let ledger = await bank.read(id);
-        if (!ledger.accounts.length) {
-          await bank.seedDemo(id);
-          ledger = await bank.read(id);
-        }
-        const now = clock();
-        const date = new Intl.DateTimeFormat('en-CA', {
-          timeZone: 'Europe/Madrid',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-        }).format(now);
-        const account = ledger.accounts.find(account => account.openingDate <= date);
-        if (!account) throw new ApiError(400, 'No account is open for the simulated movement date');
-        const slot = Math.floor(now.getTime() / state.intervalMs);
-        const outcome = await bank.importTransactions(id, {
-          transactions: [
-            {
-              id: `runtime-${state.intervalMs}-${slot}`,
-              accountId: account.id,
-              date,
-              description: 'Synthetic runtime grocery purchase',
-              amountCents: -(300 + (slot % 900)),
-              currency: 'EUR',
-              category: 'food',
-              status: 'booked',
-              synthetic: true,
-            },
-          ],
-        });
-        state.lastTickAt = now.toISOString();
-        state.lastError = null;
-        state.tickCount++;
-        return { ...view(id, state), inserted: outcome.result.inserted, revision: outcome.ledger.revision };
-      } catch (error) {
-        state.lastError = 'Synthetic feed failed; inspect account dates, profile seed data and ledger capacity.';
-        state.enabled = false;
-        if (state.timer) clearInterval(state.timer);
-        throw error;
-      }
-    })();
-    state.running = operation;
+
+  /** Make sure the user has the runtime connection, without starting its timer. */
+  async function ensureConnection(id: string) {
+    users.add(id);
+    if (await engine.connection(id, runtimeConnectionId)) return;
     try {
-      return await operation;
-    } finally {
-      state.running = undefined;
+      await engine.connect(id, {
+        providerId: synthetic.id,
+        ref: `runtime-${id}`,
+        id: runtimeConnectionId,
+        pollIntervalMs: null,
+      });
+    } catch (error) {
+      // A concurrent request created it first.
+      if (!(error instanceof ApiError && error.status === 409)) throw error;
     }
   }
+
+  async function enabledFeeds() {
+    let count = 0;
+    for (const user of users) if ((await engine.connection(user, runtimeConnectionId))?.polling) count++;
+    return count;
+  }
+
+  /** Produce one synthetic movement now. A failure pauses the feed until it is enabled again. */
+  async function tick(id: string) {
+    safeId.parse(id);
+    await ensureConnection(id);
+    try {
+      const result = await engine.syncConnection(id, runtimeConnectionId);
+      return { ...(await view(id)), inserted: result.inserted, revision: result.revision };
+    } catch (error) {
+      await engine.pausePolling(id, runtimeConnectionId);
+      throw error;
+    }
+  }
+
   return {
     async status(id: string) {
       await bank.read(id);
@@ -104,27 +105,21 @@ export function createBankRuntime(bank: BankStore, clock = () => new Date()) {
     async configure(id: string, input: unknown) {
       const settings = runtimeSettings.parse(input);
       await bank.read(id);
-      const state = states.get(id) ?? fresh();
-      if (settings.enabled && !state.enabled && [...states.values()].filter(s => s.enabled).length >= 20)
-        throw new ApiError(400, 'Maximum 20 enabled demo feeds');
-      if (state.timer) clearInterval(state.timer);
-      state.enabled = settings.enabled;
-      state.intervalMs = settings.intervalMs ?? state.intervalMs;
-      states.set(id, state);
-      if (state.enabled) {
-        state.timer = setInterval(() => {
-          void tick(id).catch(() => {});
-        }, state.intervalMs);
-        state.timer.unref();
-      } else if (state.running) await state.running.catch(() => {});
-      return view(id, state);
+      const existing = await engine.connection(id, runtimeConnectionId);
+      if (!settings.enabled && !existing) return view(id);
+      if (settings.enabled && !existing?.polling && (await enabledFeeds()) >= maxFeeds)
+        throw new ApiError(400, `Maximum ${maxFeeds} enabled demo feeds`);
+      await ensureConnection(id);
+      const intervalMs = settings.intervalMs ?? existing?.pollIntervalMs ?? syntheticIntervalMs;
+      // The demo feed stops at its first failure instead of retrying, and reports it in `lastError`.
+      if (settings.enabled || settings.intervalMs !== undefined)
+        await engine.setPolling(id, runtimeConnectionId, intervalMs, { stopAfterFailures: 1 });
+      if (!settings.enabled) await engine.pausePolling(id, runtimeConnectionId);
+      return view(id);
     },
     async close() {
-      for (const state of states.values()) {
-        state.enabled = false;
-        if (state.timer) clearInterval(state.timer);
-      }
-      await Promise.allSettled([...states.values()].map(state => state.running));
+      await Promise.all([...users].map(user => engine.pausePolling(user, runtimeConnectionId)));
+      if (!sharedEngine) await engine.close();
     },
   };
 }

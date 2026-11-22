@@ -25,7 +25,7 @@ test('MCP bank bridge polls authenticated aggregates and sanitizes upstream fail
     if (request.url?.includes('/events'))
       response.end(
         JSON.stringify({
-          synthetic: true,
+          synthetic: !request.url.includes('/real-user/'),
           events: [
             {
               sequence: 3,
@@ -98,6 +98,13 @@ test('MCP bank bridge polls authenticated aggregates and sanitizes upstream fail
     assert.equal((updates.structuredContent as Record<string, unknown>)?.nextCursor, 3);
     assert(!JSON.stringify(updates).includes('secret-token'));
     assert(seen[0].path.endsWith('after=2&limit=50'));
+    assert.equal((updates.structuredContent as Record<string, unknown>)?.synthetic, true);
+    assert.match(JSON.stringify(updates.content), /synthetic demo data/);
+    const real = await client.callTool({ name: 'get_bank_updates', arguments: { userId: 'real-user' } });
+    assert(!real.isError);
+    assert.equal((real.structuredContent as Record<string, unknown>)?.synthetic, false, 'the flag is passed through');
+    assert.match(JSON.stringify(real.content), /real bank data/);
+    assert.doesNotMatch(JSON.stringify(real.content), /synthetic demo data/);
     assert.equal(seen[0].authorization, 'Bearer secret-token');
     const runtime = await client.callTool({ name: 'get_bank_runtime', arguments: { userId: 'user-001' } });
     assert(!runtime.isError);

@@ -3,6 +3,7 @@ node_modules
 apps/*/dist/
 .env*
 *.tmp
-data/users/
 data/runtime-users/
+data/runtime-habits/
+data/cache/
 data/synthetic-users.*

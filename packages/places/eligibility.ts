@@ -122,6 +122,20 @@ function householdChecks(id: Policy['id'], facts: Household): Check[] {
           'The reduced rate’s acquisition and habitual-residence deadlines or an official exception are satisfied.',
         ],
       ];
+    case 'itp_rehab_buy':
+      return [
+        residence,
+        [facts.pre1970, 'The home was built before 1 January 1970.'],
+        [
+          atMost(facts.itpBuyerNetTaxBaseEur, 36_000),
+          'The buyer’s own net tax base on the last IRPF return before the purchase is at most €36,000.',
+        ],
+        [facts.itpTransaction, 'A qualifying acquisition right is subject to ITP/TPO.'],
+        [
+          facts.satisfiesItpRehabilitationRules,
+          'The works are structural rehabilitation above 25% of the price or market value, end within two years of the purchase, and the occupancy deadlines are met.',
+        ],
+      ];
     case 'renovation_grant_2026':
       return [
         [facts.ownerOfVacantHome, 'The applicant is a private owner of a qualifying vacant dwelling.'],
@@ -130,10 +144,49 @@ function householdChecks(id: Policy['id'], facts: Household): Check[] {
           'Verify the technical project, residential use commitment, expense conditions and documentation with the housing agency.',
         ],
       ];
+    case 'youth_purchase_small_town':
+      return [
+        residence,
+        [
+          atMost(facts.age, 35),
+          'The applicant is 35 or younger when applying, or when signing a purchase contract that predates the call.',
+        ],
+        [
+          atMost(facts.purchasePriceEur, 300_000),
+          'The purchase price, or the self-build cost excluding land, is at most €300,000 in Catalonia.',
+        ],
+        [
+          facts.ownsHomeInSpain === undefined ? undefined : !facts.ownsHomeInSpain,
+          'The applicant does not own or hold a usufruct over another home in Spain, unless an official exception applies.',
+        ],
+        [
+          facts.incomeWithinFiveIprem,
+          'Annual income is at most 5 times IPREM (5.5 or 6 times with a recognised disability).',
+        ],
+      ];
   }
 }
 
+/** A call window that is `null` means no call could be verified, which is unknown rather than closed. */
+function callStatusOn(policy: Policy, asOf: string): Eligibility['callStatus'] {
+  if (policy.callWindow === null) return 'unknown';
+  const window =
+    policy.callWindow ??
+    (policy.mechanism === 'grant' ? { opensOn: policy.effectiveFrom, closesOn: policy.effectiveThrough } : undefined);
+  if (!window) return 'unknown';
+  return asOf < window.opensOn ? 'upcoming' : asOf > window.closesOn ? 'closed' : 'open';
+}
+
 function geographicCheck(policy: Policy, town: Municipality, date: string, nucleus?: string): Check {
+  if (policy.id === 'youth_purchase_small_town') {
+    // The decree's test is resident population, not the Catalan rural classification.
+    if (policy.municipalityCodes?.includes(town.code)) {
+      return [true, 'The municipality has 10,000 residents or fewer.'];
+    }
+    return nucleus && normalizedName(nucleus) !== normalizedName(town.centre.name)
+      ? [undefined, 'Confirm that the population nucleus has 10,000 residents or fewer under the call.']
+      : [false, 'The municipality or population nucleus must have 10,000 residents or fewer.'];
+  }
   if (policy.mechanism === 'grant') {
     if (!policy.municipalityCodes?.includes(town.code))
       return [false, 'Municipality must be listed in the specific 2026 grant call.'];
@@ -175,14 +228,24 @@ export function evaluateIncentives(
             : policy.mechanism === 'tax_deduction'
               ? 'needs_verification'
               : 'ended';
-      let callStatus: Eligibility['callStatus'] = 'unknown';
-      if (isGrant) {
-        callStatus = asOf < policy.effectiveFrom ? 'upcoming' : asOf > policy.effectiveThrough ? 'closed' : 'open';
-      }
+      const callStatus = callStatusOn(policy, asOf);
+      const callNotPublished = policy.callWindow === null;
       const geography = geographicCheck(policy, town, evaluatedOn, input.nucleus);
       const rulesCovered = isGrant || measureStatus === 'active';
       const checks = [geography, ...(rulesCovered ? householdChecks(policy.id, input.household ?? {}) : [])];
       if (!isGrant && !eventDate) checks.push([undefined, 'Provide the actual or planned qualifying event date.']);
+      if (policy.id === 'youth_purchase_small_town') {
+        checks.push([
+          eventDate === undefined ? undefined : eventDate >= '2026-01-01',
+          'The purchase contract is signed on or after 1 January 2026.',
+        ]);
+      }
+      if (callNotPublished) {
+        checks.push([
+          undefined,
+          'No Catalan call for this aid could be verified; its bases will set the final amount and conditions.',
+        ]);
+      }
       if (!rulesCovered) {
         checks.push([undefined, 'Confirm whether the measure applies for the stated event date.']);
       }
@@ -198,7 +261,7 @@ export function evaluateIncentives(
       const geographicStatus =
         geography[0] === true ? 'applies' : geography[0] === false ? 'does_not_apply' : 'needs_verification';
       const nextStep =
-        callStatus === 'closed'
+        callStatus === 'closed' || callNotPublished
           ? 'Check the housing agency’s official page for a future call.'
           : isGrant
             ? 'Review the application and supporting documents on Tràmits Gencat.'

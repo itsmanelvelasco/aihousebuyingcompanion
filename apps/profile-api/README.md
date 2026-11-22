@@ -5,10 +5,10 @@ Requires Node.js 24+. Run commands from the repository root:
 ```powershell
 npm ci
 $env:PROFILE_API_TOKEN = [guid]::NewGuid().ToString('N')
-npm run start:api
+npm start
 ```
 
-The API listens on `http://127.0.0.1:3001`. `PORT` changes the port. All routes require `Authorization: Bearer <PROFILE_API_TOKEN>`. The token is required at startup; keep it in your local environment and share it only with trusted local clients.
+The API listens on `http://127.0.0.1:8787/api`. `PORT` changes the port. All routes require `Authorization: Bearer <PROFILE_API_TOKEN>`. The token is required at startup; keep it in your local environment and share it only with trusted local clients.
 
 On startup the API copies missing users from `data/users/` into git-ignored `data/runtime-users/`. Edits affect runtime copies, not the committed fixtures or aggregate exports. `PROFILE_DATA_DIR` overrides runtime storage. Start from the repo root. This is a local, single-process, shared-token demo service for synthetic data; production per-user authorization and real bank storage are not implemented. CORS is not enabled; use a same-origin backend/proxy for browser integration.
 
@@ -38,7 +38,7 @@ Read and update an existing preference document in PowerShell:
 
 ```powershell
 $headers = @{ Authorization = "Bearer $env:PROFILE_API_TOKEN" }
-$uri = 'http://127.0.0.1:3001/users/user-001/preferences'
+$uri = 'http://127.0.0.1:8787/api/users/user-001/preferences'
 $preferences = Invoke-RestMethod -Uri $uri -Headers $headers
 $preferences | ConvertTo-Json -Depth 20
 # Edit properties in $preferences, then save the entire document:

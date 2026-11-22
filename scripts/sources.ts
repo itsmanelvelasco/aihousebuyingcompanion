@@ -1,8 +1,11 @@
-export const socrata = 'https://analisi.transparenciacatalunya.cat';
+import { emexProfileUrl } from '../packages/sources/definitions/idescat-emex.ts';
+import { socrata } from '../packages/sources/http.ts';
+
+export { socrata };
 
 export const urls = {
   emexNodes: 'https://api.idescat.cat/emex/v1/nodes.json?lang=ca',
-  emexProfile: (code: string) => `https://api.idescat.cat/emex/v1/geo/${code}.json?lang=ca`,
+  emexProfile: emexProfileUrl,
   geography: `${socrata}/d/wpyq-we8x`,
   rural: `${socrata}/d/7gqm-722r`,
   ruralResolution: 'https://dogc.gencat.cat/ca/document-del-dogc/?documentId=1037694',

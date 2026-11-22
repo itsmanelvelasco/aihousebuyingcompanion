@@ -1,4 +1,4 @@
-# Public ReloCat MCP server (apps/mcp-server). Build context is trimmed by .dockerignore.
+# The ReloCat server (apps/server): MCP endpoint, board, workspace, API and connect page on one origin.
 FROM node:24-bookworm-slim AS build
 
 WORKDIR /app
@@ -17,11 +17,11 @@ ENV NODE_ENV=production HOST=0.0.0.0 PORT=8787
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-COPY --chown=node:node apps/mcp-server ./apps/mcp-server
-COPY --from=build --chown=node:node /app/apps/mcp-server/dist ./apps/mcp-server/dist
+COPY --from=build --chown=node:node /app/apps ./apps
 COPY --chown=node:node packages ./packages
 COPY --chown=node:node data ./data
+RUN mkdir -p data/cache data/runtime-users data/runtime-habits && chown -R node:node data
 
 USER node
 EXPOSE 8787
-CMD ["node", "apps/mcp-server/index.ts"]
+CMD ["node", "apps/server/index.ts"]

@@ -1,20 +1,28 @@
 import { randomUUID } from 'node:crypto';
-import { rename, rm, writeFile } from 'node:fs/promises';
-import { setTimeout as delay } from 'node:timers/promises';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { parse } from 'csv-parse/sync';
 import { strFromU8, unzipSync } from 'fflate';
 import { readSheet } from 'read-excel-file/node';
 import { z } from 'zod';
-import type { Metric, Municipality, School, Snapshot } from '../packages/contracts/places.ts';
-import { isoDate } from '../packages/contracts/places.ts';
-import { validateSnapshot } from '../packages/places/data.ts';
+import type { Metric, Municipality, Policy, School, Snapshot } from '../packages/contracts/places.ts';
+import { isoDate, serviceKind } from '../packages/contracts/places.ts';
+import { derivedServices, validateSnapshot } from '../packages/places/data.ts';
 import { distanceKm, madridDate } from '../packages/places/geography.ts';
-import { lleidaCode, railMunicipalities, recommendableCodes, socrata, urls } from './sources.ts';
+import equipaments from '../packages/sources/definitions/gencat-equipaments.ts';
+import emex from '../packages/sources/definitions/idescat-emex.ts';
+import {
+  createRequester,
+  createSourceContext,
+  socrataQuery,
+  socrataUpdatedOn,
+  soqlList,
+} from '../packages/sources/http.ts';
+import { withServices } from '../packages/sources/overlay.ts';
+import { sources } from '../packages/sources/registry.ts';
+import { runSource } from '../packages/sources/source.ts';
+import { lleidaCode, railMunicipalities, recommendableCodes, urls } from './sources.ts';
 
 type Row = Record<string, string | undefined>;
-type EmexField = { id: string; v?: string; r?: string };
-type EmexTable = { l?: string; r?: string; ff: { f: EmexField[] | EmexField } };
-type EmexProfile = { fitxes: { gg: { g: { tt: { t: EmexTable[] | EmexTable } }[] } } };
 type EmexNodes = { fitxes: { v: { v: { content: string; v: { id: string; content: string }[] }[] } } };
 const asOf = madridDate();
 const salesYear = z.coerce
@@ -24,33 +32,65 @@ const salesYear = z.coerce
   .max(Number(asOf.slice(0, 4)))
   .parse(process.env.SALES_YEAR ?? 2025);
 const codes = [...recommendableCodes, lleidaCode].sort();
-const quoted = (items: string[]) => items.map(item => `'${item.replaceAll("'", "''")}'`).join(',');
-const oneOrMany = <T>(value: T | T[]) => (Array.isArray(value) ? value : [value]);
+const quoted = soqlList;
+// HTTP goes through the same bounded, retrying requester the live sources use.
+const fetchSource = createRequester();
+const http = { json: async <T>(url: string) => (await fetchSource(url)).json() as Promise<T> };
+const json = http.json;
+const query = <T = Row[]>(dataset: string, params: Record<string, string>) => socrataQuery<T>(http, dataset, params);
+const updatedOn = (dataset: string) => socrataUpdatedOn(http, dataset);
+const target = new URL('../data/towns.json', import.meta.url);
 
-async function fetchSource(url: string) {
-  const request = () => fetch(url, { signal: AbortSignal.timeout(20_000) });
-  const response = await request().then(
-    async response => {
-      if (response.status !== 429 && response.status < 500) return response;
-      await response.body?.cancel();
-      await delay(1000);
-      return request();
-    },
-    async () => {
-      await delay(1000);
-      return request();
-    },
+/** Service counts in the order of the serviceKind enum, so reruns do not reorder the file. */
+function inKindOrder(services: NonNullable<Snapshot['services']>) {
+  const position = (kind: (typeof serviceKind.options)[number]) => serviceKind.options.indexOf(kind);
+  return Object.fromEntries(
+    Object.entries(services).map(([code, counts]) => [
+      code,
+      [...counts].sort((a, b) => position(a.kind) - position(b.kind)),
+    ]),
   );
-  if (!response.ok) throw new Error(`${response.status} from ${url}`);
-  return response;
 }
 
-async function json<T>(url: string): Promise<T> {
-  return (await fetchSource(url)).json() as Promise<T>;
+/** Replaces the committed snapshot in one step after validating it. */
+async function writeSnapshot(raw: unknown) {
+  const valid = validateSnapshot(raw);
+  const output = { ...valid, services: inKindOrder(valid.services ?? {}) };
+  const temporary = new URL(`../data/${output.version}.tmp`, import.meta.url);
+  try {
+    await writeFile(temporary, `${JSON.stringify(output, null, 2)}\n`, { flag: 'wx' });
+    await rename(temporary, target);
+  } finally {
+    await rm(temporary, { force: true });
+  }
+  return output;
 }
 
-function query<T = Row[]>(dataset: string, params: Record<string, string>) {
-  return json<T>(`${socrata}/resource/${dataset}.json?${new URLSearchParams(params)}`);
+/**
+ * `--sources-only`: refetches only what the live source definitions cover (Idescat municipal
+ * metrics and service counts) and lays it over the committed snapshot. Schools, rail timetables,
+ * housing and retail figures stay exactly as committed.
+ */
+async function refreshSourcesOnly() {
+  const snapshot = validateSnapshot(JSON.parse(await readFile(target, 'utf8')));
+  const context = createSourceContext({ municipalities: snapshot.municipalities });
+  // Sources overlay the shape `loadData()` returns; policies and travel estimates are not involved here.
+  let data = { snapshot, policies: [] as Policy[], travelEstimates: {} };
+  for (const source of sources) {
+    if (source.overlay) data = source.overlay(data, await runSource(source, context));
+  }
+  data = withServices(data, derivedServices(data.snapshot));
+  const output = await writeSnapshot({
+    ...data.snapshot,
+    generatedOn: asOf,
+    version: `catalonia-pilot-${asOf}-${randomUUID().slice(0, 8)}`,
+  });
+  console.log(`Wrote ${output.version}: refreshed ${sources.map(source => source.id).join(', ')} only.`);
+}
+
+if (process.argv.includes('--sources-only')) {
+  await refreshSourcesOnly();
+  process.exit(0);
 }
 
 async function latestYear(dataset: string) {
@@ -59,11 +99,6 @@ async function latestYear(dataset: string) {
     .string()
     .regex(/^20\d{2}$/)
     .parse(rows[0]?.latest);
-}
-
-async function updatedOn(dataset: string) {
-  const meta = await json<{ rowsUpdatedAt: number }>(`${socrata}/api/views/${dataset}.json`);
-  return madridDate(new Date(meta.rowsUpdatedAt * 1000));
 }
 
 function number(value: unknown) {
@@ -153,8 +188,10 @@ async function workbook(scope: 'municipis' | 'ambits') {
   return rows.slice(5);
 }
 
-const [profiles, marketMunicipal, marketComarca, schoolRows, retailRows, rail] = await Promise.all([
-  Promise.all(codes.map(code => json<EmexProfile>(urls.emexProfile(code)))),
+const sourceContext = createSourceContext({ municipalities });
+const [emexMetrics, facilities, marketMunicipal, marketComarca, schoolRows, retailRows, rail] = await Promise.all([
+  runSource(emex, sourceContext),
+  runSource(equipaments, sourceContext),
   workbook('municipis'),
   workbook('ambits'),
   query('kvmv-ahh4', {
@@ -173,24 +210,17 @@ if (!schoolRows.length || schoolRows.length === 4000 || !retailRows.length || re
 }
 
 const defined = <T>(value: T | undefined): value is T => value !== undefined;
+// Kinds added after the first snapshots go last, so existing metrics keep their position in the file.
+const newIndicators = new Set<Metric['kind']>(['area_km2', 'population_density_per_km2', 'foreign_population_percent']);
 const townMetrics = Object.fromEntries(
-  municipalities.map((town, index) => {
-    const tables = profiles[index].fitxes.gg.g.flatMap(group => oneOrMany(group.tt.t));
+  municipalities.map(town => {
     const municipal = {
       geography: 'municipality' as const,
       geographyName: town.name,
     };
-    function emex(fieldId: string, kind: Metric['kind'], unit: string) {
-      for (const table of tables) {
-        const field = oneOrMany(table.ff.f).find(field => field.id === fieldId);
-        if (!field) continue;
-        const value = number(field.v?.split(',')[0]);
-        const observedAt = field.r ?? table.r;
-        if (value !== undefined && observedAt && (kind !== 'rent_eur_per_month' || value > 0)) {
-          return { ...municipal, kind, unit, value, observedAt, sourceUrl: table.l ?? urls.emexProfile(town.code) };
-        }
-      }
-    }
+    // Idescat metrics come from the shared source definition, in the order it declares them.
+    const idescat = emexMetrics[town.code] ?? [];
+    const established = (metric: Metric) => !newIndicators.has(metric.kind);
     const sale = marketMunicipal.find(row => String(row[0]).padStart(5, '0') === town.code.slice(0, 5));
     const sold = number(sale?.[4]);
     const price = number(sale?.[17]);
@@ -203,11 +233,7 @@ const townMetrics = Object.fromEntries(
     return [
       town.code,
       [
-        emex('f321', 'population', 'residents'),
-        emex('f407', 'rent_eur_per_month', 'EUR/month'),
-        emex('f406', 'rent_contracts', 'contracts'),
-        emex('f308', 'registered_unemployment', 'people (annual average)'),
-        emex('f377', 'resident_social_security_affiliates', 'people'),
+        ...idescat.filter(established),
         sold !== undefined
           ? { ...municipal, ...saleSource, kind: 'resale_transactions', unit: 'transactions', value: sold }
           : undefined,
@@ -226,7 +252,8 @@ const townMetrics = Object.fromEntries(
               value: retailDensity,
             }
           : undefined,
-      ].filter(defined),
+        ...idescat.filter(metric => !established(metric)),
+      ].filter(defined) as Metric[],
     ] as const;
   }),
 );
@@ -286,7 +313,8 @@ for (const row of schoolRows) {
   });
 }
 
-const output = validateSnapshot({
+const derived = derivedServices({ municipalities, townMetrics, schools, rail });
+const output = await writeSnapshot({
   schemaVersion: 1,
   generatedOn: asOf,
   version: `catalonia-pilot-${asOf}-${randomUUID().slice(0, 8)}`,
@@ -296,15 +324,9 @@ const output = validateSnapshot({
   schools,
   schoolDirectory: { observedAt: schoolObserved, sourceUrl: urls.school },
   rail,
+  // Directory counts first, then the kinds that follow from schools, rail stops and the retail census.
+  services: Object.fromEntries(codes.map(code => [code, [...(facilities[code] ?? []), ...(derived[code] ?? [])]])),
 });
-const target = new URL('../data/towns.json', import.meta.url);
-const temporary = new URL(`../data/${output.version}.tmp`, import.meta.url);
-try {
-  await writeFile(temporary, `${JSON.stringify(output, null, 2)}\n`, { flag: 'wx' });
-  await rename(temporary, target);
-} finally {
-  await rm(temporary, { force: true });
-}
 console.log(`Wrote ${output.version} with ${municipalities.length} municipalities and ${schools.length} schools.`);
 
 async function readRail(): Promise<Snapshot['rail']> {

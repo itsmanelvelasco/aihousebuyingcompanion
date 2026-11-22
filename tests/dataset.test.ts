@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
+import { metricKind, serviceKind } from '../packages/contracts/places.ts';
+import { loadData, missingMetrics, missingServices } from '../packages/places/data.ts';
 
 // Handles RFC-style quoted fields, doubled quotes and embedded line breaks.
 function parseCsv(text: string): string[][] {
@@ -94,4 +96,83 @@ test('500 synthetic household profiles agree with their full JSON and CSV export
   assert.ok(idIndex >= 0);
   assert.deepEqual(new Set(rows.map(row => row[idIndex])), ids);
   for (const row of rows) assert.equal(row.length, header.length);
+});
+
+const official = /^https:\/\/([a-z0-9-]+\.)*(idescat\.cat|gencat\.cat|transparenciacatalunya\.cat|fgc\.cat)\//;
+
+test('every municipality carries density, surface and foreign-nationality share, or lists them as missing', () => {
+  const { snapshot } = loadData();
+  const added = ['area_km2', 'population_density_per_km2', 'foreign_population_percent'] as const;
+  for (const kind of added) assert.ok(metricKind.options.includes(kind));
+  for (const town of snapshot.municipalities) {
+    const metrics = snapshot.townMetrics[town.code];
+    const missing: string[] = missingMetrics(snapshot, town.code);
+    const value = (kind: string) => metrics.find(metric => metric.kind === kind)?.value;
+    for (const kind of added) {
+      const metric = metrics.find(metric => metric.kind === kind);
+      // Unknown is acceptable only when it is declared: a town never silently lacks an indicator.
+      assert.equal(missing.includes(kind), !metric, `${town.code} ${kind}`);
+      if (!metric) continue;
+      assert.match(metric.observedAt, /^20\d{2}/, `${town.code} ${kind} observation date`);
+      assert.match(metric.sourceUrl, /^https:\/\/(www|api)\.idescat\.cat\//);
+      assert.equal(metric.geographyName, town.name);
+    }
+    const area = value('area_km2');
+    const density = value('population_density_per_km2');
+    const foreign = value('foreign_population_percent');
+    const population = value('population');
+    if (area !== undefined) assert.ok(area > 0 && area < 1000, `${town.code} area`);
+    if (density !== undefined) assert.ok(density > 0 && density < 30_000, `${town.code} density`);
+    if (foreign !== undefined) assert.ok(foreign >= 0 && foreign <= 100, `${town.code} foreign share`);
+    if (area !== undefined && density !== undefined && population !== undefined) {
+      // Idescat publishes all three; they must agree within rounding and a year of population change.
+      const expected = population / area;
+      assert.ok(Math.abs(density - expected) <= Math.max(1, density * 0.05), `${town.code} density check`);
+    }
+  }
+  // Idescat publishes all three for every pilot town today; a regression to "missing" should be noticed.
+  const complete = snapshot.municipalities.filter(town =>
+    added.every(kind => !(missingMetrics(snapshot, town.code) as string[]).includes(kind)),
+  );
+  assert.equal(complete.length, snapshot.municipalities.length);
+});
+
+test('service counts are sourced, dated and never state a zero the directories do not publish', () => {
+  const { snapshot } = loadData();
+  const towns = new Set(snapshot.municipalities.map(town => town.code));
+  assert.deepEqual(new Set(Object.keys(snapshot.services ?? {})), towns);
+  const covered = new Set<string>();
+  for (const town of snapshot.municipalities) {
+    const services = snapshot.services?.[town.code] ?? [];
+    const missing: string[] = missingServices(snapshot, town.code);
+    assert.equal(services.length + missing.length, serviceKind.options.length);
+    for (const service of services) {
+      covered.add(service.kind);
+      assert.ok(!missing.includes(service.kind));
+      assert.ok(Number.isInteger(service.count) && service.count >= 0);
+      assert.ok(service.observedAt, `${town.code} ${service.kind} observation date`);
+      assert.match(service.sourceUrl, official);
+      // Only the retail census states explicit zeroes; a directory without a listing means unknown.
+      if (service.kind !== 'retail') assert.ok(service.count > 0, `${town.code} ${service.kind}`);
+    }
+    const count = (kind: string) => services.find(service => service.kind === kind)?.count;
+    const schools = snapshot.schools.filter(school => school.municipalityCode === town.code).length;
+    const stops = snapshot.rail.stops.filter(stop => stop.municipalityCode === town.code).length;
+    const retail = snapshot.townMetrics[town.code].find(metric => metric.kind === 'retail_establishments');
+    assert.equal(count('school'), schools || undefined);
+    assert.equal(count('rail_station'), stops || undefined);
+    assert.equal(count('retail'), retail?.value);
+  }
+  // No official open dataset with municipality codes covers pharmacies or social services yet.
+  assert.deepEqual([...covered].sort(), [
+    'hospital',
+    'library',
+    'primary_care',
+    'rail_station',
+    'retail',
+    'school',
+    'sports',
+  ]);
+  const lleida = snapshot.services?.['251207'] ?? [];
+  assert.ok((lleida.find(service => service.kind === 'hospital')?.count ?? 0) >= 1);
 });

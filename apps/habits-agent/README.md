@@ -8,11 +8,11 @@ Requires Node.js 24+. From the repository root in PowerShell:
 
 ```powershell
 npm ci
-$env:HABITS_API_TOKEN = [guid]::NewGuid().ToString('N')
-npm run start:habits
+$env:PROFILE_API_TOKEN = [guid]::NewGuid().ToString('N')
+npm start
 ```
 
-The server listens on `127.0.0.1:3002`. Every endpoint requires `Authorization: Bearer <HABITS_API_TOKEN>`. `HABITS_PORT` changes the port. `PROFILE_DATA_DIR` defaults to committed synthetic profiles in `data/users`; point it at `data/runtime-users` to share the profile API's current user directory. Profiles are read only. Habit state belongs in the separately ignored `HABITS_DATA_DIR` (`data/runtime-habits` by default).
+The server listens on `http://127.0.0.1:8787/api`. Every endpoint requires `Authorization: Bearer <PROFILE_API_TOKEN>`. `HABITS_PORT` changes the port. `PROFILE_DATA_DIR` defaults to committed synthetic profiles in `data/users`; point it at `data/runtime-users` to share the profile API's current user directory. Profiles are read only. Habit state belongs in the separately ignored `HABITS_DATA_DIR` (`data/runtime-habits` by default).
 
 ## Routes
 

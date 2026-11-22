@@ -1,7 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import type { Policy, Snapshot } from '../contracts/places.ts';
-import { metricKind, policy, relocationDataset, snapshotSchema, travelEstimateData } from '../contracts/places.ts';
+import {
+  metricKind,
+  policy,
+  relocationDataset,
+  serviceKind,
+  snapshotSchema,
+  travelEstimateData,
+} from '../contracts/places.ts';
 
 const snapshotPath = new URL('../../data/towns.json', import.meta.url);
 const policyPath = new URL('../../data/incentives.json', import.meta.url);
@@ -40,6 +47,13 @@ export function validateSnapshot(raw: unknown) {
   }
   for (const code of Object.keys(snapshot.townMetrics)) {
     if (!townCodes.has(code)) throw new Error(`Orphan municipal metrics for ${code}`);
+  }
+  for (const [code, services] of Object.entries(snapshot.services ?? {})) {
+    if (!townCodes.has(code)) throw new Error(`Orphan service counts for ${code}`);
+    unique(
+      services.map(({ kind }) => kind),
+      `service kind for ${code}`,
+    );
   }
   for (const [area, metrics] of Object.entries(snapshot.comarcaMetrics)) {
     unique(
@@ -146,4 +160,53 @@ export function getTown(snapshot: Snapshot, code: string) {
 export function missingMetrics(snapshot: Snapshot, code: string) {
   const metrics = snapshot.townMetrics[code];
   return metricKind.options.filter(kind => !metrics.some(metric => metric.kind === kind));
+}
+
+/** Service kinds with no count for a municipality. Missing means unknown, never zero. */
+export function missingServices(snapshot: Snapshot, code: string) {
+  const services = snapshot.services?.[code] ?? [];
+  return serviceKind.options.filter(kind => !services.some(service => service.kind === kind));
+}
+
+type ServiceCounts = NonNullable<Snapshot['services']>;
+
+/**
+ * Service counts that follow from data already in the snapshot: schools from the official school
+ * directory, FGC rail stops from the timetable feed and shops from the retail census metric.
+ * A kind is only reported when its source lists at least one facility or states a figure: the
+ * directory keeps schools near pilot towns only, and the feed covers FGC lines, not all rail.
+ */
+export function derivedServices(snapshot: Pick<Snapshot, 'municipalities' | 'townMetrics' | 'schools' | 'rail'>) {
+  const counts: ServiceCounts = {};
+  for (const { code } of snapshot.municipalities) {
+    const schools = snapshot.schools.filter(school => school.municipalityCode === code);
+    const stops = snapshot.rail.stops.filter(stop => stop.municipalityCode === code);
+    const retail = snapshot.townMetrics[code]?.find(metric => metric.kind === 'retail_establishments');
+    counts[code] = [
+      ...(schools.length
+        ? [
+            {
+              kind: 'school' as const,
+              count: schools.length,
+              observedAt: schools[0].observedAt,
+              sourceUrl: schools[0].sourceUrl,
+            },
+          ]
+        : []),
+      ...(stops.length
+        ? [
+            {
+              kind: 'rail_station' as const,
+              count: stops.length,
+              observedAt: snapshot.rail.observedAt,
+              sourceUrl: snapshot.rail.sourceUrl,
+            },
+          ]
+        : []),
+      ...(retail && Number.isInteger(retail.value)
+        ? [{ kind: 'retail' as const, count: retail.value, observedAt: retail.observedAt, sourceUrl: retail.sourceUrl }]
+        : []),
+    ];
+  }
+  return counts;
 }

@@ -11,6 +11,7 @@ import { handleConnectPage } from '../mcp-server/connect-page.ts';
 import { handleTestUi } from '../mcp-server/test-ui.ts';
 import { createMcpServer as createRelocatMcpServer } from '../mcp-server/tools.ts';
 import { loadTownExplorerPage } from '../mcp-server/town-explorer.ts';
+import { loadWorkspacePage } from '../mcp-server/workspace.ts';
 import { getView, openDemo, openSchema, updateDemo, updateSchema } from './demo.ts';
 import { validateAnswers } from './intake.ts';
 import type { Connection } from './profiles.ts';
@@ -19,18 +20,23 @@ import { connectedAnswers, ProfileBridge, profileConnection } from './profiles.t
 const connectedUpdateSchema = updateSchema.extend({ answers: connectedAnswers.optional() });
 
 const widgetUri = productWidgetUri('journey-board-v1.html');
-const data = loadData();
+const baseline = loadData();
 const townExplorerPage = loadTownExplorerPage();
+const workspacePage = loadWorkspacePage();
 
 export type BoardOptions = {
   /** Profile API connection. Null runs the board from scripted in-memory scenes only. */
   connection: Connection | null;
   /** Public HTTPS origin used to build shareable board links. */
   publicOrigin: string | null;
+  /** Current place data. Defaults to the committed snapshot; the server passes the live overlay. */
+  data?: () => ReturnType<typeof loadData>;
+  /** Freshness of the live sources, exposed as a tool when present. */
+  dataStatus?: () => unknown[];
 };
 
 /** The journey board and its MCP endpoint as a request handler. */
-export function createBoardApp({ connection, publicOrigin }: BoardOptions) {
+export function createBoardApp({ connection, publicOrigin, data = () => baseline, dataStatus }: BoardOptions) {
   const bridge = connection ? new ProfileBridge(connection) : null;
 
   function withBoardLink(view: ReturnType<typeof getView>) {
@@ -143,8 +149,10 @@ export function createBoardApp({ connection, publicOrigin }: BoardOptions) {
   function createMcpServer() {
     // Same tools as the public server, plus the board. The profile API only adds the bank bridge.
     const server = createRelocatMcpServer({
-      ...data,
+      ...data(),
+      dataStatus,
       townExplorerPage,
+      workspacePage,
       bankApi: connection ? { baseUrl: connection.baseUrl, token: connection.token } : undefined,
       extraInstructions: boardInstructions,
     });
@@ -204,7 +212,7 @@ export function createBoardApp({ connection, publicOrigin }: BoardOptions) {
     try {
       if (handleConnectPage(req, res)) return;
       if (path === '/test' || path.startsWith('/test/')) {
-        if (await handleTestUi(req, res, data.snapshot, data.policies, undefined, data.travelEstimates)) return;
+        if (await handleTestUi(req, res, data().snapshot, data().policies, undefined, data().travelEstimates)) return;
       }
       if (path === '/mcp') {
         const mcp = createMcpServer();
@@ -221,6 +229,11 @@ export function createBoardApp({ connection, publicOrigin }: BoardOptions) {
       }
       if (req.method === 'GET' && (path === '/' || path === '/preview')) {
         send(res, 200, page, 'text/html');
+        return;
+      }
+      if (req.method === 'GET' && path === '/workspace' && workspacePage) {
+        // The React workspace outside a chat host; it calls the tools through POST /mcp on this origin.
+        send(res, 200, workspacePage, 'text/html');
         return;
       }
       if (req.method === 'GET' && path === '/preview/state') {

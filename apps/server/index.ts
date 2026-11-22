@@ -7,6 +7,7 @@ import { defaultPorts, envInteger, envList, envPort, openaiModels } from '../../
 import { product } from '../../packages/config/product.ts';
 import { sendJson } from '../../packages/http/server.ts';
 import { seedRuntime } from '../../packages/profiles/store.ts';
+import { createLiveData } from '../../packages/sources/live.ts';
 import { createBoardApp } from '../board/server.ts';
 import { createHabitsHandler } from '../habits-agent/server.ts';
 import { createProfileApiHandler } from '../profile-api/server.ts';
@@ -45,12 +46,23 @@ const habits = createHabitsHandler({
   },
 });
 
+// Official data: the committed snapshot is the baseline; fresher cached values are overlaid on it.
+const live = createLiveData({ cacheDir: resolve(process.env.DATA_CACHE_DIR ?? 'data/cache') });
+const liveEnabled = process.env.LIVE_DATA !== 'off';
+
 let board: ReturnType<typeof createBoardApp> | undefined;
 
 async function route(request: IncomingMessage, response: ServerResponse) {
   const path = (request.url ?? '/').split('?')[0];
   if (path === '/health' && request.method === 'GET') {
-    return sendJson(response, 200, { status: 'ok', product: product.name, version: product.version });
+    return sendJson(response, 200, {
+      status: 'ok',
+      product: product.name,
+      version: product.version,
+      snapshot: live.current().snapshot.version,
+      liveData: liveEnabled,
+      sources: live.status().map(({ id, status, fetchedAt, applied }) => ({ id, status, fetchedAt, applied })),
+    });
   }
   if (path === apiPrefix || path.startsWith(`${apiPrefix}/`)) {
     request.url = (request.url ?? '').slice(apiPrefix.length) || '/';
@@ -74,13 +86,28 @@ server.listen(port, host, async () => {
   const boundPort = address && typeof address === 'object' ? address.port : port;
   const local = `http://127.0.0.1:${boundPort}`;
   // The board and MCP tools reach the API over loopback, exactly as an external client would.
-  board = createBoardApp({ connection: { baseUrl: local + apiPrefix, token }, publicOrigin });
-  for (const id of envList('DEMO_BANK_USERS')) {
+  board = createBoardApp({
+    connection: { baseUrl: local + apiPrefix, token },
+    publicOrigin,
+    data: () => live.current(),
+    dataStatus: () => live.status(),
+  });
+  if (liveEnabled) {
+    // Pre-cache every source once, then keep refreshing in the background. Failures keep the last good copy.
+    void live.warm().then(() => live.start());
+  }
+  // Outside production the demo feed for user-001 runs unless DEMO_BANK_USERS says otherwise.
+  const demoUsers =
+    process.env.DEMO_BANK_USERS === undefined && process.env.NODE_ENV !== 'production'
+      ? ['user-001']
+      : envList('DEMO_BANK_USERS');
+  for (const id of demoUsers) {
     await profiles.bankRuntime.configure(id, { enabled: true, intervalMs: envInteger('DEMO_BANK_INTERVAL_MS', 5000) });
     await profiles.bankRuntime.tick(id);
   }
   console.log('%s server: %s', product.name, publicOrigin ?? local);
   console.log('  board    %s/preview', local);
+  console.log('  workspace %s/workspace?user=user-001&towns=250404,252542,251207', local);
   console.log('  connect  %s/connect', local);
   console.log('  MCP      %s/mcp', local);
   console.log('  API      %s%s (bearer token, server-side only)', local, apiPrefix);
@@ -88,6 +115,7 @@ server.listen(port, host, async () => {
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
-    void profiles.bankRuntime.close().then(() => server.close());
+    live.stop();
+    void profiles.close().then(() => server.close());
   });
 }

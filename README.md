@@ -69,9 +69,23 @@ ReloCat connects a conversational interface to a set of small, specialised servi
 
 ### How the pieces connect
 
-The connected local demo combines the web board and MCP tools on port **8787**. The profile/bank API on **3001** stores runtime edits and produces financial summaries. The optional habits service runs separately on **3002**; the standalone interviewer defaults to **3000**. Feature branches may extend this startup arrangement.
+One server serves everything from a single origin: `http://127.0.0.1:8787` locally, `https://www.relo.cat` once deployed.
 
-Bank movements are stored separately from profile balance snapshots. A simulated worker can add movements while the service runs; clients poll for changes. It does not independently wake ChatGPT or send messages.
+| Path | What it is |
+| --- | --- |
+| `/mcp` | The MCP endpoint ChatGPT and other agents connect to. |
+| `/workspace` | React workspace: the person, the places and the savings plan. |
+| `/preview` | Journey board with the four demo stories. |
+| `/connect` | Homepage and agent setup guide. |
+| `/api` | Profiles, interview answers, bank ledger, bank events and habits. Bearer token, server-side only. |
+| `/health` | Readiness and the freshness of each data source. |
+
+Two entities sit at the centre. A **person** is a household with finances and habits. A **place** is a municipality with indicators (population, density, share of foreign residents, prices, services nearby) and benefits. The planner joins them: how many months until this person has the upfront cash to buy in this place, and how many fewer because of their habits and of what the place offers. A benefit is counted only when its money arrives before the purchase and eligibility is verified; everything else is shown, not counted.
+
+Information comes in through plug-ins, one file each:
+
+- **Official place data** is fetched when the server starts, cached on disk and refreshed in the background. The snapshot committed in `data/` remains the baseline and the fallback. A new source is one file in `packages/sources/definitions/`.
+- **Bank movements** come from providers. A new bank is one file in `packages/banks/providers/` implementing a handful of functions. Banks announce new movements at `/api/webhooks/bank/<provider>`, and clients receive them through a live event stream. Only the synthetic demo provider ships today.
 
 ## Run the local demo
 
@@ -86,14 +100,15 @@ Then open:
 
 | Address | Purpose |
 | --- | --- |
+| `http://127.0.0.1:8787/workspace?user=user-001&towns=250404,252542,251207` | React workspace: person, places and the savings plan. |
 | `http://127.0.0.1:8787/preview` | Connected journey board. |
 | `http://127.0.0.1:8787/connect` | Homepage and agent setup guide. |
 | `http://127.0.0.1:8787/test` | Local tool-testing page. |
 | `http://127.0.0.1:8787/mcp` | MCP endpoint for a client, rather than a normal webpage. |
 
-The launcher starts the profile API and board, shares a server-side token between them, and enables the synthetic feed for `user-001`. Stop both services with **Ctrl+C**. This demo does not need an OpenAI API key. Optional live voice and AI features require additional setup and may consume API credits.
+One process starts everything and enables the synthetic bank feed for `user-001`. Stop it with **Ctrl+C**. No API key is needed; [.env.example](.env.example) lists every optional setting, ordered by where each piece of information comes from. Optional voice and AI features may consume API credits.
 
-To run only the municipality MCP service, use `npm run start:mcp` instead. Both commands default to port 8787, so run one at a time. Agents running on another computer need a reachable HTTPS endpoint; your localhost address only points to your own machine.
+Agents running on another computer need a reachable HTTPS endpoint; your localhost address only points to your own machine.
 
 For the separate interviewer, see [voice and guided interview setup](apps/interviewer/README.md). For the React workspace, follow [PR #18](https://github.com/itsmanelvelasco/aihousebuyingcompanion/pull/18) and its branch instructions.
 
@@ -106,7 +121,9 @@ For the separate interviewer, see [voice and guided interview setup](apps/interv
 | [`apps/interviewer/`](apps/interviewer/README.md) | Standalone voice and guided interview in the browser. |
 | [`apps/profile-api/`](apps/profile-api/README.md) | Profile storage, shared inputs, bank movements and financial analysis. |
 | [`apps/habits-agent/`](apps/habits-agent/README.md) | Optional habit suggestions, goals and check-ins. |
-| [`packages/`](packages/) | Shared code: validation contracts, town matching, finance calculations, HTTP helpers and configuration. |
+| [`apps/server/`](apps/server/index.ts) | The one server that mounts everything on a single origin. |
+| [`apps/web/`](apps/web/) | React workspace widget for ChatGPT. |
+| [`packages/`](packages/) | Shared code: contracts, the person and place entities, the savings planner, bank providers, live data sources, town matching, finance, HTTP helpers and configuration. |
 | [`data/`](data/) | Dated municipality/policy snapshots and fictional user fixtures. |
 | [`docs/`](docs/README.md) | Area guides, integration notes and team setup. |
 

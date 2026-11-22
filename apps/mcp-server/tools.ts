@@ -27,7 +27,7 @@ import {
 import type { ListingSearchConfig } from '../../packages/listings/search.ts';
 import { searchHomes } from '../../packages/listings/search.ts';
 import { getNearbySchools, getTransportOptions } from '../../packages/places/access.ts';
-import { getTown, missingMetrics, snapshotInfo } from '../../packages/places/data.ts';
+import { derivedServices, getTown, missingMetrics, snapshotInfo } from '../../packages/places/data.ts';
 import { evaluateIncentives } from '../../packages/places/eligibility.ts';
 import { madridDate, nextSchoolDay, normalizedName } from '../../packages/places/geography.ts';
 import { recommendTowns, recommendTownsForProfile } from '../../packages/places/recommend.ts';
@@ -35,7 +35,9 @@ import { getRelocationResearch } from '../../packages/places/relocation.ts';
 import type { BankToolConfig } from './bank-tools.ts';
 import { registerBankTools } from './bank-tools.ts';
 import { interviewerRouting, registerInterviewerTools } from './interview-tools.ts';
+import { registerPlannerTools } from './planner-tools.ts';
 import { registerTownExplorer } from './town-explorer.ts';
+import { registerWorkspace } from './workspace.ts';
 
 const lleidaCode = '251207';
 const placeCoverage =
@@ -68,6 +70,10 @@ export type McpServerOptions = {
   townExplorerPage?: string;
   /** Read-only bridge to the profile API's synthetic bank. */
   bankApi?: BankToolConfig;
+  /** Built React workspace page. When present, the workspace widget and its tool are registered. */
+  workspacePage?: string;
+  /** Freshness of the live data sources, for the `get_data_sources` tool. */
+  dataStatus?: () => unknown[];
   /** Guidance appended to the server instructions by a host such as the journey board. */
   extraInstructions?: string;
 };
@@ -207,6 +213,7 @@ export function createMcpServer(options: McpServerOptions) {
           observedAt: snapshot.rail.observedAt,
           sourceUrl: snapshot.rail.sourceUrl,
         },
+        services: [...(snapshot.services?.[town.code] ?? []), ...(derivedServices(snapshot)[town.code] ?? [])],
         incentives: evaluateIncentives(policies, town, input, asOf).filter(
           incentive => incentive.geographicStatus !== 'does_not_apply',
         ),
@@ -341,6 +348,33 @@ export function createMcpServer(options: McpServerOptions) {
   );
 
   if (options.townExplorerPage) registerTownExplorer(server, snapshot, options.townExplorerPage);
+  if (options.workspacePage) registerWorkspace(server, options.workspacePage);
   if (options.bankApi) registerBankTools(server, options.bankApi);
+  // Person and place entities and the savings plan; the profile API supplies stored people.
+  if (options.dataStatus) {
+    const dataStatus = options.dataStatus;
+    server.registerTool(
+      'get_data_sources',
+      {
+        title: 'Check data freshness',
+        description:
+          'List every official data source ReloCat reads, when it was last fetched and whether the cached copy is fresh, stale or failing. Use it to answer how current a figure is.',
+        inputSchema: z.object({}).strict(),
+        outputSchema: z.object({
+          snapshot: z.object({ version: z.string(), generatedOn: z.string() }),
+          sources: z.array(z.record(z.string(), z.unknown())),
+        }),
+        annotations: readOnly,
+      },
+      () => {
+        const sources = dataStatus() as Record<string, unknown>[];
+        return result(`${sources.length} live data sources; the committed snapshot is the baseline.`, {
+          snapshot: metadata,
+          sources,
+        });
+      },
+    );
+  }
+  registerPlannerTools(server, { snapshot, policies, today, profileApi: options.bankApi });
   return server;
 }

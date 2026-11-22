@@ -9,8 +9,13 @@ const count = z.number().int().safe().nonnegative();
 const cents = z.number().int().safe();
 const timestamp = z.string().nullable();
 const output = z.object({}).catchall(z.json());
+/** The provenance label for a result, taken from its own `synthetic` flag rather than assumed. */
+const provenance = (data: Record<string, unknown>) =>
+  data.synthetic === true
+    ? 'All underlying records are synthetic demo data.'
+    : 'The underlying records include real bank data (synthetic: false).';
 const eventsResult = z.object({
-  synthetic: z.literal(true),
+  synthetic: z.boolean(),
   events: z.array(
     z.object({
       sequence: count,
@@ -26,7 +31,7 @@ const eventsResult = z.object({
   hasMore: z.boolean(),
 });
 const runtimeResult = z.object({
-  synthetic: z.literal(true),
+  synthetic: z.boolean(),
   userId: safeId,
   enabled: z.boolean(),
   intervalMs: count,
@@ -35,7 +40,7 @@ const runtimeResult = z.object({
   tickCount: count,
 });
 const summaryResult = z.object({
-  synthetic: z.literal(true),
+  synthetic: z.boolean(),
   currency: z.literal('EUR'),
   from: z.string(),
   to: z.string(),
@@ -89,14 +94,14 @@ export function registerBankTools(server: McpServer, config: BankToolConfig) {
       });
       if (!response.ok) throw new Error('Unavailable');
       const data = schema.parse(await response.json()) as Record<string, unknown>;
-      return { content: [{ type: 'text', text: message }], structuredContent: data };
+      return { content: [{ type: 'text', text: `${message} ${provenance(data)}` }], structuredContent: data };
     } catch {
       return {
         isError: true,
         content: [
           {
             type: 'text',
-            text: 'Synthetic bank data is unavailable or invalid. Check the local profile API and server-side bridge configuration.',
+            text: 'Bank data is unavailable or invalid. Check the profile API and server-side bridge configuration.',
           },
         ],
       };
@@ -105,9 +110,9 @@ export function registerBankTools(server: McpServer, config: BankToolConfig) {
   server.registerTool(
     'get_bank_updates',
     {
-      title: 'Read simulated bank changes',
+      title: 'Read bank changes',
       description:
-        'Poll persisted synthetic bank change events after a cursor; save nextCursor for the next call. requiresRefresh means earlier events expired or the cursor reset: refresh the bank summary. This read-only tool does not start a feed, subscribe to notifications, wake ChatGPT or send proactive messages.',
+        'Poll persisted bank change events after a cursor; save nextCursor for the next call. The synthetic flag in the result says whether every underlying record is fabricated demo data (true) or real bank data is included (false). Events carry counts and timestamps only, never movements. requiresRefresh means earlier events expired or the cursor reset: refresh the bank summary. This read-only tool does not start a feed, subscribe to notifications, wake ChatGPT or send proactive messages.',
       inputSchema: z
         .object({ userId: safeId, after: count.default(0), limit: z.number().int().min(1).max(100).default(50) })
         .strict(),
@@ -118,25 +123,21 @@ export function registerBankTools(server: McpServer, config: BankToolConfig) {
       call(
         `/users/${userId}/bank/events?after=${after}&limit=${limit}`,
         eventsResult,
-        'Synthetic bank changes since the supplied cursor.',
+        'Bank changes since the supplied cursor.',
       ),
   );
   server.registerTool(
     'get_bank_runtime',
     {
-      title: 'Read simulated bank runtime status',
+      title: 'Read bank demo feed status',
       description:
-        'Read the status of the local synthetic background feed for one demo user. The worker runs in the profile API independently of tool calls; polling this tool cannot wake ChatGPT or deliver proactive messages.',
+        'Read the status of the background demo feed for one user. This feed only ever produces synthetic movements; it is not a real bank connection. The worker runs in the profile API independently of tool calls; polling this tool cannot wake ChatGPT or deliver proactive messages.',
       inputSchema: z.object({ userId: safeId }).strict(),
       outputSchema: output,
       annotations,
     },
     async ({ userId }) => {
-      const result = await call(
-        `/users/${userId}/bank/runtime`,
-        runtimeResult,
-        'Synthetic bank background worker status.',
-      );
+      const result = await call(`/users/${userId}/bank/runtime`, runtimeResult, 'Bank demo feed status.');
       if (result.structuredContent?.lastError)
         result.structuredContent.lastError = 'Background bank feed needs attention.';
       return result;
@@ -145,9 +146,9 @@ export function registerBankTools(server: McpServer, config: BankToolConfig) {
   server.registerTool(
     'get_bank_summary',
     {
-      title: 'Read simulated monthly bank cash flow',
+      title: 'Read monthly bank cash flow',
       description:
-        'Read aggregate synthetic cash flow for 1–24 complete calendar months. Pending movements and owned-account transfers are excluded; empty months may mean missing data. This does not assess creditworthiness or mortgage approval. Raw movements and recurring merchant/account identifiers are not returned.',
+        'Read aggregate bank cash flow for 1–24 complete calendar months. The synthetic flag in the result is true only when every movement in the ledger is fabricated demo data, and false when real bank data is included; report it as labelled. Pending movements and owned-account transfers are excluded; empty months may mean missing data. This does not assess creditworthiness or mortgage approval. Raw movements and recurring merchant/account identifiers are not returned.',
       inputSchema: periodSchema.safeExtend({ userId: safeId }),
       outputSchema: output,
       annotations,
@@ -156,7 +157,7 @@ export function registerBankTools(server: McpServer, config: BankToolConfig) {
       call(
         `/users/${userId}/bank/summary?from=${from}&to=${to}`,
         summaryResult,
-        'Historical synthetic cash-flow aggregates; review data status and assumptions.',
+        'Historical bank cash-flow aggregates; review data status and assumptions.',
       ),
   );
 }

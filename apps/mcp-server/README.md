@@ -8,13 +8,13 @@ Use Node.js 24 or newer.
 
 ```sh
 npm ci
-npm run start:mcp
+npm start
 curl http://127.0.0.1:8787/health
 ```
 
 The Streamable HTTP endpoint is `http://127.0.0.1:8787/mcp`. In MCP Inspector, select **Streamable HTTP** and enter that URL. Run `npm test` to exercise initialization, tool discovery and every tool through the official client. Run `npm run typecheck` and `npm run data:validate` to check the code and snapshot.
 
-For hosting, use `npm run start:mcp` with `HOST=0.0.0.0` and the platform’s `PORT`, or build the included image with `docker build -t relocat-mcp .` and run it with `docker run --rm -p why 127.0.0.1:8787:8787 relocat-mcp`. The service speaks HTTP behind the host’s TLS proxy. Connect ChatGPT to the resulting HTTPS `/mcp` URL or use Secure MCP Tunnel. Requests from browser origins are rejected unless their exact origin is listed in `ALLOWED_ORIGINS` as a comma-separated value. [OpenAI’s connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt)
+For hosting, use `npm start` with `HOST=0.0.0.0` and the platform’s `PORT`, or build the included image with `docker build -t relocat-mcp .` and run it with `docker run --rm -p why 127.0.0.1:8787:8787 relocat-mcp`. The service speaks HTTP behind the host’s TLS proxy. Connect ChatGPT to the resulting HTTPS `/mcp` URL or use Secure MCP Tunnel. Requests from browser origins are rejected unless their exact origin is listed in `ALLOWED_ORIGINS` as a comma-separated value. [OpenAI’s connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt)
 
 The tools are read-only. The application processes supplied household criteria in memory for the duration of the call. The schema takes age, tax-base amounts and qualifying facts. It has no fields for identities, tax IDs or bank details.
 
@@ -39,7 +39,7 @@ The map uses the pilot’s sourced town centres and simplified ICGC provincial b
 
 ```sh
 npm ci
-ALLOWED_ORIGINS=http://127.0.0.1:8787 npm run start:mcp
+ALLOWED_ORIGINS=http://127.0.0.1:8787 npm start
 ```
 
 Open [the preview](http://127.0.0.1:8787/preview) to try a sample ESO shortlist, or [start on Calaf](http://127.0.0.1:8787/preview?town=080312). Pick any visible card or pin to fetch its profile from the running MCP. Use the same host and port in the preview URL and the origin allowlist. If port 8787 is occupied, set `PORT` and update both URLs.
@@ -157,7 +157,7 @@ For example, call `get_town_profile` with `{"municipalityCode":"251180"}` to rec
 
 `search_homes` runs an on-demand Google search through treg's `treg.google.serp.organic` route, constrained to Idealista listing URLs. It returns **indexed examples, not verified live inventory**. Search results can be stale or refer to another town; each example therefore keeps `municipalityCode: null`, `locationConfidence: unknown`, `availability: unknown` and `filtersVerified: false`. Price and bedroom criteria are search hints. The tool does not infer structured prices or bedrooms from snippets, and examples must not be used to satisfy hard household constraints without checking the listing.
 
-Set `TREG_TOKEN` to a valid treg API key in the environment of the server process, then restart it. This works with both `npm run start:mcp` and the connected `npm run dev`. The ChatGPT treg connector's OAuth session is separate from the app's credentials. If using a personal sign-in token, also set `TREG_ORG` to the intended team slug. No Idealista API key is required for this web-search route. For Docker, pass the variables with `--env TREG_TOKEN` and, if needed, `--env TREG_ORG`; never bake them into the image. Environment files are not automatically loaded by these scripts.
+Set `TREG_TOKEN` to a valid treg API key in the environment of the server process, then restart it. This works with both `npm start` and the connected `npm run dev`. The ChatGPT treg connector's OAuth session is separate from the app's credentials. If using a personal sign-in token, also set `TREG_ORG` to the intended team slug. No Idealista API key is required for this web-search route. For Docker, pass the variables with `--env TREG_TOKEN` and, if needed, `--env TREG_ORG`; never bake them into the image. Environment files are not automatically loaded by these scripts.
 
 Example tool input:
 

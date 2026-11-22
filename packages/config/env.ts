@@ -20,6 +20,11 @@ export function envInteger(name: string, fallback: number, env: Env = process.en
     .parse(env[name] || fallback);
 }
 
+/** One variable as text. Unset and empty both read as undefined, so callers treat them as "not configured". */
+export function envString(name: string, env: Env = process.env) {
+  return env[name] || undefined;
+}
+
 /** A comma-separated list with blanks removed. */
 export function envList(name: string, env: Env = process.env) {
   return (env[name] ?? '')

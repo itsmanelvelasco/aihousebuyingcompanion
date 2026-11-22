@@ -1,108 +1,194 @@
 [
   {
-    "version": "2026-11-21",
+    "version": "2026-11-22",
     "beneficiary": "household",
     "authority": "Agència Tributària de Catalunya",
     "effectiveFrom": "2026-01-01",
     "effectiveThrough": "2026-12-31",
     "mechanism": "tax_deduction",
     "sourceUrl": "https://atc.gencat.cat/ca/tributs/irpf/deduccions-tram-irpf/",
-    "lastVerified": "2026-11-21",
+    "lastVerified": "2026-11-22",
     "id": "irpf_move",
     "title": "Catalan IRPF deduction for moving to a rural municipality",
     "intent": "move",
     "legalUrl": "https://www.boe.es/eli/es-ct/l/2025/07/30/8/con#a5-9",
     "benefit": "Rural €750; special attention €1,000. Official single-parent families: €1,500 and €2,000 respectively.",
+    "effect": {
+      "kind": "one_off_eur",
+      "amount": {
+        "rural": 750,
+        "special_attention": 1000,
+        "other": 0
+      }
+    },
     "notes": [
-      "For tax year 2026, filed in 2027. The Catalan ATC page and law agree on €1,000 for special-attention moves; the Spanish guidance showed a different amount."
+      "For tax year 2026, filed in 2027. The Catalan ATC page and law agree on €1,000 for special-attention moves; the Spanish guidance showed a different amount.",
+      "Effect figures are the standard amounts in article 57 of Llei 8/2025 and on the ATC page; the doubled single-parent amounts are not in the effect. It is a deduction from the Catalan IRPF quota, so it arrives through the following year’s tax return, not as cash at the move."
     ]
   },
   {
-    "version": "2026-11-21",
+    "version": "2026-11-22",
     "beneficiary": "household",
     "authority": "Agència Tributària de Catalunya",
     "effectiveFrom": "2026-01-01",
     "effectiveThrough": "2026-12-31",
     "mechanism": "tax_deduction",
     "sourceUrl": "https://atc.gencat.cat/ca/tributs/irpf/deduccions-tram-irpf/",
-    "lastVerified": "2026-11-21",
+    "lastVerified": "2026-11-22",
     "id": "irpf_buy",
     "title": "Catalan IRPF deduction for buying a rural primary home",
     "intent": "buy",
     "legalUrl": "https://www.boe.es/eli/es-ct/l/2025/07/30/8/con#a5-10",
     "benefit": "15% rural or 20% special attention on a maximum annual eligible base of €6,000.",
+    "effect": {
+      "kind": "annual_rate_of_cost",
+      "cost": "purchase_payments",
+      "rate": {
+        "rural": 0.15,
+        "special_attention": 0.2,
+        "other": 0
+      },
+      "maxBaseEur": 6000
+    },
     "notes": [
-      "The 2026 rules distinguish individually computed tax bases from joint filing totals. Dwelling occupancy, investment and transitional deduction rules apply."
+      "The 2026 rules distinguish individually computed tax bases from joint filing totals. Dwelling occupancy, investment and transitional deduction rules apply.",
+      "Effect figures: 15% or 20% of the amounts paid in the tax year on a €6,000 maximum annual base, as stated on the ATC page (at most €900 or €1,200 a year). It reduces the following year’s tax bill and cannot exceed the tax due."
     ]
   },
   {
-    "version": "2026-11-21",
+    "version": "2026-11-22",
     "beneficiary": "household",
     "authority": "Agència Tributària de Catalunya",
     "effectiveFrom": "2026-01-01",
     "effectiveThrough": "2026-12-31",
     "mechanism": "tax_deduction",
     "sourceUrl": "https://atc.gencat.cat/ca/tributs/irpf/deduccions-tram-irpf/",
-    "lastVerified": "2026-11-21",
+    "lastVerified": "2026-11-22",
     "id": "irpf_rent",
     "title": "Catalan IRPF deduction for renting a rural primary home",
     "intent": "rent",
     "legalUrl": "https://www.boe.es/eli/es-ct/l/2025/07/30/8/con#a6-3",
     "benefit": "15% rural or 20% special attention, generally capped at €600 individual or €1,200 joint; shared-dwelling allocation rules apply.",
+    "effect": {
+      "kind": "annual_rate_of_cost",
+      "cost": "rent",
+      "rate": {
+        "rural": 0.15,
+        "special_attention": 0.2,
+        "other": 0
+      },
+      "maxBaseEur": 3000
+    },
     "notes": [
-      "Landlord identification is required on the tax return. This tool accepts only confirmation of the criterion."
+      "Landlord identification is required on the tax return. This tool accepts only confirmation of the criterion.",
+      "Effect figures: the law caps the deduction at €600 a year (€1,200 on a joint return), not the rent base. The effect uses a €3,000 base so that it never exceeds the €600 individual cap: exact at the 20% special-attention rate, and up to €150 a year below the true cap at the 15% rural rate. The joint-return cap is not modelled."
     ]
   },
   {
-    "version": "2026-11-21",
+    "version": "2026-11-22",
     "beneficiary": "household",
     "authority": "Agència Tributària de Catalunya",
     "effectiveFrom": "2026-01-01",
     "effectiveThrough": "2026-12-31",
     "mechanism": "tax_deduction",
     "sourceUrl": "https://atc.gencat.cat/ca/tributs/irpf/deduccions-tram-irpf/",
-    "lastVerified": "2026-11-21",
+    "lastVerified": "2026-11-22",
     "id": "irpf_renovate",
     "title": "Catalan IRPF deduction for rehabilitating a rural primary home",
     "intent": "renovate",
     "legalUrl": "https://www.boe.es/eli/es-ct/l/2025/07/30/8/con#a5-11",
     "benefit": "15% rural or 20% special attention on a maximum annual eligible base of €6,000, with applicable subsidy adjustments.",
+    "effect": {
+      "kind": "annual_rate_of_cost",
+      "cost": "renovation",
+      "rate": {
+        "rural": 0.15,
+        "special_attention": 0.2,
+        "other": 0
+      },
+      "maxBaseEur": 6000
+    },
     "notes": [
-      "The dwelling must predate 1 January 1970. Structural work, occupancy, investment and compatibility conditions apply."
+      "The dwelling must predate 1 January 1970. Structural work, occupancy, investment and compatibility conditions apply.",
+      "Effect figures: 15% or 20% of the amounts paid in the tax year on a €6,000 maximum annual base, as stated on the ATC page. Public renovation subsidies received in the year reduce the deduction; that adjustment is not modelled."
     ]
   },
   {
-    "version": "2026-11-21",
+    "version": "2026-11-22",
     "beneficiary": "household",
     "authority": "Agència Tributària de Catalunya",
     "effectiveFrom": "2025-08-20",
     "effectiveThrough": "2029-07-16",
     "mechanism": "reduced_tax_rate",
     "sourceUrl": "https://atc.gencat.cat/ca/tributs/itpajd/tpo/tarifes-tipus/",
-    "lastVerified": "2026-11-21",
+    "lastVerified": "2026-11-22",
     "id": "itp_buy",
     "title": "Reduced ITP on a rural primary-home purchase (TMR / TEA)",
     "intent": "buy",
     "legalUrl": "https://www.boe.es/eli/es-ct/l/2025/07/30/8/con#a6-4",
     "benefit": "4% rural TMR rate or 3% special-attention TEA rate on qualifying ITP/TPO acquisitions.",
+    "effect": {
+      "kind": "transfer_tax_rate",
+      "standardRate": 0.1,
+      "reducedRate": {
+        "rural": 0.04,
+        "special_attention": 0.03,
+        "other": 0.1
+      }
+    },
     "notes": [
-      "Confirm the prior household tax base, acquisition right, and schooling and occupancy rules with ATC."
+      "Confirm the prior household tax base, acquisition right, and schooling and occupancy rules with ATC.",
+      "Effect figures: the general ITP/TPO rate read on the ATC rates page on 2026-11-22 is 10% when the property’s total value does not exceed €600,000 (above that an averaged tariff with 11%, 12% and 13% brackets applies), so the standard rate is modelled as 10%. Buyers who would otherwise qualify for another reduced rate, such as the 5% rate for buyers aged 35 or younger (TUJ), save less than the difference from 10%."
     ]
   },
   {
-    "version": "2026-11-21",
+    "version": "2026-11-22",
+    "beneficiary": "household",
+    "authority": "Agència Tributària de Catalunya",
+    "effectiveFrom": "2025-08-20",
+    "effectiveThrough": "2029-07-16",
+    "mechanism": "reduced_tax_rate",
+    "sourceUrl": "https://atc.gencat.cat/ca/tributs/itpajd/tpo/tarifes-tipus/",
+    "lastVerified": "2026-11-22",
+    "id": "itp_rehab_buy",
+    "title": "Reduced ITP on buying a rural home to rehabilitate as a primary home (TRR / TRA)",
+    "intent": "buy",
+    "legalUrl": "https://www.boe.es/eli/es-ct/l/2025/07/30/8/con#a6-5",
+    "benefit": "4% rural TRR rate or 3% special-attention TRA rate on the ITP/TPO purchase of a home built before 1970 that the buyer rehabilitates as a habitual residence.",
+    "effect": {
+      "kind": "transfer_tax_rate",
+      "standardRate": 0.1,
+      "reducedRate": {
+        "rural": 0.04,
+        "special_attention": 0.03,
+        "other": 0.1
+      }
+    },
+    "notes": [
+      "Unlike the TMR / TEA rate there is no school-age child requirement. The buyer’s own tax base (general plus savings, less the personal and family minimum) on the last IRPF return before the purchase must not exceed €36,000.",
+      "The works must be structural rehabilitation costing more than 25% of the purchase price or market value excluding land, and must end within two years of the purchase. The rate is provisional: if a condition fails, a complementary self-assessment at the general rate plus late-payment interest is due within one month. It does not apply to bare ownership.",
+      "In Artesa de Segre and Tremp only the attached nuclei qualify, not the municipal capital. Since 2026-09-29 the municipalities in Resolució PRE/3375/2026 (special regime) also count as rural for this rate.",
+      "Effect figures: the general ITP/TPO rate read on the ATC rates page on 2026-11-22 is 10% when the property’s total value does not exceed €600,000 (above that an averaged tariff with 11%, 12% and 13% brackets applies), so the standard rate is modelled as 10%. Buyers who would otherwise qualify for another reduced rate, such as the 5% rate for buyers aged 35 or younger (TUJ), save less than the difference from 10%."
+    ]
+  },
+  {
+    "version": "2026-11-22",
     "beneficiary": "household",
     "authority": "Agència de l’Habitatge de Catalunya",
     "effectiveFrom": "2026-05-18",
     "effectiveThrough": "2026-09-10",
     "mechanism": "grant",
     "sourceUrl": "https://tramits.gencat.cat/ca/tramits/tramits-temes/Rehabilitacio_entorn_rural",
-    "lastVerified": "2026-11-21",
+    "lastVerified": "2026-11-22",
     "id": "renovation_grant_2026",
     "title": "2026 rural and mountain housing rehabilitation grant",
     "intent": "renovate",
     "legalUrl": "https://dogc.gencat.cat/ca/document-del-dogc?documentId=1043506",
     "benefit": "The subsidy rate and cap depend on municipality, beneficiary and intended use (own residence or affordable rental).",
+    "effect": {
+      "kind": "unquantified",
+      "reason": "For a private owner’s own residence the bases (Resolució TER/723/2026) pay 10% to 40% of the approved budget, capped at €10,000 to €20,000 per dwelling, depending on whether the municipality is rural or special-attention and on how rural its comarca is; the comarca class is not modelled, and the 2026 call is closed."
+    },
     "notes": [
       "Household/private-owner pathway only. See the official municipality and rates table at https://agenciahabitatge.gencat.cat/monrural2026. The 2026 application window ended at 14:00 local time on September 10."
     ],
@@ -121,5 +207,49 @@
       "259046",
       "431573"
     ]
+  },
+  {
+    "version": "2026-11-22",
+    "beneficiary": "household",
+    "authority": "Ministerio de Vivienda y Agenda Urbana; calls are run by the Agència de l’Habitatge de Catalunya",
+    "effectiveFrom": "2026-01-01",
+    "effectiveThrough": "2030-12-31",
+    "mechanism": "grant",
+    "sourceUrl": "https://habitatge.gencat.cat/ca/normativa/bases-convocatories-ajuts/ajuts-a-ladquisicio-de-lhabitatge/",
+    "lastVerified": "2026-11-22",
+    "id": "youth_purchase_small_town",
+    "title": "State youth aid to buy or self-build a home in a municipality of 10,000 residents or fewer",
+    "intent": "buy",
+    "legalUrl": "https://www.boe.es/eli/es/rd/2026/04/22/326/con",
+    "benefit": "Up to €15,000 per home and at most 20% of the purchase or building cost, for buyers aged 35 or younger, on a home priced at €300,000 or less in Catalonia.",
+    "effect": {
+      "kind": "unquantified",
+      "reason": "The grant is the lower of €15,000 and 20% of the price, shared between at most two buyers, and it can only be claimed through a Catalan call; no such call could be found on the Generalitat housing pages on 2026-11-22."
+    },
+    "notes": [
+      "Articles 140 to 145 and annex IV of Real Decreto 326/2026 (Plan Estatal de Vivienda 2026-2030), in force since 2026-04-24. Purchase contracts signed on or after 2026-01-01 can qualify. The decree gives no end date for this line; 2030-12-31 is the end of the plan period.",
+      "Conditions in the decree: aged 35 or younger; annual income at most 5 times IPREM (5.5 or 6 times with a recognised disability); not owning or holding a usufruct over another home in Spain, with exceptions; habitual and permanent residence for at least five years, occupied within three months of handover.",
+      "No Catalan call was found on 2026-11-22: the Generalitat page for purchase aid lists only the Fons Públic d’Emancipació loans. The call status is therefore unknown, and Catalan bases may add conditions to the decree’s.",
+      "The decree covers municipalities or population nuclei of 10,000 residents or fewer when it entered into force or when the call is published; a bilateral agreement may extend it to 20,000. The listed municipalities are the pilot towns at or below 10,000 residents in the snapshot’s 2025 population figures. Nuclei inside larger municipalities are not assessed."
+    ],
+    "municipalityCodes": [
+      "080312",
+      "250024",
+      "250122",
+      "250371",
+      "250621",
+      "251180",
+      "251569",
+      "251713",
+      "251902",
+      "252154",
+      "252206",
+      "252347",
+      "252402",
+      "252542",
+      "259046",
+      "431573"
+    ],
+    "callWindow": null
   }
 ]

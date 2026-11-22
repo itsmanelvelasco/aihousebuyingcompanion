@@ -37,7 +37,8 @@ export const transactionSchema = z
       'internal_transfer',
     ]),
     status: z.enum(['booked', 'pending']).default('booked'),
-    synthetic: z.literal(true),
+    /** True for fabricated records, false for real bank data. Required: a missing flag is never read as real. */
+    synthetic: z.boolean(),
   })
   .strict()
   .superRefine((transaction, context) => {
@@ -71,6 +72,11 @@ function sum(values: number[]) {
   const total = values.reduce((accumulator, value) => accumulator + value, 0);
   if (!Number.isSafeInteger(total)) throw new RangeError('Monetary total exceeds safe integer range');
   return total;
+}
+
+/** A result is synthetic only when every record it could draw on is; one real record makes it real. */
+export function allSynthetic(records: readonly { synthetic: boolean }[]) {
+  return records.every(record => record.synthetic);
 }
 
 export function analyzeTransactions(transactions: Transaction[], from: string, to: string) {
@@ -130,7 +136,7 @@ export function analyzeTransactions(transactions: Transaction[], from: string, t
         ? 'partial'
         : 'observed';
   return {
-    synthetic: true as const,
+    synthetic: allSynthetic(transactions),
     currency: 'EUR' as const,
     from,
     to,
@@ -196,7 +202,7 @@ export function simulateSavings(
         'Review subscription expenses and confirm which, if any, you want to reduce. No cancellation is assumed.',
     });
   return {
-    synthetic: true as const,
+    synthetic: summary.synthetic,
     currency: 'EUR' as const,
     ...values,
     availableSavingsCents,

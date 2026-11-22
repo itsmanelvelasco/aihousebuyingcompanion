@@ -31,6 +31,9 @@ export const metricKind = z.enum([
   'resident_social_security_affiliates',
   'retail_establishments',
   'retail_per_1000',
+  'area_km2',
+  'population_density_per_km2',
+  'foreign_population_percent',
 ]);
 /** Kinds of public service counted per municipality. A missing kind is unknown, not zero. */
 export const serviceKind = z.enum([
@@ -162,6 +165,8 @@ export const relocationResult = z.object({
   limitations: z.array(z.string()),
 });
 
+/** Facilities of one kind listed for a municipality by a dated official directory. */
+export const serviceCount = source.extend({ kind: serviceKind, count: z.number().int().nonnegative() });
 export const snapshotSchema = z.object({
   schemaVersion: z.literal(1),
   version: z.string().min(1),
@@ -172,6 +177,8 @@ export const snapshotSchema = z.object({
   schools: z.array(school),
   schoolDirectory: source,
   rail: railFeed,
+  /** Service counts by municipality. A kind that is absent is unknown, never zero. */
+  services: z.record(municipalityCode, z.array(serviceCount)).optional(),
   relocation: relocationDataset.optional(),
 });
 
@@ -182,7 +189,9 @@ export const policyId = z.enum([
   'irpf_rent',
   'irpf_renovate',
   'itp_buy',
+  'itp_rehab_buy',
   'renovation_grant_2026',
+  'youth_purchase_small_town',
 ]);
 /** An amount or rate that depends on the municipality's rural category. */
 export const byRuralCategory = z
@@ -246,6 +255,12 @@ export const policy = z.object({
   effect: policyEffect.optional(),
   notes: z.array(z.string()),
   municipalityCodes: z.array(municipalityCode).optional(),
+  /**
+   * Application window, for a measure that is claimed through a call and whose own dates are not that window.
+   * `null`: the measure needs a call and none could be verified, so `callStatus` stays `unknown`.
+   * Absent: a grant's effective dates are its call window; tax measures have no call.
+   */
+  callWindow: z.object({ opensOn: isoDate, closesOn: isoDate }).nullable().optional(),
 });
 export const eligibility = policy.extend({
   geographicStatus: z.enum(['applies', 'does_not_apply', 'needs_verification']),
@@ -310,6 +325,24 @@ export const household = z
     ),
     ownerOfVacantHome: optionalFact(
       "Applicant is a private owner and the dwelling meets the call's vacancy requirement",
+    ),
+    itpBuyerNetTaxBaseEur: taxBase(
+      "Buyer's own general plus savings tax bases less the personal and family minimum on the last IRPF return before the purchase",
+    ),
+    satisfiesItpRehabilitationRules: optionalFact(
+      'Confirmed the works are structural rehabilitation costing over 25% of the price or market value excluding land, end within two years of purchase, and the occupancy deadlines are met',
+    ),
+    purchasePriceEur: z
+      .number()
+      .positive()
+      .max(50_000_000)
+      .optional()
+      .describe('Agreed purchase price of the home in euros, or the self-build cost excluding land'),
+    ownsHomeInSpain: optionalFact(
+      'Applicant owns or holds a usufruct over a home in Spain and no official exception applies',
+    ),
+    incomeWithinFiveIprem: optionalFact(
+      "Applicant's annual income is at most 5 times IPREM (5.5 or 6 times with a recognised disability)",
     ),
   })
   .strict();
@@ -546,6 +579,9 @@ export const profileResult = z.object({
     validThrough: isoDate,
     sampleConnectionToLleida: transportResult.nullable(),
   }),
+  services: z
+    .array(serviceCount)
+    .describe('Counts of public services in the municipality; a missing kind is unknown, not zero'),
   incentives: z.array(eligibility),
   dataMissing: z.array(z.string()),
 });

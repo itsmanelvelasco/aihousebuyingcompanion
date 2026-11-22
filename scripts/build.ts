@@ -11,6 +11,14 @@ const bundles = [
   },
   { entryPoints: ['apps/board/widget.ts'], outfile: 'apps/board/dist/widget.js' },
   { entryPoints: ['apps/interviewer/app.mjs'], outfile: 'apps/interviewer/dist/app.js' },
+  {
+    entryPoints: ['apps/web/main.tsx'],
+    outfile: 'apps/web/dist/workspace.js',
+    minify: true,
+    legalComments: 'eof' as const,
+    jsx: 'automatic' as const,
+    define: { 'process.env.NODE_ENV': '"production"' },
+  },
 ];
 
 await Promise.all(

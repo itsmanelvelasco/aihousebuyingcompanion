@@ -23,7 +23,7 @@ CSV format is `date,description,amount` with YYYY-MM-DD dates and signed amounts
 
 ## Connect the ChatGPT plugin
 
-Run `npm run start:mcp` to start ReloCat’s shared MCP server at `http://localhost:8787/mcp`. Connect it using a Secure MCP Tunnel or an HTTPS endpoint forwarding to that listener. In ChatGPT Plugins, select **Add custom MCP server**, enter that endpoint and install the plugin. In Work, invoke it and ask “Show me the sample cash flow for a first-time buyer.”
+Run `npm start` to start ReloCat’s shared MCP server at `http://localhost:8787/mcp`. Connect it using a Secure MCP Tunnel or an HTTPS endpoint forwarding to that listener. In ChatGPT Plugins, select **Add custom MCP server**, enter that endpoint and install the plugin. In Work, invoke it and ask “Show me the sample cash flow for a first-time buyer.”
 
 The sample tool displays a cash-flow card and a spending breakdown in ChatGPT. The plugin can also analyze CSV text shared explicitly in chat and compare two savings timelines. Try “Interview me one question at a time using the fictional cash flow, then help me compare two savings timelines.” The local Realtime interview runs in the browser demo and retains its own profile. Live banking and cross-device accounts are outside the prototype.
 

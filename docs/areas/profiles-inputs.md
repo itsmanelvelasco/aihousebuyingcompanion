@@ -18,7 +18,7 @@ Use `POST /users/:id/inputs` for partial records and `GET /users/:id/context` fo
 
 ## Run and verify
 
-Set `PROFILE_API_TOKEN`, then run `npm run start:api` on port 3001. `PROFILE_DATA_DIR` changes the runtime directory. `npm run typecheck` and `npm test` cover storage, input merging, authorization and fixture consistency.
+Set `PROFILE_API_TOKEN`, then run `npm start` (served under `/api` on port 8787). `PROFILE_DATA_DIR` changes the runtime directory. `npm run typecheck` and `npm test` cover storage, input merging, authorization and fixture consistency.
 
 ## Handoff
 

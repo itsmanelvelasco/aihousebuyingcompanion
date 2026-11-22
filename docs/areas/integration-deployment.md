@@ -1,38 +1,45 @@
 # Integration and deployment area
 
-**Owner:** integration/demo coordinator. **Purpose:** connect the teams' modules into one repeatable demo and keep publishing separate from local development.
+**Owner:** integration/demo coordinator. **Purpose:** keep every module mounted on one server and make releases repeatable.
 
-## Service entry points
+## One server
 
-| Service | Entry point | Role |
+`apps/server/index.ts` is the only long-running process. It mounts request handlers from the other apps on a single origin: `http://127.0.0.1:8787` locally, `https://www.relo.cat` in production.
+
+| Path | Handler | Role |
 | --- | --- | --- |
-| Profile/bank API | `apps/profile-api/server.ts` | Authenticated storage, inputs and runtime bank writer; port 3001. |
-| Integrated plugin/board | `apps/board/server.ts` | Preview and combined ChatGPT-facing tools; port 8787. |
-| Standalone places MCP | `apps/mcp-server/index.ts` | Municipality-only development alternative; port 8787 by default. |
-| Combined local launcher | `scripts/dev-stack.ts` | Starts the API, waits for readiness, then starts the connected plugin and stops both on exit. |
+| `/mcp` | `apps/mcp-server/tools.ts` via `apps/board/server.ts` | MCP endpoint for ChatGPT and other agents. |
+| `/workspace` | `apps/web` (React), served by the board handler | Person, places and savings plan. |
+| `/preview` | `apps/board` | Journey board. |
+| `/connect`, `/test` | `apps/mcp-server` | Homepage, agent setup guide and local tool tester. |
+| `/api/...` | `apps/profile-api`, `apps/habits-agent` | Profiles, inputs, bank ledger, connections, events, webhooks and habits. |
+| `/health` | `apps/server` | Readiness, snapshot version and data-source freshness. |
 
-Do not run the integrated plugin and standalone places MCP on port 8787 simultaneously. The connected demo should reuse municipality tools in the plugin's one MCP endpoint. The API remains an internal HTTP service.
+`/api` requires a bearer token, except `/api/webhooks/bank/<provider>`, which a bank calls and which is authenticated by that provider's own signature check. The token is generated at start unless `PROFILE_API_TOKEN` is set, and never leaves the server: the board and MCP tools reach `/api` over loopback.
+
+`apps/board/server.ts` can still run alone (`npm run start:board`) for a scripted rehearsal without the API. The interviewer (`npm run start:interviewer`) is a separate local voice page.
 
 ## Install and run
 
-Requires Node.js 24+. The shortest connected startup from the repository root is:
+Requires Node.js 24+.
 
 ```powershell
 npm ci
 npm run dev
 ```
 
-`npm run dev` builds the browser bundles and starts the profile API on 3001 plus the unified plugin on 8787. If no `PROFILE_API_TOKEN` was supplied, it generates one and shares it only through child-process environment variables. It defaults the synthetic feed to `user-001`; override `DEMO_BANK_USERS` to choose the startup set. `DEMO_BANK_INTERVAL_MS` controls the feed interval (default 5000 ms). `PROFILE_API_PORT` and `APP_PORT` override the two ports and must differ. Ctrl+C stops both services.
+`npm run dev` builds the browser bundles and restarts the server on code changes; `npm start` runs it once. Outside production the synthetic bank feed starts for `user-001` unless `DEMO_BANK_USERS` says otherwise. Official data sources are fetched at start and cached under `data/cache/`; `LIVE_DATA=off` serves only the committed snapshot. Every setting is described in `.env.example`.
 
-For separate terminals, first set a private `PROFILE_API_TOKEN` and run `npm run start:api`. In the plugin terminal set the same token and the API URL:
+## Deploying to www.relo.cat
+
+Build the image from the repository root and run it with the public origin:
 
 ```powershell
-$env:PROFILE_API_URL = 'http://127.0.0.1:3001'
-# Set PROFILE_API_TOKEN to the same local value used by the API.
-npm run start:board
+docker build -t relocat .
+docker run --rm -p 8787:8787 -e PUBLIC_ORIGIN=https://www.relo.cat -e DEMO_BANK_USERS= relocat
 ```
 
-Without configured connection mode, the prototype remains clearly scripted; configured failures surface instead of falling back silently. Open `http://127.0.0.1:8787/preview`. For ChatGPT, use the plugin's documented HTTPS tunnel setup and keep credentials server-side. Local profile API storage should not be exposed directly through the public tunnel. The standalone municipality MCP can optionally register bank polling tools with `BANK_API_URL` and `BANK_API_TOKEN`; the combined plugin uses its profile connection instead.
+Put it behind HTTPS. Runtime data (`data/runtime-users`, `data/runtime-habits`, `data/cache`) lives inside the container unless you mount volumes for it. Before a real launch, note what the demo does not have: per-user authentication and authorization, a consent flow for real banks, and an `Origin` check on `/mcp`.
 
 ## Verification
 
@@ -40,8 +47,8 @@ Without configured connection mode, the prototype remains clearly scripted; conf
 npm run check
 ```
 
-Rehearse grouped interview → persisted context → provisional sourced town shortlist → actual incentive explanation, then bank event → refreshed board aggregate. Bedroom requirements remain pending property-level checks; the screen must not claim a particular property fits. Check backend-unavailable, conflict, missing-data and stopped-feed states. Keep the board's fixed 20-year debt-free illustration separate from cash readiness and actual loan decisions. Do not claim a successful end-to-end connection from independent unit tests alone.
+Then rehearse on the running server: `/health` shows fresh sources; `plan_home_savings` returns a plan for `user-001`; `/workspace` updates when the bank feed adds a movement; the board saves interview answers. Do not claim a successful end-to-end connection from unit tests alone, and do not claim a ChatGPT widget works until it has been seen in ChatGPT.
 
 ## Release handoff
 
-Use an integration branch and a reviewable pull request. Include changed areas, run commands, checks and remaining demo limits. Preserve current production audience and secrets. The user has requested a PR and merge for this integration; merge after the intended checks pass and verify `main` contains the exact merged result. Runtime files, tokens, generated build artifacts and local logs must stay ignored.
+Use a branch and a reviewable pull request. Include changed areas, run commands, checks and remaining limits. Runtime files, tokens, build output and caches stay ignored.

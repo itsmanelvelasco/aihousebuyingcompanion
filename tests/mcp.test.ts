@@ -55,7 +55,7 @@ async function tool(name: string, args: Record<string, unknown>) {
 test('discovers schemas and exposes sourced profiles, schools and business indicators', async () => {
   assert.equal(client.getServerVersion()?.name, 'relocat');
   const listed = await client.listTools();
-  assert.equal(listed.tools.length, 16);
+  assert.equal(listed.tools.length, 19);
   assert(listed.tools.every(tool => tool.inputSchema && tool.outputSchema && tool.annotations?.readOnlyHint));
   const profileTool = listed.tools.find(tool => tool.name === 'recommend_towns_for_profile');
   assert.deepEqual(Object.keys(profileTool?.inputSchema.properties ?? {}).sort(), ['limit', 'profile']);
@@ -406,7 +406,14 @@ test('keeps call availability, exact geographic scope and household eligibility 
         nucleus,
       }),
     );
-    assert(area.incentives.every(entry => entry.geographicStatus === status));
+    // The state youth purchase aid is scoped by resident population, so Tremp qualifies as a whole.
+    const ruralScoped = area.incentives.filter(entry => entry.id !== 'youth_purchase_small_town');
+    assert.deepEqual(
+      ruralScoped.map(entry => entry.id),
+      ['irpf_buy', 'itp_buy', 'itp_rehab_buy'],
+    );
+    assert(ruralScoped.every(entry => entry.geographicStatus === status));
+    assert.equal(area.incentives.length, ruralScoped.length + 1);
     assert(area.incentives.every(entry => entry.eligibilityStatus !== 'eligible'));
   }
 });

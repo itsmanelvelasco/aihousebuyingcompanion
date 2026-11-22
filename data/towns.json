@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "version": "catalonia-pilot-2026-11-21-10b5fbf0",
-  "generatedOn": "2026-11-21",
+  "version": "catalonia-pilot-2026-11-22-87d12711",
+  "generatedOn": "2026-11-22",
   "municipalities": [
     {
       "code": "080312",
@@ -495,6 +495,33 @@
         "unit": "establishments/1,000 residents",
         "geography": "municipality",
         "geographyName": "Àger"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:250024",
+        "kind": "area_km2",
+        "value": 160.57,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Àger"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:250024",
+        "kind": "population_density_per_km2",
+        "value": 4,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Àger"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:250024",
+        "kind": "foreign_population_percent",
+        "value": 15.1,
+        "unit": "% of residents",
+        "geography": "municipality",
+        "geographyName": "Àger"
       }
     ],
     "250122": [
@@ -578,6 +605,33 @@
         "unit": "establishments/1,000 residents",
         "geography": "municipality",
         "geographyName": "Alcoletge"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:250122",
+        "kind": "area_km2",
+        "value": 16.7,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Alcoletge"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:250122",
+        "kind": "population_density_per_km2",
+        "value": 220.3,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Alcoletge"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:250122",
+        "kind": "foreign_population_percent",
+        "value": 16.7,
+        "unit": "% of residents",
+        "geography": "municipality",
+        "geographyName": "Alcoletge"
       }
     ],
     "250371": [
@@ -632,6 +686,33 @@
         "kind": "retail_per_1000",
         "value": 4.36,
         "unit": "establishments/1,000 residents",
+        "geography": "municipality",
+        "geographyName": "les Avellanes i Santa Linya"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:250371",
+        "kind": "area_km2",
+        "value": 102.96,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "les Avellanes i Santa Linya"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:250371",
+        "kind": "population_density_per_km2",
+        "value": 4.2,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "les Avellanes i Santa Linya"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:250371",
+        "kind": "foreign_population_percent",
+        "value": 7.1,
+        "unit": "% of residents",
         "geography": "municipality",
         "geographyName": "les Avellanes i Santa Linya"
       }
@@ -717,6 +798,33 @@
         "unit": "establishments/1,000 residents",
         "geography": "municipality",
         "geographyName": "Balaguer"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:250404",
+        "kind": "area_km2",
+        "value": 57.32,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Balaguer"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:250404",
+        "kind": "population_density_per_km2",
+        "value": 308.2,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Balaguer"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:250404",
+        "kind": "foreign_population_percent",
+        "value": 25.2,
+        "unit": "% of residents",
+        "geography": "municipality",
+        "geographyName": "Balaguer"
       }
     ],
     "250621": [
@@ -782,6 +890,33 @@
         "unit": "establishments/1,000 residents",
         "geography": "municipality",
         "geographyName": "Camarasa"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:250621",
+        "kind": "area_km2",
+        "value": 157.13,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Camarasa"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:250621",
+        "kind": "population_density_per_km2",
+        "value": 5.1,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Camarasa"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:250621",
+        "kind": "foreign_population_percent",
+        "value": 6,
+        "unit": "% of residents",
+        "geography": "municipality",
+        "geographyName": "Camarasa"
       }
     ],
     "251180": [
@@ -836,6 +971,33 @@
         "kind": "retail_per_1000",
         "value": 12.47,
         "unit": "establishments/1,000 residents",
+        "geography": "municipality",
+        "geographyName": "Juncosa"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:251180",
+        "kind": "area_km2",
+        "value": 76.49,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Juncosa"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:251180",
+        "kind": "population_density_per_km2",
+        "value": 5,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Juncosa"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:251180",
+        "kind": "foreign_population_percent",
+        "value": 11.1,
+        "unit": "% of residents",
         "geography": "municipality",
         "geographyName": "Juncosa"
       }
@@ -921,6 +1083,33 @@
         "unit": "establishments/1,000 residents",
         "geography": "municipality",
         "geographyName": "Lleida"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:251207",
+        "kind": "area_km2",
+        "value": 212.3,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Lleida"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:251207",
+        "kind": "population_density_per_km2",
+        "value": 694.2,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Lleida"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:251207",
+        "kind": "foreign_population_percent",
+        "value": 23.3,
+        "unit": "% of residents",
+        "geography": "municipality",
+        "geographyName": "Lleida"
       }
     ],
     "251569": [
@@ -984,6 +1173,33 @@
         "kind": "retail_per_1000",
         "value": 6.69,
         "unit": "establishments/1,000 residents",
+        "geography": "municipality",
+        "geographyName": "Os de Balaguer"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:251569",
+        "kind": "area_km2",
+        "value": 135.96,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Os de Balaguer"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:251569",
+        "kind": "population_density_per_km2",
+        "value": 8,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Os de Balaguer"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:251569",
+        "kind": "foreign_population_percent",
+        "value": 6.7,
+        "unit": "% of residents",
         "geography": "municipality",
         "geographyName": "Os de Balaguer"
       }
@@ -1069,6 +1285,33 @@
         "unit": "establishments/1,000 residents",
         "geography": "municipality",
         "geographyName": "la Pobla de Segur"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:251713",
+        "kind": "area_km2",
+        "value": 32.83,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "la Pobla de Segur"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:251713",
+        "kind": "population_density_per_km2",
+        "value": 96.8,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "la Pobla de Segur"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:251713",
+        "kind": "foreign_population_percent",
+        "value": 21,
+        "unit": "% of residents",
+        "geography": "municipality",
+        "geographyName": "la Pobla de Segur"
       }
     ],
     "251902": [
@@ -1123,6 +1366,33 @@
         "kind": "retail_per_1000",
         "value": 8.7,
         "unit": "establishments/1,000 residents",
+        "geography": "municipality",
+        "geographyName": "Salàs de Pallars"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:251902",
+        "kind": "area_km2",
+        "value": 20.27,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Salàs de Pallars"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:251902",
+        "kind": "population_density_per_km2",
+        "value": 18.2,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Salàs de Pallars"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:251902",
+        "kind": "foreign_population_percent",
+        "value": 10.1,
+        "unit": "% of residents",
         "geography": "municipality",
         "geographyName": "Salàs de Pallars"
       }
@@ -1190,6 +1460,33 @@
         "unit": "establishments/1,000 residents",
         "geography": "municipality",
         "geographyName": "Talarn"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:252154",
+        "kind": "area_km2",
+        "value": 27.95,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Talarn"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:252154",
+        "kind": "population_density_per_km2",
+        "value": 20,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Talarn"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:252154",
+        "kind": "foreign_population_percent",
+        "value": 5.5,
+        "unit": "% of residents",
+        "geography": "municipality",
+        "geographyName": "Talarn"
       }
     ],
     "252206": [
@@ -1244,6 +1541,33 @@
         "kind": "retail_per_1000",
         "value": 9.54,
         "unit": "establishments/1,000 residents",
+        "geography": "municipality",
+        "geographyName": "Térmens"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:252206",
+        "kind": "area_km2",
+        "value": 27.54,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Térmens"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:252206",
+        "kind": "population_density_per_km2",
+        "value": 48.8,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Térmens"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:252206",
+        "kind": "foreign_population_percent",
+        "value": 15.7,
+        "unit": "% of residents",
         "geography": "municipality",
         "geographyName": "Térmens"
       }
@@ -1329,6 +1653,33 @@
         "unit": "establishments/1,000 residents",
         "geography": "municipality",
         "geographyName": "Tremp"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:252347",
+        "kind": "area_km2",
+        "value": 302.82,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Tremp"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:252347",
+        "kind": "population_density_per_km2",
+        "value": 20.3,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Tremp"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:252347",
+        "kind": "foreign_population_percent",
+        "value": 19.1,
+        "unit": "% of residents",
+        "geography": "municipality",
+        "geographyName": "Tremp"
       }
     ],
     "252402": [
@@ -1412,6 +1763,33 @@
         "unit": "establishments/1,000 residents",
         "geography": "municipality",
         "geographyName": "Vallfogona de Balaguer"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:252402",
+        "kind": "area_km2",
+        "value": 26.97,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Vallfogona de Balaguer"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:252402",
+        "kind": "population_density_per_km2",
+        "value": 74.5,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Vallfogona de Balaguer"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:252402",
+        "kind": "foreign_population_percent",
+        "value": 13.2,
+        "unit": "% of residents",
+        "geography": "municipality",
+        "geographyName": "Vallfogona de Balaguer"
       }
     ],
     "252542": [
@@ -1477,6 +1855,33 @@
         "unit": "establishments/1,000 residents",
         "geography": "municipality",
         "geographyName": "Vilanova de la Barca"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:252542",
+        "kind": "area_km2",
+        "value": 21.55,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Vilanova de la Barca"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:252542",
+        "kind": "population_density_per_km2",
+        "value": 53.8,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Vilanova de la Barca"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:252542",
+        "kind": "foreign_population_percent",
+        "value": 25.4,
+        "unit": "% of residents",
+        "geography": "municipality",
+        "geographyName": "Vilanova de la Barca"
       }
     ],
     "259046": [
@@ -1522,6 +1927,33 @@
         "kind": "retail_establishments",
         "value": 0,
         "unit": "establishments",
+        "geography": "municipality",
+        "geographyName": "Castell de Mur"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:259046",
+        "kind": "area_km2",
+        "value": 62.42,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Castell de Mur"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:259046",
+        "kind": "population_density_per_km2",
+        "value": 2.5,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Castell de Mur"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:259046",
+        "kind": "foreign_population_percent",
+        "value": 2.5,
+        "unit": "% of residents",
         "geography": "municipality",
         "geographyName": "Castell de Mur"
       }
@@ -1578,6 +2010,33 @@
         "kind": "retail_per_1000",
         "value": 14.67,
         "unit": "establishments/1,000 residents",
+        "geography": "municipality",
+        "geographyName": "Ulldemolins"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:431573",
+        "kind": "area_km2",
+        "value": 38.17,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Ulldemolins"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:431573",
+        "kind": "population_density_per_km2",
+        "value": 10.2,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Ulldemolins"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:431573",
+        "kind": "foreign_population_percent",
+        "value": 7.4,
+        "unit": "% of residents",
         "geography": "municipality",
         "geographyName": "Ulldemolins"
       }
@@ -1661,6 +2120,33 @@
         "kind": "retail_per_1000",
         "value": 11.98,
         "unit": "establishments/1,000 residents",
+        "geography": "municipality",
+        "geographyName": "Calaf"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:080312",
+        "kind": "area_km2",
+        "value": 9.22,
+        "unit": "km²",
+        "geography": "municipality",
+        "geographyName": "Calaf"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=inddt&n=396&geo=mun:080312",
+        "kind": "population_density_per_km2",
+        "value": 393.4,
+        "unit": "residents/km²",
+        "geography": "municipality",
+        "geographyName": "Calaf"
+      },
+      {
+        "observedAt": "2025",
+        "sourceUrl": "https://www.idescat.cat/pub/?id=censph&n=479&geo=mun:080312",
+        "kind": "foreign_population_percent",
+        "value": 21.4,
+        "unit": "% of residents",
         "geography": "municipality",
         "geographyName": "Calaf"
       }
@@ -11247,6 +11733,620 @@
             21180
           ]
         ]
+      }
+    ]
+  },
+  "services": {
+    "250024": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 1
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 1
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "library",
+        "count": 1
+      },
+      {
+        "observedAt": "2026-11-20T08:56:15+01:00_not tagged",
+        "sourceUrl": "https://www.fgc.cat/google/google_transit.zip",
+        "kind": "rail_station",
+        "count": 1
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 9
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 1
+      }
+    ],
+    "250122": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 1
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 2
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "library",
+        "count": 1
+      },
+      {
+        "observedAt": "2026-11-20T08:56:15+01:00_not tagged",
+        "sourceUrl": "https://www.fgc.cat/google/google_transit.zip",
+        "kind": "rail_station",
+        "count": 1
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 22
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 3
+      }
+    ],
+    "250371": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 3
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 2
+      },
+      {
+        "observedAt": "2026-11-20T08:56:15+01:00_not tagged",
+        "sourceUrl": "https://www.fgc.cat/google/google_transit.zip",
+        "kind": "rail_station",
+        "count": 2
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 2
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 6
+      }
+    ],
+    "250404": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 1
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 11
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "library",
+        "count": 1
+      },
+      {
+        "observedAt": "2026-11-20T08:56:15+01:00_not tagged",
+        "sourceUrl": "https://www.fgc.cat/google/google_transit.zip",
+        "kind": "rail_station",
+        "count": 2
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 228
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 8
+      }
+    ],
+    "250621": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 2
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 2
+      },
+      {
+        "observedAt": "2026-11-20T08:56:15+01:00_not tagged",
+        "sourceUrl": "https://www.fgc.cat/google/google_transit.zip",
+        "kind": "rail_station",
+        "count": 1
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 7
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 5
+      }
+    ],
+    "251180": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 1
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 1
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "library",
+        "count": 1
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 5
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 2
+      }
+    ],
+    "251207": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 10
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "hospital",
+        "count": 3
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 93
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "library",
+        "count": 19
+      },
+      {
+        "observedAt": "2026-11-20T08:56:15+01:00_not tagged",
+        "sourceUrl": "https://www.fgc.cat/google/google_transit.zip",
+        "kind": "rail_station",
+        "count": 3
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 1704
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 75
+      }
+    ],
+    "251569": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 2
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 3
+      },
+      {
+        "observedAt": "2026-11-20T08:56:15+01:00_not tagged",
+        "sourceUrl": "https://www.fgc.cat/google/google_transit.zip",
+        "kind": "rail_station",
+        "count": 1
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 7
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 5
+      }
+    ],
+    "251713": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 1
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 4
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "library",
+        "count": 1
+      },
+      {
+        "observedAt": "2026-11-20T08:56:15+01:00_not tagged",
+        "sourceUrl": "https://www.fgc.cat/google/google_transit.zip",
+        "kind": "rail_station",
+        "count": 1
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 43
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 7
+      }
+    ],
+    "251902": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 1
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 1
+      },
+      {
+        "observedAt": "2026-11-20T08:56:15+01:00_not tagged",
+        "sourceUrl": "https://www.fgc.cat/google/google_transit.zip",
+        "kind": "rail_station",
+        "count": 1
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 3
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 2
+      }
+    ],
+    "252154": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 1
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 1
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 2
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 3
+      }
+    ],
+    "252206": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 1
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 2
+      },
+      {
+        "observedAt": "2026-11-20T08:56:15+01:00_not tagged",
+        "sourceUrl": "https://www.fgc.cat/google/google_transit.zip",
+        "kind": "rail_station",
+        "count": 1
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 13
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 5
+      }
+    ],
+    "252347": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 5
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "hospital",
+        "count": 1
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 6
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "library",
+        "count": 1
+      },
+      {
+        "observedAt": "2026-11-20T08:56:15+01:00_not tagged",
+        "sourceUrl": "https://www.fgc.cat/google/google_transit.zip",
+        "kind": "rail_station",
+        "count": 2
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 106
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 10
+      }
+    ],
+    "252402": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 2
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 4
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "library",
+        "count": 1
+      },
+      {
+        "observedAt": "2026-11-20T08:56:15+01:00_not tagged",
+        "sourceUrl": "https://www.fgc.cat/google/google_transit.zip",
+        "kind": "rail_station",
+        "count": 1
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 24
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 6
+      }
+    ],
+    "252542": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 1
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 2
+      },
+      {
+        "observedAt": "2026-11-20T08:56:15+01:00_not tagged",
+        "sourceUrl": "https://www.fgc.cat/google/google_transit.zip",
+        "kind": "rail_station",
+        "count": 1
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 14
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 6
+      }
+    ],
+    "259046": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 1
+      },
+      {
+        "observedAt": "2026-11-20T08:56:15+01:00_not tagged",
+        "sourceUrl": "https://www.fgc.cat/google/google_transit.zip",
+        "kind": "rail_station",
+        "count": 2
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 0
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 2
+      }
+    ],
+    "431573": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 1
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 1
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 6
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 2
+      }
+    ],
+    "080312": [
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "primary_care",
+        "count": 1
+      },
+      {
+        "observedAt": "2026/2027",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/kvmv-ahh4",
+        "kind": "school",
+        "count": 3
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "library",
+        "count": 1
+      },
+      {
+        "observedAt": "2023",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/2dhj-q3r8",
+        "kind": "retail",
+        "count": 43
+      },
+      {
+        "observedAt": "2026-11-22",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
+        "kind": "sports",
+        "count": 6
       }
     ]
   }

@@ -3,7 +3,7 @@ import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { safeId } from '../../packages/contracts/ids.ts';
-import { dateSchema, transactionSchema } from '../../packages/finance/cashflow.ts';
+import { allSynthetic, dateSchema, transactionSchema } from '../../packages/finance/cashflow.ts';
 import { ApiError } from '../../packages/http/server.ts';
 import { createStore } from '../../packages/profiles/store.ts';
 
@@ -17,13 +17,15 @@ export const accountSchema = z
     currency: z.literal('EUR'),
     openingBalanceCents: money,
     openingDate: dateSchema,
-    synthetic: z.literal(true),
+    /** True for fabricated accounts, false for accounts of a real bank. */
+    synthetic: z.boolean(),
   })
   .strict();
 const ledgerSchema = z
   .object({
     schemaVersion: z.literal(1),
-    synthetic: z.literal(true),
+    /** Derived on every read and write: true only when every account and movement is synthetic. */
+    synthetic: z.boolean(),
     updatedAt: z.string(),
     accounts: z.array(accountSchema).max(20),
     transactions: z.array(transactionSchema).max(10000),
@@ -36,7 +38,8 @@ const ledgerSchema = z
           type: z.literal('bank.updated'),
           accountCount: z.number().int().nonnegative(),
           transactionCount: z.number().int().nonnegative(),
-          synthetic: z.literal(true),
+          /** Whether the whole ledger was synthetic at this revision. */
+          synthetic: z.boolean(),
         }),
       )
       .max(500)
@@ -44,14 +47,38 @@ const ledgerSchema = z
   })
   .strict();
 export type Ledger = z.infer<typeof ledgerSchema>;
+export type LedgerEvent = Ledger['events'][number];
+/** Fired after a ledger revision has been written to disk. */
+export type LedgerListener = (change: { userId: string; event: LedgerEvent }) => void;
 const importSchema = z.object({ transactions: z.array(transactionSchema).min(1).max(500) }).strict();
+/** True only when every account and movement of the ledger is labelled synthetic. */
+function ledgerIsSynthetic(ledger: Pick<Ledger, 'accounts' | 'transactions'>) {
+  return allSynthetic(ledger.accounts) && allSynthetic(ledger.transactions);
+}
+
 export function createBankStore(root: string) {
   const profiles = createStore(root);
   const locks = new Map<string, Promise<unknown>>();
+  const listeners = new Set<LedgerListener>();
+  /** Tell in-process listeners about a persisted revision. A failing listener never breaks a write. */
+  function announce(userId: string, event: LedgerEvent) {
+    for (const listener of listeners) {
+      try {
+        listener({ userId, event });
+      } catch {
+        // Listeners are observers; the ledger write already succeeded.
+      }
+    }
+  }
   async function read(id: string): Promise<Ledger> {
     await profiles.read(id, 'details');
     try {
-      return ledgerSchema.parse(JSON.parse(await readFile(join(root, safeId.parse(id), 'bank-ledger.json'), 'utf8')));
+      const ledger = ledgerSchema.parse(
+        JSON.parse(await readFile(join(root, safeId.parse(id), 'bank-ledger.json'), 'utf8')),
+      );
+      // The stored flag is a cache; the records decide.
+      ledger.synthetic = ledgerIsSynthetic(ledger);
+      return ledger;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       return {
@@ -84,15 +111,17 @@ export function createBankStore(root: string) {
         const result = change(ledger);
         if (previousContent === JSON.stringify([ledger.accounts, ledger.transactions])) return { result, ledger };
         ledger.updatedAt = new Date().toISOString();
+        ledger.synthetic = ledgerIsSynthetic(ledger);
         ledger.revision++;
-        ledger.events.push({
+        const event: LedgerEvent = {
           sequence: ledger.revision,
           occurredAt: ledger.updatedAt,
           type: 'bank.updated',
           accountCount: ledger.accounts.length,
           transactionCount: ledger.transactions.length,
-          synthetic: true,
-        });
+          synthetic: ledger.synthetic,
+        };
+        ledger.events.push(event);
         ledger.events = ledger.events.slice(-500);
         validate(ledger);
         const target = join(root, id, 'bank-ledger.json');
@@ -103,6 +132,7 @@ export function createBankStore(root: string) {
         } finally {
           await rm(temporary, { force: true });
         }
+        announce(id, event);
         return { result, ledger };
       });
     locks.set(id, operation);
@@ -114,6 +144,13 @@ export function createBankStore(root: string) {
   }
   return {
     read,
+    /** Subscribe to persisted revisions of this store instance. Returns the function that unsubscribes. */
+    onEvent(listener: LedgerListener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
     async events(id: string, after: number, limit: number) {
       const ledger = await read(id);
       const oldest = ledger.events[0]?.sequence ?? ledger.revision + 1;
@@ -122,7 +159,7 @@ export function createBankStore(root: string) {
       const nextCursor =
         requiresRefresh && after > ledger.revision ? ledger.revision : (selected.at(-1)?.sequence ?? after);
       return {
-        synthetic: true,
+        synthetic: ledger.synthetic,
         events: selected,
         latestRevision: ledger.revision,
         nextCursor,
@@ -167,6 +204,30 @@ export function createBankStore(root: string) {
         }
         if (ledger.transactions.length > 10000) throw new ApiError(400, 'Movement limit reached');
         return { inserted, duplicates };
+      });
+    },
+    /**
+     * Provider sync: insert new movements and update the ones whose content changed at the bank
+     * (for example pending to booked). Identical rows are skipped, so repeating a sync changes nothing.
+     */
+    async upsertTransactions(id: string, input: unknown) {
+      const { transactions } = importSchema.parse(input);
+      return mutate(id, ledger => {
+        const counts = { inserted: 0, updated: 0, duplicates: 0 };
+        for (const tx of transactions) {
+          const index = ledger.transactions.findIndex(item => item.id === tx.id);
+          if (index < 0) {
+            ledger.transactions.push(tx);
+            counts.inserted++;
+          } else if (JSON.stringify(ledger.transactions[index]) === JSON.stringify(tx)) {
+            counts.duplicates++;
+          } else {
+            ledger.transactions[index] = tx;
+            counts.updated++;
+          }
+        }
+        if (ledger.transactions.length > 10000) throw new ApiError(400, 'Movement limit reached');
+        return counts;
       });
     },
     async updateTransaction(id: string, transactionId: string, input: unknown) {
