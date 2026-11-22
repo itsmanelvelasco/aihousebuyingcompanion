@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { safeId } from './ids.ts';
-import { household, isoDate, municipalityCode, policyId, rural } from './places.ts';
+import { household, isoDate, municipalityCode, policyId, rural, serviceKind } from './places.ts';
 
 /**
  * ReloCat's two core entities and the plan that joins them.
@@ -87,18 +87,6 @@ export const indicator = sourced.extend({
   unit: z.string().min(1),
   geography: z.enum(['municipality', 'comarca']),
 });
-
-export const serviceKind = z.enum([
-  'primary_care',
-  'hospital',
-  'pharmacy',
-  'school',
-  'library',
-  'rail_station',
-  'retail',
-  'sports',
-  'social_services',
-]);
 
 /** Something a place offers that changes the cost or the timeline of buying there. */
 export const placeBenefit = z

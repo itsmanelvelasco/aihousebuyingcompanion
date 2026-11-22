@@ -7,3 +7,4 @@ data/runtime-users/
 data/runtime-habits/
 *.tmp
 artifacts/team-plugin/
+data/cache/

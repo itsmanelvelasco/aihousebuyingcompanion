@@ -32,6 +32,18 @@ export const metricKind = z.enum([
   'retail_establishments',
   'retail_per_1000',
 ]);
+/** Kinds of public service counted per municipality. A missing kind is unknown, not zero. */
+export const serviceKind = z.enum([
+  'primary_care',
+  'hospital',
+  'pharmacy',
+  'school',
+  'library',
+  'rail_station',
+  'retail',
+  'sports',
+  'social_services',
+]);
 export const metric = source.extend({
   kind: metricKind,
   value: z.number().nonnegative(),

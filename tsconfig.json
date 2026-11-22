@@ -8,7 +8,9 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "types": ["node"],
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"]
+  "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"]
 }
