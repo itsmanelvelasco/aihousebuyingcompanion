@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { rateLimitConfig } from '../packages/config/env.ts';
 
 /**
  * The real entry point, `apps/server/index.ts`, started as its own process the way a deployment
@@ -69,6 +70,11 @@ function start(directory: string, port: number, env: Record<string, string | und
     PROFILE_API_TOKEN: undefined,
     OPENAI_API_KEY: undefined,
     TREG_TOKEN: undefined,
+    DATA_ENCRYPTION_KEY: undefined,
+    RATE_LIMIT_PER_MINUTE: undefined,
+    BANK_DEMO_BANK_BASE_URL: undefined,
+    BANK_DEMO_BANK_API_KEY: undefined,
+    BANK_DEMO_BANK_WEBHOOK_SECRET: undefined,
     NODE_TEST_CONTEXT: undefined,
     ...env,
   };
@@ -265,6 +271,8 @@ test('the entry point in a production shape: sign-up, sign-in, a personal call, 
   assert.match(log, /origin {4}https:\/\/relocat\.test/);
   assert.match(log, /client address from X-Forwarded-For, 1 trusted proxy/);
   assert.match(log, /must pass the original Host header \(relocat\.test\)/);
+  // No bank that needs a consent is configured, so production runs without a data key and says so.
+  assert.match(log, /rate limit 300 requests a minute per address · bank credentials sealed with nothing: no bank/);
   assert.doesNotMatch(log, /WARNING/, 'every request carried a client address');
   assert(existsSync(join(directory, 'db', 'relocat.db')), 'the database is where DATABASE_FILE says');
 });
@@ -333,4 +341,57 @@ test('the entry point exits with status 1 when its port is taken', async t => {
   const code = await exitWithin(server, 30_000);
   assert.equal(code, 1, server.output());
   assert.match(server.output(), new RegExp(`Port ${address.port} on 127\\.0\\.0\\.1 is already in use`));
+});
+
+test('in production a bank people connect by consent does not run without DATA_ENCRYPTION_KEY', async t => {
+  const { directory, remove } = await scratch();
+  let running: Started | undefined;
+  // One hook, in this order: the process must be gone before its database directory can be removed.
+  t.after(async () => {
+    await running?.stop();
+    await remove();
+  });
+  // The demo bank's provider has a consent flow; configuring it is what makes the key necessary.
+  const bank = {
+    BANK_DEMO_BANK_BASE_URL: 'http://127.0.0.1:9',
+    BANK_DEMO_BANK_API_KEY: 'a-configured-bank-key',
+    BANK_DEMO_BANK_WEBHOOK_SECRET: 'a-configured-webhook-secret',
+  };
+  const key = 'k'.repeat(43);
+  const refused: [Record<string, string | undefined>, RegExp][] = [
+    [bank, /DATA_ENCRYPTION_KEY is not set, and demo-bank is configured/],
+    [{ ...bank, DATA_ENCRYPTION_KEY: '' }, /DATA_ENCRYPTION_KEY is not set/],
+    // A key that is not 32 bytes is a mistake in any mode, with or without such a bank.
+    [{ ...bank, DATA_ENCRYPTION_KEY: 'too-short' }, /DATA_ENCRYPTION_KEY must be 32 random bytes/],
+    [{ DATA_ENCRYPTION_KEY: 'too-short' }, /DATA_ENCRYPTION_KEY must be 32 random bytes/],
+  ];
+  for (const [env, message] of refused) {
+    running = start(directory, await sparePort(), env);
+    const code = await exitWithin(running, 20_000);
+    await running.stop();
+    assert.equal(code, 1, `${JSON.stringify(env)}\n${running.output()}`);
+    assert.match(running.output(), /The server did not start\./);
+    assert.match(running.output(), message);
+    assert.doesNotMatch(running.output(), /a-configured-bank-key|a-configured-webhook-secret/, 'no secret is printed');
+  }
+
+  // With a key it starts, says what seals the credentials, and never prints the key.
+  const server = start(directory, await sparePort(), { ...bank, DATA_ENCRYPTION_KEY: key });
+  running = server;
+  await ready(server);
+  assert.match(server.output(), /bank credentials sealed with DATA_ENCRYPTION_KEY/);
+  assert.doesNotMatch(server.output(), new RegExp(key));
+  assert.doesNotMatch(server.output(), /development key/);
+});
+
+test('the request limit defaults to 300 a minute on a public deployment and 3000 on a developer’s machine', () => {
+  // One journey-board tab polls once a second: five tabs alone are 300 requests a minute from 127.0.0.1.
+  assert.equal(rateLimitConfig({}).perMinute, 3000);
+  assert.equal(rateLimitConfig({ RATE_LIMIT_PER_MINUTE: '' }).perMinute, 3000);
+  assert.equal(rateLimitConfig({ NODE_ENV: 'production' }).perMinute, 300);
+  assert.equal(rateLimitConfig({ PUBLIC_ORIGIN: 'https://www.relo.cat' }).perMinute, 300);
+  // Whatever is set is what applies, in either mode.
+  assert.equal(rateLimitConfig({ RATE_LIMIT_PER_MINUTE: '120' }).perMinute, 120);
+  assert.equal(rateLimitConfig({ NODE_ENV: 'production', RATE_LIMIT_PER_MINUTE: '900' }).perMinute, 900);
+  assert.equal(rateLimitConfig({}).webhooksPerMinute, 120);
 });

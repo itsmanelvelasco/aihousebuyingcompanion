@@ -9,6 +9,7 @@ import { hashPassword, verifyPassword } from '../packages/auth/passwords.ts';
 import { csrfToken, verifyCsrf } from '../packages/auth/secrets.ts';
 import { createThrottle } from '../packages/auth/throttle.ts';
 import { defineBankProvider } from '../packages/banks/provider.ts';
+import synthetic from '../packages/banks/providers/synthetic.ts';
 import { createBankRegistry } from '../packages/banks/registry.ts';
 import { accessConfig, envText, publicOriginConfig } from '../packages/config/env.ts';
 import { remainingRows } from '../packages/db/auth.ts';
@@ -18,6 +19,7 @@ import {
   Browser,
   bearer,
   connectClient,
+  everyScope,
   mcp,
   pkce,
   postForm,
@@ -28,6 +30,7 @@ import {
   startProductionApp,
   type TestApp,
 } from './support/app.ts';
+import { consentBank } from './support/banks.ts';
 
 const password = 'correct horse battery';
 
@@ -892,11 +895,18 @@ test('an access token expires, and a token issued for another resource is refuse
 const personalCalls: [string, Record<string, unknown>][] = [
   ['get_person', {}],
   ['get_my_inputs', {}],
+  ['get_next_questions', { me: true, municipalityCodes: ['251207'] }],
   ['save_my_inputs', { data: { household: { size: 4 } }, confirmed: true }],
   ['get_bank_summary', { from: '2026-08-01', to: '2026-10-31' }],
   ['get_bank_updates', {}],
   ['get_bank_runtime', {}],
   ['plan_home_savings', { me: true, municipalityCodes: ['251207'] }],
+  ['list_connectable_banks', {}],
+  ['list_my_bank_connections', {}],
+  ['get_my_bank_accounts', {}],
+  ['list_my_statement_imports', {}],
+  ['sync_my_bank', {}],
+  ['preview_statement_import', { csv: 'date,description,amount\n2026-10-01,Salary,1000.00\n2026-10-02,Rent,-500.00' }],
 ];
 
 test('access-control matrix: MCP tools', async t => {
@@ -910,8 +920,8 @@ test('access-control matrix: MCP tools', async t => {
   const idOf = (email: string) =>
     server.db.get<{ user_id: string }>('SELECT user_id FROM accounts WHERE email = ?', email)!.user_id;
   const [aId, bId] = [idOf('a@example.com'), idOf('b@example.com')];
-  const tokenA = (await connectClient(a)).tokens.access_token;
-  const tokenB = (await connectClient(b)).tokens.access_token;
+  const tokenA = (await connectClient(a, everyScope)).tokens.access_token;
+  const tokenB = (await connectClient(b, everyScope)).tokens.access_token;
   await mcp(
     origin,
     'save_my_inputs',
@@ -1876,4 +1886,770 @@ test('token endpoint: malformed Basic credentials are 401, and a refresh may ask
   const full = await refresh(narrowed.body.refresh_token);
   assert.equal(full.body.scope, 'person:read person:write');
   assert.equal((await save(full.body.access_token)).result?.structuredContent?.saved, true);
+});
+
+// ------------------------------------------------------- a person's own bank data
+
+const statement = [
+  'date,description,amount',
+  '2026-09-01,Salary September,2100.00',
+  '2026-09-03,Rent,-800.00',
+  '2026-09-12,Mercadona,-64.20',
+  '2026-10-01,Salary October,2100.00',
+  '2026-10-03,Rent,-800.00',
+  '2026-10-31,Netflix,-12.99',
+].join('\n');
+
+/** An app with the consent bank and the synthetic feed, and two people with tokens of every kind. */
+async function bankWorld(start: typeof startApp | typeof startProductionApp = startApp) {
+  const bank = consentBank();
+  const server = await start({
+    profileApi: { bankRegistry: bank.registry([synthetic]), bankSync: { housekeepingMs: null } },
+  });
+  const a = server.browser('203.0.113.21');
+  const b = server.browser('203.0.113.22');
+  await a.signUp('a@example.com');
+  await b.signUp('b@example.com');
+  const idOf = (email: string) =>
+    server.db.get<{ user_id: string }>('SELECT user_id FROM accounts WHERE email = ?', email)!.user_id;
+  const count = (table: string, userId: string) =>
+    server.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table} WHERE user_id = ?`, userId)!.n;
+  return {
+    server,
+    bank,
+    a,
+    b,
+    aId: idOf('a@example.com'),
+    bId: idOf('b@example.com'),
+    count,
+    token: async (browser: Browser, scope: string) => (await connectClient(browser, scope)).tokens.access_token,
+  };
+}
+
+test('access-control matrix: bank tools act on the caller alone and the ones that change something need bank:manage', async t => {
+  const world = await bankWorld();
+  t.after(() => world.server.close());
+  const { server, a, b, aId, bId, count } = world;
+  const { origin } = server;
+  const full = await world.token(a, everyScope);
+  const fullB = await world.token(b, everyScope);
+  const noBank = await world.token(a, 'person:read person:write');
+  const readOnly = await world.token(a, 'person:read');
+  const text = (value: unknown) => JSON.stringify(value);
+  /** The structured result of a tool call; empty when the call failed. */
+  const content = (response: Awaited<ReturnType<typeof mcp>>) =>
+    (response.result?.structuredContent ?? {}) as Record<string, any>;
+  const changes: [string, Record<string, unknown>][] = [
+    ['connect_my_bank', { providerId: 'synthetic' }],
+    ['disconnect_my_bank', { connectionId: 'synthetic-12345678' }],
+    ['sync_my_bank', {}],
+    ['preview_statement_import', { csv: statement }],
+    ['confirm_statement_import', { previewHash: 'a'.repeat(40) }],
+    ['delete_statement_import', { importId: 'imp-000000000000000000000000' }],
+  ];
+  const reads = [
+    'list_connectable_banks',
+    'list_my_bank_connections',
+    'get_my_bank_accounts',
+    'list_my_statement_imports',
+  ];
+
+  for (const [name, args] of changes) {
+    // Anonymous: 401. A token without bank:manage: 403 that names the scope to ask for.
+    assert.equal((await mcp(origin, name, args)).status, 401, `${name} anonymous`);
+    for (const token of [noBank, readOnly]) {
+      const refused = await mcp(origin, name, args, bearer(token));
+      assert.equal(refused.status, 403, `${name} without bank:manage`);
+      const header = refused.headers.get('www-authenticate') ?? '';
+      assert.match(header, /error="insufficient_scope"/, name);
+      assert.match(header, /scope="[^"]*bank:manage[^"]*"/, name);
+    }
+    // No tool takes a person: the argument does not exist.
+    const cross = await mcp(origin, name, { ...args, userId: bId }, bearer(full));
+    assert(cross.error || cross.result?.isError, `${name} accepted a userId`);
+  }
+  for (const name of reads) {
+    assert.equal((await mcp(origin, name)).status, 401, `${name} anonymous`);
+    assert.equal((await mcp(origin, name, {}, bearer(readOnly))).status, 200, `${name} read-only`);
+  }
+  // Nothing above changed anything for anybody.
+  for (const table of ['bank_connections', 'bank_import_previews', 'bank_imports', 'bank_transactions'])
+    assert.deepEqual([count(table, aId), count(table, bId)], [0, 0], table);
+
+  // The bank that needs a consent is not connected by a tool: the person continues in their browser.
+  const banks = content(await mcp(origin, 'list_connectable_banks', {}, bearer(readOnly)));
+  assert.deepEqual(
+    (banks.banks as { id: string; synthetic: boolean; connect: string }[]).map(item => [
+      item.id,
+      item.synthetic,
+      item.connect,
+    ]),
+    [
+      ['consent-bank', false, 'consent_at_bank'],
+      ['synthetic', true, 'direct'],
+    ],
+  );
+  const consent = await mcp(origin, 'connect_my_bank', { providerId: 'consent-bank' }, bearer(full));
+  assert.deepEqual([content(consent).status, content(consent).continueUrl], ['consent_required', `${origin}/account`]);
+  assert.equal(world.bank.state.begun.length, 0, 'no consent was started by the tool');
+  assert.equal(count('bank_consents', aId), 0);
+  // A reference is never an input.
+  const withRef = await mcp(origin, 'connect_my_bank', { providerId: 'synthetic', ref: `self-${bId}` }, bearer(full));
+  assert(withRef.error || withRef.result?.isError);
+
+  // A connects the synthetic feed, syncs and imports a statement; B's ledger never moves.
+  const connected = await mcp(origin, 'connect_my_bank', { providerId: 'synthetic' }, bearer(full));
+  assert.equal(content(connected).status, 'connected', text(connected.result));
+  const connectionId = content(connected).connection.id as string;
+  const synced = await mcp(origin, 'sync_my_bank', {}, bearer(full));
+  assert.equal(content(synced).results[0].status, 'synced', text(synced.result));
+  const preview = await mcp(origin, 'preview_statement_import', { csv: statement }, bearer(full));
+  const summary = content(preview);
+  assert.deepEqual(
+    [
+      summary.rowCount,
+      summary.newRows,
+      summary.coveredFrom,
+      summary.coveredTo,
+      summary.synthetic,
+      summary.averageBasis,
+    ],
+    [6, 6, '2026-09-01', '2026-10-31', false, 'complete_months'],
+  );
+  assert.equal(count('bank_transactions', aId), 1, 'a preview writes no movement (one came from the feed)');
+  const previewHash = summary.previewHash as string;
+  // B cannot confirm A's preview, with A's hash or any other.
+  const hijack = await mcp(origin, 'confirm_statement_import', { previewHash }, bearer(fullB));
+  assert.equal(hijack.result?.isError, true);
+  assert.equal(count('bank_transactions', bId), 0);
+  const confirmed = await mcp(origin, 'confirm_statement_import', { previewHash }, bearer(full));
+  assert.deepEqual([content(confirmed).inserted, content(confirmed).duplicates], [6, 0], text(confirmed.result));
+  // A confirmation is used up with its preview.
+  assert.equal((await mcp(origin, 'confirm_statement_import', { previewHash }, bearer(full))).result?.isError, true);
+  assert.equal(count('bank_transactions', aId), 7);
+  const imports = await mcp(origin, 'list_my_statement_imports', {}, bearer(full));
+  const importId = content(imports).imports[0].id as string;
+  assert.equal(content(await mcp(origin, 'list_my_statement_imports', {}, bearer(fullB))).imports.length, 0);
+
+  // No tool result carries a movement: descriptions never leave through a tool.
+  const outputs = [preview, confirmed, synced, imports];
+  for (const name of [...reads, 'get_bank_summary', 'get_bank_updates'])
+    outputs.push(
+      await mcp(
+        origin,
+        name,
+        name === 'get_bank_summary' ? { from: '2026-09-01', to: '2026-10-31' } : {},
+        bearer(full),
+      ),
+    );
+  for (const output of outputs)
+    assert.doesNotMatch(text(output).toLowerCase(), /mercadona|netflix|salary september|synthetic runtime grocery/);
+  const accounts = content(await mcp(origin, 'get_my_bank_accounts', {}, bearer(full)));
+  assert.deepEqual(
+    (accounts.accounts as { id: string; synthetic: boolean }[]).map(account => [account.id, account.synthetic]),
+    [
+      ['synthetic-feed', true],
+      ['manual-import', false],
+    ],
+  );
+  assert.equal(accounts.synthetic, false, 'real data is in the ledger now');
+
+  // B cannot delete A's import or disconnect A's bank, even knowing the ids.
+  assert.equal((await mcp(origin, 'delete_statement_import', { importId }, bearer(fullB))).result?.isError, true);
+  assert.equal((await mcp(origin, 'disconnect_my_bank', { connectionId }, bearer(fullB))).result?.isError, true);
+  assert.deepEqual([count('bank_imports', aId), count('bank_connections', aId)], [1, 1]);
+  const removed = await mcp(origin, 'delete_statement_import', { importId }, bearer(full));
+  assert.equal(content(removed).removedMovements, 6);
+  assert.equal(count('bank_transactions', aId), 1);
+  assert.equal((await mcp(origin, 'disconnect_my_bank', { connectionId }, bearer(full))).result?.isError, undefined);
+  assert.equal(count('bank_connections', aId), 0);
+
+  // The session of a page on this origin may do the same; from another origin it may not.
+  const page = { Cookie: `rc_session=${a.cookies.get('rc_session')}`, Origin: origin };
+  assert.equal((await mcp(origin, 'sync_my_bank', {}, page)).status, 200);
+  assert.equal((await mcp(origin, 'sync_my_bank', {}, { ...page, Origin: 'https://evil.example' })).status, 403);
+
+  // Every bank tool declares that it needs sign-in, and the scope it needs.
+  const listed = (await (
+    await fetch(`${origin}/mcp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    })
+  ).json()) as {
+    result: {
+      tools: {
+        name: string;
+        description: string;
+        _meta?: { securitySchemes?: { type: string; scopes?: string[] }[] };
+      }[];
+    };
+  };
+  const tools = new Map(listed.result.tools.map(tool => [tool.name, tool]));
+  for (const [name] of changes)
+    assert.deepEqual(tools.get(name)?._meta?.securitySchemes, [{ type: 'oauth2', scopes: ['bank:manage'] }], name);
+  for (const name of reads)
+    assert.deepEqual(tools.get(name)?._meta?.securitySchemes, [{ type: 'oauth2', scopes: ['person:read'] }], name);
+  for (const name of ['list_my_bank_connections', 'get_my_bank_accounts', 'sync_my_bank', 'preview_statement_import'])
+    assert.match(tools.get(name)?.description ?? '', /individual movements are never returned by a tool/, name);
+
+  // The scope is advertised, and the consent page says in plain words what it allows and what it does not.
+  for (const path of ['/.well-known/oauth-protected-resource', '/.well-known/oauth-authorization-server']) {
+    const metadata = (await (await fetch(origin + path)).json()) as { scopes_supported: string[] };
+    assert.deepEqual(metadata.scopes_supported, ['person:read', 'person:write', 'bank:manage'], path);
+  }
+  const { body: client } = await registerClient(origin);
+  const asked = (scope: string) =>
+    a
+      .request(
+        `/oauth/authorize?${new URLSearchParams({
+          response_type: 'code',
+          client_id: client.client_id,
+          redirect_uri: 'https://client.example/callback',
+          code_challenge: pkce().challenge,
+          code_challenge_method: 'S256',
+          scope,
+        })}`,
+      )
+      .then(response => response.text());
+  const consentPage = await asked(everyScope);
+  assert.match(
+    consentPage,
+    /<li>Manage your bank data for you: start connecting a bank \(you still approve at the bank yourself\)/,
+  );
+  assert.match(consentPage, /a bank is only connected after you approve on the bank’s own page yourself/);
+  assert.match(consentPage, /not your individual movements, and nothing it can do moves money/);
+  assert.doesNotMatch(
+    await asked('person:read person:write'),
+    /bank data/i,
+    'nothing about banks unless it is asked for',
+  );
+  // The account page lists what a connected assistant may do, the bank scope included.
+  assert.match(
+    await (await a.request('/account')).text(),
+    /Test client<\/strong>[\s\S]{0,400}Manage your bank data for you/,
+  );
+});
+
+test('access-control matrix: a person’s own bank routes on /api', async t => {
+  const world = await bankWorld();
+  t.after(() => world.server.close());
+  const { server, a, aId, bId, count } = world;
+  const { origin } = server;
+  const bankToken = await world.token(a, everyScope);
+  const write = await world.token(a, 'person:read person:write');
+  const readOnly = await world.token(a, 'person:read');
+  const bankOnly = await world.token(a, 'bank:manage');
+  const admin = bearer('admin-test-token');
+  const api = (path: string, headers: Record<string, string> = {}, method = 'GET', body?: unknown) =>
+    fetch(`${origin}/api${path}`, {
+      method,
+      headers: { ...headers, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  const json = async (response: Response) => (await response.json()) as Record<string, any>;
+
+  const reads = [
+    '/bank/banks',
+    '/bank/connections',
+    '/bank/consents',
+    '/bank/imports',
+    '/bank/transactions',
+    '/export',
+  ];
+  for (const id of [aId, bId, 'user-001'])
+    for (const path of reads) {
+      assert.equal((await api(`/users/${id}${path}`)).status, 401, `anonymous ${id}${path}`);
+      assert.equal((await api(`/users/${id}${path}`, admin)).status, 200, `admin ${id}${path}`);
+      for (const token of [bankToken, readOnly])
+        assert.equal((await api(`/users/${id}${path}`, bearer(token))).status, id === aId ? 200 : 403, `${id}${path}`);
+    }
+  // A token that was granted bank:manage alone manages bank data and reads nothing.
+  for (const path of ['/context', '/export', '/bank/transactions'])
+    assert.equal((await api(`/users/${aId}${path}`, bearer(bankOnly))).status, 403, path);
+
+  // Every bank change: refused for another person's id, for an unknown id, and without bank:manage.
+  const writes: [string, string, unknown][] = [
+    ['POST', '/bank/connections', { providerId: 'synthetic' }],
+    ['DELETE', '/bank/connections/synthetic-12345678', undefined],
+    ['POST', '/bank/sync', {}],
+    ['POST', '/bank/imports/preview', { csv: statement }],
+    ['POST', '/bank/imports', { previewHash: 'a'.repeat(40) }],
+    ['DELETE', '/bank/imports/imp-000000000000000000000000', undefined],
+    ['PATCH', '/bank/transactions/some-movement', { category: 'other' }],
+    ['DELETE', '/bank/transactions/some-movement', undefined],
+  ];
+  for (const [method, path, body] of writes) {
+    assert.equal((await api(`/users/${aId}${path}`, {}, method, body)).status, 401, `anonymous ${method} ${path}`);
+    for (const id of [bId, 'user-001', 'p-000000000000000000000000000000'])
+      assert.equal(
+        (await api(`/users/${id}${path}`, bearer(bankToken), method, body)).status,
+        403,
+        `${method} ${id}${path}`,
+      );
+    for (const token of [write, readOnly])
+      assert.equal(
+        (await api(`/users/${aId}${path}`, bearer(token), method, body)).status,
+        403,
+        `${method} ${path} without bank:manage`,
+      );
+  }
+  // What stays with the operator, whatever the scope: raw ledger writes and the demo feed.
+  for (const [method, path, body] of [
+    ['POST', '/bank/transactions', { transactions: [] }],
+    ['POST', '/bank/accounts', {}],
+    ['PUT', '/bank/transactions/some-movement', {}],
+    ['POST', '/bank/runtime', { enabled: true }],
+    ['POST', '/bank/demo', {}],
+  ] as const)
+    assert.equal((await api(`/users/${aId}${path}`, bearer(bankToken), method, body)).status, 403, `${method} ${path}`);
+  for (const table of ['bank_connections', 'bank_import_previews', 'bank_transactions'])
+    assert.deepEqual([count(table, aId), count(table, bId)], [0, 0], table);
+
+  // Connecting: a person names the bank and nothing else.
+  for (const body of [
+    { providerId: 'synthetic', ref: `self-${bId}` },
+    { providerId: 'consent-bank', ref: 'CREDENTIAL-bob-52aa0d4c' },
+    { providerId: 'synthetic', id: 'mine' },
+    { providerId: 'synthetic', pollIntervalMs: 1000 },
+  ])
+    assert.equal(
+      (await api(`/users/${aId}/bank/connections`, bearer(bankToken), 'POST', body)).status,
+      403,
+      JSON.stringify(body),
+    );
+  const needsConsent = await api(`/users/${aId}/bank/connections`, bearer(bankToken), 'POST', {
+    providerId: 'consent-bank',
+  });
+  assert.equal(needsConsent.status, 202);
+  assert.deepEqual([(await json(needsConsent)).status, world.bank.state.begun.length], ['consent_required', 0]);
+  assert.equal(
+    (await api(`/users/${aId}/bank/connections`, bearer(bankToken), 'POST', { providerId: 'nope' })).status,
+    404,
+  );
+  const connected = await api(`/users/${aId}/bank/connections`, bearer(bankToken), 'POST', { providerId: 'synthetic' });
+  assert.equal(connected.status, 201);
+  const connectionId = (await json(connected)).connection.id as string;
+  assert.equal((await api(`/users/${aId}/bank/sync`, bearer(bankToken), 'POST', {})).status, 200);
+  const feedMovement = server.db.get<{ id: string }>('SELECT id FROM bank_transactions WHERE user_id = ?', aId)!.id;
+
+  // A statement: preview, confirm, the same again changes nothing, an overlapping one adds only what is new.
+  const previewed = await json(
+    await api(`/users/${aId}/bank/imports/preview`, bearer(bankToken), 'POST', { csv: statement }),
+  );
+  assert.deepEqual([previewed.rowCount, previewed.newRows, previewed.alreadyImported], [6, 6, false]);
+  assert.equal(count('bank_transactions', aId), 1, 'the preview wrote nothing');
+  const first = await api(`/users/${aId}/bank/imports`, bearer(bankToken), 'POST', {
+    previewHash: previewed.previewHash,
+  });
+  assert.equal(first.status, 201);
+  assert.deepEqual(
+    (({ inserted, duplicates, alreadyImported }) => [inserted, duplicates, alreadyImported])(await json(first)),
+    [6, 0, false],
+  );
+  assert.equal(
+    (await api(`/users/${aId}/bank/imports`, bearer(bankToken), 'POST', { previewHash: previewed.previewHash })).status,
+    409,
+  );
+  const again = await json(
+    await api(`/users/${aId}/bank/imports/preview`, bearer(bankToken), 'POST', { csv: statement }),
+  );
+  assert.deepEqual([again.newRows, again.alreadyInLedger, again.alreadyImported], [0, 6, true]);
+  const repeated = await json(
+    await api(`/users/${aId}/bank/imports`, bearer(bankToken), 'POST', { previewHash: again.previewHash }),
+  );
+  assert.deepEqual([repeated.inserted, repeated.alreadyImported], [0, true]);
+  assert.equal(count('bank_transactions', aId), 7);
+  const listed = await json(
+    await api(`/users/${aId}/bank/transactions?from=2026-09-01&to=2026-09-30&limit=2&offset=1`, bearer(readOnly)),
+  );
+  assert.deepEqual([listed.total, listed.transactions.length, listed.synthetic], [3, 2, false]);
+
+  // Corrections: the category of a movement, a transfer between own accounts, deleting what was imported.
+  const rent = server.db.get<{ id: string }>(
+    "SELECT id FROM bank_transactions WHERE user_id = ? AND description = 'rent' ORDER BY date",
+    aId,
+  )!.id;
+  const patch = (id: string, category: string, token = bankToken) =>
+    api(`/users/${aId}/bank/transactions/${id}`, bearer(token), 'PATCH', { category });
+  assert.equal((await patch(rent, 'internal_transfer')).status, 200);
+  assert.equal((await patch(rent, 'income')).status, 400, 'money out is never income');
+  assert.equal((await patch(rent, 'nonsense')).status, 400);
+  assert.equal((await patch('csv-unknown', 'other')).status, 404);
+  assert.equal(
+    server.db.get<{ category: string }>(
+      'SELECT category FROM bank_transactions WHERE user_id = ? AND id = ?',
+      aId,
+      rent,
+    )?.category,
+    'internal_transfer',
+  );
+  assert.equal(
+    (await api(`/users/${aId}/bank/transactions/${feedMovement}`, bearer(bankToken), 'DELETE')).status,
+    403,
+    'a bank movement is corrected, not deleted',
+  );
+  assert.equal((await api(`/users/${aId}/bank/transactions/${rent}`, bearer(bankToken), 'DELETE')).status, 200);
+  assert.equal(count('bank_transactions', aId), 6);
+
+  // The session cookie: reads work; every change needs this origin and the CSRF token.
+  const cookie = { Cookie: `rc_session=${a.cookies.get('rc_session')}` };
+  const csrf = await a.csrf('/account');
+  assert.equal((await api(`/users/${aId}/bank/connections`, cookie)).status, 200);
+  assert.equal((await api(`/users/${bId}/bank/connections`, cookie)).status, 403);
+  assert.equal((await api(`/users/${bId}/export`, cookie)).status, 403);
+  assert.equal(
+    (await api(`/users/${aId}/bank/sync`, { ...cookie, Origin: origin }, 'POST', {})).status,
+    403,
+    'no CSRF token',
+  );
+  assert.equal(
+    (await api(`/users/${aId}/bank/sync`, { ...cookie, 'X-CSRF-Token': csrf }, 'POST', {})).status,
+    403,
+    'no Origin',
+  );
+  assert.equal(
+    (
+      await api(
+        `/users/${aId}/bank/sync`,
+        { ...cookie, Origin: 'https://evil.example', 'X-CSRF-Token': csrf },
+        'POST',
+        {},
+      )
+    ).status,
+    401,
+  );
+  assert.equal(
+    (await api(`/users/${aId}/bank/sync`, { ...cookie, Origin: origin, 'X-CSRF-Token': csrf }, 'POST', {})).status,
+    200,
+  );
+  assert.equal(
+    (await api(`/users/${bId}/bank/sync`, { ...cookie, Origin: origin, 'X-CSRF-Token': csrf }, 'POST', {})).status,
+    403,
+  );
+
+  // Deleting the import removes its movements; disconnecting removes the link.
+  const importId = (await json(await api(`/users/${aId}/bank/imports`, bearer(readOnly)))).imports[0].id as string;
+  const removed = await json(await api(`/users/${aId}/bank/imports/${importId}`, bearer(bankToken), 'DELETE'));
+  assert.equal(removed.removedMovements, 5, 'the five that were left of the six');
+  assert.equal((await api(`/users/${aId}/bank/connections/${connectionId}`, bearer(bankToken), 'DELETE')).status, 200);
+  assert.deepEqual(
+    [count('bank_imports', aId), count('bank_import_rows', aId), count('bank_connections', aId)],
+    [0, 0, 0],
+  );
+  // B was never touched.
+  for (const table of ['bank_connections', 'bank_transactions', 'bank_imports', 'bank_import_previews'])
+    assert.equal(count(table, bId), 0, table);
+
+  // The export through /api is the person's own, and names nobody else.
+  const exported = await api(`/users/${aId}/export`, bearer(readOnly));
+  assert.match(exported.headers.get('content-disposition') ?? '', /attachment/);
+  const body = await exported.text();
+  assert(body.includes(aId) && body.includes('a@example.com'));
+  assert(!body.includes(bId) && !body.includes('b@example.com'));
+});
+
+for (const shape of shapes)
+  test(`the account page: bank, statement, password and export forms act on the session’s person and need its CSRF token [${shape.name}]`, async t => {
+    const world = await bankWorld(shape.start);
+    t.after(() => world.server.close());
+    const { server, a, b, aId, bId, count } = world;
+    const csrf = await a.csrf('/account');
+    const forms: [string, Record<string, string>][] = [
+      ['/account/password', { current: password, next: 'another passphrase' }],
+      ['/account/export', {}],
+      ['/account/bank/connect', { provider: 'synthetic' }],
+      ['/account/bank/sync', {}],
+      ['/account/bank/disconnect', { connection: 'synthetic-12345678' }],
+      ['/account/bank/import/confirm', { preview: 'a'.repeat(40) }],
+      ['/account/bank/import/cancel', { preview: 'a'.repeat(40) }],
+      ['/account/bank/import/delete', { import: 'imp-000000000000000000000000' }],
+      ['/account/bank/movement', { movement: 'x', category: 'other' }],
+      ['/account/bank/movement/delete', { movement: 'x' }],
+    ];
+    const anonymous = server.browser('203.0.113.99');
+    for (const [path, fields] of forms) {
+      // Not signed in: to the sign-in page. Signed in without the token, with another session's
+      // token, or from another site: refused.
+      const signedOut = await anonymous.request(path, { form: fields });
+      assert.deepEqual([signedOut.status, signedOut.headers.get('location')], [303, '/login?next=%2Faccount'], path);
+      assert.equal((await a.request(path, { form: fields })).status, 403, `${path} without a token`);
+      assert.equal(
+        (await a.request(path, { form: { ...fields, csrf: await b.csrf('/account') } })).status,
+        403,
+        `${path} with B's token`,
+      );
+      const crossSite = await a.request(path, {
+        form: { ...fields, csrf },
+        headers: { Origin: 'https://evil.example' },
+      });
+      assert.equal(crossSite.status, 403, `${path} from another site`);
+    }
+    const upload = (browser: Browser, fields: Record<string, string>, content = statement) =>
+      browser.request('/account/bank/import', {
+        upload: { fields, name: 'statement', filename: 'statement <b>.csv', content },
+      });
+    assert.equal((await upload(a, {})).status, 403, 'the upload needs the token too');
+    assert.equal((await upload(anonymous, { csrf })).status, 303);
+    assert.equal((await a.request('/bank/consent/callback?state=x', { method: 'POST' })).status, 405);
+    for (const table of ['bank_connections', 'bank_import_previews', 'bank_transactions'])
+      assert.deepEqual([count(table, aId), count(table, bId)], [0, 0], table);
+    assert.equal(
+      (await server.browser('203.0.113.21').login('a@example.com')).status,
+      303,
+      'the password is unchanged',
+    );
+    const token = csrf;
+
+    // The page: strict headers, no script, and the bank section with what can be connected.
+    const page = await a.request('/account');
+    const html = await page.text();
+    assert.match(page.headers.get('content-security-policy') ?? '', /default-src 'none'.*form-action 'self'$/);
+    assert.doesNotMatch(html, /<script/i);
+    assert.match(html, /Consent Bank/);
+    assert.match(html, /Synthetic demo feed<\/strong> <span class="tag">fictional data<\/span>/);
+    assert.match(html, /No bank is connected\./);
+    assert.match(html, /Download everything as JSON/);
+    assert.match(html, /Change your password/);
+
+    // Connect the feed, fetch, and read a statement: a summary first, nothing saved.
+    const connect = await a.request('/account/bank/connect', { form: { csrf: token, provider: 'synthetic' } });
+    assert.deepEqual([connect.status, connect.headers.get('location')], [303, '/account?done=bank-connected#bank']);
+    assert.equal((await a.request('/account/bank/sync', { form: { csrf: token } })).status, 303);
+    const preview = await upload(a, { csrf: token });
+    const previewHtml = await preview.text();
+    assert.equal(preview.status, 200);
+    assert.match(previewHtml, /Nothing has been saved yet/);
+    assert.match(previewHtml, /statement &lt;b&gt;\.csv/, 'the file name is escaped');
+    assert.match(previewHtml, /2026-09-01 to 2026-10-31 \(61 days\)/);
+    assert.match(previewHtml, /Monthly figures are averages of 2 complete month\(s\)/);
+    assert.match(previewHtml, /<td>Housing<\/td><td class="num">2<\/td><td class="num">−€1,600\.00<\/td>/);
+    assert.doesNotMatch(previewHtml, /<script/i);
+    assert.equal(count('bank_transactions', aId), 1);
+    const previewHash = /name="preview" value="([0-9a-f]{40})"/.exec(previewHtml)![1];
+    // B cannot confirm what A uploaded.
+    const hijack = await b.request('/account/bank/import/confirm', {
+      form: { csrf: await b.csrf('/account'), preview: previewHash },
+    });
+    assert.equal(hijack.status, 409);
+    assert.equal(count('bank_transactions', bId), 0);
+    const confirmed = await a.request('/account/bank/import/confirm', { form: { csrf: token, preview: previewHash } });
+    assert.deepEqual([confirmed.status, confirmed.headers.get('location')], [303, '/account?done=imported#movements']);
+    assert.equal(count('bank_transactions', aId), 7);
+
+    // The movements are listed for their owner only, newest first, with a filter and pages.
+    const listed = await (await a.request('/account?from=2026-09-01&to=2026-10-31')).text();
+    assert.match(listed, /6 movement\(s\) · page 1 of 1/);
+    assert(listed.indexOf('netflix') < listed.indexOf('salary september'), 'newest first');
+    assert.doesNotMatch(await (await b.request('/account')).text(), /netflix|mercadona/);
+    // A statement too short for a monthly figure says so, and one that is not a statement is refused.
+    const short = await (await upload(a, { csrf: token }, 'date,description,amount\n2026-11-03,Coffee,-2.10')).text();
+    assert.match(
+      short,
+      /rc-note--warn">The statement runs from 2026-11-03 to 2026-11-03: 1 day\(s\)\. That is too short for a monthly figure/,
+    );
+    const broken = await upload(a, { csrf: token }, 'not,a,statement\n1,2,3');
+    assert.equal(broken.status, 400);
+    assert.match(await broken.text(), /Use a CSV with date, description, and amount columns/);
+    assert.equal(
+      (await upload(a, { csrf: token }, `date,description,amount\n${'2026-11-03,Coffee,-2.10\n'.repeat(12_000)}`))
+        .status,
+      413,
+    );
+
+    // Corrections from the page, and only on the person's own movements.
+    const id = (description: string) =>
+      server.db.get<{ id: string }>(
+        'SELECT id FROM bank_transactions WHERE user_id = ? AND description = ?',
+        aId,
+        description,
+      )!.id;
+    const saved = await a.request('/account/bank/movement', {
+      form: { csrf: token, movement: id('mercadona'), category: 'internal_transfer', from: '2026-09-01', page: '1' },
+    });
+    assert.deepEqual(
+      [saved.status, saved.headers.get('location')],
+      [303, '/account?done=category&from=2026-09-01&page=1#movements'],
+    );
+    assert.match(await (await a.request('/account')).text(), /<span class="tag">your choice<\/span>/);
+    const notMine = await b.request('/account/bank/movement', {
+      form: { csrf: await b.csrf('/account'), movement: id('mercadona'), category: 'other' },
+    });
+    assert.equal(notMine.status, 404, 'B cannot touch a movement of A, even knowing its id');
+    assert.equal(
+      (
+        await b.request('/account/bank/movement/delete', {
+          form: { csrf: await b.csrf('/account'), movement: id('netflix') },
+        })
+      ).status,
+      404,
+    );
+    assert.equal(
+      (await a.request('/account/bank/movement/delete', { form: { csrf: token, movement: id('netflix') } })).status,
+      303,
+    );
+    const feed = server.db.get<{ id: string }>(
+      "SELECT id FROM bank_transactions WHERE user_id = ? AND account_id = 'synthetic-feed'",
+      aId,
+    )!.id;
+    const kept = await a.request('/account/bank/movement/delete', { form: { csrf: token, movement: feed } });
+    assert.equal(kept.status, 403);
+    assert.match(await kept.text(), /Only movements you imported yourself can be deleted/);
+    assert.equal(count('bank_transactions', aId), 6);
+
+    // The download: one JSON file with everything of this person and nothing of anybody else.
+    const download = await a.request('/account/export', { form: { csrf: token } });
+    assert.equal(download.status, 200);
+    assert.match(
+      download.headers.get('content-disposition') ?? '',
+      /^attachment; filename="relocat-export-\d{4}-\d{2}-\d{2}\.json"$/,
+    );
+    assert.equal(download.headers.get('cache-control'), 'no-store');
+    const text = await download.text();
+    const exported = JSON.parse(text) as {
+      tables: Record<string, Record<string, unknown>[]>;
+      redacted: { columns: Record<string, string[]> };
+    };
+    assert.equal(exported.tables.accounts[0].email, 'a@example.com');
+    assert.deepEqual(
+      [
+        exported.tables.bank_transactions.length,
+        exported.tables.bank_imports.length,
+        exported.tables.bank_connections.length,
+      ],
+      [6, 1, 1],
+    );
+    assert(!text.includes(bId) && !text.includes('b@example.com'));
+    assert(!/password_hash|scrypt\$/.test(JSON.stringify(exported.tables)), 'the password hash is not exported');
+    assert.deepEqual(exported.redacted.columns.accounts, ['password_hash']);
+
+    // Disconnect and delete the import from the page.
+    const connectionId = server.db.get<{ id: string }>('SELECT id FROM bank_connections WHERE user_id = ?', aId)!.id;
+    const foreign = await b.request('/account/bank/disconnect', {
+      form: { csrf: await b.csrf('/account'), connection: connectionId },
+    });
+    assert.equal(foreign.status, 404);
+    assert.equal(count('bank_connections', aId), 1);
+    assert.equal(
+      (await a.request('/account/bank/disconnect', { form: { csrf: token, connection: connectionId } })).status,
+      303,
+    );
+    const importId = server.db.get<{ id: string }>('SELECT id FROM bank_imports WHERE user_id = ?', aId)!.id;
+    assert.equal(
+      (await b.request('/account/bank/import/delete', { form: { csrf: await b.csrf('/account'), import: importId } }))
+        .status,
+      404,
+    );
+    assert.equal(
+      (await a.request('/account/bank/import/delete', { form: { csrf: token, import: importId } })).status,
+      303,
+    );
+    assert.deepEqual(
+      [count('bank_connections', aId), count('bank_imports', aId), count('bank_transactions', aId)],
+      [0, 0, 1],
+    );
+
+    // Deleting the account leaves nothing: no upload waiting, no consent in progress, no credential.
+    await upload(a, { csrf: token });
+    world.bank.state.expiresAt = null;
+    const leave = await a.request('/account/bank/connect', { form: { csrf: token, provider: 'consent-bank' } });
+    assert.equal(leave.status, 200);
+    assert.match(await leave.text(), /href="https:\/\/bank\.example\/authorize\?state=/);
+    const pending = world.bank.lastState();
+    assert.deepEqual([count('bank_import_previews', aId), count('bank_consents', aId)], [2, 1], 'two uploads wait');
+    const back = await a.request(`/bank/consent/callback?state=${pending}&code=code-ada`);
+    assert.deepEqual([back.status, back.headers.get('location')], [302, '/account?done=bank-connected#bank']);
+    await a.request('/account/bank/connect', { form: { csrf: token, provider: 'consent-bank' } });
+    assert.deepEqual([count('bank_credentials', aId), count('bank_consents', aId)], [1, 1]);
+    const account = server.db.get<{ id: string }>("SELECT id FROM accounts WHERE email = 'a@example.com'")!;
+    const deleted = await a.request('/account/delete', { form: { csrf: token, password, confirm: 'yes' } });
+    assert.equal(deleted.status, 200);
+    assert.equal(remainingRows(server.db, account.id, aId), 0);
+    for (const table of ['bank_credentials', 'bank_consents', 'bank_import_previews', 'bank_connections'])
+      assert.equal(server.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table}`)?.n, 0, table);
+    // The consent that was in progress is worthless now, to anybody.
+    const late = await b.request(`/bank/consent/callback?state=${world.bank.lastState()}&code=code-ada`);
+    assert.equal(late.status, 400);
+    assert.equal(count('bank_connections', bId), 0);
+  });
+
+test('changing the password needs the current one, ends other sessions and every token, and has its own throttle', async t => {
+  const server = await startApp();
+  t.after(() => server.close());
+  const { origin } = server;
+  const here = server.browser();
+  await here.signUp('ada@example.com');
+  const elsewhere = server.browser();
+  assert.equal((await elsewhere.login('ada@example.com')).status, 303);
+  const client = await connectClient(elsewhere, everyScope);
+  const bystander = server.browser();
+  await bystander.signUp('bob@example.com');
+  const bystanderToken = (await connectClient(bystander)).tokens.access_token;
+  const csrf = await here.csrf('/account');
+  const change = (current: string, next: string) =>
+    here.request('/account/password', { form: { csrf, current, next } });
+  const next = 'a brand new passphrase';
+
+  // A wrong current password, or a new one that is too weak, changes nothing.
+  const wrong = await change('not the password', next);
+  assert.equal(wrong.status, 400);
+  assert.match(await wrong.text(), /The current password is not right\. Nothing was changed\./);
+  for (const [weak, reason] of [
+    ['short', /10 to 200 characters/],
+    ['ada@example.com', /must differ from the email/],
+    [password, /must differ from the current one/],
+  ] as const) {
+    const refused = await change(password, weak);
+    assert.equal(refused.status, 400, weak);
+    assert.match(await refused.text(), reason);
+  }
+  assert.equal((await elsewhere.request('/account')).status, 200, 'nothing ended yet');
+  assert.equal((await mcp(origin, 'get_person', {}, bearer(client.tokens.access_token))).status, 200);
+
+  // Wrong guesses are counted for this session: five are free, the next one makes it wait. Signing in is not affected.
+  for (let n = 0; n < 6; n++) assert.equal((await change('wrong guess', next)).status, 400);
+  const waiting = await change(password, next);
+  assert.equal(waiting.status, 429);
+  assert.equal(waiting.headers.get('retry-after'), '30');
+  assert.equal((await server.browser().login('ada@example.com')).status, 303, 'sign-in has its own counters');
+  const other = server.browser();
+  await other.login('ada@example.com');
+  const otherCsrf = await other.csrf('/account');
+
+  // From a session that is not waiting, with the right password: changed.
+  const changed = await other.request('/account/password', { form: { csrf: otherCsrf, current: password, next } });
+  assert.deepEqual([changed.status, changed.headers.get('location')], [303, '/account?done=password']);
+  assert.match(await (await other.request('/account?done=password')).text(), /Your password was changed/);
+  // Every other browser is signed out; this one stays.
+  for (const browser of [here, elsewhere])
+    assert.equal((await browser.request('/account')).headers.get('location'), '/login?next=%2Faccount');
+  assert.equal((await other.request('/account')).status, 200);
+  // Every token issued before is dead, access and refresh alike, and no assistant is listed.
+  assert.equal((await mcp(origin, 'get_person', {}, bearer(client.tokens.access_token))).status, 401);
+  const refresh = await postForm(origin, '/oauth/token', {
+    grant_type: 'refresh_token',
+    refresh_token: client.tokens.refresh_token,
+    client_id: client.clientId,
+  });
+  assert.equal(refresh.status, 400);
+  assert.match(await (await other.request('/account')).text(), /No assistant or application is connected/);
+  // The old password is refused, the new one signs in, and nobody else noticed anything.
+  assert.equal((await server.browser().login('ada@example.com')).status, 400);
+  assert.equal((await server.browser().login('ada@example.com', next)).status, 303);
+  assert.equal((await bystander.request('/account')).status, 200);
+  assert.equal((await mcp(origin, 'get_person', {}, bearer(bystanderToken))).status, 200);
+});
+
+test('a new account’s documents say synthetic: false by themselves, with or without the trigger behind them', async () => {
+  const db = open(':memory:');
+  db.run('DROP TRIGGER accounts_own_real_people');
+  const account = await createAccounts(db).signUp({ email: 'ada@example.com', password, address: 'a' });
+  const sections = db.all<{ synthetic: number; document: string }>(
+    'SELECT synthetic, document FROM profile_sections WHERE user_id = ?',
+    account.userId,
+  );
+  assert.equal(sections.length, 3);
+  for (const section of sections)
+    assert.deepEqual([section.synthetic, JSON.parse(section.document).synthetic], [0, false]);
+  db.close();
 });

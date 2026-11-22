@@ -4,13 +4,16 @@ import { createAccounts } from '../../packages/auth/accounts.ts';
 import type { OAuthOptions } from '../../packages/auth/oauth.ts';
 import { createOAuth } from '../../packages/auth/oauth.ts';
 import { safeEqual, verifyCsrf } from '../../packages/auth/secrets.ts';
+import type { Vault } from '../../packages/banks/vault.ts';
+import { developmentVault, lazyVault } from '../../packages/banks/vault.ts';
 import type { accessConfig } from '../../packages/config/env.ts';
 import { listingBudgetConfig, listingSearchConfig } from '../../packages/config/env.ts';
 import type { Database } from '../../packages/db/database.ts';
+import { DatabaseBusyError } from '../../packages/db/database.ts';
 import type { RateLimitOptions } from '../../packages/http/rate-limit.ts';
 import { createRateLimiter } from '../../packages/http/rate-limit.ts';
 import type { ApiAccess } from '../../packages/http/server.ts';
-import { bearerToken, sendJson } from '../../packages/http/server.ts';
+import { bearerToken, sendHtml, sendJson } from '../../packages/http/server.ts';
 import { createListingBudget } from '../../packages/listings/budget.ts';
 import type { BoardOptions, CallerResolution } from '../board/server.ts';
 import { createBoardApp } from '../board/server.ts';
@@ -20,6 +23,7 @@ import type { Caller } from '../mcp-server/identity.ts';
 import type { ProfileApiOptions } from '../profile-api/server.ts';
 import { createProfileApiHandler } from '../profile-api/server.ts';
 import { createAccountRoutes } from './account-routes.ts';
+import { messagePage } from './pages.ts';
 import { createPeople } from './people.ts';
 
 /**
@@ -53,7 +57,13 @@ export type AppOptions = {
     'trustProxy' | 'clientAddress'
   >;
   habits?: Pick<HabitsOptions, 'openai' | 'dailyCalls'>;
-  profileApi?: Omit<ProfileApiOptions, 'authorize' | 'ownedByAccount'>;
+  profileApi?: Omit<ProfileApiOptions, 'authorize' | 'ownedByAccount' | 'vault'>;
+  /**
+   * Seals bank credentials at rest (`DATA_ENCRYPTION_KEY`). Omitted outside production: a
+   * development key kept in the database. Omitted in production: nobody can connect a bank through
+   * a consent, and `index.ts` refuses to start when a bank that needs one is configured.
+   */
+  vault?: Vault;
   accounts?: AccountsOptions;
   oauth?: Omit<OAuthOptions, 'issuer' | 'redirectSchemes' | 'onRevoke'>;
   /**
@@ -89,6 +99,7 @@ export function createApp(options: AppOptions) {
   const publicService = access.production || publicOrigin !== null;
   const warn = options.warn ?? (message => console.warn(message));
   const ownedByAccount = (userId: string) => accounts.ownerOf(userId) !== undefined;
+  const vault = options.vault ?? (access.production ? undefined : lazyVault(() => developmentVault(db, warn)));
 
   // ---------------------------------------------------------------- hosts
 
@@ -190,7 +201,14 @@ export function createApp(options: AppOptions) {
     const token = bearerToken(request);
     if (token) {
       const grant = oauth.verifyAccessToken(token);
-      return grant ? { userId: grant.userId, write: grant.scopes.includes('person:write') } : null;
+      return grant
+        ? {
+            userId: grant.userId,
+            read: grant.scopes.includes('person:read'),
+            write: grant.scopes.includes('person:write'),
+            bank: grant.scopes.includes('bank:manage'),
+          }
+        : null;
     }
     if (request.headers.authorization) return null;
     const session = routes.sessionOf(request);
@@ -198,16 +216,21 @@ export function createApp(options: AppOptions) {
     const origin = request.headers.origin;
     const sameOrigin = origin === undefined || origin === requestOrigin(request);
     const write = sameOrigin && origin !== undefined && verifyCsrf(session.id, request.headers['x-csrf-token']);
-    return sameOrigin ? { userId: session.account.userId, write } : null;
+    // A session may do everything the person may; every change needs the CSRF token of that session.
+    return sameOrigin ? { userId: session.account.userId, read: true, write, bank: write } : null;
   }
 
   const profiles = createProfileApiHandler(db, options.adminToken, {
     ...options.profileApi,
     authorize: authorizeApi,
     ownedByAccount,
+    vault,
   });
   const habits = createHabitsHandler({ ...options.habits, token: options.adminToken, db, authorize: authorizeApi });
-  const people = createPeople({ ...profiles.people, habits: habits.read });
+  const people = createPeople(
+    { ...profiles.people, habits: habits.read },
+    { origin: () => publicOrigin ?? localOrigin() },
+  );
   const demo = access.publicDemo ? people.demo(access.demoUserIds, ownedByAccount) : null;
   const routes = createAccountRoutes({
     db,
@@ -220,6 +243,8 @@ export function createApp(options: AppOptions) {
     signUps: access.signUps,
     onSignOut: userId => void profiles.closeStreams(userId),
     forgetPerson: userId => profiles.forgetPerson(userId),
+    bank: { sync: profiles.bankSync, ledger: profiles.bank, statements: profiles.statements },
+    exportPerson: userId => profiles.exportPerson(userId),
   });
 
   // ----------------------------------------------------------- housekeeping
@@ -229,6 +254,8 @@ export function createApp(options: AppOptions) {
     try {
       accounts.housekeeping();
       oauth.housekeeping();
+      // Bank consents nobody finished and statements nobody confirmed.
+      profiles.housekeeping();
       return true;
     } catch {
       return false;
@@ -248,8 +275,8 @@ export function createApp(options: AppOptions) {
    * refused rather than treated as anonymous. Without a token, the session cookie counts only for
    * a request the browser marks as coming from this origin, so another site cannot borrow it.
    */
-  function resolveCaller(request: IncomingMessage): CallerResolution {
-    const challenge: Caller['challenge'] = error => oauth.challenge(error);
+  function resolveCallerNow(request: IncomingMessage): CallerResolution {
+    const challenge: Caller['challenge'] = (error, scopes) => oauth.challenge(error, scopes);
     const base = { demo, challenge };
     if (request.headers.authorization !== undefined) {
       const token = bearerToken(request);
@@ -268,8 +295,29 @@ export function createApp(options: AppOptions) {
       (request.headers.origin === undefined && request.headers['sec-fetch-site'] === 'same-origin');
     const session = sameOrigin ? routes.sessionOf(request) : null;
     if (session)
-      return { caller: { ...base, me: people.own(session.account.userId), scopes: ['person:read', 'person:write'] } };
+      return {
+        caller: {
+          ...base,
+          me: people.own(session.account.userId),
+          scopes: ['person:read', 'person:write', 'bank:manage'],
+        },
+      };
     return { caller: { ...base, me: null, scopes: [] } };
+  }
+
+  /**
+   * The caller of an `/mcp` request, resolved once. `route` resolves it before the board's handler
+   * runs, so a failure of the lookup itself (a busy database) reaches the one place that answers it
+   * instead of the handler's own catch-all.
+   */
+  const resolved = new WeakMap<IncomingMessage, CallerResolution>();
+  function resolveCaller(request: IncomingMessage): CallerResolution {
+    let resolution = resolved.get(request);
+    if (!resolution) {
+      resolution = resolveCallerNow(request);
+      resolved.set(request, resolution);
+    }
+    return resolution;
   }
 
   const board = createBoardApp({
@@ -316,15 +364,34 @@ export function createApp(options: AppOptions) {
     if (await routes.handle(request, response)) return;
     if (options.interviewer && (path === '/interview' || path.startsWith('/interview/')))
       return options.interviewer(request, response);
+    if (path === '/mcp') resolveCaller(request);
     return board.handle(request, response);
+  }
+
+  /**
+   * The one answer to a database that stayed busy (`DatabaseBusyError`): 503 with `Retry-After`,
+   * as a page for a browser and as JSON for everything else. Nothing was written, so the same
+   * request can simply be sent again. `/api` gives the same answer from its own handlers.
+   */
+  function busy(request: IncomingMessage, response: ServerResponse, error: DatabaseBusyError) {
+    response.setHeader('Retry-After', String(error.retryAfterSeconds));
+    const page = request.method === 'GET' && String(request.headers.accept ?? '').includes('text/html');
+    if (page)
+      return sendHtml(
+        response,
+        503,
+        messagePage('ReloCat is busy', 'Nothing was changed. Wait a moment and try again.'),
+      );
+    return sendJson(response, 503, { error: 'Storage is busy; try again shortly', retryable: true });
   }
 
   return {
     /** The request listener. A handler that throws becomes a 500 without detail. */
     handle(request: IncomingMessage, response: ServerResponse) {
-      route(request, response).catch(() => {
-        if (!response.headersSent) sendJson(response, 500, { error: 'Internal server error' });
-        else response.destroy();
+      route(request, response).catch(error => {
+        if (response.headersSent) response.destroy();
+        else if (error instanceof DatabaseBusyError) busy(request, response, error);
+        else sendJson(response, 500, { error: 'Internal server error' });
       });
     },
     profiles,

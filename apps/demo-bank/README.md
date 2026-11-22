@@ -134,6 +134,23 @@ A receiver must compare in constant time over the raw bytes and **reject a times
 
 **Retries.** Any answer that is not 2xx, a timeout (5 s) or a refused connection is a failure. Attempts follow after 1 s, 2 s, 4 s, 8 s and 16 s; every attempt is signed with a fresh timestamp. After the sixth failure the delivery is `dead` and is never sent again: the receiver catches up by pulling. Deliveries are sent in the background and never hold the simulation back. A delivery in the log is `{ id, event_id, event_type, webhook_id, url, state: "pending" | "delivered" | "dead", attempts, next_attempt_at, last_status, last_error, created_at, updated_at }`.
 
+## Consent
+
+How a customer allows an application to read their accounts. It has the shape of a real bank's redirect flow and none of its substance: there are no logins, so the page lets the visitor say which fictional customer they are. A real bank would make them sign in and pass strong customer authentication at that point.
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| POST | `/consents` | API key. Body `{ "redirect_uri": "http://127.0.0.1:8787/bank/consent/callback", "state": "…" }` (`state` 16 to 200 characters). Returns 201 `{ consent_id, consent_path, expires_at }`. The return address must be on this machine unless `DEMO_BANK_ALLOW_REMOTE_WEBHOOKS` is on. |
+| GET | `/consent/:id` | No key: the page the customer opens. It names the host that asks, says that the bank and everything on it are fictional, and offers Allow and Deny. No script; its form may post only to the bank and be redirected to the return address. |
+| POST | `/consent/:id` | The form: `decision=approve&customer_id=cust-002`, or `decision=deny`. Answers 303 to the return address with the unchanged `state` and a one-time `code`, or with `error=access_denied`. A request is decided once. |
+| POST | `/consents/token` | API key. Body `{ "code": "…" }`. Returns `{ customer_id, expires_at }`: the customer reference and the day the consent ends (90 days). A code works once and for two minutes. |
+
+A request nobody decides lapses after ten minutes. Requests and codes live in memory only and are not in the snapshot. The unguessable `consent_id` is what admits the browser to the page; there is nothing else to protect, since no login exists.
+
+ReloCat's side is the `consent` capability of [`packages/banks/providers/demo-bank.ts`](../../packages/banks/providers/demo-bank.ts): `beginConsent` calls `POST /consents` and sends the person to the page, `completeConsent` exchanges the code. The customer reference that comes back is not a secret, but ReloCat stores it sealed like any credential a real bank would return (see the [bank API guide](../profile-api/BANK_API.md#credentials-at-rest)). A person does all of this from their ReloCat account page: **Connect** next to Banc Demo, approve at the bank, and the movements of the customer they chose start arriving by webhook.
+
+The data routes do not check consents: one API key reads every customer, and `demo-bank:connect` still links `user-001` to `cust-001` without one. A real bank would tie every read to the consent it was granted under.
+
 ## Fire a movement on demand
 
 The `/simulate` routes take the admin key.
@@ -162,12 +179,13 @@ Invoke-RestMethod "$bank/simulate/transactions/$($tx.id)/state" -Method Post -He
 
 State lives in memory. With `DEMO_BANK_SNAPSHOT_FILE` the bank writes its whole state (the seed and start date it was made with, the window of transactions and the balances carried from older ones, webhooks with their secrets, pending deliveries, simulation position) to that file shortly after every change, through a temporary file and a rename, and restores it at start. A restored bank keeps the seed and start date of its snapshot when none is configured, so the default start date ("three months ago") does not move when the month changes. The file is refused only if `DEMO_BANK_SEED` or `DEMO_BANK_START_DATE` is set to a value that differs from the snapshot's, or the customer count (`DEMO_BANK_CUSTOMERS`, default 4) differs: delete the file or restore the setting. Without it a restart begins a new life: the history is regenerated from the seed with the same IDs, webhooks must be registered again and old cursors are refused.
 
-Run one process per snapshot file. There is no rate limiting, no per-customer authorization (one key reads every customer) and no consent flow: those belong to a real bank, not to this stand-in.
+Run one process per snapshot file. There is no rate limiting and no per-customer authorization: one key reads every customer, with or without a consent. The [consent desk](#consent) shows the shape of the flow; enforcing it on every read belongs to a real bank, not to this stand-in.
 
 ## Code
 
 - [`simulation.ts`](simulation.ts): the deterministic plan of a customer's day.
 - [`bank.ts`](bank.ts): state, the simulation loop, the rolling window, events, deliveries with retries, the snapshot.
+- [`consent.ts`](consent.ts): the consent desk: requests, the customer's page, one-time codes.
 - [`server.ts`](server.ts): `createDemoBank(options)` (request handler and lifecycle, with injectable `clock`, `seed` and `fetch`), `startDemoBank`, and the standalone entry point.
 - [`connect.ts`](connect.ts): `connectDemoBank`, the HTTP wiring behind `npm run demo-bank:connect`.
 - [`tests/demo-bank.test.ts`](../../tests/demo-bank.test.ts): both services in one process with stepped clocks.

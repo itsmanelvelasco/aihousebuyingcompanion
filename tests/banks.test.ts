@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createHmac, randomBytes } from 'node:crypto';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -18,11 +18,13 @@ import synthetic from '../packages/banks/providers/synthetic.ts';
 import { createBankRegistry, loadBankRegistry } from '../packages/banks/registry.ts';
 import type { BankEvent } from '../packages/banks/sync.ts';
 import { createBankSync } from '../packages/banks/sync.ts';
+import { createVault, developmentVault, parseDataKey, VaultError } from '../packages/banks/vault.ts';
 import { safeId } from '../packages/contracts/ids.ts';
 import { getConnection } from '../packages/db/bank-sync.ts';
 import type { Database } from '../packages/db/database.ts';
 import { open } from '../packages/db/database.ts';
 import { createStore } from '../packages/profiles/store.ts';
+import { consentBank, testVault } from './support/banks.ts';
 
 const webhookSecret = 'fake-webhook-secret';
 const fakeEnv = { BANK_FAKE_BANK_API_KEY: 'fake-api-key', BANK_FAKE_BANK_WEBHOOK_SECRET: webhookSecret };
@@ -594,6 +596,401 @@ test('a full ledger rejects the batch once, says so on the connection and is not
     await sync.acceptWebhook('fake-bank', { connectionRef: 'link-alice', eventId: 'evt-after' });
     await sync.idle();
     assert.equal(fetches(), before + 2, 'webhooks drive syncs again');
+  } finally {
+    await sync.close();
+    db.close();
+  }
+});
+
+// --------------------------------------------------------------- consent and sealing
+
+/** An engine over a fresh database with the consent bank, a vault and a clock the test moves. */
+async function consentFixture(options: { file?: string; webhooks?: boolean } = {}) {
+  const db = options.file ? open(options.file) : await fixture();
+  if (options.file) {
+    const document = { schemaVersion: 1 as const, synthetic: true as const };
+    for (const id of ['alice', 'bob'])
+      if (!db.get('SELECT 1 FROM users WHERE id = ?', id))
+        await createStore(db).create(id, {
+          details: { ...document, id },
+          preferences: document,
+          'bank-account': document,
+        });
+  }
+  const bank = consentBank({ webhooks: options.webhooks });
+  const clock = { now: Date.parse('2026-11-22T10:00:00Z') };
+  const vault = testVault();
+  const ledger = createBankStore(db);
+  const engine = (overrides: Partial<Parameters<typeof createBankSync>[0]> = {}) =>
+    createBankSync({
+      ledger,
+      registry: bank.registry([synthetic]),
+      db,
+      vault,
+      clock: () => new Date(clock.now),
+      housekeepingMs: null,
+      ...overrides,
+    });
+  const returnUrl = 'http://127.0.0.1:8787/bank/consent/callback';
+  return { db, bank, clock, vault, ledger, engine, returnUrl };
+}
+
+test('the vault seals for one row, fails closed on any mismatch, and reads the key in three spellings', () => {
+  const key = randomBytes(32);
+  const vault = createVault(key);
+  const sealed = vault.seal('CREDENTIAL-1', 'row-a');
+  assert.match(sealed, /^v1\.[\w-]{16}\.[\w-]+\.[\w-]{22}$/);
+  assert(!sealed.includes('CREDENTIAL'));
+  assert.notEqual(vault.seal('CREDENTIAL-1', 'row-a'), sealed, 'a fresh nonce every time');
+  assert.equal(vault.open(sealed, 'row-a'), 'CREDENTIAL-1');
+  // Another row, another key, a changed byte, another format: nothing comes back.
+  assert.throws(() => vault.open(sealed, 'row-b'), VaultError);
+  assert.throws(() => createVault(randomBytes(32)).open(sealed, 'row-a'), VaultError);
+  const parts = sealed.split('.');
+  parts[2] = `${parts[2].startsWith('A') ? 'B' : 'A'}${parts[2].slice(1)}`;
+  assert.throws(() => vault.open(parts.join('.'), 'row-a'), VaultError);
+  assert.throws(() => vault.open('v2.a.b.c', 'row-a'), VaultError);
+  assert.throws(() => vault.open('plain text', 'row-a'), VaultError);
+  // The fingerprint is stable, keyed and not the value.
+  assert.equal(vault.fingerprint('cust-001'), vault.fingerprint('cust-001'));
+  assert.match(vault.fingerprint('cust-001'), /^sealed:[0-9a-f]{64}$/);
+  assert.notEqual(vault.fingerprint('cust-001'), createVault(randomBytes(32)).fingerprint('cust-001'));
+
+  for (const spelling of [key.toString('hex'), key.toString('base64'), key.toString('base64url')])
+    assert.deepEqual(parseDataKey(spelling), key, spelling);
+  assert.equal(parseDataKey(undefined), undefined);
+  assert.equal(parseDataKey('  '), undefined);
+  for (const bad of ['short', 'x'.repeat(64), key.toString('hex').slice(2)])
+    assert.throws(() => parseDataKey(bad), VaultError);
+  assert.throws(() => createVault(randomBytes(16)), VaultError);
+});
+
+test('without DATA_ENCRYPTION_KEY a development key is created once, kept in the database and announced once', () => {
+  const db = open(':memory:');
+  const notices: string[] = [];
+  const first = developmentVault(db, message => notices.push(message));
+  const second = developmentVault(db, message => notices.push(message));
+  assert.equal(first.development, true);
+  assert.equal(notices.length, 1);
+  assert.match(notices[0], /DATA_ENCRYPTION_KEY is not set/);
+  assert.match(notices[0], /development key/);
+  assert.equal(second.open(first.seal('x', 'row'), 'row'), 'x', 'the same key is read back');
+  assert.equal(db.get<{ n: number }>("SELECT COUNT(*) AS n FROM app_meta WHERE key LIKE 'data-encryption%'")?.n, 1);
+  db.close();
+});
+
+test('a consent connects a bank for the person who started it, once, in the session that started it', async () => {
+  const { db, bank, clock, engine, returnUrl } = await consentFixture();
+  const sync = engine();
+  try {
+    assert.deepEqual(await sync.banks(), [
+      { id: 'consent-bank', displayName: 'Consent Bank', synthetic: false, connect: 'consent_at_bank', webhooks: true },
+      { id: 'synthetic', displayName: 'Synthetic demo feed', synthetic: true, connect: 'direct', webhooks: false },
+    ]);
+    const begin = () => sync.beginConsent('alice', 'consent-bank', { sessionKey: 'session-alice', returnUrl });
+    const started = await begin();
+    assert.equal(new URL(started.redirectUrl).origin, 'https://bank.example');
+    assert.equal(bank.state.begun[0].returnUrl, returnUrl);
+    const state = bank.lastState();
+    assert.match(state, /^[\w-]{43}$/);
+    // Only a hash of the state is stored, with the person and a hash of the session.
+    const stored = db.all<Record<string, string>>('SELECT * FROM bank_consents');
+    assert.equal(stored.length, 1);
+    assert(!JSON.stringify(stored).includes(state) && !JSON.stringify(stored).includes('session-alice'));
+    assert.deepEqual(
+      (await sync.pendingConsents('alice')).map(item => item.providerId),
+      ['consent-bank'],
+    );
+    assert.deepEqual(await sync.pendingConsents('bob'), []);
+
+    // Another person presents the callback: refused, and the state is spent.
+    await assert.rejects(
+      sync.completeConsent({ state, code: 'code-ada' }, { userId: 'bob', sessionKey: 'session-bob' }),
+      { status: 403 },
+    );
+    await assert.rejects(
+      sync.completeConsent({ state, code: 'code-ada' }, { userId: 'alice', sessionKey: 'session-alice' }),
+      { status: 400 },
+    );
+    assert.equal(bank.state.completed, 0, 'the bank was never asked');
+
+    // The same person in another browser session: refused too.
+    await begin();
+    await assert.rejects(
+      sync.completeConsent(
+        { state: bank.lastState(), code: 'code-ada' },
+        { userId: 'alice', sessionKey: 'other-session' },
+      ),
+      { status: 403 },
+    );
+
+    // Too late: refused.
+    await begin();
+    const late = bank.lastState();
+    clock.now += 10 * 60_000 + 1;
+    await assert.rejects(
+      sync.completeConsent({ state: late, code: 'code-ada' }, { userId: 'alice', sessionKey: 'session-alice' }),
+      { status: 400 },
+    );
+    assert.equal(sync.housekeeping(), 0, 'presenting it removed it');
+
+    // An unknown or missing state, or one made up: refused.
+    for (const forged of ['', 'x'.repeat(43), 'y'.repeat(300)])
+      await assert.rejects(
+        sync.completeConsent({ state: forged, code: 'code-ada' }, { userId: 'alice', sessionKey: 'session-alice' }),
+        { status: 400 },
+      );
+
+    // Denied at the bank: nothing is connected and the bank is not asked for a link.
+    await begin();
+    const denied = await sync.completeConsent(
+      { state: bank.lastState(), error: 'access_denied' },
+      { userId: 'alice', sessionKey: 'session-alice' },
+    );
+    assert.equal(denied.status, 'denied');
+    assert.equal(bank.state.completed, 0);
+    assert.deepEqual(await sync.listConnections('alice'), []);
+
+    // A code the bank refuses: nothing is connected.
+    await begin();
+    await assert.rejects(
+      sync.completeConsent(
+        { state: bank.lastState(), code: 'made-up' },
+        { userId: 'alice', sessionKey: 'session-alice' },
+      ),
+      { status: 502, message: 'Consent Bank refused the code' },
+    );
+    assert.deepEqual(await sync.listConnections('alice'), []);
+
+    // The real thing.
+    await begin();
+    const good = bank.lastState();
+    const outcome = await sync.completeConsent(
+      { state: good, code: 'code-ada' },
+      { userId: 'alice', sessionKey: 'session-alice' },
+    );
+    assert.equal(outcome.status, 'connected');
+    assert(outcome.status === 'connected');
+    assert.deepEqual(
+      [outcome.connection.consent, outcome.connection.consentExpiresAt, outcome.connection.synthetic],
+      ['granted', null, false],
+    );
+    assert(outcome.connection.lastSyncAt, 'a first pull ran');
+    assert.deepEqual(
+      bank.state.refsSeen,
+      ['CREDENTIAL-ada-7f3c9b1e'],
+      'the provider got the credential back, decrypted',
+    );
+    assert.equal((await createBankStore(db).read('alice')).transactions.length, 1);
+    // Replay of a state that connected a bank: refused.
+    await assert.rejects(
+      sync.completeConsent({ state: good, code: 'code-ada' }, { userId: 'alice', sessionKey: 'session-alice' }),
+      { status: 400 },
+    );
+    assert.deepEqual(await sync.pendingConsents('alice'), []);
+
+    // At most five consents wait per person; a sixth pushes the oldest out.
+    for (let n = 0; n < 7; n++) await begin();
+    assert.equal((await sync.pendingConsents('alice')).length, 5);
+    clock.now += 11 * 60_000;
+    assert.equal(sync.housekeeping(), 5);
+  } finally {
+    await sync.close();
+    db.close();
+  }
+});
+
+test('the credential is sealed at rest: not in the file, one bank login per person, gone on disconnect', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'relocat-vault-'));
+  const file = join(directory, 'relocat.db');
+  const { db, bank, vault, engine, returnUrl } = await consentFixture({ file });
+  const sync = engine();
+  const consent = async (userId: string, code: string) => {
+    await sync.beginConsent(userId, 'consent-bank', { sessionKey: `session-${userId}`, returnUrl });
+    return sync.completeConsent({ state: bank.lastState(), code }, { userId, sessionKey: `session-${userId}` });
+  };
+  const credential = 'CREDENTIAL-ada-7f3c9b1e';
+  /** Everything SQLite keeps for this database, as bytes. */
+  const onDisk = async () =>
+    Buffer.concat(
+      await Promise.all(['', '-wal'].map(suffix => readFile(`${file}${suffix}`).catch(() => Buffer.alloc(0)))),
+    );
+  try {
+    assert.equal((await consent('alice', 'code-ada')).status, 'connected');
+    const row = db.get<{ id: string; ref: string }>("SELECT id, ref FROM bank_connections WHERE user_id = 'alice'")!;
+    assert.equal(row.ref, vault.fingerprint(credential));
+    const cipher = db.get<{ cipher: string }>("SELECT cipher FROM bank_credentials WHERE user_id = 'alice'")!.cipher;
+    assert.match(cipher, /^v1\./);
+    assert(!(await onDisk()).includes(Buffer.from(credential)), 'the credential is nowhere in the file in clear');
+    assert(!(await onDisk()).includes(Buffer.from(bank.state.begun[0].state)), 'neither is the consent state');
+
+    // One bank login belongs to one person: Bob approving with Ada's login is refused, as is an
+    // operator linking the same reference in clear.
+    await assert.rejects(consent('bob', 'code-ada'), { status: 409 });
+    await assert.rejects(sync.connect('bob', { providerId: 'consent-bank', ref: credential }), { status: 409 });
+    assert.deepEqual(await sync.listConnections('bob'), []);
+    // And the other way round: a reference an operator linked cannot be taken over by a consent.
+    await sync.connect('bob', { providerId: 'consent-bank', ref: 'CREDENTIAL-bob-52aa0d4c', pollIntervalMs: null });
+    await assert.rejects(consent('alice', 'code-bob'), { status: 409 });
+
+    // The bank's webhook names the credential; the engine finds the sealed connection without storing it.
+    const fetched = bank.state.fetches;
+    assert.deepEqual(await sync.acceptWebhook('consent-bank', { connectionRef: credential }), {
+      known: true,
+      duplicate: false,
+    });
+    await sync.idle();
+    assert.equal(bank.state.fetches, fetched + 1);
+    assert.deepEqual(await sync.acceptWebhook('consent-bank', { connectionRef: 'CREDENTIAL-nobody' }), {
+      known: false,
+      duplicate: false,
+    });
+    assert(!(await onDisk()).includes(Buffer.from(credential)), 'the queue did not store it either');
+
+    // Ada consents again with the same login: the same connection, a fresh credential.
+    const renewed = await consent('alice', 'code-ada');
+    assert.equal(renewed.status, 'renewed');
+    assert.equal((await sync.listConnections('alice')).length, 1);
+    assert.notEqual(
+      db.get<{ cipher: string }>("SELECT cipher FROM bank_credentials WHERE user_id = 'alice'")!.cipher,
+      cipher,
+    );
+
+    // Disconnecting deletes the credential; the bank login is free for somebody else.
+    await sync.disconnect('alice', row.id);
+    assert.equal(db.get("SELECT 1 FROM bank_credentials WHERE user_id = 'alice'"), undefined);
+    assert.deepEqual(await sync.acceptWebhook('consent-bank', { connectionRef: credential }), {
+      known: false,
+      duplicate: false,
+    });
+    await sync.disconnect('bob', (await sync.listConnections('bob'))[0].id);
+    assert.equal((await consent('bob', 'code-ada')).status, 'connected');
+
+    // Deleting a person takes credentials and consents in progress with the connections.
+    await sync.beginConsent('bob', 'consent-bank', { sessionKey: 'session-bob', returnUrl });
+    assert.equal(await sync.forgetUser('bob'), 1);
+    for (const table of ['bank_connections', 'bank_credentials', 'bank_consents'])
+      assert.equal(db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table}`)?.n, 0, table);
+  } finally {
+    await sync.close();
+    db.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a wrong key, a missing key or a moved ciphertext fails closed, and an expired consent waits for a new one', async () => {
+  const { db, bank, clock, engine, returnUrl } = await consentFixture({ webhooks: false });
+  const first = engine();
+  const who = { userId: 'alice', sessionKey: 'session-alice' };
+  const consent = async (sync: ReturnType<typeof engine>) => {
+    await sync.beginConsent('alice', 'consent-bank', { sessionKey: who.sessionKey, returnUrl });
+    return sync.completeConsent({ state: bank.lastState(), code: 'code-ada' }, who);
+  };
+  bank.state.expiresAt = '2027-02-20T10:00:00+00:00';
+  const connected = await consent(first);
+  assert(connected.status === 'connected');
+  assert.equal(connected.connection.consentExpiresAt, '2027-02-20T10:00:00.000Z');
+  const { id } = connected.connection;
+  await first.beginConsent('bob', 'consent-bank', { sessionKey: 'session-bob', returnUrl });
+  await first.completeConsent(
+    { state: bank.lastState(), code: 'code-bob' },
+    { userId: 'bob', sessionKey: 'session-bob' },
+  );
+  await first.close();
+  const seen = bank.state.refsSeen.length;
+  const failure = async (sync: ReturnType<typeof engine>) => {
+    const result = (await sync.sync('alice')).results[0];
+    assert.equal(result.status, 'failed');
+    assert.equal(bank.state.refsSeen.length, seen, 'the provider was not called');
+    await sync.close();
+    return result.status === 'failed' ? result.error : '';
+  };
+
+  // Another key: the credential does not open, nothing reaches the bank, and the person is told what to do.
+  assert.match(await failure(engine({ vault: testVault() })), /cannot be read with the current data encryption key/);
+  // No key at all.
+  assert.match(await failure(engine({ vault: undefined })), /no data encryption key/);
+  // A ciphertext copied from another person's row does not open either: it is bound to its own row.
+  const cipherOf = (userId: string) =>
+    db.get<{ cipher: string }>('SELECT cipher FROM bank_credentials WHERE user_id = ?', userId)!.cipher;
+  const [own, foreign] = [cipherOf('alice'), cipherOf('bob')];
+  db.run("UPDATE bank_credentials SET cipher = ? WHERE user_id = 'alice'", foreign);
+  assert.match(await failure(engine()), /cannot be read/);
+  db.run("UPDATE bank_credentials SET cipher = ? WHERE user_id = 'alice'", own);
+
+  // With the right key it works again.
+  const sync = engine();
+  try {
+    assert.equal((await sync.sync('alice')).results[0].status, 'synced');
+    // The consent runs out: syncing stops by itself and says why; no retry is scheduled.
+    clock.now = Date.parse('2027-02-20T10:00:01Z');
+    const fetches = bank.state.fetches;
+    const expired = (await sync.sync('alice')).results[0];
+    assert.deepEqual(
+      [expired.status, expired.status === 'failed' && expired.error],
+      ['failed', 'The consent at the bank has expired. Connect this bank again to renew it.'],
+    );
+    const stale = (await sync.listConnections('alice'))[0];
+    assert.deepEqual(
+      [stale.consent, stale.nextRetryAt, stale.lastError],
+      ['expired', null, expired.status === 'failed' && expired.error],
+    );
+    await sync.runDue();
+    assert.equal(bank.state.fetches, fetches, 'nothing is fetched on an expired consent');
+    // Consenting again renews the same connection and syncing resumes at once.
+    bank.state.expiresAt = '2027-05-21T10:00:00Z';
+    const renewed = await consent(sync);
+    assert(renewed.status === 'renewed');
+    assert.deepEqual(
+      [renewed.connection.id, renewed.connection.consent, renewed.connection.lastError],
+      [id, 'granted', null],
+    );
+    assert.equal(bank.state.fetches, fetches + 1);
+    // A bank that hands back a consent already over is not connected.
+    bank.state.expiresAt = '2020-01-01T00:00:00Z';
+    await sync.beginConsent('alice', 'consent-bank', { sessionKey: who.sessionKey, returnUrl });
+    await assert.rejects(sync.completeConsent({ state: bank.lastState(), code: 'code-ada' }, who), { status: 502 });
+  } finally {
+    await sync.close();
+    db.close();
+  }
+});
+
+test('a person connects only what needs no bank themselves, and never chooses the reference', async () => {
+  const { db, bank, engine, returnUrl } = await consentFixture();
+  const { provider: operatorOnly } = fakeBank();
+  const sync = engine({ registry: createBankRegistry([bank.provider, synthetic, operatorOnly], fakeEnv) });
+  try {
+    // A real bank without a consent flow is the operator's to link; it is not even offered.
+    assert(!(await sync.banks()).some(item => item.id === 'fake-bank' && item.synthetic === false));
+    const real = defineBankProvider({ ...operatorOnly, id: 'real-bank', synthetic: false, env: [] });
+    const strict = engine({ registry: createBankRegistry([real, bank.provider], {}) });
+    assert.deepEqual(
+      (await strict.banks()).map(item => item.id),
+      ['consent-bank'],
+    );
+    await assert.rejects(strict.connectSelf('alice', 'real-bank'), { status: 403 });
+    await assert.rejects(strict.connectSelf('alice', 'consent-bank'), { status: 409 });
+    await assert.rejects(strict.beginConsent('alice', 'real-bank', { sessionKey: 's', returnUrl }), { status: 409 });
+    await strict.close();
+
+    const direct = await sync.connectSelf('alice', 'synthetic');
+    assert.deepEqual([direct.providerId, direct.consent, direct.synthetic], ['synthetic', 'not_required', true]);
+    assert.equal(
+      db.get<{ ref: string }>("SELECT ref FROM bank_connections WHERE user_id = 'alice'")?.ref,
+      'self-alice',
+    );
+    await assert.rejects(sync.connectSelf('alice', 'synthetic'), { status: 409 }, 'once per person');
+    await assert.rejects(sync.connectSelf('alice', 'unknown-bank'), { status: 404 });
+    // Without a vault nobody can start a consent, and nothing is stored for the attempt.
+    const keyless = engine({ vault: undefined });
+    await assert.rejects(keyless.beginConsent('bob', 'consent-bank', { sessionKey: 's', returnUrl }), { status: 503 });
+    assert.equal(db.get<{ n: number }>('SELECT COUNT(*) AS n FROM bank_consents')?.n, 0);
+    await keyless.close();
+    // The bound of ten connections holds for consents too.
+    for (let n = 0; n < 10; n++)
+      await sync.connect('bob', { providerId: 'fake-bank', ref: `link-${n}`, pollIntervalMs: null });
+    await assert.rejects(sync.beginConsent('bob', 'consent-bank', { sessionKey: 's', returnUrl }), { status: 400 });
   } finally {
     await sync.close();
     db.close();

@@ -3,9 +3,19 @@ import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { demoBankConfig } from '../../packages/config/env.ts';
-import { ApiError, pathParts, readJson, requireBearer, sendJson } from '../../packages/http/server.ts';
+import {
+  ApiError,
+  pageHeaders,
+  pathParts,
+  readForm,
+  readJson,
+  redirect,
+  requireBearer,
+  sendJson,
+} from '../../packages/http/server.ts';
 import type { DemoBankCoreOptions } from './bank.ts';
 import { createDemoBankCore } from './bank.ts';
+import { createConsentDesk } from './consent.ts';
 
 /**
  * Banc Demo, a fictional neobank with a business-style API. It runs as its own process on its own
@@ -14,6 +24,8 @@ import { createDemoBankCore } from './bank.ts';
  *
  *   Pull   GET /customers, /customers/:id/accounts, /customers/:id/transactions[/:transactionId]
  *   Push   POST|GET /webhooks, DELETE /webhooks/:id, PUT /webhooks/:id/secret, GET /webhooks/deliveries
+ *   Consent  POST /consents, POST /consents/token   (API key)
+ *            GET|POST /consent/:id                  (the customer's browser; see consent.ts)
  *   Demo   GET /simulate/status, POST /simulate/step, /simulate/transaction,
  *          /simulate/transactions/:id/state            (admin key)
  *
@@ -27,6 +39,8 @@ export type DemoBankOptions = DemoBankCoreOptions & {
   apiKey: string;
   /** Bearer key of the `/simulate` routes. Defaults to `apiKey`. */
   adminKey?: string;
+  /** Days an approved consent lasts. Default 90. */
+  consentDays?: number;
 };
 
 const listQuery = z
@@ -58,6 +72,12 @@ export function createDemoBank(options: DemoBankOptions) {
   if (!options.apiKey) throw new Error('The demo bank needs an API key');
   const adminKey = options.adminKey || options.apiKey;
   const bank = createDemoBankCore(options);
+  const consents = createConsentDesk({
+    clock: options.clock,
+    customers: () => bank.listCustomers(),
+    allowRemote: options.allowRemoteWebhooks,
+    consentDays: options.consentDays,
+  });
 
   async function route(request: IncomingMessage, response: ServerResponse) {
     const parts = pathParts(request);
@@ -90,7 +110,27 @@ export function createDemoBank(options: DemoBankOptions) {
       throw new ApiError(404, 'Route not found');
     }
 
+    // The customer's own browser: no API key. The unguessable consent id is what admits them.
+    if (parts[0] === 'consent' && parts.length === 2) {
+      const consentId = z
+        .string()
+        .regex(/^consent-[0-9a-f]{32}$/, 'Invalid identifier')
+        .parse(parts[1]);
+      if (method === 'GET') {
+        const page = consents.page(consentId);
+        return void response.writeHead(200, pageHeaders([page.formAction])).end(page.html);
+      }
+      if (method === 'POST') return redirect(response, consents.decide(consentId, await readForm(request)));
+      throw new ApiError(405, 'Method not allowed');
+    }
+
     requireBearer(request, options.apiKey);
+    if (parts[0] === 'consents') {
+      if (method !== 'POST') throw new ApiError(405, 'Method not allowed');
+      if (parts.length === 1) return sendJson(response, 201, consents.create(await body()));
+      if (parts.length === 2 && parts[1] === 'token') return sendJson(response, 200, consents.exchange(await body()));
+      throw new ApiError(404, 'Route not found');
+    }
     if (parts[0] === 'customers') {
       if (method !== 'GET') throw new ApiError(405, 'Method not allowed');
       if (parts.length === 1) return sendJson(response, 200, { synthetic: true, customers: bank.listCustomers() });
@@ -148,6 +188,7 @@ export function createDemoBank(options: DemoBankOptions) {
     flushDeliveries: bank.flushDeliveries,
     status: bank.status,
     listDeliveries: bank.listDeliveries,
+    consents,
   };
 }
 

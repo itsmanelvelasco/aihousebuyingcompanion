@@ -27,13 +27,16 @@ import {
   applyHabitOverrides,
   benefitSummary,
   benefitView,
+  conflictSources,
   effectiveOverrides,
+  factSourceLabel,
   habitMonthlyEffectCents,
   habitPlanView,
   habitSwitchedOn,
   indicatorViews,
   lastCompleteMonths,
   longestTimeline,
+  planChanges,
   planHeadline,
   planNotes,
   timelineSteps,
@@ -540,4 +543,86 @@ test('indicators, notes and bank periods keep unknowns and sources', () => {
   assert.deepEqual(lastCompleteMonths('2026-11-22', 3), { from: '2026-08-01', to: '2026-10-31' });
   assert.deepEqual(lastCompleteMonths('2026-01-05', 3), { from: '2025-10-01', to: '2025-12-31' });
   assert.deepEqual(lastCompleteMonths('2024-03-31', 1), { from: '2024-02-01', to: '2024-02-29' });
+});
+
+test('the details panel reads what changed from two plans and never does the sums itself', async () => {
+  // Same plan twice: nothing changed, so nothing is claimed.
+  assert.deepEqual(planChanges(fixturePlan, fixturePlan), []);
+  const [first, ...rest] = fixturePlan.plans;
+  const benefit = first.benefits.find(item => item.counted);
+  assert(benefit && first.withPlaceBenefits, 'the fixture counts a benefit in its first place');
+  const before = {
+    ...fixturePlan,
+    plans: [
+      {
+        ...first,
+        withPlaceBenefits: { ...first.withPlaceBenefits, months: 20 },
+        benefits: first.benefits.map(item =>
+          item === benefit ? { ...item, counted: false, eligibilityStatus: 'needs_verification' as const } : item,
+        ),
+      },
+      ...rest,
+    ],
+  };
+  // Both timelines are quoted as the planner gave them; the panel does not subtract one from the other.
+  assert.deepEqual(planChanges(before, fixturePlan), [
+    {
+      place: first.place.name,
+      lines: [
+        `Counted now: ${benefit.title}.`,
+        `The wait is now ${formatDuration(first.withPlaceBenefits.months).toLowerCase()}; it was 1 year 8 months.`,
+      ],
+    },
+  ]);
+  assert.deepEqual(planChanges(fixturePlan, before)[0].lines[0], `No longer counted: ${benefit.title}.`);
+  // A place that was not in the earlier plan has nothing to compare with.
+  assert.deepEqual(planChanges({ ...fixturePlan, plans: rest }, { ...fixturePlan, plans: [first] }), []);
+  // A timeline that appears, and a status that changes without being counted.
+  const noTimeline = {
+    ...fixturePlan,
+    plans: [{ ...first, withPlaceBenefits: null, baseline: null, withHabits: null }],
+  };
+  assert.match(
+    planChanges(noTimeline, { ...fixturePlan, plans: [first] })[0].lines.at(-1) ?? '',
+    /^A timeline can be estimated now: /,
+  );
+  const other = first.benefits.find(item => !item.counted && item.eligibilityStatus !== 'ineligible');
+  assert(other);
+  const ruledOut = {
+    ...fixturePlan,
+    plans: [
+      {
+        ...first,
+        benefits: first.benefits.map(item =>
+          item === other ? { ...item, eligibilityStatus: 'ineligible' as const } : item,
+        ),
+      },
+    ],
+  };
+  assert.deepEqual(planChanges({ ...fixturePlan, plans: [first] }, ruledOut), [
+    { place: first.place.name, lines: [`Does not apply to you: ${other.title}.`] },
+  ]);
+
+  assert.equal(factSourceLabel('interview'), 'Said in the interview');
+  assert.equal(factSourceLabel('what_if'), 'This estimate only, not saved');
+  assert.equal(factSourceLabel('somewhere'), 'Source not recorded');
+  const candidate = (source: string) => ({ value: 1, text: '1', source, observedAt: '2026-11-01', confirmed: true });
+  assert.deepEqual(conflictSources({ candidates: [candidate('manual'), candidate('interview')] }), [
+    'interview',
+    'manual',
+  ]);
+  assert.deepEqual(conflictSources({ candidates: [candidate('manual'), candidate('bank')] }), ['manual']);
+
+  // Saving names the source of the answer; the default is "typed in by the person".
+  const calls: Record<string, unknown>[] = [];
+  const client = createToolClient(async (_name, args) => {
+    calls.push(args);
+    return { structuredContent: { saved: true, inputId: 'x', inputCount: 1 } };
+  });
+  await client.saveInputs({ eligibility: { itpBuyerNetTaxBaseEur: null } }, true);
+  await client.saveInputs({ eligibility: { primaryResidence: true } }, true, 'interview');
+  assert.deepEqual(calls, [
+    { data: { eligibility: { itpBuyerNetTaxBaseEur: null } }, confirmed: true, source: 'manual' },
+    { data: { eligibility: { primaryResidence: true } }, confirmed: true, source: 'interview' },
+  ]);
 });

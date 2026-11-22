@@ -1,4 +1,5 @@
 import type { Database } from './database.ts';
+import { deletePersonRows, personRowCounts } from './person-data.ts';
 
 /**
  * Queries for accounts, browser sessions, sign-in throttling and OAuth (clients, grants, codes and
@@ -52,76 +53,25 @@ export function updatePasswordHash(db: Database, accountId: string, passwordHash
 }
 
 /**
- * Delete an account and everything stored about its person. The account row takes its sessions,
- * grants, codes and tokens with it; the `users` row takes the profile, inputs, ledger, bank
- * connections, events and habits. Queued bank webhooks carry no user id, so they go by reference.
- * Returns the number of rows removed per table that held any.
+ * Delete an account and everything stored about its person: every table of `personTables`
+ * (`person-data.ts`), in one transaction. Returns the number of rows removed per table.
  *
  * The caller disconnects the person's bank connections from the running sync engine first
- * (`forgetUser` in `packages/banks/sync.ts`); this function removes whatever rows are left.
+ * (`forgetUser` in `packages/banks/sync.ts`); this function removes whatever rows are left,
+ * including sealed bank credentials, pending bank consents and unconfirmed statement uploads.
  */
 export function deleteAccountAndPerson(db: Database, accountId: string) {
   return db.transaction(() => {
     const account = accountById(db, accountId);
     if (!account) return null;
     const { userId } = account;
-    const count = (sql: string, ...parameters: string[]) => db.get<{ total: number }>(sql, ...parameters)?.total ?? 0;
-    const removed: Record<string, number> = {};
-    const perUser = [
-      'profile_sections',
-      'input_records',
-      'bank_ledgers',
-      'bank_accounts',
-      'bank_transactions',
-      'bank_events',
-      'bank_connections',
-      'habit_goals',
-      'habit_checkins',
-    ];
-    for (const table of perUser)
-      removed[table] = count(`SELECT COUNT(*) AS total FROM ${table} WHERE user_id = ?`, userId);
-    removed.auth_sessions = count('SELECT COUNT(*) AS total FROM auth_sessions WHERE account_id = ?', accountId);
-    removed.oauth_grants = count('SELECT COUNT(*) AS total FROM oauth_grants WHERE account_id = ?', accountId);
-    db.run(
-      `
-        DELETE FROM bank_webhook_queue
-        WHERE EXISTS (
-          SELECT 1 FROM bank_connections c
-          WHERE c.user_id = ? AND c.provider_id = bank_webhook_queue.provider_id AND c.ref = bank_webhook_queue.ref
-        )
-      `,
-      userId,
-    );
-    db.run('DELETE FROM accounts WHERE id = ?', accountId);
-    // Rows that reference the user only through a composite key are removed explicitly first.
-    db.run('DELETE FROM habit_checkins WHERE user_id = ?', userId);
-    db.run('DELETE FROM bank_transactions WHERE user_id = ?', userId);
-    db.run('DELETE FROM users WHERE id = ?', userId);
-    removed.accounts = 1;
-    removed.users = 1;
-    return { userId, removed };
+    return { userId, removed: deletePersonRows(db, { userId, accountId }) };
   });
 }
 
 /** Rows that still mention a person or an account anywhere; used to prove a deletion was complete. */
 export function remainingRows(db: Database, accountId: string, userId: string) {
-  const byUser = [
-    'profile_sections',
-    'input_records',
-    'bank_ledgers',
-    'bank_accounts',
-    'bank_transactions',
-    'bank_events',
-    'bank_connections',
-    'habit_goals',
-    'habit_checkins',
-  ];
-  let total = db.get<{ total: number }>('SELECT COUNT(*) AS total FROM users WHERE id = ?', userId)!.total;
-  for (const table of byUser)
-    total += db.get<{ total: number }>(`SELECT COUNT(*) AS total FROM ${table} WHERE user_id = ?`, userId)!.total;
-  for (const table of ['auth_sessions', 'oauth_grants'])
-    total += db.get<{ total: number }>(`SELECT COUNT(*) AS total FROM ${table} WHERE account_id = ?`, accountId)!.total;
-  total += db.get<{ total: number }>('SELECT COUNT(*) AS total FROM accounts WHERE id = ?', accountId)!.total;
+  let total = Object.values(personRowCounts(db, { userId, accountId })).reduce((sum, rows) => sum + rows, 0);
   total += db.get<{ total: number }>(
     `
       SELECT COUNT(*) AS total FROM oauth_tokens t
@@ -448,6 +398,7 @@ export function storedCounts(db: Database, userId: string) {
     bankAccounts: count('bank_accounts'),
     bankMovements: count('bank_transactions'),
     bankConnections: count('bank_connections'),
+    bankImports: count('bank_imports'),
     habitGoals: count('habit_goals'),
     habitCheckins: count('habit_checkins'),
   };

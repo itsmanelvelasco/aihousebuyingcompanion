@@ -16,6 +16,7 @@ import {
   touchSession,
   updatePasswordHash,
 } from '../db/auth.ts';
+import { deleteOtherSessions } from '../db/bank-person.ts';
 import type { Database } from '../db/database.ts';
 import { insertUser, writeSection } from '../db/profiles.ts';
 import { decoyHash, hashPassword, needsRehash, verifyPassword } from './passwords.ts';
@@ -201,9 +202,11 @@ export function createAccounts(db: Database, options: AccountsOptions = {}) {
         if (accountByEmail(db, account.email))
           throw new AuthError('email_taken', 'An account with this email already exists. Sign in instead.');
         insertUser(db, account.userId, account.createdAt);
-        // The profile store requires its three documents; they start empty. `synthetic` is the
-        // store's required flag for every document; ownership by an account is what marks a person real.
-        const empty = { schemaVersion: 1, synthetic: true };
+        // The profile store requires its three documents; they start empty. A person who signs up
+        // is real, so the documents say `synthetic: false`. The trigger `accounts_own_real_people`
+        // (migration 3) stays as a backstop: it corrects the flag for any account row, whatever a
+        // future caller, an import or a restore wrote into the documents first.
+        const empty = { schemaVersion: 1, synthetic: false };
         const details = { ...empty, id: account.userId } as { synthetic: boolean };
         writeSection(db, account.userId, 'details', details, account.createdAt);
         writeSection(db, account.userId, 'preferences', empty, account.createdAt);
@@ -305,6 +308,47 @@ export function createAccounts(db: Database, options: AccountsOptions = {}) {
     account(accountId: string) {
       const record = accountById(db, accountId);
       return record ? publicAccount(record) : null;
+    },
+
+    /**
+     * Change the password of a signed-in account. The current password is required, so a session
+     * left open on a shared computer cannot take the account over. Wrong current passwords are
+     * counted for the session that sends them, on a counter of their own (five free, then a wait
+     * that doubles), apart from the sign-in and delete counters.
+     *
+     * On success every other session of the account ends; the caller (the server) also ends every
+     * OAuth grant, so no token issued under the old password keeps working.
+     */
+    async changePassword(
+      accountId: string,
+      input: { current: unknown; next: unknown },
+      context: { sessionId: string },
+    ) {
+      const record = accountById(db, accountId);
+      const key = `password:${hashSecret(context.sessionId).slice(0, 32)}`;
+      if (throttle.waitSeconds(key)) refuse(throttle.waitSeconds(key));
+      const current = typeof input.current === 'string' ? input.current.slice(0, maxPasswordLength) : '';
+      const matches = await verifyPassword(current, record?.passwordHash ?? (await decoyHash()));
+      if (!record || !matches) {
+        if (record) throttle.fail(key, pairRule);
+        throw new AuthError('invalid_credentials', 'The current password is not right. Nothing was changed.');
+      }
+      throttle.clear(key);
+      const next = typeof input.next === 'string' ? input.next : '';
+      if (next.length < minPasswordLength || next.length > maxPasswordLength)
+        throw new AuthError(
+          'weak_password',
+          `Choose a new password of ${minPasswordLength} to ${maxPasswordLength} characters.`,
+        );
+      if (next.toLowerCase() === record.email)
+        throw new AuthError('weak_password', 'The password must differ from the email.');
+      if (next === current) throw new AuthError('weak_password', 'The new password must differ from the current one.');
+      const passwordHash = await hashPassword(next);
+      const sessionsEnded = db.transaction(() => {
+        updatePasswordHash(db, record.id, passwordHash);
+        return deleteOtherSessions(db, record.id, hashSecret(context.sessionId));
+      });
+      return { sessionsEnded };
     },
 
     /** The account that owns a person record; undefined for a demo fixture or an unknown id. */

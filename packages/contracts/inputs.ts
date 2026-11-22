@@ -3,6 +3,52 @@ import { household, isoDate, municipalityCode, recommendationInput, schoolStage 
 
 const optional = <T extends z.ZodType>(schema: T) => schema.nullable().optional();
 const cents = z.number().int().safe().nonnegative().max(100_000_000_000);
+
+type NullableShape<Shape extends Record<string, z.ZodType>> = { [Key in keyof Shape]: z.ZodNullable<Shape[Key]> };
+/** The same fields, each also accepting `null`: the person was asked and does not know. */
+function nullableShape<Shape extends Record<string, z.ZodType>>(shape: Shape) {
+  return Object.fromEntries(
+    Object.entries(shape).map(([key, schema]) => [key, schema.nullable()]),
+  ) as NullableShape<Shape>;
+}
+const { children: _children, purchasePriceEur: _price, ...householdFacts } = household.shape;
+/**
+ * One child of the household. Exactly one of `birthDate`, `birthYear` and `age` says how old the
+ * child is. A date of birth is preferred: an age goes stale, and a birth year alone leaves the
+ * birthday open (the planner then takes the age reached during the plan year, the cautious reading
+ * of a rule with an upper age limit). A schooling flag that is `null` means "I don't know".
+ */
+export const childInput = z
+  .object({
+    birthDate: isoDate.optional(),
+    birthYear: z.number().int().min(1900).max(2200).optional(),
+    age: z.number().int().min(0).max(125).optional(),
+    inDesignatedSchool: z.boolean().nullable().optional(),
+    meetsItpSchooling: z.boolean().nullable().optional(),
+  })
+  .strict()
+  .refine(
+    child => [child.birthDate, child.birthYear, child.age].filter(value => value !== undefined).length === 1,
+    'State exactly one of birthDate, birthYear or age for each child',
+  );
+/**
+ * The household facts that decide whether a tax measure or an aid applies: the buyer's date of birth
+ * (or, less durable, an age), the children, habitual residence, family status, the type of tax return
+ * and the tax bases. The fields are those of the incentive screening (`household` in `places.ts`),
+ * without the purchase price, which the planner takes from the plan. A tax base is the figure on the
+ * tax return, never a salary. Every field accepts `null`: the person was asked and does not know.
+ * That is stored as an explicit unknown, never as zero and never as a guess. The planner reads a fact
+ * only from a confirmed input.
+ */
+export const eligibilityInput = z
+  .object({
+    ...nullableShape(householdFacts),
+    /** The buyer's date of birth. The age is derived from it on the date of each plan. */
+    birthDate: isoDate.nullable().optional(),
+    /** Dependent children. An empty array explicitly means none. */
+    children: z.array(childInput).max(30).nullable().optional(),
+  })
+  .strict();
 const dataSchema = z
   .object({
     housing: z
@@ -12,6 +58,8 @@ const dataSchema = z
         homeSizeM2: optional(z.number().positive().max(2000)),
         minimumBedrooms: optional(z.number().int().min(1).max(20)),
         allowComarcaEstimate: optional(z.boolean()),
+        /** Share of the price paid upfront as a deposit, 0–1. The plan assumes 0.2 when none is stated. */
+        depositRate: optional(z.number().min(0).max(1)),
       })
       .strict()
       .optional(),
@@ -66,14 +114,8 @@ const dataSchema = z
       .object({ required: optional(z.boolean()) })
       .strict()
       .optional(),
-    /**
-     * The household facts that decide whether a tax measure or an aid applies: the buyer's age, the
-     * children and their ages, habitual residence, family status, the type of tax return and the tax
-     * bases. The fields are those of the incentive screening (`household` in `places.ts`), without the
-     * purchase price, which the planner takes from the plan. A tax base is the figure on the tax
-     * return, never a salary. The planner reads a fact only from a confirmed input.
-     */
-    eligibility: household.omit({ purchasePriceEur: true }).optional(),
+    /** The facts that decide tax measures and aids; see `eligibilityInput`. */
+    eligibility: eligibilityInput.optional(),
   })
   .strict()
   .refine(
@@ -98,7 +140,7 @@ export const inputSchema = z
 export type AppInput = z.infer<typeof inputSchema>;
 /** Most input records kept per user; see the retention rule in `apps/profile-api/INPUTS.md`. */
 export const maxInputs = 500;
-type Value = string | number | boolean | string[] | null;
+type Value = string | number | boolean | string[] | z.infer<typeof childInput>[] | null;
 /** `synthetic` is absent only in provenance produced before the field existed. */
 type Provenance = Pick<AppInput, 'source' | 'observedAt' | 'confirmed'> & { inputId: string; synthetic?: boolean };
 type Candidate = Provenance & { value: Value };

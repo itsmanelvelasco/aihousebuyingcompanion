@@ -306,8 +306,82 @@ const truthfulProvenance = `
     ON bank_transactions (user_id, account_id, date, status, amount_cents);
 `;
 
+/**
+ * A person's own bank data: consent, sealed credentials, statement imports and corrections.
+ *
+ * - `bank_credentials` holds what a provider's consent flow returned for a connection, encrypted
+ *   (AES-256-GCM, `packages/banks/vault.ts`). The connection row then carries only a keyed
+ *   fingerprint of the bank reference in `ref`, so "one reference, one person" and webhook lookups
+ *   keep working without the reference being stored in clear.
+ * - `bank_consents` are authorisations a person started at a bank and has not finished: only the
+ *   hash of the single-use state, bound to the person and to the browser session that started it.
+ * - `bank_import_previews` are statements a person uploaded and has not yet confirmed; they expire.
+ *   `bank_imports` are confirmed ones and `bank_import_rows` says which movements each brought, so
+ *   deleting an import removes exactly its movements.
+ * - `bank_transactions.category_locked` marks a category the person chose, which a later sync keeps.
+ */
+const personalBanking = `
+  CREATE TABLE bank_credentials (
+    user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    connection_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    -- 'v1.<iv>.<ciphertext>.<tag>', bound to this row by its additional authenticated data.
+    cipher TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    -- When the bank's consent ends; NULL when the bank states no end.
+    expires_at TEXT,
+    PRIMARY KEY (user_id, connection_id),
+    FOREIGN KEY (user_id, connection_id) REFERENCES bank_connections (user_id, id) ON DELETE CASCADE
+  ) STRICT, WITHOUT ROWID;
+
+  CREATE TABLE bank_consents (
+    state_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    provider_id TEXT NOT NULL,
+    -- Hash of the browser session that started the consent; the callback must arrive in that session.
+    session_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+  ) STRICT, WITHOUT ROWID;
+  CREATE INDEX bank_consents_by_user ON bank_consents (user_id, created_at);
+  CREATE INDEX bank_consents_expiry ON bank_consents (expires_at);
+
+  CREATE TABLE bank_import_previews (
+    user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    preview_hash TEXT NOT NULL,
+    csv TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, preview_hash)
+  ) STRICT, WITHOUT ROWID;
+  CREATE INDEX bank_import_previews_expiry ON bank_import_previews (expires_at);
+
+  CREATE TABLE bank_imports (
+    user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    row_count INTEGER NOT NULL CHECK (row_count >= 0),
+    covered_from TEXT NOT NULL,
+    covered_to TEXT NOT NULL,
+    PRIMARY KEY (user_id, id)
+  ) STRICT, WITHOUT ROWID;
+
+  CREATE TABLE bank_import_rows (
+    user_id TEXT NOT NULL,
+    import_id TEXT NOT NULL,
+    transaction_id TEXT NOT NULL,
+    PRIMARY KEY (user_id, import_id, transaction_id),
+    FOREIGN KEY (user_id, import_id) REFERENCES bank_imports (user_id, id) ON DELETE CASCADE
+  ) STRICT, WITHOUT ROWID;
+  CREATE INDEX bank_import_rows_by_transaction ON bank_import_rows (user_id, transaction_id);
+
+  ALTER TABLE bank_transactions ADD COLUMN category_locked INTEGER NOT NULL DEFAULT 0 CHECK (category_locked IN (0, 1));
+`;
+
 export const migrations: readonly Migration[] = [
   { version: 1, name: 'initial runtime schema', sql: initial },
   { version: 2, name: 'accounts, sessions and oauth', sql: accounts },
   { version: 3, name: 'truthful provenance, habit start dates, per-file legacy import', sql: truthfulProvenance },
+  { version: 4, name: 'personal banking: consents, sealed credentials, statement imports', sql: personalBanking },
 ];

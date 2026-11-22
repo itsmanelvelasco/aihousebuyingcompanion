@@ -15,6 +15,9 @@
  *     that completes comes back with the same ID and updates its ledger row.
  *   - A webhook is `X-Demo-Bank-Signature` = hex HMAC-SHA256 of `<timestamp>.<raw body>`, with the
  *     timestamp in `X-Demo-Bank-Timestamp`. Calls older or newer than five minutes are rejected.
+ *   - A person connects it by consenting at the bank (`consent` below): ReloCat creates a consent
+ *     request, the person approves on the bank's own page, and the one-time code the bank sends
+ *     back is exchanged for the customer reference. The engine seals that reference at rest.
  */
 import { z } from 'zod';
 import { ApiError } from '../../http/server.ts';
@@ -69,6 +72,12 @@ const eventSchema = z.object({
   data: z.object({ customer_id: z.string().min(1).max(200) }),
 });
 
+const consentRequestSchema = z.object({ consent_path: z.string().regex(/^\/consent\/consent-[0-9a-f]{32}$/) });
+const consentGrantSchema = z.object({
+  customer_id: z.string().min(1).max(200),
+  expires_at: z.string().regex(/^\d{4}-\d{2}-\d{2}T/),
+});
+
 /** Thrown for an HTTP status the caller wants to react to (a cursor the bank no longer accepts). */
 class BankStatusError extends ApiError {}
 
@@ -76,12 +85,23 @@ class BankStatusError extends ApiError {}
  * One authenticated GET to the bank, validated against a schema. Failures become short messages
  * that are safe to store on the connection: they never contain the URL, the key or the bank's text.
  */
-async function callBank<T>(env: Readonly<Record<string, string>>, path: string, schema: z.ZodType<T>): Promise<T> {
+async function callBank<T>(
+  env: Readonly<Record<string, string>>,
+  path: string,
+  schema: z.ZodType<T>,
+  post?: unknown,
+): Promise<T> {
   const base = env.BANK_DEMO_BANK_BASE_URL.replace(/\/+$/, '');
   let response: Response;
   try {
     response = await fetch(`${base}${path}`, {
-      headers: { Authorization: `Bearer ${env.BANK_DEMO_BANK_API_KEY}`, Accept: 'application/json' },
+      method: post === undefined ? 'GET' : 'POST',
+      headers: {
+        Authorization: `Bearer ${env.BANK_DEMO_BANK_API_KEY}`,
+        Accept: 'application/json',
+        ...(post === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
+      ...(post === undefined ? {} : { body: JSON.stringify(post) }),
       redirect: 'error',
       signal: AbortSignal.timeout(requestTimeoutMs),
     });
@@ -94,6 +114,8 @@ async function callBank<T>(env: Readonly<Record<string, string>>, path: string, 
     if (response.status === 401) throw new BankStatusError(502, 'Banc Demo rejected the API key');
     if (response.status === 404) throw new BankStatusError(502, 'Banc Demo does not know this customer');
     if (response.status === 410) throw new BankStatusError(410, 'Banc Demo no longer accepts the saved cursor');
+    if (response.status === 400 && post !== undefined)
+      throw new BankStatusError(502, 'Banc Demo refused the authorisation; start again');
     throw new ApiError(502, `Banc Demo answered with status ${response.status}`);
   }
   let body: unknown;
@@ -157,6 +179,24 @@ export default defineBankProvider({
       description: 'Signing secret the demo bank returned when the webhook was registered.',
     },
   ],
+
+  /**
+   * The person authorises access at Banc Demo. `beginConsent` registers the return address and
+   * the state with the bank and gets the page to open; `completeConsent` exchanges the one-time
+   * code of the callback for the customer reference and the day the consent ends.
+   */
+  consent: {
+    async beginConsent({ returnUrl, state }, { env }) {
+      const created = await callBank(env, '/consents', consentRequestSchema, { redirect_uri: returnUrl, state });
+      return { redirectUrl: `${env.BANK_DEMO_BANK_BASE_URL.replace(/\/+$/, '')}${created.consent_path}` };
+    },
+    async completeConsent(params, { env }) {
+      if (typeof params.code !== 'string' || !params.code)
+        throw new ApiError(502, 'Banc Demo sent no authorisation code');
+      const granted = await callBank(env, '/consents/token', consentGrantSchema, { code: params.code });
+      return { ref: granted.customer_id, expiresAt: granted.expires_at };
+    },
+  },
 
   /** The customer's EUR accounts, with the balance they had before their first listed movement. */
   async listAccounts(connection, { env }): Promise<ProviderAccount[]> {

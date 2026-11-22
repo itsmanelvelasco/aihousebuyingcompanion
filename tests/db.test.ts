@@ -10,10 +10,15 @@ import { createHabitStore } from '../apps/habits-agent/store.ts';
 import { createBankStore } from '../apps/profile-api/bank.ts';
 import { createInputStore } from '../apps/profile-api/inputs.ts';
 import { createProfileApi } from '../apps/profile-api/server.ts';
+import { createApp } from '../apps/server/app.ts';
+import { createAccounts } from '../packages/auth/accounts.ts';
+import { createOAuth } from '../packages/auth/oauth.ts';
 import type { ProviderTransaction } from '../packages/banks/provider.ts';
 import { defineBankProvider } from '../packages/banks/provider.ts';
 import { createBankRegistry } from '../packages/banks/registry.ts';
 import { createBankSync } from '../packages/banks/sync.ts';
+import { accessConfig } from '../packages/config/env.ts';
+import { remainingRows } from '../packages/db/auth.ts';
 import { countSeenWebhooks, enqueueWebhook, pendingWebhooks, seenRetention } from '../packages/db/bank-sync.ts';
 import { countBoardRuns } from '../packages/db/board.ts';
 import type { Database } from '../packages/db/database.ts';
@@ -27,6 +32,13 @@ import {
 } from '../packages/db/database.ts';
 import { eventRetention, insertTransaction } from '../packages/db/ledger.ts';
 import { importedLegacyFiles, importLegacyFiles, importLegacyJson, legacyImportMarker } from '../packages/db/legacy.ts';
+import {
+  deletePersonRows,
+  exportPersonRows,
+  personRowCounts,
+  personTables,
+  sharedTables,
+} from '../packages/db/person-data.ts';
 import { migrations } from '../packages/db/schema.ts';
 import { analyzeTransactions } from '../packages/finance/cashflow.ts';
 import { createStore, seedRuntime } from '../packages/profiles/store.ts';
@@ -1417,6 +1429,312 @@ test('the backup command leaves one verified file, cleans up after a failure and
     assert.deepEqual((await readdir(backups)).sort(), ['first.db', 'second.db']);
     db.close();
   } finally {
+    await remove();
+  }
+});
+
+// ------------------------------------------------ a person's data: one registry
+
+test('every table is classified, and no table that names a person is left out of export and deletion', () => {
+  const db = open(':memory:');
+  const tables = db
+    .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+    .map(row => row.name);
+  const personal = new Set(personTables.map(entry => entry.table));
+  assert.equal(personal.size, personTables.length, 'no table is listed twice');
+  for (const table of tables) {
+    const where = [personal.has(table) && 'personTables', table in sharedTables && 'sharedTables'].filter(Boolean);
+    assert.equal(
+      where.length,
+      1,
+      `Table ${table} must be named in exactly one of personTables and sharedTables (packages/db/person-data.ts), ` +
+        `so that it is exported and deleted with its person, or known to hold nothing about one. Found in: ${where.join(', ') || 'neither'}.`,
+    );
+    // By convention a column that points at a person, an account or a grant makes the table personal.
+    const columns = db.all<{ name: string }>(`PRAGMA table_info(${table})`).map(column => column.name);
+    const pointer = columns.find(column => ['user_id', 'account_id', 'grant_id'].includes(column));
+    if (pointer)
+      assert(personal.has(table), `Table ${table} has a ${pointer} column: list it in personTables, not sharedTables.`);
+  }
+  for (const table of [...personal, ...Object.keys(sharedTables)])
+    assert(tables.includes(table), `${table} is listed in person-data.ts but is not a table of the schema`);
+  // A redacted or JSON column that does not exist would silently export a secret or nothing.
+  for (const entry of personTables) {
+    const columns = db.all<{ name: string }>(`PRAGMA table_info(${entry.table})`).map(column => column.name);
+    for (const column of [...(entry.redact ?? []), ...(entry.json ?? [])])
+      assert(columns.includes(column), `${entry.table}.${column} is not a column`);
+    assert.equal(entry.where.split('?').length, 2, `${entry.table}: the condition takes exactly one id`);
+  }
+  // Every column that holds a hash of a secret, or a sealed value, is redacted wherever it lives.
+  // `preview_hash` is not one: it names a statement the person uploaded, and they confirm with it.
+  const notSecret = new Set(['preview_hash']);
+  for (const entry of personTables) {
+    const columns = db.all<{ name: string }>(`PRAGMA table_info(${entry.table})`).map(column => column.name);
+    for (const column of columns.filter(name => /_hash$|^cipher$|^code_challenge$/.test(name) && !notSecret.has(name)))
+      assert(entry.redact?.includes(column), `${entry.table}.${column} must be redacted from the export`);
+  }
+  db.close();
+});
+
+/** One row in every person-owned table for a fresh account, written the way the application writes them. */
+async function populatedPerson(db: Database, email: string) {
+  const accounts = createAccounts(db);
+  const account = await accounts.signUp({ email, password: 'correct horse battery', address: email });
+  const { userId } = account;
+  accounts.startSession(account.id);
+  const oauth = createOAuth(db, { issuer: () => 'https://relocat.test' });
+  const client = oauth.registerClient({
+    client_name: `Client of ${email}`,
+    redirect_uris: ['https://client.example/cb'],
+  });
+  const request = oauth.validateAuthorize({
+    response_type: 'code',
+    client_id: client.client_id,
+    redirect_uri: 'https://client.example/cb',
+    code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+    code_challenge_method: 'S256',
+    scope: 'person:read bank:manage',
+  });
+  assert(!('kind' in request));
+  const code = new URL(oauth.approve(account.id, request)).searchParams.get('code')!;
+  oauth.token({
+    grant_type: 'authorization_code',
+    code,
+    code_verifier: 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk',
+    client_id: client.client_id,
+    redirect_uri: 'https://client.example/cb',
+  });
+  oauth.approve(account.id, request);
+  const tag = userId.slice(-6);
+  const at = '2026-11-20T00:00:00Z';
+  db.run(
+    "INSERT INTO input_records (user_id, id, source, observed_at, confirmed, synthetic, data) VALUES (?, 'i1', 'manual', ?, 1, 0, ?)",
+    userId,
+    at,
+    JSON.stringify({ household: { size: 3 } }),
+  );
+  db.run('INSERT INTO bank_ledgers (user_id, revision, updated_at) VALUES (?, 1, ?)', userId, at);
+  db.run(
+    "INSERT INTO bank_accounts (user_id, id, name, currency, opening_balance_cents, opening_date, synthetic) VALUES (?, 'main', ?, 'EUR', 0, '2026-01-01', 0)",
+    userId,
+    `Account ${tag}`,
+  );
+  db.run(
+    "INSERT INTO bank_transactions (user_id, id, account_id, date, description, amount_cents, currency, category, status, synthetic) VALUES (?, 't1', 'main', '2026-11-01', ?, 250000, 'EUR', 'income', 'booked', 0)",
+    userId,
+    `Salary ${tag}`,
+  );
+  db.run(
+    "INSERT INTO bank_events (user_id, sequence, occurred_at, type, account_count, transaction_count, synthetic) VALUES (?, 1, ?, 'bank.updated', 1, 1, 0)",
+    userId,
+    at,
+  );
+  db.run(
+    "INSERT INTO bank_connections (user_id, id, provider_id, ref, created_at) VALUES (?, 'c1', 'some-bank', ?, ?)",
+    userId,
+    `sealed:${tag}`,
+    at,
+  );
+  db.run(
+    "INSERT INTO bank_credentials (user_id, connection_id, provider_id, cipher, created_at) VALUES (?, 'c1', 'some-bank', ?, ?)",
+    userId,
+    `v1.nonce.SEALED-${tag}.tag`,
+    at,
+  );
+  db.run(
+    "INSERT INTO bank_consents (state_hash, user_id, provider_id, session_hash, created_at, expires_at) VALUES (?, ?, 'some-bank', ?, ?, ?)",
+    `statehash-${tag}`,
+    userId,
+    `sessionhash-${tag}`,
+    at,
+    '2099-01-01T00:00:00Z',
+  );
+  db.run(
+    "INSERT INTO bank_webhook_queue (provider_id, ref, received_at) VALUES ('some-bank', ?, ?)",
+    `sealed:${tag}`,
+    at,
+  );
+  db.run(
+    "INSERT INTO bank_import_previews (user_id, preview_hash, csv, created_at, expires_at) VALUES (?, 'p1', ?, ?, ?)",
+    userId,
+    `date,description,amount\n2026-11-01,Pending ${tag},1.00`,
+    at,
+    '2099-01-01T00:00:00Z',
+  );
+  db.run(
+    "INSERT INTO bank_imports (user_id, id, account_id, created_at, row_count, covered_from, covered_to) VALUES (?, 'imp-1', 'main', ?, 1, '2026-11-01', '2026-11-01')",
+    userId,
+    at,
+  );
+  db.run("INSERT INTO bank_import_rows (user_id, import_id, transaction_id) VALUES (?, 'imp-1', 't1')", userId);
+  const habits = createHabitStore(db);
+  await habits.saveGoal(userId, {
+    id: 'coffee',
+    title: `Coffee ${tag}`,
+    action: 'Brew',
+    category: 'food',
+    targetDaysPerWeek: 3,
+    active: true,
+  });
+  await habits.checkin(userId, 'coffee', { id: 'c1', date: '2026-11-20', completed: true });
+  return { account, userId, tag, ids: { userId, accountId: account.id } };
+}
+
+test('the export holds every row of every table about a person and nothing of anybody else; deletion removes exactly that', async () => {
+  const db = open(':memory:');
+  const ada = await populatedPerson(db, 'ada@example.com');
+  const bob = await populatedPerson(db, 'bob@example.com');
+
+  // The fixture really has at least one row in every person-owned table, for both people.
+  for (const person of [ada, bob])
+    for (const [table, rows] of Object.entries(personRowCounts(db, person.ids)))
+      assert(rows >= 1, `${table} has no row for the test person: add one to populatedPerson`);
+
+  const exported = exportPersonRows(db, ada.ids, new Date('2026-11-22T10:00:00Z'));
+  assert.deepEqual(
+    [exported.format, exported.exportedAt, exported.userId],
+    ['relocat-export/1', '2026-11-22T10:00:00.000Z', ada.userId],
+  );
+  assert.deepEqual(Object.keys(exported.tables).sort(), personTables.map(entry => entry.table).sort());
+  // Row for row what is stored, per table.
+  const counts = personRowCounts(db, ada.ids);
+  for (const entry of personTables) {
+    assert.equal(exported.tables[entry.table].length, counts[entry.table], entry.table);
+    assert(exported.describes[entry.table], `${entry.table} is described`);
+    for (const row of exported.tables[entry.table])
+      for (const column of entry.redact ?? []) assert(!(column in row), `${entry.table}.${column} is exported`);
+  }
+  const text = JSON.stringify(exported);
+  // Ada's own data is there, readable: the email, the answers as JSON, the movement, the pending upload.
+  assert.equal(exported.tables.accounts[0].email, 'ada@example.com');
+  assert.deepEqual(exported.tables.input_records[0].data, { household: { size: 3 } });
+  assert.equal((exported.tables.profile_sections[0].document as { synthetic: boolean }).synthetic, false);
+  for (const own of [
+    `Salary ${ada.tag}`,
+    `Account ${ada.tag}`,
+    `Coffee ${ada.tag}`,
+    `Pending ${ada.tag}`,
+    `sealed:${ada.tag}`,
+  ])
+    assert(text.includes(own), own);
+  // Nothing of Bob's, and no secret: no password hash, token hash, session hash, state hash or sealed credential.
+  for (const foreign of [bob.userId, bob.account.id, 'bob@example.com', bob.tag])
+    assert(!text.includes(foreign), `the export of Ada contains ${foreign}`);
+  const secrets = [
+    ...db.all<{ v: string }>('SELECT password_hash AS v FROM accounts'),
+    ...db.all<{ v: string }>('SELECT id_hash AS v FROM auth_sessions'),
+    ...db.all<{ v: string }>('SELECT token_hash AS v FROM oauth_tokens'),
+    ...db.all<{ v: string }>('SELECT code_hash AS v FROM oauth_codes'),
+    ...db.all<{ v: string }>('SELECT cipher AS v FROM bank_credentials'),
+    ...db.all<{ v: string }>('SELECT state_hash AS v FROM bank_consents'),
+    ...db.all<{ v: string }>('SELECT session_hash AS v FROM bank_consents'),
+  ];
+  assert(secrets.length >= 14);
+  for (const { v } of secrets) assert(!text.includes(v), 'a hash or sealed value is in the export');
+  assert.deepEqual(exported.redacted.columns.bank_credentials, ['cipher']);
+  assert.deepEqual(exported.redacted.columns.oauth_tokens, ['token_hash']);
+
+  // Deletion goes through the same list: every row of Ada's is gone and every row of Bob's is still there.
+  const bobBefore = personRowCounts(db, bob.ids);
+  const removed = db.transaction(() => deletePersonRows(db, ada.ids));
+  assert.deepEqual(removed, counts);
+  assert.equal(remainingRows(db, ada.account.id, ada.userId), 0);
+  assert(Object.values(personRowCounts(db, ada.ids)).every(rows => rows === 0));
+  assert.deepEqual(personRowCounts(db, bob.ids), bobBefore);
+  assert.equal(integrityCheck(db), 'ok');
+  assert.deepEqual(db.all('PRAGMA foreign_key_check'), []);
+  db.close();
+});
+
+test('a busy database is one answer on every route outside /api: 503, Retry-After, and nothing written', async () => {
+  const { directory, remove } = await scratch('relocat-app-busy-');
+  const file = join(directory, 'relocat.db');
+  const db = open(file);
+  let port = 0;
+  const app = createApp({
+    db,
+    adminToken: 'admin-test-token',
+    publicOrigin: null,
+    port: () => port,
+    access: accessConfig({}),
+    housekeepingMs: null,
+    warn: () => {},
+  });
+  const { createServer } = await import('node:http');
+  const server = createServer(app.handle);
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  port = address.port;
+  const origin = `http://127.0.0.1:${port}`;
+  try {
+    const account = await app.accounts.signUp({
+      email: 'ada@example.com',
+      password: 'correct horse battery',
+      address: 'a',
+    });
+    const session = app.accounts.startSession(account.id);
+    const cookie = `rc_session=${session.id}`;
+    // The session was last seen long enough ago that the next request records it: a write.
+    db.run('UPDATE auth_sessions SET last_seen_at = ? WHERE 1', new Date(Date.now() - 120_000).toISOString());
+    const requests: [string, () => Promise<Response>, 'page' | 'json'][] = [
+      [
+        'GET /account',
+        () => fetch(`${origin}/account`, { headers: { Cookie: cookie, Accept: 'text/html' }, redirect: 'manual' }),
+        'page',
+      ],
+      [
+        'POST /mcp',
+        () =>
+          fetch(`${origin}/mcp`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json, text/event-stream',
+              Cookie: cookie,
+              Origin: origin,
+            },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'tools/call',
+              params: { name: 'get_person', arguments: {} },
+            }),
+          }),
+        'json',
+      ],
+      [
+        'POST /oauth/register',
+        () =>
+          fetch(`${origin}/oauth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ client_name: 'Busy client', redirect_uris: ['https://client.example/cb'] }),
+          }),
+        'json',
+      ],
+    ];
+    const lock = holdWriteLock(file, 3000);
+    await lock.locked;
+    const started = performance.now();
+    for (const [name, send, kind] of requests) {
+      const response = await send();
+      assert.equal(response.status, 503, name);
+      assert.equal(response.headers.get('retry-after'), '1', name);
+      const body = await response.text();
+      if (kind === 'page') assert.match(body, /ReloCat is busy.*Nothing was changed/s, name);
+      else assert.deepEqual(JSON.parse(body), { error: 'Storage is busy; try again shortly', retryable: true }, name);
+    }
+    assert.ok(performance.now() - started < 2500, 'answered while the lock was still held, without freezing');
+    assert.equal(db.get<{ n: number }>('SELECT COUNT(*) AS n FROM oauth_clients')?.n, 0, 'nothing was written');
+    // Once the other writer is done, the very same requests succeed.
+    await lock.released;
+    assert.deepEqual(await Promise.all(requests.map(async ([, send]) => (await send()).status)), [200, 200, 201]);
+  } finally {
+    await app.close();
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    db.close();
     await remove();
   }
 });

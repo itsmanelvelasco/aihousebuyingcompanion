@@ -5,7 +5,8 @@
 ## Entry points
 
 - `apps/interviewer/server.ts`, `app.ts`, `index.html`: voice/guided interview, mounted by the one server at `http://127.0.0.1:8787/interview/` (`npm start`) and still runnable alone on port 3000 (`npm run start:interviewer`). `createInterviewerHandler` serves the page, its bundle, the demo CSV and `/scenario` (deterministic, free) to anyone. `/classify` (OpenAI Decisions) and `/voice` (OpenAI Realtime) spend `OPENAI_API_KEY` credits: by default they answer only same-origin requests made on the server's own machine, and `INTERVIEWER_PUBLIC_AI=on` opens them to the public site with a per-visitor hourly limit. Guided mode works without paid calls.
-- `apps/mcp-server/interview-tools.ts`: interview/cash-flow tools registered by the shared MCP factory. The browser interview retains its own local state; it is not automatically the persisted profile API.
+- `apps/interviewer/facts.ts`: the plan facts of the interview, with no page code in it. It asks the shared question set (`packages/model/questions.ts`) after the money questions, keeps the answers in one typed state for the guided and the voice interview, builds the parameters of the Realtime tool `save_plan_facts`, and saves the confirmed answers to the signed-in person's profile with one same-origin `save_my_inputs` call to `/mcp`.
+- `apps/mcp-server/interview-tools.ts`: interview/cash-flow tools registered by the shared MCP factory. The browser interview retains its own local state; it reaches the persisted profile only when a signed-in person presses the save button on the main server.
 - `apps/board/intake.ts`: expanded demo intake definitions and validation.
 
 - `apps/board/demo.ts`: question groups, validation, `openDemo` and `updateDemo`.
@@ -17,6 +18,8 @@
 ## Inputs and outputs
 
 Accept grouped answers, including household size, work, income/spending/savings and housing requirements. Persist canonical partial input records rather than replacing whole profile files. Budget/floor area, official commute destination, required school stages and transport mode are needed before a fully constrained town search. `null` is explicitly unknown; omission means no update.
+
+The facts that decide tax measures and aids (date of birth, children and schooling, main home, family status, tax return type and tax bases) are asked from the shared question set, never from a list of the interviewer's own. “I don’t know” is stored as `null`, a skipped question stays unanswered, and a tax or family fact is never worked out from age, income or household size. Standalone or signed out, the page says the answers are only on this device.
 
 Use integer EUR cents at the API boundary. The UI's debt-inclusive spending must not be added to debt payments a second time: the connected adapter stores that entered total as expenses and zero separate debt for that input. This is a total-spending representation, not proof the household has no debt. A bank summary is evidence to review, not automatic confirmation of every financial fact. Never infer tax eligibility from household demographics.
 

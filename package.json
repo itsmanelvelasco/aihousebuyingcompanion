@@ -26,6 +26,7 @@
     "generate:users": "node scripts/generate-users.ts",
     "db:backup": "node --env-file-if-exists=.env scripts/backup-db.ts",
     "db:import-legacy": "node --env-file-if-exists=.env scripts/import-legacy.ts",
+    "db:reseed-demo": "node --env-file-if-exists=.env scripts/reseed-demo.ts",
     "package:team-plugin": "node --env-file-if-exists=.env scripts/package-team-plugin.ts",
     "images:generate": "node --env-file-if-exists=.env scripts/generate-images.ts"
   },

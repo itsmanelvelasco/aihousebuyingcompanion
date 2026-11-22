@@ -4,6 +4,7 @@ import type { Server } from 'node:http';
 import { createServer, request as httpRequest } from 'node:http';
 import type { AppOptions } from '../../apps/server/app.ts';
 import { createApp } from '../../apps/server/app.ts';
+import { createVault } from '../../packages/banks/vault.ts';
 import { accessConfig } from '../../packages/config/env.ts';
 import { open } from '../../packages/db/database.ts';
 import { createStore } from '../../packages/profiles/store.ts';
@@ -45,6 +46,8 @@ export async function startApp(overrides: Partial<AppOptions> & { accessEnv?: Re
     port: () => port,
     access: accessConfig({ ...accessEnv }),
     warn: message => void warnings.push(message),
+    // A key of its own, as a deployment has: bank credentials are sealed, and no development key is made.
+    vault: createVault(randomBytes(32)),
     ...options,
   });
   const server = createServer(app.handle);
@@ -187,7 +190,14 @@ export class Browser {
   }
   async request(
     path: string,
-    init: { method?: string; form?: Record<string, string>; headers?: Record<string, string>; json?: unknown } = {},
+    init: {
+      method?: string;
+      form?: Record<string, string>;
+      headers?: Record<string, string>;
+      json?: unknown;
+      /** A form with a file field, as `enctype="multipart/form-data"` sends it. */
+      upload?: { fields: Record<string, string>; name: string; filename: string; content: string };
+    } = {},
   ) {
     const headers: Record<string, string> = { ...init.headers };
     if (this.client) headers[clientHeader] = this.client;
@@ -197,6 +207,27 @@ export class Browser {
       headers['Content-Type'] = 'application/x-www-form-urlencoded';
       headers.Origin ??= this.site;
       body = new URLSearchParams(init.form).toString();
+    } else if (init.upload) {
+      const boundary = `----relocat-test-${randomBytes(8).toString('hex')}`;
+      headers['Content-Type'] = `multipart/form-data; boundary=${boundary}`;
+      headers.Origin ??= this.site;
+      const { fields, name, filename, content } = init.upload;
+      const lines = Object.entries(fields).flatMap(([field, value]) => [
+        `--${boundary}`,
+        `Content-Disposition: form-data; name="${field}"`,
+        '',
+        value,
+      ]);
+      lines.push(
+        `--${boundary}`,
+        `Content-Disposition: form-data; name="${name}"; filename="${filename}"`,
+        'Content-Type: text/csv',
+        '',
+        content,
+        `--${boundary}--`,
+        '',
+      );
+      body = lines.join('\r\n');
     } else if (init.json !== undefined) {
       headers['Content-Type'] = 'application/json';
       body = JSON.stringify(init.json);
@@ -248,6 +279,9 @@ export async function registerClient(origin: string, metadata: Record<string, un
   });
   return { status: response.status, body: (await response.json()) as Record<string, string> };
 }
+
+/** Every scope a person can grant: reading, saving answers and managing their own bank data. */
+export const everyScope = 'person:read person:write bank:manage';
 
 /**
  * The whole authorization-code flow for a signed-in browser: register a client, consent, exchange

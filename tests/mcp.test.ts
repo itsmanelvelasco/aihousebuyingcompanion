@@ -55,10 +55,19 @@ async function tool(name: string, args: Record<string, unknown>) {
 test('discovers schemas and exposes sourced profiles, schools and business indicators', async () => {
   assert.equal(client.getServerVersion()?.name, 'relocat');
   const listed = await client.listTools();
-  assert.equal(listed.tools.length, 24);
-  // Every tool reads only, except the one that saves to the signed-in person's own profile.
+  assert.equal(listed.tools.length, 35);
+  // Every tool reads only, except the ones that act on the signed-in person's own record: saving
+  // answers, and managing their own bank data.
   const writers = listed.tools.filter(tool => !tool.annotations?.readOnlyHint).map(tool => tool.name);
-  assert.deepEqual(writers, ['save_my_inputs']);
+  assert.deepEqual(writers.sort(), [
+    'confirm_statement_import',
+    'connect_my_bank',
+    'delete_statement_import',
+    'disconnect_my_bank',
+    'preview_statement_import',
+    'save_my_inputs',
+    'sync_my_bank',
+  ]);
   assert(listed.tools.every(tool => tool.inputSchema && tool.outputSchema));
   // No tool takes a user id from the model; this server has no accounts, so personal tools say so.
   for (const tool of listed.tools) assert(!('userId' in (tool.inputSchema.properties ?? {})), tool.name);

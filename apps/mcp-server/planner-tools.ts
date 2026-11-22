@@ -5,8 +5,16 @@ import { stateSchema } from '../../packages/contracts/habits.ts';
 import { inputSchema } from '../../packages/contracts/inputs.ts';
 import type { Policy, Snapshot } from '../../packages/contracts/places.ts';
 import { municipalityCode } from '../../packages/contracts/places.ts';
-import type { Person } from '../../packages/contracts/planner.ts';
-import { person, place, planInput, planResult } from '../../packages/contracts/planner.ts';
+import type { Person, PlanResult } from '../../packages/contracts/planner.ts';
+import {
+  factConflict,
+  knownFact,
+  nextQuestion,
+  person,
+  place,
+  planInput,
+  planResult,
+} from '../../packages/contracts/planner.ts';
 import { bankSummaryInput, buildPerson } from '../../packages/model/person.ts';
 import { buildPlace } from '../../packages/model/place.ts';
 import { normalizedName } from '../../packages/places/geography.ts';
@@ -26,12 +34,35 @@ export type PlannerToolOptions = {
 const readOnly = { readOnlyHint: true, openWorldHint: false, destructiveHint: false, idempotentHint: true };
 /** Complete calendar months of bank movements averaged into a typical month. */
 const bankMonths = 3;
+const provenanceItem = z.object({ confirmed: z.boolean(), observedAt: z.string(), source: z.string().optional() });
 const contextResult = z.object({
   resolved: z.object({
     data: z.record(z.string(), z.record(z.string(), z.unknown())),
-    provenance: z.record(z.string(), z.array(z.object({ confirmed: z.boolean(), observedAt: z.string() }))).optional(),
+    provenance: z.record(z.string(), z.array(provenanceItem)).optional(),
+    // Answers that disagree: the person is shown both and picks; the plan uses neither.
+    conflicts: z
+      .array(z.object({ field: z.string(), candidates: z.array(provenanceItem.extend({ value: z.unknown() })) }))
+      .optional(),
   }),
 });
+
+/**
+ * How the model should use `nextQuestions`, said once and repeated by every tool that returns them.
+ * The same rules hold for every surface: one question at a time, the most valuable first, a saved
+ * answer only after the person confirmed it, and "I don't know" as an answer of its own.
+ */
+export const askingGuidance =
+  'nextQuestions lists what is still worth asking, most valuable first; an empty list means nothing more can change the plan, so stop asking. Ask ONE question at a time, in that order, in the person’s language: say the question, then why it is asked (why) and what it could change (effect.text). Read help aloud when the person hesitates, and say sensitivity before a sensitive question. Never guess an answer, never infer a tax or family fact from age, income or household size, and never turn “I don’t know” into zero or no. After each answer call the tool again: the order changes with every answer. Signed in: repeat the answer back, and only after the person confirms it call save_my_inputs with confirmed:true, writing the value at the question’s inputPath (for example data.eligibility.birthDate; money at a finance or housing path is integer cents, a tax base is euros, housing.depositRate is a share such as 0.2); “I don’t know” is saved as null at that path. Children are saved as data.eligibility.children, one object per child with birthDate, plus meetsItpSchooling or inDesignatedSchool once those are answered; [] means no children. Not signed in: nothing is stored; add the answer to the inline person instead and plan again (a date of birth as person.born.self, children as person.born.children, any other eligibility field under person.household with the same name, the figures under person.finances and person.home), and say the answers live only in this conversation. A question with state said_unknown was already answered “I don’t know”: explain where to find the figure instead of asking again. conflicts lists answers that disagree: show the candidates, let the person pick, and save the pick; never choose for them. knownFacts with a stale note may be out of date: say when the fact was given and ask whether it still holds.';
+
+/** One sentence for the tool text: the question to ask now, or that there is none. */
+export function nextQuestionNote(plan: Pick<PlanResult, 'nextQuestions' | 'conflicts'>): string {
+  const [first, ...rest] = (plan.nextQuestions ?? []).filter(question => question.state !== 'said_unknown');
+  const conflicts = plan.conflicts?.length
+    ? ` ${plan.conflicts.length} answer(s) disagree (${plan.conflicts.map(item => item.label).join(', ')}): show the candidates and let the person pick.`
+    : '';
+  if (!first) return `No further question would change this plan.${conflicts}`;
+  return `Ask next, one question at a time: “${first.question}” Why: ${first.why} ${first.effect.text} ${rest.length} more question(s) follow in nextQuestions; plan again after each answer, because the order changes.${conflicts}`;
+}
 
 function result(summary: string, structuredContent: Record<string, unknown>): CallToolResult {
   return { content: [{ type: 'text', text: summary }], structuredContent };
@@ -69,11 +100,26 @@ export function provenanceNote(who: Person): string {
 /** A message that is safe to show: never an upstream body or a URL. */
 class PersonUnavailable extends Error {}
 
+/** What `get_next_questions` answers: the question list of a plan, without the timelines. */
+export const nextQuestionsResult = z.object({
+  asOf: z.string(),
+  /** True when the answers belong to the signed-in person and can be saved; false for an inline person or a demo persona. */
+  stored: z.boolean(),
+  nextQuestions: z.array(nextQuestion),
+  knownFacts: z.array(knownFact),
+  conflicts: z.array(factConflict),
+});
+
 /**
  * The person, place and plan tools. A stored person is reached only through the caller: `me` for
  * the signed-in person, or a read-only demo persona. No tool here accepts a user id.
+ *
+ * Returns `registerNextQuestions`, which adds the optional `get_next_questions` tool to the same
+ * server. It is not registered by default: `createMcpServer` in `tools.ts` decides which tools exist,
+ * and switches it on with `registerPlannerTools(server, options).registerNextQuestions()`.
  */
 export function registerPlannerTools(server: McpServer, options: PlannerToolOptions) {
+  let registerQuestionTool: () => unknown = () => undefined;
   const { snapshot, policies, today } = options;
   const caller = options.caller ?? anonymous;
   const demoIds = caller.demo?.ids ?? [];
@@ -161,8 +207,7 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
     'plan_home_savings',
     {
       title: 'Estimate months of saving to buy in each place',
-      description:
-        'For one person and up to eight municipalities, compute the upfront cash to buy (deposit, transfer tax, purchase fees) and the months of saving needed: with current savings, with the person’s habits, and with the benefits each place offers. Pass exactly one of: me:true for the signed-in person (needs sign-in), an inline person, or demoId for a fictional demo persona. There is no user id argument. Benefits are counted only when eligibility is confirmed unless includeUnverifiedBenefits is set; closed calls are never counted. habits says for each habit whether it was counted and why: say so instead of assuming an active habit was counted. A benefit with a null amountCents and an ineligible status brings the person nothing; nominalAmountCents is only what it is worth to someone who qualifies. person.synthetic and person.finances.bankSynthetic say separately whether the person and the bank movements are fictional: repeat them as given. This is arithmetic on supplied figures: it is not mortgage approval and no aid is guaranteed. Present assumptions, dataMissing and limitations with the result.',
+      description: `For one person and up to eight municipalities, compute the upfront cash to buy (deposit, transfer tax, purchase fees) and the months of saving needed: with current savings, with the person’s habits, and with the benefits each place offers. Pass exactly one of: me:true for the signed-in person (needs sign-in), an inline person, or demoId for a fictional demo persona. There is no user id argument. Benefits are counted only when eligibility is confirmed unless includeUnverifiedBenefits is set; closed calls are never counted. A benefit stays needs_verification until the facts that decide it are known. ${askingGuidance} habits says for each habit whether it was counted and why: say so instead of assuming an active habit was counted. A benefit with a null amountCents and an ineligible status brings the person nothing; nominalAmountCents is only what it is worth to someone who qualifies. person.synthetic and person.finances.bankSynthetic say separately whether the person and the bank movements are fictional: repeat them as given. This is arithmetic on supplied figures: it is not mortgage approval and no aid is guaranteed. Present assumptions, dataMissing and limitations with the result.`,
       inputSchema: planToolInput,
       outputSchema: planResult,
       annotations: readOnly,
@@ -192,7 +237,7 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
         const habitNote = withheld
           ? ` ${withheld} active habit(s) are shown but not counted; habits says why for each.`
           : '';
-        return result(`${summary}${habitNote} ${provenanceNote(plan.person)}`, {
+        return result(`${summary}${habitNote} ${nextQuestionNote(plan)} ${provenanceNote(plan.person)}`, {
           ...plan,
           limitations: [...plan.limitations, ...loaded.notes],
         });
@@ -264,7 +309,7 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
     {
       title: 'Save details to my profile',
       description:
-        'Save facts the signed-in person stated about their household, housing needs, schools, transport, finances (integer cents) or eligibility. Needs sign-in with write permission; it always writes to the caller’s own person. Set confirmed:true only when the person explicitly confirmed the values; otherwise false. Each call adds one dated record; earlier records are kept, and conflicts are reported by get_my_inputs.',
+        'Save facts the signed-in person stated about their household, housing needs, schools, transport, finances (integer cents) or eligibility. Needs sign-in with write permission; it always writes to the caller’s own person. Save an answer to one of the plan’s nextQuestions at its inputPath, one answer per call, and only after repeating it back and hearing the person confirm it: then confirmed:true. An unconfirmed household fact is stored but never used to count a benefit. “I don’t know” is saved as null at the same path, which records that the person was asked; never save zero, false or a guess in its place. eligibility.birthDate is the buyer’s date of birth (preferred over eligibility.age, which goes out of date); eligibility.children is the whole list of children, each with birthDate (or birthYear or age) and, once answered, meetsItpSchooling and inDesignatedSchool; [] means no children. Tax bases are euros from the tax return, never a salary. Each call adds one dated record; earlier records are kept. An answer that contradicts an earlier confirmed one from another source is reported as a conflict by plan_home_savings and get_my_inputs and is not silently preferred.',
       inputSchema: z
         .object({
           data: inputSchema.shape.data,
@@ -296,6 +341,40 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
         return result('Saved to your profile.', { saved: true, inputId, inputCount: stored.inputs.length });
       }),
   );
+
+  registerQuestionTool = () =>
+    server.registerTool(
+      'get_next_questions',
+      {
+        title: 'What to ask this person next',
+        description: `For one person and up to eight municipalities, return only the questions worth asking next, the facts already known with their source, and any answers that disagree. It is the same list plan_home_savings returns, without the timelines: use it between answers of an interview. Pass exactly one of me:true (needs sign-in), an inline person, or demoId. ${askingGuidance}`,
+        inputSchema: planToolInput,
+        outputSchema: nextQuestionsResult,
+        annotations: readOnly,
+        _meta: security('either'),
+      },
+      input =>
+        guarded(async () => {
+          const chosen = [input.person, input.me, input.demoId].filter(value => value !== undefined);
+          if (chosen.length !== 1) return failure('Provide exactly one of me:true, person or demoId.');
+          let who: Person;
+          if (input.person) who = input.person;
+          else if (input.me) {
+            const own = ownPerson(caller, 'person:read');
+            if ('error' in own) return own.error;
+            who = (await loadPerson(own.me)).person;
+          } else who = (await loadPerson(demoPerson(input.demoId as string))).person;
+          const places = [...new Set(input.municipalityCodes)].map(code => buildPlace(snapshot, code));
+          const plan = planForPlaces(who, places, policies, input.assumptions, today());
+          return result(nextQuestionNote(plan), {
+            asOf: plan.asOf,
+            stored: input.me === true,
+            nextQuestions: plan.nextQuestions ?? [],
+            knownFacts: plan.knownFacts ?? [],
+            conflicts: plan.conflicts ?? [],
+          });
+        }),
+    );
 
   if (demoIds.length)
     server.registerTool(
@@ -332,4 +411,5 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
         return result(`${node.name}, ${node.comarca} · place node from the ${snapshot.generatedOn} snapshot.`, node);
       }),
   );
+  return { registerNextQuestions: () => void registerQuestionTool() };
 }

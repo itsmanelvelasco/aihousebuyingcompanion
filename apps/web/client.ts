@@ -172,8 +172,11 @@ export function createToolClient(call: CallTool) {
       return read(call, tool, { ...args, ...period }, bankSummary);
     },
     /** Save details to the signed-in person's own profile. Only `me` can be written. */
-    saveInputs: (data: Record<string, Record<string, unknown>>, confirmed: boolean) =>
-      read(call, 'save_my_inputs', { data, confirmed, source: 'manual' }, savedInputs),
+    saveInputs: (
+      data: Record<string, Record<string, unknown>>,
+      confirmed: boolean,
+      source: 'manual' | 'interview' = 'manual',
+    ) => read(call, 'save_my_inputs', { data, confirmed, source }, savedInputs),
     municipalities: async () =>
       (await read(call, 'list_catalonia_municipalities', {}, municipalityListResult)).municipalities,
   };

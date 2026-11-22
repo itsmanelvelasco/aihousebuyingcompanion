@@ -165,7 +165,17 @@ export function bearerToken(request: IncomingMessage) {
  * Who an `/api` request acts for. `admin` is the operator's service token and may touch any user;
  * a person's credential may only touch `/users/<its own id>/…`, and writes need `write`.
  */
-export type ApiAccess = 'admin' | { userId: string; write: boolean };
+export type ApiAccess =
+  | 'admin'
+  | {
+      userId: string;
+      /** May save answers and habits (`person:write`, or a session with its CSRF token). */
+      write: boolean;
+      /** May read (`person:read`). Absent means yes, as every credential could before scopes for reads existed. */
+      read?: boolean;
+      /** May connect banks, sync, import statements and correct movements (`bank:manage`). */
+      bank?: boolean;
+    };
 
 /** Resolves a person's credential (OAuth token or session). Returns null when the request carries none. */
 export type ApiAuthorizer = (request: IncomingMessage) => ApiAccess | null;
@@ -191,10 +201,45 @@ export function requireOwnRoute(
   access: ApiAccess,
   request: IncomingMessage,
   parts: string[],
-  mayWrite: (parts: string[]) => boolean,
+  mayWrite: (parts: string[], method: string) => boolean | 'bank',
 ) {
   if (access === 'admin') return;
   if (parts[0] !== 'users' || parts[1] !== access.userId) throw new ApiError(403, 'Forbidden');
-  if (request.method === 'GET' || request.method === 'HEAD') return;
-  if (!access.write || !mayWrite(parts)) throw new ApiError(403, 'Forbidden');
+  if (request.method === 'GET' || request.method === 'HEAD') {
+    if (access.read === false) throw new ApiError(403, 'Forbidden');
+    return;
+  }
+  // `true` is a write of answers or habits; `'bank'` is a change to the person's own bank data.
+  const needs = mayWrite(parts, request.method ?? '');
+  if (needs === false || (needs === 'bank' ? access.bank !== true : !access.write))
+    throw new ApiError(403, 'Forbidden');
+}
+
+/** One part of a `multipart/form-data` body: a form field, or a file with its name. */
+export type FormPart = { name: string; filename?: string; value: string };
+
+/**
+ * Read a bounded `multipart/form-data` body (a form with a file field) as text parts. Only what a
+ * plain HTML form sends is understood: parts separated by the boundary, each with a
+ * `Content-Disposition: form-data; name="..."[; filename="..."]` header. Anything else is refused.
+ */
+export async function readMultipart(request: IncomingMessage, maxBytes: number, tooLarge?: string) {
+  const type = String(request.headers['content-type'] ?? '');
+  const boundary = /^multipart\/form-data;\s*boundary=(?:"([^"]{1,70})"|([^\s;"]{1,70}))/i.exec(type);
+  if (!boundary) throw new ApiError(415, 'Expected a form with a file');
+  const text = await readText(request, maxBytes, tooLarge);
+  const parts: FormPart[] = [];
+  for (const chunk of text.split(`--${boundary[1] ?? boundary[2]}`).slice(1)) {
+    if (chunk.startsWith('--')) break;
+    const split = chunk.indexOf('\r\n\r\n');
+    if (split < 0) throw new ApiError(400, 'Malformed form body');
+    const disposition = /content-disposition:\s*form-data;([^\r\n]*)/i.exec(chunk.slice(0, split));
+    const name = disposition && /(?:^|;)\s*name="([^"]*)"/.exec(disposition[1]);
+    if (!name) throw new ApiError(400, 'Malformed form body');
+    const filename = /(?:^|;)\s*filename="([^"]*)"/.exec(disposition[1])?.[1];
+    // The part ends with the line break that precedes the next boundary.
+    parts.push({ name: name[1], filename, value: chunk.slice(split + 4).replace(/\r\n$/, '') });
+    if (parts.length > 20) throw new ApiError(400, 'Too many form fields');
+  }
+  return parts;
 }

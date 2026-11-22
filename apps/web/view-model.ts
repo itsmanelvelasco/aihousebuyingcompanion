@@ -1,4 +1,5 @@
 import type {
+  FactConflict,
   Habit,
   HabitEffect,
   Person,
@@ -450,6 +451,81 @@ export function planNotes(result: PlanResult): PlanNotes {
       .map(plan => ({ place: plan.place.name, items: [...new Set([...plan.dataMissing, ...plan.place.dataMissing])] }))
       .filter(group => group.items.length > 0),
   };
+}
+
+// ------------------------------------------------------------------ details
+
+const sourceLabels: Record<string, string> = {
+  profile: 'From your saved profile',
+  interview: 'Said in the interview',
+  manual: 'Typed in by you',
+  bank: 'Observed in bank movements',
+  listing: 'From a listing',
+  what_if: 'This estimate only, not saved',
+};
+/** Where an answer came from, in words. An unknown source is named as such, not guessed. */
+export const factSourceLabel = (source: string) => sourceLabels[source] ?? 'Source not recorded';
+
+/**
+ * The sources a picked answer is written under to settle a conflict: every disagreeing source the
+ * workspace can write (`interview`, `manual`), so no older answer keeps contradicting the pick.
+ * When none of them is writable the pick is saved as typed in by the person.
+ */
+export function conflictSources(conflict: Pick<FactConflict, 'candidates'>): ('manual' | 'interview')[] {
+  const writable = (['interview', 'manual'] as const).filter(source =>
+    conflict.candidates.some(candidate => candidate.source === source),
+  );
+  return writable.length ? writable : ['manual'];
+}
+
+export type PlanChange = { place: string; lines: string[] };
+
+/**
+ * What an answer changed, place by place, read from the plan before it and the plan after it. Both
+ * timelines are quoted as the planner gave them; nothing is added or subtracted here. A place where
+ * nothing changed is left out.
+ */
+export function planChanges(before: PlanResult, after: PlanResult): PlanChange[] {
+  return after.plans.flatMap(plan => {
+    const previous = before.plans.find(item => item.place.municipalityCode === plan.place.municipalityCode);
+    if (!previous) return [];
+    const lines: string[] = [];
+    for (const benefit of plan.benefits) {
+      const was = previous.benefits.find(item => item.policyId === benefit.policyId);
+      if (!was) continue;
+      if (benefit.counted && !was.counted) lines.push(`Counted now: ${benefit.title}.`);
+      else if (!benefit.counted && was.counted) lines.push(`No longer counted: ${benefit.title}.`);
+      // A status that settles is news; one that only becomes open again is already in the question list.
+      else if (
+        benefit.eligibilityStatus !== was.eligibilityStatus &&
+        benefit.eligibilityStatus !== 'needs_verification'
+      )
+        lines.push(
+          benefit.eligibilityStatus === 'eligible'
+            ? `Confirmed for you: ${benefit.title}.`
+            : `Does not apply to you: ${benefit.title}.`,
+        );
+    }
+    const baselineRate = plan.transferTax?.baselinePolicyId ?? null;
+    if (baselineRate !== (previous.transferTax?.baselinePolicyId ?? null))
+      lines.push(
+        baselineRate
+          ? 'Your transfer tax anywhere in Catalonia is now a reduced rate, so every place starts from it.'
+          : 'Your transfer tax anywhere in Catalonia is the general rate again.',
+      );
+    const [was, now] = [previous.withPlaceBenefits, plan.withPlaceBenefits];
+    if (!was && now) lines.push(`A timeline can be estimated now: ${formatDuration(now.months).toLowerCase()}.`);
+    else if (was && !now) lines.push('A timeline can no longer be estimated.');
+    else if (was && now && was.months !== now.months)
+      lines.push(
+        `The wait is now ${formatDuration(now.months).toLowerCase()}; it was ${formatDuration(was.months).toLowerCase()}.`,
+      );
+    else if (was && now && was.upfrontCashCents !== now.upfrontCashCents)
+      lines.push(
+        `The upfront cash is now ${formatEuros(now.upfrontCashCents)}; it was ${formatEuros(was.upfrontCashCents)}.`,
+      );
+    return lines.length ? [{ place: plan.place.name, lines }] : [];
+  });
 }
 
 // --------------------------------------------------------------------- bank

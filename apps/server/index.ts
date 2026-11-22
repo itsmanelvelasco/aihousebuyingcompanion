@@ -2,10 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
+import { loadBankRegistry } from '../../packages/banks/registry.ts';
+import { createVault, parseDataKey } from '../../packages/banks/vault.ts';
 import {
   accessConfig,
   clientAddressConfig,
   clientAddressProblem,
+  dataEncryptionKey,
   defaultPorts,
   demoBankConfig,
   envInteger,
@@ -15,6 +18,7 @@ import {
   envText,
   openaiModels,
   publicOriginConfig,
+  rateLimitConfig,
   storageConfig,
 } from '../../packages/config/env.ts';
 import { product } from '../../packages/config/product.ts';
@@ -91,6 +95,35 @@ if (demoBankOn) {
 }
 let demoBank: Awaited<ReturnType<typeof startDemoBankFromEnv>> | undefined;
 
+// Bank providers are discovered once here (after the demo bank's variables are set) so the server
+// can check what they need before it serves anything.
+const bankRegistry = await loadBankRegistry();
+// Bank credentials are sealed at rest with DATA_ENCRYPTION_KEY. A bank that people connect by a
+// consent hands back something worth protecting, so in production such a bank does not run without
+// a key of the operator's own. Outside production a key kept in the database stands in (app.ts).
+let dataKey: Buffer | undefined;
+try {
+  dataKey = parseDataKey(dataEncryptionKey());
+} catch (error) {
+  console.error(`The server did not start.\n${error instanceof Error ? error.message : 'Invalid DATA_ENCRYPTION_KEY'}`);
+  db.close();
+  process.exit(1);
+}
+const consentBanks = bankRegistry.list().filter(bank => bank.consent && bank.status === 'configured');
+if (access.production && !dataKey && consentBanks.length) {
+  console.error(
+    [
+      'The server did not start.',
+      `DATA_ENCRYPTION_KEY is not set, and ${consentBanks.map(bank => bank.id).join(', ')} is configured: a bank people connect by`,
+      'consenting at the bank returns a credential, which is stored encrypted with that key.',
+      'Generate one and keep it with your other secrets (losing it means every person connects their bank again):',
+      "  node -e \"console.log(require('node:crypto').randomBytes(32).toString('base64url'))\"",
+    ].join('\n'),
+  );
+  db.close();
+  process.exit(1);
+}
+
 // First start on a machine that ran the JSON-file version: bring that state in once. The files stay.
 const legacy = await importLegacyJson(db, {
   profileDir: resolve(storage.legacyProfileDir),
@@ -139,11 +172,9 @@ const app = createApp({
     database: { schemaVersion: db.schemaVersion },
     sources: live.status().map(({ id, status, fetchedAt, applied }) => ({ id, status, fetchedAt, applied })),
   }),
-  rateLimit: {
-    perMinute: envInteger('RATE_LIMIT_PER_MINUTE', 300),
-    webhooksPerMinute: envInteger('WEBHOOK_RATE_LIMIT_PER_MINUTE', 120),
-    trustProxy: process.env.TRUST_PROXY === 'on',
-  },
+  rateLimit: { ...rateLimitConfig(), trustProxy: process.env.TRUST_PROXY === 'on' },
+  profileApi: { bankRegistry },
+  vault: dataKey && createVault(dataKey),
   habits: {
     dailyCalls: envInteger('HABITS_DAILY_AI_CALLS', 20),
     openai: {
@@ -234,6 +265,15 @@ server.listen(port, host, async () => {
       .join(', '),
   );
   console.log('  client address from %s', clientAddressMode);
+  console.log(
+    '  rate limit %d requests a minute per address · bank credentials sealed with %s',
+    rateLimitConfig().perMinute,
+    dataKey
+      ? 'DATA_ENCRYPTION_KEY'
+      : access.production
+        ? 'nothing: no bank that needs a consent is configured'
+        : 'a development key kept in the database (set DATA_ENCRYPTION_KEY for anything real)',
+  );
   if (publicOrigin)
     console.log(
       '  A reverse proxy must pass the original Host header (%s), or every form answers 403.',

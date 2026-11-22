@@ -49,6 +49,40 @@ export const habit = z
   })
   .strict();
 
+/**
+ * What is known about one question of the shared question set (`packages/model/questions.ts`),
+ * keyed by question id in `person.answers`.
+ * - `known`: a confirmed answer the plan can use.
+ * - `said_unknown`: the person was asked and said they do not know. It is not asked again as new.
+ * - `unconfirmed`: a value exists but nobody confirmed it, so the plan does not rely on it.
+ * - `conflict`: confirmed answers disagree; `candidates` lists them and the plan uses none.
+ */
+export const factAnswer = z
+  .object({
+    status: z.enum(['known', 'said_unknown', 'unconfirmed', 'conflict']),
+    /** `what_if`: typed into a page or said in chat for an estimate, stored nowhere. */
+    source: z.enum(['profile', 'interview', 'manual', 'bank', 'listing', 'what_if']).optional(),
+    /** When the answer was given, as an ISO date or date-time. */
+    observedAt: z.string().optional(),
+    /** Whether the person confirmed it. A plan figure can be used unconfirmed; a household fact cannot. */
+    confirmed: z.boolean().optional(),
+    candidates: z
+      .array(
+        z
+          .object({
+            value: z.unknown(),
+            source: z.string(),
+            observedAt: z.string(),
+            confirmed: z.boolean(),
+          })
+          .strict(),
+      )
+      .max(10)
+      .optional(),
+  })
+  .strict();
+export type FactAnswer = z.infer<typeof factAnswer>;
+
 /** Where one monthly figure came from. */
 export const figureBasis = z.enum(['declared', 'bank_observed', 'unknown']);
 
@@ -59,6 +93,38 @@ export const person = z
     synthetic: z.boolean(),
     /** Facts used to screen incentives. Missing facts keep eligibility at needs_verification. */
     household: household.optional(),
+    /**
+     * Dates of birth, when known. The plan derives `household.age` and `household.children` from
+     * them on its own date, so an age never goes stale; where both are given, these win. A child with
+     * only a birth year is taken at the age reached during the plan year, the cautious reading of a
+     * rule with an upper age limit. Inline what-if persons can keep stating plain ages in `household`.
+     */
+    born: z
+      .object({
+        self: isoDate.optional(),
+        children: z
+          .array(
+            z
+              .object({
+                birthDate: isoDate.optional(),
+                birthYear: z.number().int().min(1900).max(2200).optional(),
+                age: z.number().int().min(0).max(125).optional(),
+                inDesignatedSchool: z.boolean().optional(),
+                meetsItpSchooling: z.boolean().optional(),
+              })
+              .strict(),
+          )
+          .max(30)
+          .optional(),
+      })
+      .strict()
+      .optional(),
+    /**
+     * Provenance of the answers behind this person, by question id: where each came from, when it was
+     * given, and which questions were answered "I don't know" or are in conflict. Absent on a person
+     * that carries no provenance (an inline person, a person built before the field existed).
+     */
+    answers: z.record(z.string(), factAnswer).optional(),
     householdSize: z.number().int().min(1).max(30).nullable(),
     currentMunicipalityCode: municipalityCode.nullable(),
     finances: z
@@ -292,10 +358,145 @@ export const habitEffect = z
   .strict();
 export type HabitEffect = z.infer<typeof habitEffect>;
 
+/** How a question is answered. Every surface renders and validates from this, never from its own rules. */
+export const answerSpec = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('boolean') }).strict(),
+  /** A calendar day, `YYYY-MM-DD`. */
+  z.object({ type: z.literal('date'), min: isoDate, max: isoDate }).strict(),
+  /** An amount in euros as the person says it. `storedAs` is the unit of the saved value. */
+  z.object({ type: z.literal('money'), storedAs: z.enum(['cents', 'eur']), min: z.number(), max: z.number() }).strict(),
+  z.object({ type: z.literal('number'), unit: z.string(), min: z.number(), max: z.number() }).strict(),
+  /** A percentage as the person says it (20), stored as a share (0.2). */
+  z.object({ type: z.literal('percent'), min: z.number(), max: z.number() }).strict(),
+  z
+    .object({
+      type: z.literal('choice'),
+      options: z.array(z.object({ value: z.string(), label: z.string() }).strict()).min(2),
+    })
+    .strict(),
+  /** The children of the household, each with a date of birth; an empty list means none. */
+  z.object({ type: z.literal('children'), max: z.number().int().positive() }).strict(),
+  /** One yes, no or "I don't know" per listed child; `index` is the child's position in the household. */
+  z
+    .object({
+      type: z.literal('per_child'),
+      children: z.array(z.object({ index: z.number().int().nonnegative(), label: z.string() }).strict()),
+    })
+    .strict(),
+]);
+export type AnswerSpec = z.infer<typeof answerSpec>;
+
+/** What answering one question could change in the plan, in the place where it changes the most. */
+export const questionEffect = z
+  .object({
+    /**
+     * `required`: without it no timeline can be computed. `benefit`: it decides a measure that would
+     * change the upfront cash or the wait. `baseline`: it decides a rate that applies anywhere in
+     * Catalonia, which changes what a place is compared with. `assumption`: the plan is using a
+     * default in its place.
+     */
+    kind: z.enum(['required', 'benefit', 'baseline', 'assumption']),
+    /** Months the wait could be shorter by; null when no finite timeline exists to compare. */
+    months: z.number().int().nonnegative().nullable(),
+    /** How much lower the upfront cash could be, in cents; null when it cannot be computed. */
+    upfrontCents: positiveCents.nullable(),
+    municipalityCode: municipalityCode.nullable(),
+    placeName: z.string().nullable(),
+    /** The measures this answer helps decide for the places compared. */
+    policyIds: z.array(policyId),
+    /** Labels of the other unanswered questions of the same measure: the effect needs those answers too. */
+    alsoNeeds: z.array(z.string()),
+    /** The effect in one sentence, such as "Could shorten the wait by up to 14 months in Talarn." */
+    text: z.string(),
+  })
+  .strict();
+
+/** One question worth asking next, with everything a surface needs to ask it and store the answer. */
+export const nextQuestion = z
+  .object({
+    id: z.string(),
+    /** The input field the answer is saved to, such as `eligibility.birthDate`. */
+    inputPath: z.string(),
+    label: z.string(),
+    question: z.string(),
+    /** Why it is asked: the measure it decides, in one sentence. */
+    why: z.string(),
+    /** Where to find the answer, when that is not obvious. */
+    help: z.string().nullable(),
+    /** Present for a sensitive fact: why it is asked and where it is kept. */
+    sensitivity: z.string().nullable(),
+    answer: answerSpec,
+    /** True when "I don't know" is an accepted answer, stored as an explicit unknown. */
+    allowUnknown: z.boolean(),
+    /**
+     * `missing`: never answered. `unconfirmed`: a value exists that nobody confirmed. `conflict`:
+     * confirmed answers disagree and the person has to pick. `said_unknown`: answered "I don't know";
+     * listed so the benefit is explained, not asked again as if new.
+     */
+    state: z.enum(['missing', 'unconfirmed', 'conflict', 'said_unknown']),
+    effect: questionEffect,
+  })
+  .strict();
+export type NextQuestion = z.infer<typeof nextQuestion>;
+
+/** One fact the plan knows about the person, with where it came from. */
+export const knownFact = z
+  .object({
+    id: z.string(),
+    inputPath: z.string(),
+    label: z.string(),
+    /** The value in words, as the plan read it ("Born 1994-03-02: 32 on the plan date"). */
+    value: z.string(),
+    source: factAnswer.shape.source,
+    observedAt: z.string().nullable(),
+    /** True when the person confirmed it; null when the person carries no provenance for it. */
+    confirmed: z.boolean().nullable(),
+    /** True when the screening of a measure or the arithmetic of the plan read this fact. */
+    usedByPlan: z.boolean(),
+    /** Set when the fact may no longer hold: the reason, with the date it was given. */
+    stale: z.string().nullable(),
+  })
+  .strict();
+export type KnownFact = z.infer<typeof knownFact>;
+
+/** Confirmed answers that disagree. The plan uses none of them until the person picks one. */
+export const factConflict = z
+  .object({
+    id: z.string(),
+    inputPath: z.string(),
+    label: z.string(),
+    question: z.string(),
+    candidates: z.array(
+      z
+        .object({
+          value: z.unknown(),
+          /** The value in words. */
+          text: z.string(),
+          source: z.string(),
+          observedAt: z.string(),
+          confirmed: z.boolean(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type FactConflict = z.infer<typeof factConflict>;
+
 export const planResult = z
   .object({
     person,
     asOf: isoDate,
+    /**
+     * The questions whose answers could still change this plan, most valuable first: what is missing
+     * for a timeline, then the facts that decide a measure, ranked by the months and the upfront cash
+     * at stake for the places compared, then the defaults the plan is assuming. Empty when nothing
+     * more can change the plan. Absent in results produced before this field existed.
+     */
+    nextQuestions: z.array(nextQuestion).optional(),
+    /** The facts about the person that are known, each with its source and whether the plan relied on it. */
+    knownFacts: z.array(knownFact).optional(),
+    /** Questions with confirmed answers that disagree. The person picks; nothing is taken silently. */
+    conflicts: z.array(factConflict).optional(),
     /**
      * One entry per habit of the person, in the same order: whether the plan counted it and why.
      * Displays read this instead of deriving it from the habit's status. Absent in results produced

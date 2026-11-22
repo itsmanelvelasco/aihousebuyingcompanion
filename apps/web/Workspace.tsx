@@ -3,6 +3,7 @@ import type { Habit, Person } from '../../packages/contracts/planner.ts';
 import type { ToolClient } from './client.ts';
 import { BankStrip } from './components/BankStrip.tsx';
 import { Wordmark } from './components/bits.tsx';
+import { DetailsPanel } from './components/DetailsPanel.tsx';
 import { Notes } from './components/Notes.tsx';
 import { PersonPanel } from './components/PersonPanel.tsx';
 import { PlacesPanel } from './components/PlacesPanel.tsx';
@@ -133,6 +134,17 @@ export function Workspace({ client, launch, mode }: Props) {
       {stored ? (
         <BankStrip userId={label} feed={feed} onRetry={retryFeed} personSynthetic={person?.synthetic ?? null} />
       ) : null}
+
+      <DetailsPanel
+        client={client}
+        subject={subject}
+        launch={launch}
+        mode={mode}
+        plan={plan}
+        hasPlaces={codes.length > 0}
+        onInline={(inline: Person) => setSubject({ kind: 'inline', person: inline })}
+        onSaved={refreshFromBank}
+      />
 
       <div className="layout">
         <PersonPanel

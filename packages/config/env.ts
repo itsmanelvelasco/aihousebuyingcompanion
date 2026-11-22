@@ -139,6 +139,29 @@ export function storageConfig(env: Env = process.env) {
 export const defaultPorts = { app: 8787, interviewer: 3000, demoBank: 3003 } as const;
 
 /**
+ * Requests one client address may make per minute (`RATE_LIMIT_PER_MINUTE`). Unset: 300 on a
+ * public deployment (`NODE_ENV=production` or a `PUBLIC_ORIGIN`), 3000 otherwise. On a developer's
+ * machine every browser tab, the journey board (one poll a second per tab), the workspace and the
+ * test tools all arrive from the one address 127.0.0.1, and 300 a minute is five board tabs.
+ */
+export function rateLimitConfig(env: Env = process.env) {
+  const publicService = env.NODE_ENV === 'production' || Boolean(envString('PUBLIC_ORIGIN', env));
+  return {
+    perMinute: envInteger('RATE_LIMIT_PER_MINUTE', publicService ? 300 : 3000, env),
+    webhooksPerMinute: envInteger('WEBHOOK_RATE_LIMIT_PER_MINUTE', 120, env),
+  };
+}
+
+/**
+ * `DATA_ENCRYPTION_KEY`: the key bank credentials are sealed with at rest, as text. Unset and empty
+ * both read as undefined. `packages/banks/vault.ts` parses it (64 hex characters, or base64 of 32
+ * bytes) and explains what happens without it.
+ */
+export function dataEncryptionKey(env: Env = process.env) {
+  return envString('DATA_ENCRYPTION_KEY', env);
+}
+
+/**
  * Settings of the fictional bank service in `apps/demo-bank` (its own process). Its API key and
  * signing secret fall back to the values ReloCat's `demo-bank` provider reads, so one `.env` can
  * configure both ends of a local demo.

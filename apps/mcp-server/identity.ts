@@ -25,12 +25,38 @@ export type PersonReader = {
   habits(): Promise<unknown>;
 };
 
-/** The caller's own person: everything a reader has, plus saving inputs. */
-export type PersonWriter = PersonReader & {
-  saveInputs(inputs: unknown[]): Promise<{ inserted: number; duplicates: number }>;
+/**
+ * The caller's own bank data: which banks can be connected, their connections, statements they
+ * import. Like every handle here it is bound to one person when it is made and takes no user id.
+ * Nothing in it returns a movement: tools give aggregates and states, and the person reads their
+ * movements on their account page or through `/api` with their own credential.
+ */
+export type OwnBank = {
+  /** Banks this person can connect themselves, with whether their records are fabricated. */
+  connectable(): Promise<unknown>;
+  /** The person's connections with their sync state, and consents they started and have not finished. */
+  connections(): Promise<unknown>;
+  /** Accounts with today's booked balance. */
+  accounts(): Promise<unknown>;
+  /** Connect a bank: done at once for a synthetic feed, continued in the browser for a consent at the bank. */
+  connect(providerId: string): Promise<unknown>;
+  disconnect(connectionId: string): Promise<unknown>;
+  sync(connectionId?: string): Promise<unknown>;
+  /** Read and summarise a statement; nothing is written until `confirmStatement`. */
+  previewStatement(csv: string): Promise<unknown>;
+  confirmStatement(previewHash: string): Promise<unknown>;
+  statementImports(): Promise<unknown>;
+  deleteStatementImport(importId: string): Promise<unknown>;
 };
 
-export type PersonScope = 'person:read' | 'person:write';
+/** The caller's own person: everything a reader has, plus saving inputs and managing their own bank data. */
+export type PersonWriter = PersonReader & {
+  saveInputs(inputs: unknown[]): Promise<{ inserted: number; duplicates: number }>;
+  /** Absent when the server that made the handle has no bank engine (a scripted rehearsal). */
+  bank?: OwnBank;
+};
+
+export type PersonScope = 'person:read' | 'person:write' | 'bank:manage';
 
 export type Caller = {
   /** The signed-in person, or null for an anonymous call. */
@@ -40,7 +66,11 @@ export type Caller = {
   /** The public demo, or null when it is off. `open` returns null for any id outside the allowlist. */
   demo: { ids: string[]; open(id: string): PersonReader | null } | null;
   /** `WWW-Authenticate` value that tells a client how to sign in; absent when the server has no accounts. */
-  challenge?: (error?: { code: 'invalid_token' | 'insufficient_scope'; description: string }) => string;
+  challenge?: (
+    error?: { code: 'invalid_token' | 'insufficient_scope'; description: string },
+    /** The scopes to ask for; omitted, the server's default for a first sign-in. */
+    scopes?: PersonScope[],
+  ) => string;
 };
 
 export const anonymous: Caller = { me: null, scopes: [], demo: null };
@@ -56,6 +86,16 @@ export const personalTools: Record<string, PersonScope[]> = {
   get_bank_summary: ['person:read'],
   get_bank_updates: ['person:read'],
   get_bank_runtime: ['person:read'],
+  list_connectable_banks: ['person:read'],
+  list_my_bank_connections: ['person:read'],
+  get_my_bank_accounts: ['person:read'],
+  list_my_statement_imports: ['person:read'],
+  connect_my_bank: ['bank:manage'],
+  disconnect_my_bank: ['bank:manage'],
+  sync_my_bank: ['bank:manage'],
+  preview_statement_import: ['bank:manage'],
+  confirm_statement_import: ['bank:manage'],
+  delete_statement_import: ['bank:manage'],
 };
 
 /** The scopes a `tools/call` needs before it runs, or null when the call is public. */
@@ -63,7 +103,7 @@ export function requiredScopes(name: unknown, args: unknown): PersonScope[] | nu
   if (typeof name !== 'string') return null;
   if (name in personalTools) return personalTools[name];
   const me = args && typeof args === 'object' && (args as { me?: unknown }).me === true;
-  return name === 'plan_home_savings' && me ? ['person:read'] : null;
+  return (name === 'plan_home_savings' || name === 'get_next_questions') && me ? ['person:read'] : null;
 }
 
 /**
@@ -81,10 +121,11 @@ export function authRequired(caller: Caller, missingScope?: PersonScope): CallTo
   const description = missingScope
     ? `This connection may not do that. Reconnect ReloCat and allow "${missingScope}".`
     : 'Sign in to ReloCat to use your own profile.';
-  const challenge = caller.challenge?.({
-    code: missingScope ? 'insufficient_scope' : 'invalid_token',
-    description,
-  });
+  const challenge = caller.challenge?.(
+    { code: missingScope ? 'insufficient_scope' : 'invalid_token', description },
+    // A missing scope is asked for on top of what the connection already has (a step-up).
+    missingScope ? [...new Set([...caller.scopes, missingScope])] : undefined,
+  );
   return {
     isError: true,
     content: [

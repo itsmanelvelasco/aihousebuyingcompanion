@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { envString } from '../config/env.ts';
 import type { BankProvider } from './provider.ts';
-import { defineBankProvider, supportsWebhooks } from './provider.ts';
+import { defineBankProvider, supportsConsent, supportsWebhooks } from './provider.ts';
 
 /** Where provider files live. Every `*.ts` here is loaded, except names starting with `_`. */
 export const providersDirectory = join(import.meta.dirname, 'providers');
@@ -49,6 +49,8 @@ function describeProvider({ provider, status, env }: RegisteredProvider) {
     synthetic: provider.synthetic,
     status,
     webhooks: supportsWebhooks(provider),
+    /** True when a person connects it by authorising access at the bank. */
+    consent: supportsConsent(provider),
     pollIntervalMs: provider.pollIntervalMs ?? null,
     env: provider.env.map(variable => ({
       name: variable.name,

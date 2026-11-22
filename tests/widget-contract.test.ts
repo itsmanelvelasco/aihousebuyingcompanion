@@ -130,7 +130,7 @@ test('the widget client parses real tool answers for a demo persona, a signed-in
   assert.deepEqual([saved.saved, saved.inputCount], [true, 1]);
   // What the person saved is stored as real, and so are the documents of their profile.
   const ownId = db.get<{ user_id: string }>('SELECT user_id FROM accounts')?.user_id ?? '';
-  assert.deepEqual(db.all('SELECT synthetic FROM input_records WHERE user_id = ?', ownId), [{ synthetic: 0 }]);
+  assert.deepEqual(db.all('SELECT DISTINCT synthetic FROM input_records WHERE user_id = ?', ownId), [{ synthetic: 0 }]);
   assert.deepEqual(db.all('SELECT DISTINCT synthetic FROM profile_sections WHERE user_id = ?', ownId), [
     { synthetic: 0 },
   ]);
@@ -144,6 +144,39 @@ test('the widget client parses real tool answers for a demo persona, a signed-in
     planned.plans.some(plan => plan.baseline?.months != null),
     'a finite timeline from the saved figures',
   );
+  // The plan carries what the "Your details" panel shows: what is known, from where, and what to ask next.
+  assert.deepEqual(
+    planned.knownFacts?.map(fact => [fact.id, fact.value, fact.source, fact.confirmed]),
+    [
+      ['monthlyIncome', '€3,200', 'manual', true],
+      ['monthlyExpenses', '€2,100', 'manual', true],
+      ['purchaseSavings', '€25,000', 'manual', true],
+      ['homeBudget', '€150,000', 'manual', true],
+    ],
+  );
+  assert.deepEqual(planned.conflicts, []);
+  const next = planned.nextQuestions ?? [];
+  assert(next.length > 3, 'a person with only figures still has questions worth asking');
+  assert(next.every(question => question.question && question.why && question.effect.text && question.answer.type));
+  assert.deepEqual(
+    next.slice(-2).map(question => question.id),
+    ['depositRate', 'emergencyReserve'],
+  );
+  // An answer saved through the widget's own client, at the path the plan named, is not asked again.
+  const birth = next.find(question => question.id === 'birthDate');
+  assert.equal(birth?.inputPath, 'eligibility.birthDate');
+  await signedIn.saveInputs({ eligibility: { birthDate: '1980-02-03' } }, true, 'interview');
+  const answered = await signedIn.plan({ subject: me, municipalityCodes: codes, assumptions });
+  assert.equal(
+    answered.nextQuestions?.some(question => question.id === 'birthDate'),
+    false,
+  );
+  assert.deepEqual(
+    answered.knownFacts?.filter(fact => fact.id === 'birthDate').map(fact => [fact.source, fact.confirmed]),
+    [['interview', true]],
+  );
+  assert.equal(answered.person.born?.self, '1980-02-03');
+  assert.equal(typeof answered.person.household?.age, 'number', 'the plan states the age it derived');
   // The personal bank tools answer for an empty ledger in the shape the strip reads.
   const ownUpdates = await signedIn.bankUpdates(me, 0);
   assert.deepEqual([ownUpdates.latestRevision, ownUpdates.events.length], [0, 0]);

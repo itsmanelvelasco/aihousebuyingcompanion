@@ -3,7 +3,9 @@ import type { eligibility, Municipality, Policy } from '../contracts/places.ts';
 import type { HabitEffect, Person, Place, PlaceBenefit, PlacePlan, PlanResult } from '../contracts/planner.ts';
 import { person as personSchema, planAssumptions, planResult } from '../contracts/planner.ts';
 import { maxPlanningMonths, monthsToTarget } from '../finance/savings.ts';
+import { ageOn, childAgeOn } from '../model/questions.ts';
 import { callStatusOn, evaluateIncentives } from '../places/eligibility.ts';
+import { factsOf } from './next-questions.ts';
 
 /**
  * The plan that joins a person and a place: how many months until the person has the upfront cash
@@ -29,9 +31,11 @@ import { callStatusOn, evaluateIncentives } from '../places/eligibility.ts';
  * not agree within `maxSettleRounds` rounds, nothing is counted for that timeline. A benefit tied to
  * living in the place is screened on the plan date, the assumed day of the move.
  *
- * An age is a whole number of years on the plan date and the birthday is unknown, so after m months
- * a person is `age + floor(m / 12)` or one year more. A condition that holds for one and fails for the
- * other is unverified, never assumed. Tax bases, family status and the rules are assumed unchanged.
+ * A stated age is a whole number of years on the plan date and the birthday is unknown, so after m
+ * months a person is `age + floor(m / 12)` or one year more. A condition that holds for one and fails
+ * for the other is unverified, never assumed. When the person carries dates of birth (`person.born`),
+ * every age is derived from them on the day it is needed and there is nothing to leave open. Tax
+ * bases, family status and the rules are assumed unchanged.
  *
  * The three timelines (baseline, with habits, with place benefits) each settle on their own purchase
  * day, so a faster timeline can keep a rate that a slower one loses with age.
@@ -46,7 +50,7 @@ import { callStatusOn, evaluateIncentives } from '../places/eligibility.ts';
 type Eligibility = z.infer<typeof eligibility>;
 type Household = NonNullable<Person['household']>;
 type Timeline = NonNullable<PlacePlan['baseline']>;
-type Assumptions = z.infer<typeof planAssumptions>;
+export type Assumptions = z.infer<typeof planAssumptions>;
 /** When the money of a benefit exists relative to the purchase. */
 type Timing = 'at_purchase' | 'while_living_there' | 'after_purchase' | 'not_applicable';
 type TransferTaxEffect = Extract<NonNullable<Policy['effect']>, { kind: 'transfer_tax_rate' }>;
@@ -178,21 +182,70 @@ function older(facts: Household, years: number): Household {
   };
 }
 
+const maxAge = 125;
+
+/**
+ * The household as the screening reads it on `date`, with every age derived from a date of birth
+ * where the person has one (`person.born`). A stated age is kept only without a date of birth. A list
+ * of children in which one child has neither a date, a year nor an age is left unknown: an unknown
+ * child is never dropped, because an empty list means "no children".
+ */
+function householdOn(person: Person, date: string): Household | undefined {
+  const { born } = person;
+  if (!born) return person.household;
+  const household: Household = { ...person.household };
+  if (born.self !== undefined) household.age = Math.min(maxAge, Math.max(0, ageOn(born.self, date)));
+  if (born.children) {
+    const children = born.children.map(({ birthDate: _, birthYear: __, age: ___, ...flags }, index) => ({
+      ...flags,
+      age: childAgeOn(born.children?.[index] ?? {}, date),
+    }));
+    if (children.every(child => child.age !== null))
+      household.children = children.map(child => ({ ...child, age: Math.min(maxAge, child.age ?? 0) }));
+    else delete household.children;
+  }
+  return Object.keys(household).length ? household : undefined;
+}
+
+/** The same person with the ages of the plan date written into `household`, so the result states them. */
+export function withDerivedAges(person: Person, date: string): Person {
+  if (!person.born) return person;
+  const { household: _, ...rest } = person;
+  const household = householdOn(person, date);
+  return household ? { ...rest, household } : rest;
+}
+
+/** True when every age of the household comes from a full date of birth, so a future age is exact. */
+function agesAreExact(person: Person): boolean {
+  const { born, household } = person;
+  if (!born) return false;
+  const selfExact = born.self !== undefined || household?.age === undefined;
+  const childrenExact = born.children
+    ? born.children.every(child => child.birthDate !== undefined)
+    : household?.children === undefined;
+  return selfExact && childrenExact && (born.self !== undefined || born.children !== undefined);
+}
+
 /** "46", or "46 or 47" when the birthday decides. */
 function ageRange(age: number, months: number): string {
   const [low, high] = [age + Math.floor(months / 12), age + Math.ceil(months / 12)];
   return low === high ? `${low}` : `${low} or ${high}`;
 }
 
-/** The ages on the purchase day, as a sentence; empty when no age is known or the day is the plan date. */
-function agesOn(facts: Household | undefined, months: number): string {
+/**
+ * The ages on the purchase day, as a sentence; empty when no age is known or the day is the plan date.
+ * `exact` is the household on that day when every age comes from a date of birth.
+ */
+function agesOn(facts: Household | undefined, months: number, exact?: Household): string {
   if (!facts || months === 0) return '';
-  const children = facts.children ?? [];
+  const children = (exact ?? facts).children ?? [];
+  const age = (exact ?? facts).age;
+  const range = (value: number) => (exact ? `${value}` : ageRange(value, months));
   const parts = [
-    ...(facts.age === undefined ? [] : [`you would be ${ageRange(facts.age, months)}`]),
+    ...(age === undefined ? [] : [`you would be ${range(age)}`]),
     ...(children.length
       ? [
-          `your ${children.length === 1 ? 'child' : 'children'} would be ${children.map(child => ageRange(child.age, months)).join(', ')}`,
+          `your ${children.length === 1 ? 'child' : 'children'} would be ${children.map(child => range(child.age)).join(', ')}`,
         ]
       : []),
   ];
@@ -654,8 +707,11 @@ function planOne(
   const buyPolicies = considered.filter(policy => policy.intent === 'buy');
   const livingPolicies = considered.filter(policy => policy.intent !== 'buy');
   // The price cap of an aid is checked against the price of this plan, not a separately stated one.
-  const facts: Household | undefined =
-    priceCents === null ? person.household : { ...person.household, purchasePriceEur: priceCents / 100 };
+  const priced = (household: Household | undefined): Household | undefined =>
+    priceCents === null ? household : { ...household, purchasePriceEur: priceCents / 100 };
+  const facts = priced(person.household);
+  // With dates of birth the ages on any later day are known, and no birthday is left open.
+  const exact = agesAreExact(person);
   const screenOn = (list: Policy[], eventDate: string, household: Household | undefined) =>
     evaluateIncentives(list, town, { municipalityCode: place.municipalityCode, eventDate, household }, asOf);
   // A move or a rental is assumed to start on the plan date, with everyone as old as they are today.
@@ -666,6 +722,11 @@ function planOne(
     const cached = buyScreenings.get(months);
     if (cached) return cached;
     const date = addMonths(asOf, months);
+    if (exact) {
+      const onDay = screenOn(buyPolicies, date, priced(householdOn(person, date)));
+      buyScreenings.set(months, onDay);
+      return onDay;
+    }
     const [low, high] = [Math.floor(months / 12), Math.ceil(months / 12)];
     const youngest = screenOn(buyPolicies, date, facts && older(facts, low));
     const oldest = low === high || !facts ? youngest : screenOn(buyPolicies, date, older(facts, high));
@@ -723,7 +784,12 @@ function planOne(
     why: 'unsettled' | 'no_day' = 'unsettled',
   ): Outcome => {
     const leftOutReason = why === 'no_day' ? noDayReason(asOf) : unsettledReason;
-    const when: When = { months, date: addMonths(asOf, months), ages: agesOn(person.household, months) };
+    const day = addMonths(asOf, months);
+    const when: When = {
+      months,
+      date: day,
+      ages: agesOn(person.household, months, exact ? householdOn(person, day) : undefined),
+    };
     const screened = screenedAt(months);
 
     // The baseline transfer tax: the general tax, or the lowest Catalonia-wide rate verified for that day.
@@ -1097,25 +1163,53 @@ export function planForPlaces(
   assumptions: z.input<typeof planAssumptions> | undefined,
   asOf: string,
 ): PlanResult {
-  const who = personSchema.parse(person);
   const options = planAssumptions.parse(assumptions ?? {});
   const date = options.asOf ?? asOf;
-  const taxEffects = policies.flatMap(policy => (policy.effect?.kind === 'transfer_tax_rate' ? [policy.effect] : []));
-  // The tariff by value, when a policy states it, is more complete than the single rate.
-  const taxEffect = taxEffects.find(effect => effect.standardTariff) ?? taxEffects[0];
-  const standard: StandardTax | null = taxEffect
-    ? { standardRate: taxEffect.standardRate, standardTariff: taxEffect.standardTariff }
-    : null;
+  // Ages are derived from dates of birth on the plan date, and the result states them.
+  const who = withDerivedAges(personSchema.parse(person), date);
+  const { plans: unsorted, habits } = planPlaces(who, places, policies, options, date);
+  // What is known, what disagrees and what is still worth asking, for the places compared.
+  const facts = factsOf(who, places, policies, options, date, unsorted);
   const order = (plan: PlacePlan) => plan.withPlaceBenefits?.months ?? Number.POSITIVE_INFINITY;
-  // What the habits add is the same for every place: it depends on the person only.
-  const habits = habitSavings(who, options.includeProposedHabits);
-  const plans = places
-    .map(place => planOne(who, place, policies, options, date, standard, habits))
+  const plans = unsorted
+    .map(plan => (facts.reliedOn ? { ...plan, assumptions: [...plan.assumptions, facts.reliedOn] } : plan))
     .map((plan, index) => ({ plan, index }))
     .sort((a, b) => {
       const [left, right] = [order(a.plan), order(b.plan)];
       return left === right ? a.index - b.index : left < right ? -1 : 1;
     })
     .map(({ plan }) => plan);
-  return planResult.parse({ person: who, asOf: date, habits: habits.effects, plans, limitations: planLimitations });
+  return planResult.parse({
+    person: who,
+    asOf: date,
+    nextQuestions: facts.nextQuestions,
+    knownFacts: facts.knownFacts,
+    conflicts: facts.conflicts,
+    habits: habits.effects,
+    plans,
+    limitations: planLimitations,
+  });
+}
+
+/**
+ * The plans of one person for several places, in the order of `places`, without the questions.
+ * `person` is already parsed and carries the ages of the plan date. `missingFacts` calls this to try
+ * an answer; everything else goes through `planForPlaces`.
+ */
+export function planPlaces(
+  who: Person,
+  places: Place[],
+  policies: Policy[],
+  options: Assumptions,
+  date: string,
+): { plans: PlacePlan[]; habits: HabitSavings } {
+  const taxEffects = policies.flatMap(policy => (policy.effect?.kind === 'transfer_tax_rate' ? [policy.effect] : []));
+  // The tariff by value, when a policy states it, is more complete than the single rate.
+  const taxEffect = taxEffects.find(effect => effect.standardTariff) ?? taxEffects[0];
+  const standard: StandardTax | null = taxEffect
+    ? { standardRate: taxEffect.standardRate, standardTariff: taxEffect.standardTariff }
+    : null;
+  // What the habits add is the same for every place: it depends on the person only.
+  const habits = habitSavings(who, options.includeProposedHabits);
+  return { plans: places.map(place => planOne(who, place, policies, options, date, standard, habits)), habits };
 }

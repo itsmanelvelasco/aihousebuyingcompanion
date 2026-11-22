@@ -97,6 +97,10 @@ export async function generateUsers(outputDirectory = resolve('data/users'), ove
     const targetPrice = integer(85, 260) * 100000;
     const estimatedUpfrontCash = Math.round(targetPrice * 0.3);
     const balance = Math.round((estimatedUpfrontCash * integer(1, 65)) / 100);
+    // What the household says it has set aside for the purchase: a share of the account balance
+    // (60 to 90%, the rest stays for rent, bills and a reserve), in whole euros. It is derived from
+    // the index, not drawn from the generator, so adding it changed no other field of any fixture.
+    const purchaseSavings = Math.floor((balance * (60 + ((index * 7) % 31))) / 10_000) * 100;
     const barriers = ['insufficient_upfront_savings'];
     if (creditStatus !== 'no_reported_credit_issue') barriers.push(creditStatus);
     if (['temporary_employee', 'seasonal_worker', 'self_employed', 'unemployed'].includes(employmentStatus))
@@ -156,6 +160,7 @@ export async function generateUsers(outputDirectory = resolve('data/users'), ove
       region: 'Catalunya',
       targetPurchasePriceCents: targetPrice,
       housingBudgetCents: targetPrice,
+      purchaseSavingsCents: purchaseSavings,
       minimumBedrooms: Math.max(1, Math.ceil(householdSize / 2)),
       preferredPropertyType: pick(['flat', 'house', 'either']),
       schoolStages,
@@ -235,6 +240,7 @@ export async function generateUsers(outputDirectory = resolve('data/users'), ove
     'debtPaymentsCents',
     'monthlyNetCashflowCents',
     'targetPurchasePriceCents',
+    'purchaseSavingsCents',
     'creditHistoryStatus',
     'financialBarriers',
     'schoolStages',
@@ -260,6 +266,7 @@ export async function generateUsers(outputDirectory = resolve('data/users'), ove
       b.debtPaymentsCents,
       b.monthlyNetCashflowCents,
       p.targetPurchasePriceCents,
+      p.purchaseSavingsCents,
       d.creditHistory.status,
       d.financialBarriers.join(';'),
       p.schoolStages.join(';'),

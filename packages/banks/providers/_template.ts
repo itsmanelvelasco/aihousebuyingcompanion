@@ -10,12 +10,17 @@
  *   4. If the bank can call us when something changes, implement `verifyWebhook` and `parseWebhook`
  *      and register `https://<origin>/api/webhooks/bank/<id>` at the bank. Otherwise delete both and
  *      the engine polls every `pollIntervalMs`.
- *   5. Check it: `GET /bank/providers` lists the provider (as `unconfigured` until its variables are
+ *   5. If people authorise access at the bank themselves (a redirect to the bank and back),
+ *      implement `consent` and register `https://<origin>/bank/consent/callback` as the redirect
+ *      URI at the bank. Otherwise delete it: only an operator can then link the bank, with a
+ *      reference obtained some other way.
+ *   6. Check it: `GET /bank/providers` lists the provider (as `unconfigured` until its variables are
  *      set), `POST /users/:id/bank/connections` links a user and `POST /users/:id/bank/sync` pulls.
+ *      With `consent`, the bank appears on a signed-in person's account page with a Connect button.
  *
  * A complete, working example is `demo-bank.ts` next to this file: cursor pagination, pending
- * movements that complete, declined ones (`removedIds`), a signature with a timestamp window and
- * event IDs (`eventId`) so a redelivered webhook is ignored.
+ * movements that complete, declined ones (`removedIds`), a signature with a timestamp window,
+ * event IDs (`eventId`) so a redelivered webhook is ignored, and a consent at the bank.
  *
  * Nothing in this file describes a real bank. `BankApiAccount`, `BankApiMovement` and `callBank` are
  * placeholders for whatever the bank's API returns: replace them, do not ship them.
@@ -24,8 +29,11 @@
  *   - Money is integer EUR cents. Use `decimalToCents`, never `Math.round(amount * 100)` on a float.
  *   - IDs are stable: the same bank movement must get the same `id` on every fetch (`stableId`).
  *   - Secrets come from `context.env` only. Never read `process.env`, never log or return a secret.
- *   - The connection `ref` is a non-secret identifier issued by the bank's consent flow.
+ *   - The connection `ref` of an operator-made link is a non-secret identifier. What `consent`
+ *     returns as `ref` may be a credential: the engine stores it encrypted and hands it back
+ *     decrypted, for the length of one sync. Never log it, and never put it in an error message.
  *   - A webhook is a signal to sync. Never build movements from a webhook body.
+ *   - The engine owns the consent's `state`: pass it to the bank and do not store, change or check it.
  */
 import type { BankCategory, ProviderAccount, ProviderTransaction } from '../provider.ts';
 import { decimalToCents, defineBankProvider, hmacSha256Matches, safeCategory, stableId } from '../provider.ts';
@@ -96,6 +104,39 @@ export default defineBankProvider({
   ],
   // Used when the provider has no webhooks, or as the default cadence a connection may override.
   pollIntervalMs: 15 * 60_000,
+
+  /**
+   * Optional (delete for a bank that has no such flow). How a person authorises access at the bank.
+   *
+   * `beginConsent` runs when a signed-in person presses Connect. Ask the bank for an authorisation
+   * and return the address of the bank's own page. `returnUrl` is where the bank must send the
+   * person back (register exactly that URL at the bank) and `state` goes to the bank unchanged, as
+   * its `state` parameter. The engine stores a hash of the state, bound to the person and to their
+   * browser session, for ten minutes.
+   *
+   * `completeConsent` runs when the bank sent the person back and the engine has checked the state.
+   * `params` are the other query parameters of that callback: typically a one-time `code`. Exchange
+   * it server to server and return the reference of the link as `ref` (an access or consent token,
+   * a requisition id: whatever `listAccounts` and `fetchTransactions` need), and `expiresAt` when
+   * the bank says until when the consent holds. A refusal by the person (`error=...`) never reaches
+   * this function. Throw to refuse; the message of an `ApiError` is shown to the person.
+   */
+  consent: {
+    async beginConsent({ returnUrl, state }, { env }) {
+      const started = await callBank<{ authorizationUrl: string }>(
+        env,
+        `/authorizations?redirect_uri=${encodeURIComponent(returnUrl)}&state=${encodeURIComponent(state)}`,
+      );
+      return { redirectUrl: started.authorizationUrl };
+    },
+    async completeConsent(params, { env }) {
+      const granted = await callBank<{ linkId: string; validUntil: string }>(
+        env,
+        `/authorizations/token?code=${encodeURIComponent(params.code ?? '')}`,
+      );
+      return { ref: granted.linkId, expiresAt: granted.validUntil };
+    },
+  },
 
   /**
    * Required. The accounts behind `connection.ref`.

@@ -1,5 +1,18 @@
 import { z } from 'zod';
 import { safeId } from '../../packages/contracts/ids.ts';
+import {
+  categoryIsLocked,
+  countImports,
+  deleteImport,
+  getImport,
+  insertImport,
+  linkImportRow,
+  listImports,
+  movementsOnlyOf,
+  recentMovements,
+  setChosenCategory,
+  unlinkMovement,
+} from '../../packages/db/bank-person.ts';
 import type { Database } from '../../packages/db/database.ts';
 import type { TransactionFilter } from '../../packages/db/ledger.ts';
 import {
@@ -86,6 +99,23 @@ export type Ledger = LedgerHead & { accounts: Account[]; transactions: Transacti
 /** Fired after a ledger revision has been committed. */
 export type LedgerListener = (change: { userId: string; event: LedgerEvent }) => void;
 const importSchema = z.object({ transactions: z.array(transactionSchema).min(1).max(500) }).strict();
+
+/** The one account that holds what a person imported from statements. It is real data, entered by hand. */
+export const manualAccountId = 'manual-import';
+const manualAccountName = 'Statements you imported';
+/** Statements one person may keep imported. */
+export const maxImports = 200;
+const categorySchema = transactionSchema.shape.category;
+/** Whether a category may carry an amount of this sign (the ledger's own rule). */
+const categoryFits = (category: Transaction['category'], amountCents: number) =>
+  category === 'other' || category === 'internal_transfer' || (category === 'income') === amountCents > 0;
+/** A statement that was read and checked, ready to be written. `apps/profile-api/statements.ts` builds it. */
+export type StatementBatch = {
+  importId: string;
+  coveredFrom: string;
+  coveredTo: string;
+  rows: Pick<Transaction, 'id' | 'date' | 'description' | 'amountCents' | 'category'>[];
+};
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
@@ -280,8 +310,15 @@ export function createBankStore(db: Database, options: { maxTransactions?: numbe
       return mutate(id, () => {
         const accounts = new Map<string, Account | undefined>();
         const counts = { inserted: 0, updated: 0, duplicates: 0 };
-        for (const tx of transactions) {
-          const existing = getTransaction(db, id, tx.id);
+        for (const incoming of transactions) {
+          const existing = getTransaction(db, id, incoming.id);
+          // A category the person chose is theirs: the bank reporting the movement again keeps it.
+          const keep =
+            existing &&
+            existing.category !== incoming.category &&
+            categoryIsLocked(db, id, incoming.id) &&
+            categoryFits(existing.category as Transaction['category'], incoming.amountCents);
+          const tx = keep ? { ...incoming, category: existing.category as Transaction['category'] } : incoming;
           if (existing && same(existing, tx)) {
             counts.duplicates++;
             continue;
@@ -327,6 +364,148 @@ export function createBankStore(db: Database, options: { maxTransactions?: numbe
       return mutate(id, () => {
         if (!deleteTransaction(db, id, transactionId)) throw new ApiError(404, 'Movement not found');
         return { result: { deleted: transactionId }, changed: true };
+      });
+    },
+    /**
+     * A person's own list of movements, newest first, with whether they chose each category. This is
+     * raw data for the person's own pages and credential; no model-facing tool returns it.
+     */
+    async recent(id: string, filter: { from?: string; to?: string }, page: { limit: number; offset: number }) {
+      requireUser(db, id);
+      return db.read(() => ({ ...headOf(id), ...recentMovements(db, id, filter, page) }));
+    },
+    /**
+     * The person corrects the category of one movement (`internal_transfer` marks a transfer between
+     * their own accounts, which summaries leave out). The choice is kept when the bank reports the
+     * movement again.
+     */
+    async setCategory(id: string, transactionId: string, input: unknown) {
+      const category = categorySchema.parse(input);
+      return mutate(id, () => {
+        const existing = getTransaction(db, id, transactionId);
+        if (!existing) throw new ApiError(404, 'Movement not found');
+        if (!categoryFits(category, existing.amountCents))
+          throw new ApiError(
+            400,
+            existing.amountCents > 0
+              ? 'Money that came in can be income, other or a transfer between your own accounts'
+              : 'Money that went out cannot be income; choose a spending category, other or a transfer between your own accounts',
+          );
+        const changed = existing.category !== category || !categoryIsLocked(db, id, transactionId);
+        if (changed) setChosenCategory(db, id, transactionId, category);
+        return { result: { id: transactionId, category, categoryChosen: true }, changed };
+      });
+    },
+    /**
+     * The person deletes a movement they imported themselves. A movement that came from a bank is
+     * refused: it would return with the next sync, so it is corrected, not deleted.
+     */
+    async deleteManual(id: string, transactionId: string) {
+      return mutate(id, () => {
+        const existing = getTransaction(db, id, transactionId);
+        if (!existing) throw new ApiError(404, 'Movement not found');
+        if (existing.accountId !== manualAccountId)
+          throw new ApiError(
+            403,
+            'Only movements you imported yourself can be deleted. A bank movement would come back with the next sync; change its category instead.',
+          );
+        deleteTransaction(db, id, transactionId);
+        unlinkMovement(db, id, transactionId);
+        return { result: { deleted: transactionId }, changed: true };
+      });
+    },
+    /** Statements the person imported, newest first. */
+    async imports(id: string) {
+      requireUser(db, id);
+      return listImports(db, id);
+    },
+    /**
+     * Write a confirmed statement into the person's manual account, as real data (`synthetic:
+     * false`). Movement IDs come from the row itself, so a row that is already there, from this file
+     * or from another that overlaps it, is counted as a duplicate and not written twice. Importing
+     * the same statement again changes nothing.
+     */
+    async importStatement(id: string, batch: StatementBatch) {
+      return mutate(id, () => {
+        if (getImport(db, id, batch.importId))
+          return {
+            result: { importId: batch.importId, alreadyImported: true, inserted: 0, duplicates: batch.rows.length },
+            changed: false,
+          };
+        if (countImports(db, id) >= maxImports)
+          throw new ApiError(
+            400,
+            `Import limit reached: delete a statement you no longer need (maximum ${maxImports})`,
+          );
+        let changed = false;
+        const account = getAccount(db, id, manualAccountId) as Account | undefined;
+        if (!account) {
+          if (countAccounts(db, id) >= maxAccounts) throw new ApiError(400, 'Account limit reached');
+          insertAccount(
+            db,
+            id,
+            accountSchema.parse({
+              id: manualAccountId,
+              name: manualAccountName,
+              currency: 'EUR',
+              // A statement states movements, not a balance: this account's balance is their net, nothing more.
+              openingBalanceCents: 0,
+              openingDate: batch.coveredFrom,
+              synthetic: false,
+            }),
+          );
+          changed = true;
+        } else if (batch.coveredFrom < account.openingDate) {
+          updateAccount(db, id, { ...account, openingDate: batch.coveredFrom });
+          changed = true;
+        }
+        insertImport(db, id, {
+          id: batch.importId,
+          accountId: manualAccountId,
+          createdAt: new Date().toISOString(),
+          rowCount: batch.rows.length,
+          coveredFrom: batch.coveredFrom,
+          coveredTo: batch.coveredTo,
+        });
+        let inserted = 0;
+        let duplicates = 0;
+        for (const row of batch.rows) {
+          if (getTransaction(db, id, row.id)) duplicates++;
+          else {
+            insertTransaction(
+              db,
+              id,
+              transactionSchema.parse({
+                ...row,
+                accountId: manualAccountId,
+                currency: 'EUR',
+                status: 'booked',
+                synthetic: false,
+              }),
+            );
+            inserted++;
+          }
+          linkImportRow(db, id, batch.importId, row.id);
+        }
+        if (inserted && countTransactions(db, id) > maxTransactions) throw new LedgerFullError(maxTransactions);
+        return {
+          result: { importId: batch.importId, alreadyImported: false, inserted, duplicates },
+          changed: changed || inserted > 0,
+        };
+      });
+    },
+    /**
+     * Delete an imported statement with the movements only it brought. A movement that another
+     * imported statement also contains stays, because that statement still states it.
+     */
+    async deleteImport(id: string, importId: string) {
+      return mutate(id, () => {
+        if (!getImport(db, id, importId)) throw new ApiError(404, 'Import not found');
+        let removed = 0;
+        for (const transactionId of movementsOnlyOf(db, id, importId))
+          if (deleteTransaction(db, id, transactionId)) removed++;
+        deleteImport(db, id, importId);
+        return { result: { deleted: importId, removedMovements: removed }, changed: removed > 0 };
       });
     },
     async seedDemo(id: string) {

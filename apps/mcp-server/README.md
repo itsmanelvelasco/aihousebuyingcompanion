@@ -63,12 +63,15 @@ The table lists the place, incentive and listing tools. The same endpoint also r
 | Tool | Access | Reads or writes |
 | --- | --- | --- |
 | Every tool in the table below, `get_place`, `get_data_sources`, the interview and cash-flow tools, `show_town_explorer` | Public | Places, incentives, schools, transport, sources, calculators. No person. |
-| `plan_home_savings` with an inline `person` | Public | Arithmetic on the figures sent; nothing stored. |
+| `plan_home_savings` with an inline `person` | Public | Arithmetic on the figures sent; nothing stored. The answer also carries `nextQuestions` (what to ask next, most valuable first), `knownFacts` and `conflicts`. |
+| `get_next_questions` (optional; see below) | Public with an inline `person` or `demoId`, personal with `me: true` | The same question list without the timelines. Reads only. |
 | `plan_home_savings` with `demoId`, `get_demo_person`, `get_demo_bank_summary`, `get_demo_bank_updates`, `get_demo_bank_runtime` | Public demo (only while `PUBLIC_DEMO` is on) | A fictional persona from `DEMO_USER_IDS`, read-only. |
 | `show_workspace` | Public | Opens the workspace for the signed-in person, a demo persona (`demoId`) or nobody. |
 | `open_demo`, `update_demo` (registered by `apps/board`) | Public | A board run's own scripted state; never a stored person. |
 | `plan_home_savings` with `me: true`, `get_person`, `get_my_inputs`, `get_bank_summary`, `get_bank_updates`, `get_bank_runtime` | Personal, scope `person:read` | The caller's own person. |
 | `save_my_inputs` | Personal, scope `person:write` | Adds one dated input record to the caller's own person. |
+
+**Asking for the facts that decide a plan.** A benefit stays `needs_verification` until the facts that decide it are known. `plan_home_savings` says which facts those are: `nextQuestions` lists each question with why it is asked, how it is answered and what it could change, and the tool text names the one to ask now. The model asks one at a time, saves a confirmed answer with `save_my_inputs` at the question's `inputPath` (`null` for "I don't know"), or, for someone who is not signed in, adds it to the inline `person` and plans again, storing nothing. The question set is `packages/model/questions.ts`; the semantics are in [the input contract](../profile-api/INPUTS.md). `get_next_questions` is defined in `planner-tools.ts` and is not registered by default: `registerPlannerTools(server, options).registerNextQuestions()` in `createMcpServer` switches it on.
 
 A personal tool called without sign-in answers HTTP `401` with `WWW-Authenticate` (and the tool error carries `_meta["mcp/www_authenticate"]`); with a token that lacks the scope, `403`. Each tool declares `securitySchemes` in `_meta` (`noauth`, `oauth2`, or both). The standalone server in `http.ts` has no accounts: there the personal tools say so.
 

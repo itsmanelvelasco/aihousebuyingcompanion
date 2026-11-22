@@ -6,9 +6,11 @@ import { markDataUrl, wordmark } from '../../packages/ui/icons.ts';
 import { themeCss } from '../../packages/ui/inline.ts';
 
 /**
- * The account pages: sign up, sign in, sign out, the account and the OAuth consent screen. Plain
- * server-rendered HTML forms styled with the shared theme. There is no script on any of them, and
- * every value that came from a request or the database goes through `escapeHtml`.
+ * The account pages: sign up, sign in, sign out, the account (with the person's own bank data, the
+ * password, the export and the deletion) and the OAuth consent screen. Plain server-rendered HTML
+ * forms styled with the shared theme. There is no script on any of them, every form carries the
+ * CSRF token of the session, and every value that came from a request, the database or a bank goes
+ * through `escapeHtml`.
  */
 
 const layoutCss = `
@@ -31,6 +33,17 @@ const layoutCss = `
   .hint { color: var(--rc-muted); font-size: var(--rc-text-sm); margin: 0; }
   .danger { border-color: var(--rc-danger); }
   code { overflow-wrap: anywhere; }
+  h3 { font-size: var(--rc-text-md, 1.05rem); margin: var(--rc-space-5) 0 var(--rc-space-2); }
+  .scroll { overflow-x: auto; }
+  .rc-table { width: 100%; font-size: var(--rc-text-sm); }
+  .rc-table td.num, .rc-table th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .inline { display: flex; flex-wrap: wrap; gap: var(--rc-space-2); align-items: center; }
+  .inline select, .inline input[type="date"] { width: auto; }
+  .movements { min-width: 40rem; }
+  .movements td.date { white-space: nowrap; }
+  .movements form.inline { flex-wrap: nowrap; }
+  .movements select { max-width: 12rem; min-height: 0; padding-block: 4px; }
+  .tag { display: inline-block; border: 1px solid var(--rc-line, currentColor); border-radius: 999px; padding: 0 8px; font-size: var(--rc-text-xs, 0.75rem); color: var(--rc-muted); }
 `;
 
 export type PageAccount = { email: string } | null;
@@ -156,6 +169,11 @@ export function consentPage(input: {
     .join('')}
   <p><strong>${e(input.client.name)}</strong> wants to use ReloCat for you. It will be able to:</p>
   ${scopeList(input.scopes)}
+  ${
+    input.scopes.includes('bank:manage')
+      ? '<p class="rc-note">About your bank data: this application may start a bank connection, but a bank is only connected after you approve on the bank’s own page yourself. It may import a statement you give it, after telling you what the statement contains. It receives totals, balances and the state of your connections, not your individual movements, and nothing it can do moves money.</p>'
+      : ''
+  }
   <p class="hint">It cannot see your password, and it cannot reach anybody else’s data. The name above was supplied by the application and is not verified by ReloCat. After you choose, you return to <strong>${e(target.host || target.protocol)}</strong>.</p>
   ${
     local
@@ -182,16 +200,232 @@ export type StoredSummary = {
   answers: { field: string; value: string }[];
 };
 
+/** Ledger categories as a person reads them. */
+export const categoryLabels: Record<string, string> = {
+  income: 'Income',
+  housing: 'Housing',
+  food: 'Food',
+  transport: 'Transport',
+  utilities: 'Utilities',
+  subscriptions: 'Subscriptions',
+  healthcare: 'Health',
+  education: 'Education',
+  debt: 'Debt',
+  other: 'Other',
+  internal_transfer: 'Transfer between my accounts',
+};
+
+/** Integer cents as an amount in euros: `-1234` is `−€12.34`. */
+export function euros(cents: number) {
+  const amount = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR' }).format(Math.abs(cents) / 100);
+  return cents < 0 ? `−${amount}` : amount;
+}
+
+const day = (iso: string | null) => (iso ? e(iso.slice(0, 10)) : 'never');
+const minute = (iso: string | null) => (iso ? e(`${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`) : 'never');
+const syntheticTag = (synthetic: boolean | null) =>
+  synthetic === true ? ' <span class="tag">fictional data</span>' : '';
+
+/** What the bank section of the account page shows. Everything is the signed-in person's own. */
+export type BankSection = {
+  /** False when the bank part could not be loaded; the rest of the page still works. */
+  available: boolean;
+  banks: { id: string; displayName: string; synthetic: boolean; connect: 'consent_at_bank' | 'direct' }[];
+  connections: {
+    id: string;
+    providerId: string;
+    displayName: string;
+    synthetic: boolean | null;
+    webhooks: boolean;
+    polling: boolean;
+    consent: 'not_required' | 'granted' | 'expired';
+    consentExpiresAt: string | null;
+    lastSyncAt: string | null;
+    lastError: string | null;
+  }[];
+  pendingConsents: { providerId: string; expiresAt: string }[];
+  accounts: { id: string; name: string; balanceCents: number | null; synthetic: boolean }[];
+  imports: { id: string; createdAt: string; rowCount: number; coveredFrom: string; coveredTo: string }[];
+  movements: {
+    id: string;
+    accountId: string;
+    date: string;
+    description: string;
+    amountCents: number;
+    category: string;
+    status: string;
+    synthetic: boolean;
+    categoryChosen: boolean;
+  }[];
+  total: number;
+  page: number;
+  pageSize: number;
+  from?: string;
+  to?: string;
+  /** The account that holds imported statements; only its movements can be deleted. */
+  manualAccountId: string;
+};
+
+function bankSection(csrf: string, bank: BankSection) {
+  if (!bank.available)
+    return `<section class="rc-card" id="bank" aria-labelledby="bank-title"><h2 id="bank-title">Your bank data</h2>
+<p class="rc-note rc-note--warn">Your bank data cannot be shown right now. Try again in a moment.</p></section>`;
+  const token = hidden('csrf', csrf);
+  const connectedProviders = new Set(bank.connections.map(connection => connection.providerId));
+  const banks = bank.banks.length
+    ? `<ul class="plain">${bank.banks
+        .map(item => {
+          const again = connectedProviders.has(item.id);
+          const how =
+            item.connect === 'consent_at_bank'
+              ? 'You approve access on the bank’s own page and come back here.'
+              : 'A demo feed that fabricates movements; there is nothing to approve.';
+          return `<li class="row"><div><strong>${e(item.displayName)}</strong>${syntheticTag(item.synthetic)}
+<p class="hint">${how}</p></div>
+<form method="post" action="/account/bank/connect">${token}${hidden('provider', item.id)}
+<button class="rc-btn rc-btn--sm" type="submit">${again && item.connect === 'consent_at_bank' ? 'Connect again' : 'Connect'}</button></form></li>`;
+        })
+        .join('')}</ul>`
+    : '<p class="hint">No bank can be connected on this server.</p>';
+  const state = (connection: BankSection['connections'][number]) => {
+    if (connection.consent === 'expired')
+      return 'Your consent at the bank has expired: nothing is fetched until you connect this bank again.';
+    if (connection.lastError) return `Last attempt failed: ${e(connection.lastError)}`;
+    return connection.lastSyncAt ? `Last fetched ${minute(connection.lastSyncAt)}` : 'Not fetched yet';
+  };
+  const feed = (connection: BankSection['connections'][number]) =>
+    connection.webhooks
+      ? 'the bank tells ReloCat when something changes'
+      : connection.polling
+        ? 'checked regularly'
+        : 'fetched when you ask';
+  const connections = bank.connections.length
+    ? `<ul class="plain">${bank.connections
+        .map(
+          connection => `<li class="row"><div><strong>${e(connection.displayName)}</strong>${syntheticTag(connection.synthetic)}
+<p class="hint">${state(connection)} · ${feed(connection)}${
+            connection.consent === 'granted' && connection.consentExpiresAt
+              ? ` · consent until ${day(connection.consentExpiresAt)}`
+              : ''
+          }</p></div>
+<div class="actions">
+<form method="post" action="/account/bank/sync">${token}${hidden('connection', connection.id)}
+<button class="rc-btn rc-btn--sm" type="submit">Fetch now</button></form>
+<form method="post" action="/account/bank/disconnect">${token}${hidden('connection', connection.id)}
+<button class="rc-btn rc-btn--sm rc-btn--quiet" type="submit">Disconnect</button></form></div></li>`,
+        )
+        .join('')}</ul>`
+    : '<p class="hint">No bank is connected. Your plan then uses only the figures you stated yourself.</p>';
+  const pending = bank.pendingConsents.length
+    ? `<p class="hint">${bank.pendingConsents.length} authorisation(s) started at a bank and not finished; they lapse by ${minute(
+        bank.pendingConsents[0].expiresAt,
+      )}.</p>`
+    : '';
+  const accounts = bank.accounts.length
+    ? `<div class="scroll"><table class="rc-table"><thead><tr><th>Account</th><th class="num">Balance today</th></tr></thead><tbody>${bank.accounts
+        .map(
+          account =>
+            `<tr><td>${e(account.name)}${syntheticTag(account.synthetic)}${
+              account.id === bank.manualAccountId ? ' <span class="tag">net of imported movements</span>' : ''
+            }</td><td class="num">${account.balanceCents === null ? 'unknown' : e(euros(account.balanceCents))}</td></tr>`,
+        )
+        .join('')}</tbody></table></div>
+<p class="hint">A balance is not what you have saved for a home: it also holds rent, bills and reserves. ReloCat never counts it as purchase savings unless you say so.</p>`
+    : '';
+  const imports = bank.imports.length
+    ? `<ul class="plain">${bank.imports
+        .map(
+          item => `<li class="row"><div>${e(item.coveredFrom)} to ${e(item.coveredTo)} · ${e(item.rowCount)} rows
+<p class="hint">Imported ${day(item.createdAt)}</p></div>
+<form method="post" action="/account/bank/import/delete">${token}${hidden('import', item.id)}
+<button class="rc-btn rc-btn--sm rc-btn--quiet" type="submit">Delete with its movements</button></form></li>`,
+        )
+        .join('')}</ul>`
+    : '';
+  const filter = new URLSearchParams();
+  if (bank.from) filter.set('from', bank.from);
+  if (bank.to) filter.set('to', bank.to);
+  const pageLink = (page: number, label: string) => {
+    const query = new URLSearchParams(filter);
+    if (page > 1) query.set('page', String(page));
+    const text = query.toString();
+    return `<a class="rc-btn rc-btn--sm" href="/account${text ? `?${e(text)}` : ''}#movements">${label}</a>`;
+  };
+  const pages = Math.max(1, Math.ceil(bank.total / bank.pageSize));
+  const back = hidden('from', bank.from) + hidden('to', bank.to) + hidden('page', String(bank.page));
+  const rows = bank.movements
+    .map(movement => {
+      const allowed = Object.keys(categoryLabels).filter(category =>
+        category === 'other' || category === 'internal_transfer'
+          ? true
+          : (category === 'income') === movement.amountCents > 0,
+      );
+      const options = allowed
+        .map(
+          category =>
+            `<option value="${e(category)}"${category === movement.category ? ' selected' : ''}>${e(categoryLabels[category])}</option>`,
+        )
+        .join('');
+      const remove =
+        movement.accountId === bank.manualAccountId
+          ? `<form method="post" action="/account/bank/movement/delete">${token}${back}${hidden('movement', movement.id)}
+<button class="rc-btn rc-btn--sm rc-btn--quiet" type="submit" aria-label="Delete this movement">Delete</button></form>`
+          : '';
+      return `<tr><td class="date">${e(movement.date)}</td>
+<td>${e(movement.description)}${movement.status === 'pending' ? ' <span class="tag">pending</span>' : ''}${syntheticTag(movement.synthetic)}</td>
+<td class="num">${e(euros(movement.amountCents))}</td>
+<td><form class="inline" method="post" action="/account/bank/movement">${token}${back}${hidden('movement', movement.id)}
+<select name="category" aria-label="Category of this movement">${options}</select>
+<button class="rc-btn rc-btn--sm" type="submit">Save</button>${movement.categoryChosen ? '<span class="tag">your choice</span>' : ''}</form></td>
+<td>${remove}</td></tr>`;
+    })
+    .join('');
+  const movements = `<h3 id="movements">Your movements</h3>
+<form class="inline" method="get" action="/account">
+  <label>From <input type="date" name="from" value="${e(bank.from)}"></label>
+  <label>To <input type="date" name="to" value="${e(bank.to)}"></label>
+  <button class="rc-btn rc-btn--sm" type="submit">Show</button>
+  ${bank.from || bank.to ? '<a href="/account#movements">All dates</a>' : ''}
+</form>
+${
+  bank.movements.length
+    ? `<div class="scroll"><table class="rc-table movements"><thead><tr><th>Date</th><th>Description</th><th class="num">Amount</th><th>Category</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+<div class="row"><p class="hint">${e(bank.total)} movement(s) · page ${e(bank.page)} of ${e(pages)}</p>
+<div class="actions">${bank.page > 1 ? pageLink(bank.page - 1, 'Newer') : ''}${bank.page < pages ? pageLink(bank.page + 1, 'Older') : ''}</div></div>
+<p class="hint">Choose “Transfer between my accounts” for money you moved between your own accounts, so it is not counted as income or spending. A category you choose is kept when the bank reports the movement again. Movements that came from a bank cannot be deleted here, because the next fetch would bring them back.</p>`
+    : '<p class="hint">No movements for these dates.</p>'
+}`;
+  return `<section class="rc-card" id="bank" aria-labelledby="bank-title">
+  <h2 id="bank-title">Your bank data</h2>
+  <p class="hint">Only you see your movements. Assistants you connect get totals and states, not the movements themselves.</p>
+  <h3>Connected banks</h3>
+  ${connections}${pending}
+  <h3>Connect a bank</h3>
+  ${banks}
+  ${accounts ? `<h3>Accounts</h3>${accounts}` : ''}
+  <h3>Import a statement</h3>
+  <form class="stack" method="post" action="/account/bank/import" enctype="multipart/form-data">
+    ${token}
+    <label class="rc-field">CSV file with the columns date, description and amount
+      <input type="file" name="statement" accept=".csv,text/csv" required></label>
+    <p class="hint">Dates as YYYY-MM-DD, amounts signed (money out negative), up to 256 KiB. You see a summary first; nothing is saved until you confirm.</p>
+    <div><button class="rc-btn" type="submit">Read the statement</button></div>
+  </form>
+  ${imports ? `<h3>Statements you imported</h3>${imports}` : ''}
+  ${movements}
+</section>`;
+}
+
 export function accountPage(input: {
   csrf: string;
   account: { email: string };
   stored: StoredSummary;
   clients: { grantId: string; clientName: string; scopes: Scope[]; connectedAt: string }[];
+  bank?: BankSection;
   notice?: string;
   error?: string;
 }) {
   const { stored } = input;
-  const day = (iso: string | null) => (iso ? e(iso.slice(0, 10)) : 'never');
   const clients = input.clients.length
     ? `<ul class="plain">${input.clients
         .map(
@@ -224,15 +458,33 @@ ${input.notice ? `<p class="rc-note" role="status">${e(input.notice)}</p>` : ''}
       : '<p class="hint">You have not saved any answers yet.</p>'
   }
   <p class="hint">Your password is stored only as a salted hash. Money is stored in whole cents.</p>
-  <p><a class="rc-btn rc-btn--primary" href="/workspace">Open your workspace</a></p>
+  <div class="actions">
+    <a class="rc-btn rc-btn--primary" href="/workspace">Open your workspace</a>
+    <form method="post" action="/account/export">${hidden('csrf', input.csrf)}
+      <button class="rc-btn" type="submit">Download everything as JSON</button></form>
+  </div>
+  <p class="hint">The download holds every row stored about you, table by table. Hashes of your password and of tokens, and sealed bank credentials, are left out and named in the file.</p>
 </section>
+${input.bank ? bankSection(input.csrf, input.bank) : ''}
 <section class="rc-card" aria-labelledby="clients-title">
   <h2 id="clients-title">Connected assistants</h2>
   ${clients}
 </section>
+<section class="rc-card" aria-labelledby="password-title">
+  <h2 id="password-title">Change your password</h2>
+  <form class="stack" method="post" action="/account/password" autocomplete="on">
+    ${hidden('csrf', input.csrf)}
+    <label class="rc-field">Current password
+      <input type="password" name="current" required maxlength="200" autocomplete="current-password"></label>
+    <label class="rc-field">New password
+      <input type="password" name="next" required minlength="${minPasswordLength}" maxlength="200" autocomplete="new-password"></label>
+    <p class="hint">At least ${minPasswordLength} characters. Changing it signs you out of every other browser and disconnects every assistant; you stay signed in here.</p>
+    <div><button class="rc-btn" type="submit">Change password</button></div>
+  </form>
+</section>
 <section class="rc-card danger" aria-labelledby="delete-title">
   <h2 id="delete-title">Delete your account</h2>
-  <p>This permanently deletes your account, your answers, bank summaries, habits and every connection. It cannot be undone.</p>
+  <p>This permanently deletes your account, your answers, your bank connections with their stored credentials, your movements and imported statements, habits and every connected assistant. It cannot be undone.</p>
   <form class="stack" method="post" action="/account/delete">
     ${hidden('csrf', input.csrf)}
     <label class="rc-field">Password
@@ -240,6 +492,105 @@ ${input.notice ? `<p class="rc-note" role="status">${e(input.notice)}</p>` : ''}
     <label><input type="checkbox" name="confirm" value="yes" required> I understand that all my data will be deleted.</label>
     <div><button class="rc-btn" type="submit">Delete my account and data</button></div>
   </form>
+</section>`,
+    { account: input.account, csrf: input.csrf, wide: true },
+  );
+}
+
+/**
+ * The step between "Connect" and the bank: it says where the person is going and what the bank
+ * will be asked for, and the way out is a plain link, so no form of this site ever posts to a bank.
+ */
+export function bankLeavePage(input: {
+  csrf: string;
+  account: { email: string };
+  bank: { displayName: string; synthetic: boolean };
+  redirectUrl: string;
+  expiresAt: string;
+}) {
+  const host = new URL(input.redirectUrl).host;
+  return layout(
+    'Continue to your bank',
+    `<h1>Continue to ${e(input.bank.displayName)}</h1>
+<div class="rc-card stack">
+  <p>You are leaving ReloCat for <strong>${e(host)}</strong>, where you allow or refuse access yourself. ReloCat never sees how you sign in there.</p>
+  <p>ReloCat asks to <strong>read</strong> your accounts, balances and movements. It cannot move money.</p>
+  ${
+    input.bank.synthetic
+      ? '<p class="rc-note">This is a fictional bank for demonstrations: its customers and movements are invented.</p>'
+      : ''
+  }
+  <p class="hint">After you choose, the bank sends you back here. This step is valid until ${minute(input.expiresAt)} and only in this browser, while you stay signed in.</p>
+  <div class="actions">
+    <a class="rc-btn rc-btn--primary" rel="noreferrer" href="${e(input.redirectUrl)}">Continue to ${e(input.bank.displayName)}</a>
+    <a class="rc-btn" href="/account#bank">Cancel</a>
+  </div>
+</div>`,
+    { account: input.account, csrf: input.csrf },
+  );
+}
+
+/** What a statement would add, shown before anything is saved. */
+export type StatementPreview = {
+  previewHash: string;
+  expiresAt: string;
+  alreadyImported: boolean;
+  rowCount: number;
+  newRows: number;
+  alreadyInLedger: number;
+  skippedZeroAmountRows: number;
+  coveredFrom: string;
+  coveredTo: string;
+  coveredDays: number;
+  periodTotals: { inflowCents: number; outflowCents: number; netCents: number };
+  byCategory: Record<string, { count: number; cents: number }>;
+  monthlyFigures: boolean;
+  averagingNote: string;
+};
+
+export function statementPreviewPage(input: {
+  csrf: string;
+  account: { email: string };
+  preview: StatementPreview;
+  filename?: string;
+}) {
+  const { preview } = input;
+  const categories = Object.entries(preview.byCategory)
+    .sort((a, b) => a[1].cents - b[1].cents)
+    .map(
+      ([category, entry]) =>
+        `<tr><td>${e(categoryLabels[category] ?? category)}</td><td class="num">${e(entry.count)}</td><td class="num">${e(euros(entry.cents))}</td></tr>`,
+    )
+    .join('');
+  return layout(
+    'Import a statement',
+    `<h1>Check this statement</h1>
+<p class="lede">Nothing has been saved yet. This is what the file${input.filename ? ` <strong>${e(input.filename)}</strong>` : ''} contains.</p>
+<section class="rc-card stack">
+  <dl class="facts">
+    <dt>Period</dt><dd>${e(preview.coveredFrom)} to ${e(preview.coveredTo)} (${e(preview.coveredDays)} days)</dd>
+    <dt>Rows</dt><dd>${e(preview.rowCount)}${preview.skippedZeroAmountRows ? ` (${e(preview.skippedZeroAmountRows)} more without an amount are left out)` : ''}</dd>
+    <dt>New movements</dt><dd>${e(preview.newRows)}</dd>
+    <dt>Already in your ledger</dt><dd>${e(preview.alreadyInLedger)}</dd>
+    <dt>Came in</dt><dd>${e(euros(preview.periodTotals.inflowCents))}</dd>
+    <dt>Went out</dt><dd>${e(euros(preview.periodTotals.outflowCents))}</dd>
+    <dt>Net</dt><dd>${e(euros(preview.periodTotals.netCents))}</dd>
+  </dl>
+  <div class="scroll"><table class="rc-table"><thead><tr><th>Category</th><th class="num">Rows</th><th class="num">Sum</th></tr></thead><tbody>${categories}</tbody></table></div>
+  <p class="${preview.monthlyFigures ? 'hint' : 'rc-note rc-note--warn'}">${e(preview.averagingNote)}</p>
+  ${
+    preview.alreadyImported
+      ? '<p class="rc-note">You imported this exact statement before. Importing it again changes nothing.</p>'
+      : ''
+  }
+  <p class="hint">The movements are saved as your own real data, in the account “Statements you imported”. Categories are guessed from the description; you can correct each one afterwards. Totals leave out transfers between your own accounts.</p>
+  <div class="actions">
+    <form method="post" action="/account/bank/import/confirm">${hidden('csrf', input.csrf)}${hidden('preview', preview.previewHash)}
+      <button class="rc-btn rc-btn--primary" type="submit">Import ${e(preview.newRows)} movement(s)</button></form>
+    <form method="post" action="/account/bank/import/cancel">${hidden('csrf', input.csrf)}${hidden('preview', preview.previewHash)}
+      <button class="rc-btn" type="submit">Discard</button></form>
+  </div>
+  <p class="hint">This summary is kept until ${minute(preview.expiresAt)}; after that, read the file again.</p>
 </section>`,
     { account: input.account, csrf: input.csrf, wide: true },
   );

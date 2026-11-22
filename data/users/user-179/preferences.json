@@ -7,6 +7,7 @@
   "region": "Catalunya",
   "targetPurchasePriceCents": 12100000,
   "housingBudgetCents": 12100000,
+  "purchaseSavingsCents": 1197900,
   "minimumBedrooms": 1,
   "preferredPropertyType": "house",
   "schoolStages": [],

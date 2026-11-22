@@ -1,6 +1,19 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { safeId } from '../contracts/ids.ts';
+import {
+  credentialExpiries,
+  deleteConsentsOfUser,
+  deleteCredential,
+  deleteCredentialsOfUser,
+  deleteExpiredConsents,
+  getCredential,
+  insertConsent,
+  listConsents,
+  putCredential,
+  takeConsent,
+  trimConsents,
+} from '../db/bank-person.ts';
 import {
   allConnections,
   clearWebhooks,
@@ -22,8 +35,10 @@ import { insertUser } from '../db/profiles.ts';
 import { transactionSchema } from '../finance/cashflow.ts';
 import { ApiError } from '../http/server.ts';
 import type { BankConnection, BankProvider, ProviderContext, WebhookSignal } from './provider.ts';
-import { pollIntervalSchema, supportsWebhooks } from './provider.ts';
+import { pollIntervalSchema, supportsConsent, supportsWebhooks } from './provider.ts';
 import type { BankRegistry, RegisteredProvider } from './registry.ts';
+import type { Vault } from './vault.ts';
+import { sealedRefPrefix, VaultError } from './vault.ts';
 
 /**
  * The bank sync engine: which user is connected to which provider, pulling movements from providers
@@ -38,6 +53,12 @@ import type { BankRegistry, RegisteredProvider } from './registry.ts';
  * The engine never writes the ledger itself. It goes through the `SyncLedger` it is given, so the
  * profile API's ledger store stays the single writer and imports stay idempotent. Its own state
  * (connections, the webhook queue and the notification IDs already seen) lives in the database.
+ *
+ * A person can connect a bank themselves. A provider with the `consent` capability sends them to
+ * the bank to authorise access (`beginConsent`, then `completeConsent` from the callback); what the
+ * bank returns is sealed by the `Vault` and the connection row keeps only a keyed fingerprint of
+ * it. A synthetic provider has no bank to ask and is connected directly (`connectSelf`). Any other
+ * provider stays with the operator (`connect`).
  */
 
 /** One persisted ledger revision, as returned by `GET /users/:id/bank/events`. */
@@ -99,7 +120,37 @@ const connectionSchema = z
 type StoredConnection = z.infer<typeof connectionSchema>;
 
 const eventIdSchema = z.string().min(1).max(200);
-const maxConnections = 10;
+/** Connections one person may hold, whoever created them. */
+export const maxConnections = 10;
+/** Consents one person may have in progress; starting another drops the oldest. */
+const maxPendingConsents = 5;
+/** What a consent flow may return as the reference of a link: it is sealed, so it may be a long token. */
+const grantedRefSchema = z.string().min(1).max(4000);
+const expirySchema = z.iso.datetime({ offset: true }).nullable().optional();
+/** Cadence of a synthetic feed a person connected themselves: slow enough to read. */
+const selfSyntheticPollMs = 60_000;
+
+/**
+ * A sync that cannot succeed until the person acts (the consent ran out, the stored credential
+ * cannot be read). `retryable: false` makes the engine stop its automatic syncs of the connection.
+ */
+export class ConnectionBlockedError extends ApiError {
+  readonly retryable = false;
+  constructor(message: string) {
+    super(409, message);
+  }
+}
+const consentExpiredMessage = 'The consent at the bank has expired. Connect this bank again to renew it.';
+
+const hashState = (value: string) => createHash('sha256').update(value).digest('hex');
+const sameText = (a: string, b: string) => {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+};
+/** The row a sealed credential belongs to; a ciphertext moved to another row does not open. */
+const credentialAad = (userId: string, connectionId: string, providerId: string) =>
+  `bank-credential\n${userId}\n${connectionId}\n${providerId}`;
 
 /** Body of `POST /users/:id/bank/connections`. */
 export const connectInputSchema = z
@@ -135,6 +186,13 @@ export type BankSyncOptions = {
    * without it the engine keeps them in a private in-memory database that ends with the process.
    */
   db?: Database;
+  /**
+   * Seals what a consent flow returns. Without it no connection can be made through a consent at
+   * the bank, and a sealed connection that is already stored cannot be synced.
+   */
+  vault?: Vault;
+  /** How long a person has to finish a consent they started at the bank. Default 10 minutes. */
+  consentTtlMs?: number;
   clock?: () => Date;
   /** Runs before each provider call, for example to seed an empty demo ledger for the synthetic feed. */
   beforeSync?: (userId: string, provider: BankProvider) => Promise<void>;
@@ -197,7 +255,7 @@ function createConnectionStore(db: Database, registerUsers: boolean) {
       return getConnection(db, userId, connectionId);
     },
     /** Link a connection: 409 when its ID or bank reference is taken, 400 beyond the per-user limit. */
-    add(userId: string, connection: StoredConnection) {
+    add(userId: string, connection: StoredConnection, alsoWrite?: () => void) {
       const record = connectionSchema.parse(connection);
       db.transaction(() => {
         // A private engine database has no profile store in front of it to create the user row.
@@ -207,6 +265,8 @@ function createConnectionStore(db: Database, registerUsers: boolean) {
         if (getConnection(db, userId, record.id)) throw new ApiError(409, 'Bank connection already exists');
         if (countConnections(db, userId) >= maxConnections) throw new ApiError(400, 'Connection limit reached');
         insertConnection(db, userId, record);
+        // The sealed credential of a consented connection is written with it, or neither is.
+        alsoWrite?.();
       });
     },
     /** Change one stored connection and save it. Returns the saved record, or undefined when it is gone. */
@@ -224,7 +284,12 @@ function createConnectionStore(db: Database, registerUsers: boolean) {
     remove(userId: string, connectionId: string) {
       return db.transaction(() => {
         const target = getConnection(db, userId, connectionId);
-        if (target) deleteConnection(db, userId, connectionId);
+        if (target) {
+          // The stored credential goes with the link, and so do notifications queued for it.
+          deleteCredential(db, userId, connectionId);
+          deleteConnection(db, userId, connectionId);
+          clearWebhooks(db, target.providerId, target.ref, lastWebhookSeq(db));
+        }
         return target;
       });
     },
@@ -284,6 +349,9 @@ export function createBankSync(options: BankSyncOptions) {
   const housekeepingMs = options.housekeepingMs === undefined ? 1000 : options.housekeepingMs;
   // Without a database the engine keeps its state in memory, as a private database of its own.
   const db = options.db ?? open(':memory:');
+  const { vault } = options;
+  const consentTtlMs = options.consentTtlMs ?? 10 * 60_000;
+  let loaded: BankRegistry | undefined;
   const store = createConnectionStore(db, !options.db);
   const queue = createWebhookQueue(db);
   const webhookCounts = { accepted: 0, duplicates: 0 };
@@ -366,11 +434,30 @@ export function createBankSync(options: BankSyncOptions) {
     return connection;
   }
 
-  function view(userId: string, connection: StoredConnection) {
+  /**
+   * Whether a connection rests on a consent at the bank, and until when. `expired` means the engine
+   * has stopped syncing it until the person consents again.
+   */
+  function consentOf(userId: string, connection: StoredConnection, expiries = credentialExpiries(db, userId)) {
+    if (!expiries.has(connection.id))
+      return { consent: 'not_required' as const, consentExpiresAt: null as string | null };
+    const consentExpiresAt = expiries.get(connection.id) ?? null;
+    const expired = consentExpiresAt !== null && consentExpiresAt <= clock().toISOString();
+    return { consent: expired ? ('expired' as const) : ('granted' as const), consentExpiresAt };
+  }
+
+  function view(userId: string, connection: StoredConnection, expiries?: Map<string, string | null>) {
     const state = activities.get(key(userId, connection.id));
+    const entry = loaded?.get(connection.providerId);
     return {
       id: connection.id,
       providerId: connection.providerId,
+      /** The bank's name as people read it, and whether its records are fabricated. */
+      displayName: entry?.provider.displayName ?? connection.providerId,
+      synthetic: entry?.provider.synthetic ?? null,
+      /** True when the bank tells ReloCat about new movements; false when it is polled or synced by hand. */
+      webhooks: entry ? supportsWebhooks(entry.provider) : false,
+      ...consentOf(userId, connection, expiries),
       createdAt: connection.createdAt,
       lastSyncAt: connection.lastSyncAt,
       lastError: connection.lastError,
@@ -399,6 +486,31 @@ export function createBankSync(options: BankSyncOptions) {
     return since.toISOString().slice(0, 10);
   }
 
+  /**
+   * The reference a provider is given. A consented connection stores it sealed: it is opened here,
+   * for the length of one sync, and refused when the consent has run out or the key does not fit.
+   */
+  function openRef(userId: string, stored: StoredConnection, now: Date) {
+    const credential = getCredential(db, userId, stored.id);
+    if (!credential) {
+      if (stored.ref.startsWith(sealedRefPrefix))
+        throw new ConnectionBlockedError('The stored bank credential is missing. Connect this bank again.');
+      return stored.ref;
+    }
+    if (credential.expiresAt !== null && credential.expiresAt <= now.toISOString())
+      throw new ConnectionBlockedError(consentExpiredMessage);
+    if (!vault)
+      throw new ConnectionBlockedError('The stored bank credential cannot be read: no data encryption key is set.');
+    try {
+      return vault.open(credential.cipher, credentialAad(userId, stored.id, stored.providerId));
+    } catch (error) {
+      if (!(error instanceof VaultError)) throw error;
+      throw new ConnectionBlockedError(
+        'The stored bank credential cannot be read with the current data encryption key. Connect this bank again.',
+      );
+    }
+  }
+
   /** Pull one connection from its provider into the ledger. */
   async function pull(userId: string, stored: StoredConnection): Promise<SyncResult> {
     const { provider: bank, env } = await provider(stored.providerId);
@@ -407,7 +519,7 @@ export function createBankSync(options: BankSyncOptions) {
     const connection: BankConnection = {
       id: stored.id,
       userId,
-      ref: stored.ref,
+      ref: openRef(userId, stored, now),
       cursor: stored.cursor,
       pollIntervalMs: stored.pollIntervalMs,
     };
@@ -604,6 +716,7 @@ export function createBankSync(options: BankSyncOptions) {
   /** Rebuild the webhook index and resume polling of real providers after a restart. */
   async function resume() {
     const registry = await options.registry;
+    loaded = registry;
     for (const [userId, connections] of store.scan()) {
       for (const connection of connections) {
         refs.set(refKey(connection.providerId, connection.ref), { userId, connectionId: connection.id });
@@ -635,7 +748,11 @@ export function createBankSync(options: BankSyncOptions) {
   async function acceptWebhook(providerId: string, signal: Pick<WebhookSignal, 'connectionRef' | 'eventId'>) {
     await ready;
     if (closed) throw new ApiError(503, 'Bank sync is shutting down');
-    const target = refs.get(refKey(providerId, signal.connectionRef));
+    // A consented connection is indexed by the keyed fingerprint of its reference, never by the reference.
+    const storedRef = refs.has(refKey(providerId, signal.connectionRef))
+      ? signal.connectionRef
+      : (vault?.fingerprint(signal.connectionRef) ?? signal.connectionRef);
+    const target = refs.get(refKey(providerId, storedRef));
     if (!target) return { known: false, duplicate: false };
     // A reference whose connection no longer exists is unknown, and nothing is queued for it.
     if (!store.find(target.userId, target.connectionId)) {
@@ -643,7 +760,7 @@ export function createBankSync(options: BankSyncOptions) {
       return { known: false, duplicate: false };
     }
     const eventId = eventIdSchema.optional().parse(signal.eventId);
-    const fresh = await queue.add(providerId, signal.connectionRef, eventId, clock().toISOString());
+    const fresh = await queue.add(providerId, storedRef, eventId, clock().toISOString());
     if (!fresh) {
       webhookCounts.duplicates++;
       return { known: true, duplicate: true };
@@ -662,7 +779,223 @@ export function createBankSync(options: BankSyncOptions) {
     async listConnections(userId: string) {
       await ready;
       await readLedger(userId);
-      return store.read(userId).map(connection => view(userId, connection));
+      const expiries = credentialExpiries(db, userId);
+      return store.read(userId).map(connection => view(userId, connection, expiries));
+    },
+
+    /**
+     * The banks a person can connect themselves: configured providers a person authorises at the
+     * bank, and synthetic ones, which have no bank to ask. Providers only an operator can link, and
+     * unconfigured ones, are left out. No variable name or value is included.
+     */
+    async banks() {
+      await ready;
+      return (await options.registry)
+        .list()
+        .filter(bank => bank.status === 'configured' && (bank.consent || bank.synthetic))
+        .map(bank => ({
+          id: bank.id,
+          displayName: bank.displayName,
+          /** True when every record of this bank is fabricated demo data. */
+          synthetic: bank.synthetic,
+          /** `consent_at_bank`: the person approves access on the bank's own page. `direct`: nothing to approve. */
+          connect: bank.consent ? ('consent_at_bank' as const) : ('direct' as const),
+          webhooks: bank.webhooks,
+        }));
+    },
+
+    /**
+     * A person connects a bank that needs no consent: a synthetic provider. The reference is made
+     * here, never taken from the caller, so nobody can attach a reference that is somebody else's.
+     */
+    async connectSelf(userId: string, providerId: string) {
+      await ready;
+      const { provider: bank } = await provider(safeId.parse(providerId));
+      if (supportsConsent(bank))
+        throw new ApiError(409, 'This bank is connected by authorising access at the bank itself');
+      if (!bank.synthetic) throw new ApiError(403, 'This bank can only be connected by the operator');
+      return this.connect(userId, {
+        providerId: bank.id,
+        ref: `self-${userId}`,
+        pollIntervalMs: Math.max(bank.pollIntervalMs ?? 0, selfSyntheticPollMs),
+      });
+    },
+
+    /**
+     * Start a consent at the bank for a person. Returns the bank's page to send them to. Only the
+     * hash of the single-use `state` is stored, bound to the person and to the browser session
+     * (`sessionKey`) that started it; `completeConsent` accepts the callback from that session alone.
+     */
+    async beginConsent(userId: string, providerId: string, request: { sessionKey: string; returnUrl: string }) {
+      await ready;
+      await readLedger(userId);
+      const entry = await provider(safeId.parse(providerId));
+      if (!entry.provider.consent) throw new ApiError(409, 'This bank is not connected through a consent at the bank');
+      if (!vault) throw new ApiError(503, 'Bank connections are unavailable: the server has no data encryption key');
+      const mine = store.read(userId);
+      // A renewal of a connection the person already has needs no free slot.
+      if (mine.length >= maxConnections && !mine.some(connection => connection.providerId === entry.provider.id))
+        throw new ApiError(400, 'Connection limit reached');
+      const state = randomBytes(32).toString('base64url');
+      const now = clock();
+      let redirectUrl: string;
+      try {
+        const started = await entry.provider.consent.beginConsent(
+          { returnUrl: request.returnUrl, state },
+          { env: entry.env, now },
+        );
+        const url = new URL(started.redirectUrl);
+        if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('not a web address');
+        redirectUrl = url.href;
+      } catch (error) {
+        throw new ApiError(502, error instanceof ApiError ? error.message : 'The bank did not start the authorisation');
+      }
+      const expiresAt = new Date(now.getTime() + consentTtlMs).toISOString();
+      db.transaction(() => {
+        insertConsent(db, hashState(state), {
+          userId,
+          providerId: entry.provider.id,
+          sessionHash: hashState(request.sessionKey),
+          createdAt: now.toISOString(),
+          expiresAt,
+        });
+        trimConsents(db, userId, maxPendingConsents);
+      });
+      return { providerId: entry.provider.id, displayName: entry.provider.displayName, redirectUrl, expiresAt };
+    },
+
+    /**
+     * Finish a consent from the bank's callback. `params` are the callback's query parameters;
+     * `who` is the signed-in person and browser session the callback arrived in.
+     *
+     * The state is taken out of the table before anything is checked, so it works once, whoever
+     * presents it. It must then be unexpired and belong to this person and this session. Only after
+     * that is the bank asked for the link, and what it returns is sealed before it is stored.
+     */
+    async completeConsent(params: Readonly<Record<string, string>>, who: { userId: string; sessionKey: string }) {
+      await ready;
+      const state = typeof params.state === 'string' && params.state.length <= 200 ? params.state : '';
+      const pending = state ? takeConsent(db, hashState(state)) : undefined;
+      const now = clock();
+      if (!pending || pending.expiresAt <= now.toISOString())
+        throw new ApiError(400, 'This bank authorisation is no longer valid. Start again from your account page.');
+      if (pending.userId !== who.userId || !sameText(pending.sessionHash, hashState(who.sessionKey)))
+        throw new ApiError(403, 'This bank authorisation was started by somebody else or in another browser session.');
+      const entry = await provider(pending.providerId);
+      const consent = entry.provider.consent;
+      if (!consent || !vault) throw new ApiError(503, 'Bank connections are unavailable right now');
+      const { state: _state, ...answer } = params;
+      if (answer.error !== undefined)
+        return { status: 'denied' as const, providerId: pending.providerId, displayName: entry.provider.displayName };
+      let ref: string;
+      let consentExpiresAt: string | null;
+      try {
+        const granted = await consent.completeConsent(answer, { env: entry.env, now });
+        ref = grantedRefSchema.parse(granted.ref);
+        const expiry = expirySchema.parse(granted.expiresAt);
+        consentExpiresAt = expiry ? new Date(expiry).toISOString() : null;
+      } catch (error) {
+        throw new ApiError(
+          502,
+          error instanceof ApiError ? error.message : 'The bank did not confirm the authorisation',
+        );
+      }
+      if (consentExpiresAt !== null && consentExpiresAt <= now.toISOString())
+        throw new ApiError(502, 'The bank returned a consent that has already expired');
+      const sealedRef = vault.fingerprint(ref);
+      const providerId = entry.provider.id;
+      const index = refKey(providerId, sealedRef);
+      const taken = 'This bank login is already connected to a ReloCat account';
+      // An operator may have linked the same reference in clear; it still belongs to one person only.
+      if (connectionByRef(db, providerId, ref) || refs.has(refKey(providerId, ref))) throw new ApiError(409, taken);
+      const holder = refs.get(index);
+      if (holder && !store.find(holder.userId, holder.connectionId)) forget(holder.userId, holder.connectionId);
+      const existing = connectionByRef(db, providerId, sealedRef);
+      if (existing && existing.userId !== who.userId) throw new ApiError(409, taken);
+      const seal = (connectionId: string) => ({
+        connectionId,
+        providerId,
+        cipher: vault.seal(ref, credentialAad(who.userId, connectionId, providerId)),
+        createdAt: now.toISOString(),
+        expiresAt: consentExpiresAt,
+      });
+      let connectionId: string;
+      if (existing) {
+        // The same person consented again: the connection keeps its history and gets a fresh credential.
+        connectionId = existing.connectionId;
+        db.transaction(() => {
+          putCredential(db, who.userId, seal(connectionId));
+          store.update(who.userId, connectionId, target => {
+            target.lastError = null;
+            target.consecutiveFailures = 0;
+          });
+        });
+        const renewed = activity(who.userId, connectionId);
+        renewed.blocked = false;
+        renewed.failures = 0;
+        renewed.nextRetryAt = undefined;
+      } else {
+        if (refs.has(index)) throw new ApiError(409, taken);
+        const short = sealedRef.slice(sealedRefPrefix.length, sealedRefPrefix.length + 8);
+        connectionId = safeId.parse(`${providerId.slice(0, 50)}-${short}`);
+        const webhooks = supportsWebhooks(entry.provider);
+        const pollIntervalMs = webhooks ? null : (entry.provider.pollIntervalMs ?? defaultPollIntervalMs);
+        const connection: StoredConnection = {
+          id: connectionId,
+          providerId,
+          ref: sealedRef,
+          createdAt: now.toISOString(),
+          cursor: null,
+          pollIntervalMs,
+          lastSyncAt: null,
+          lastError: null,
+          lastAttemptAt: null,
+          consecutiveFailures: 0,
+        };
+        refs.set(index, { userId: who.userId, connectionId });
+        let written = false;
+        try {
+          store.add(who.userId, connection, () => putCredential(db, who.userId, seal(connectionId)));
+          written = true;
+          const fresh = activity(who.userId, connectionId);
+          fresh.fallback = webhooks;
+          fresh.lastActivityAt = now.getTime();
+          if (pollIntervalMs) startTimer(who.userId, connectionId, pollIntervalMs);
+        } catch (error) {
+          refs.delete(index);
+          if (written) {
+            try {
+              store.remove(who.userId, connectionId);
+            } catch {
+              // The original error is the one to report.
+            }
+          }
+          throw error;
+        }
+      }
+      // A first pull, so the person returns to an account page that already shows their bank. A
+      // failure is not an error of the consent: it is recorded on the connection and retried.
+      await syncConnection(who.userId, connectionId).catch(() => {});
+      const stored = store.find(who.userId, connectionId);
+      if (!stored) throw new ApiError(404, 'Bank connection not found');
+      return {
+        status: existing ? ('renewed' as const) : ('connected' as const),
+        providerId,
+        displayName: entry.provider.displayName,
+        connection: view(who.userId, stored),
+      };
+    },
+
+    /** A person's consents in progress: which bank, since when and until when. Never the state. */
+    async pendingConsents(userId: string) {
+      await ready;
+      await readLedger(userId);
+      return listConsents(db, userId, clock().toISOString());
+    },
+
+    /** Remove consents nobody finished in time. Returns how many. */
+    housekeeping() {
+      return deleteExpiredConsents(db, clock().toISOString());
     },
 
     /**
@@ -687,6 +1020,9 @@ export function createBankSync(options: BankSyncOptions) {
       const holder = refs.get(index);
       if (holder && !store.find(holder.userId, holder.connectionId)) forget(holder.userId, holder.connectionId);
       if (refs.has(index)) throw new ApiError(409, 'This bank connection reference is already linked');
+      // The same reference may already be linked through a consent, where it is stored as a fingerprint.
+      if (vault && refs.has(refKey(request.providerId, vault.fingerprint(request.ref))))
+        throw new ApiError(409, 'This bank connection reference is already linked');
       const connection: StoredConnection = {
         id,
         providerId: request.providerId,
@@ -756,6 +1092,9 @@ export function createBankSync(options: BankSyncOptions) {
       }
       for (const target of mine()) forget(userId, target.connectionId);
       for (const id of [...activities.keys()]) if (id.startsWith(`${userId}/`)) activities.delete(id);
+      // Sealed credentials and consents in progress go too, whether or not a connection row was left.
+      deleteCredentialsOfUser(db, userId);
+      deleteConsentsOfUser(db, userId);
       return removed;
     },
 

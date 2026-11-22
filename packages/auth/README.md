@@ -7,11 +7,11 @@ account's authority. This package holds the logic; `apps/server` holds the HTTP 
 | --- | --- |
 | `passwords.ts` | scrypt hashing (`node:crypto`), a random salt per password, constant-time verification |
 | `secrets.ts` | random secrets, their SHA-256 hashes, the CSRF token of a session, the PKCE check |
-| `accounts.ts` | sign-up, sign-in, browser sessions, account deletion, and the rules that slow guessing |
+| `accounts.ts` | sign-up, sign-in, browser sessions, changing the password, account deletion, and the rules that slow guessing |
 | `throttle.ts` | the counters behind those rules: budgets per window and waits that double |
 | `oauth.ts` | the OAuth 2.1 authorization server for MCP clients |
 
-SQL lives in `packages/db/auth.ts`; the tables are migration 2 in `packages/db/schema.ts`. Nothing
+SQL lives in `packages/db/auth.ts`; the tables are migration 2 in `packages/db/schema.ts`. Which tables hold something about a person is one list, `packages/db/person-data.ts`, that the export and the deletion both read. Nothing
 here imports `node:http`: functions take plain values (an email, a cookie value, form fields) and
 return plain values, so they are tested without a server (`tests/auth.test.ts`).
 
@@ -31,14 +31,17 @@ return plain values, so they are tested without a server (`tests/auth.test.ts`).
   Form posts whose `Origin` is another site are refused as well.
 - **Throttling**: guessing is slowed for whoever guesses, and no account is ever locked from
   outside. The rules are under [Throttling](#throttling) below.
+- **Changing the password**: `/account`, with the current password. A wrong current password is counted for the session that sends it, on a counter of its own. On success every other session of the account ends, and so does every OAuth grant with its access and refresh tokens: each assistant has to be connected again. The browser that made the change stays signed in. There is still no reset for a forgotten password.
+- **Export**: `/account` offers one JSON download (`GET /api/users/<own id>/export` gives the same) with every row stored about the person, table by table. Columns that hold hashes of secrets (password, session, tokens, codes, consent states) and sealed bank credentials are left out and named in the file. `tests/db.test.ts` fails when a table is added without being listed as person-owned or as holding nothing about a person, and when a table with a `user_id`, `account_id` or `grant_id` column is not exported and deleted.
 - **Deletion**: `/account` deletes the account after the password is confirmed. The password check
   is counted for the session that sends it and has nothing to do with the sign-in counters, so
   nobody else can stand between a person and deleting their account. First the person's bank
   connections are taken out of the running sync engine (timers, retries and queued notifications
   go, and the bank reference is free again at once) and their event streams are closed; then one
   transaction removes the account, its sessions, grants, codes and tokens, and every row of its
-  person: profile documents, inputs, ledger, accounts, movements, events, bank connections, queued
-  bank notifications, habit goals and check-ins.
+  person: profile documents, inputs, ledger, accounts, movements, events, bank connections with
+  their sealed credentials, bank consents in progress, statements imported or waiting to be
+  confirmed, queued bank notifications, habit goals and check-ins.
 - **Event streams** (`/api/users/<id>/bank/events/stream`) are authorised when they open. A person
   may have five open; they are closed when the person signs out, when a grant of theirs is revoked
   and when the account is deleted. A client that is still allowed connects again.
@@ -54,6 +57,7 @@ can lift. The design therefore never refuses a person because of what somebody e
 | Wrong passwords from one address across all accounts | 20 free | The same doubling wait, for that address. |
 | Wrong passwords for one account from all addresses | 100 an hour | The account turns *careful*: every address gets one wrong try and then the 15-minute wait. A right password from an address that is not waiting still signs in. |
 | Wrong passwords on the delete-account form | 5 free per session | The same doubling wait, for that session only. |
+| Wrong current passwords on the change-password form | 5 free per session | The same doubling wait, for that session only, on a counter apart from the delete form's. |
 | Sign-ups from one address | 10 per 15 minutes | Refused until the window ends. |
 | Sign-ups from everybody | 300 an hour | Refused until the window ends. |
 | OAuth client registrations | 60 an hour per address, 600 an hour in all | `429` with `Retry-After`. |
@@ -110,7 +114,9 @@ guidance for authenticated MCP servers (<https://developers.openai.com/apps-sdk/
 | `POST /oauth/revoke` | RFC 7009 revocation |
 
 1. A client calls a personal tool without a token. `/mcp` answers `401` with
-   `WWW-Authenticate: Bearer resource_metadata="…", scope="person:read person:write"`. The body is
+   `WWW-Authenticate: Bearer resource_metadata="…", scope="person:read person:write"`. (`bank:manage`
+   is asked for only when a tool that needs it is refused: a `403` with `error="insufficient_scope"`
+   and a `scope` that adds it to what the connection has.) The body is
    the tool error with the same challenge in `_meta["mcp/www_authenticate"]`, the form ChatGPT
    documents; each tool also declares `securitySchemes` (`noauth`, `oauth2`, or both).
 2. The client reads the two metadata documents and registers itself. Redirect URIs must be `https`,
@@ -138,8 +144,14 @@ guidance for authenticated MCP servers (<https://developers.openai.com/apps-sdk/
    resource. A token that is not valid gets `401`, also on a public tool: it is never treated as
    anonymous.
 
-Scopes: `person:read` (household, finances, bank summaries, habits) and `person:write` (save
-answers). A request without `scope` gets `person:read` only.
+Scopes: `person:read` (household, finances, bank summaries, habits), `person:write` (save
+answers) and `bank:manage` (start connecting a bank, disconnect one, fetch movements, import a
+statement after its summary, delete an imported statement). A request without `scope` gets
+`person:read` only. The consent page states each scope in plain words, and for `bank:manage` adds
+what it does not allow: a bank is connected only after the person approves on the bank's own page,
+an assistant receives totals and states and never individual movements, and nothing moves money.
+On `/api` a token reads only with `person:read`, saves answers and habits only with `person:write`
+and changes bank data only with `bank:manage`.
 
 Housekeeping runs from the server every ten minutes, whether or not anybody signs in: expired
 sessions, expired codes and tokens, grants nothing can use any more (revoked, or with every code
@@ -166,12 +178,13 @@ and token expired) and clients that have no grant and were not used for 30 days.
   limiter is in memory: correct for the single process ReloCat runs as.
 - **A CAPTCHA, a breached-password check and sign-in notifications.** See what
   [Throttling](#throttling) leaves open.
-- **A person-facing export** of stored data; `/account` shows it and can delete it.
-- **Consent for real bank connections.** A person's own credential cannot create bank connections
-  or start a feed through `/api`; that stays with the operator's token.
-- **An honest storage flag.** The input and profile contracts (`packages/contracts/inputs.ts`,
-  `packages/profiles/store.ts`) still require `synthetic: true` on every stored record. Records of
-  an account's person are therefore stored with that literal, and the truth is stated at the
-  boundary instead: a person owned by an account is reported with `synthetic: false` by the tools
-  and by `/api/users/<id>/context`. The contracts should accept `false` and the stores should
-  write it.
+- **A consent flow tested against a real bank.** A person connects a bank themselves, and the
+  consent, its expiry and the sealed credential are implemented and tested against the fictional
+  Banc Demo only (`apps/profile-api/BANK_API.md`). No real bank is integrated.
+- **Re-authentication for sensitive changes other than the password and deletion.** Connecting or
+  disconnecting a bank, importing a statement and downloading the export need the session and its
+  CSRF token, not the password again.
+
+A new account's three profile documents are written with `synthetic: false`: a person who signs up
+is real. The trigger `accounts_own_real_people` (migration 3) stays behind that as a backstop and
+corrects the flag for any account row, whatever wrote the documents.

@@ -12,7 +12,8 @@ import type { Transaction } from '../finance/cashflow.ts';
  * writes to the ledger: it only answers "which accounts?" and "which movements since X?".
  *
  * To add a bank, copy `providers/_template.ts`, implement `listAccounts` and `fetchTransactions`
- * (plus `verifyWebhook` and `parseWebhook` when the bank can call us) and declare its variables in `env`.
+ * (plus `verifyWebhook` and `parseWebhook` when the bank can call us, and `consent` when a person
+ * authorises access at the bank) and declare its variables in `env`.
  */
 
 /** Ledger categories a provider must map the bank's own categories onto. */
@@ -34,8 +35,10 @@ export type BankConnection = {
   id: string;
   userId: string;
   /**
-   * Opaque identifier the bank (or its consent flow) issued for this link, such as a requisition or
-   * item ID. It is stored as plain JSON: it must not be a password, access token or other secret.
+   * What the bank issued for this link. For a connection an operator created, an opaque non-secret
+   * identifier (a requisition or item ID) that is stored as it is. For a connection made through
+   * `consent`, whatever `completeConsent` returned as `ref`: the engine keeps it encrypted at rest
+   * and hands it to the provider decrypted, so it may be a credential.
    */
   ref: string;
   /** The `nextCursor` returned by the previous successful `fetchTransactions`, or null. */
@@ -138,6 +141,52 @@ export type WebhookContext = Pick<ProviderContext, 'env'> & {
   now: Date;
 };
 
+/** What `beginConsent` receives. */
+export type ConsentRequest = {
+  /**
+   * Where the bank must send the person back: ReloCat's `/bank/consent/callback`. Register exactly
+   * this URL at the bank when it asks for redirect URIs.
+   */
+  returnUrl: string;
+  /**
+   * An unguessable single-use value. Pass it to the bank as its `state` parameter; the bank must
+   * return it unchanged on the callback. The engine stores only its hash, bound to the person and
+   * to the browser session that started the consent.
+   */
+  state: string;
+};
+
+/**
+ * Optional capability: the person authorises access at the bank itself (an OAuth-style redirect,
+ * where the bank also performs its strong customer authentication). ReloCat never sees how the
+ * person signs in there.
+ *
+ *   1. `beginConsent` asks the bank for the page the person must visit and returns its URL.
+ *   2. The person approves or refuses at the bank, which sends them to `returnUrl` with `state` and
+ *      whatever the bank adds (typically a one-time `code`, or `error=access_denied`).
+ *   3. `completeConsent` exchanges those parameters for the link's reference, server to server.
+ *
+ * A provider without this capability can only be connected by an operator (`POST
+ * /users/:id/bank/connections` with the admin token), except a `synthetic` provider, which a
+ * person may connect directly because there is no bank to ask.
+ */
+export type ProviderConsent = {
+  beginConsent(
+    request: ConsentRequest,
+    context: Pick<ProviderContext, 'env' | 'now'>,
+  ): Promise<{ redirectUrl: string }>;
+  /**
+   * `params` are the query parameters of the callback, except `state`, which the engine has already
+   * checked and consumed. Throw (an `ApiError` with a message safe to show) when the bank refuses.
+   * `ref` is stored encrypted and passed back as `connection.ref`; `expiresAt` (ISO 8601) is when
+   * the bank's consent ends, after which the engine stops syncing until the person consents again.
+   */
+  completeConsent(
+    params: Readonly<Record<string, string>>,
+    context: Pick<ProviderContext, 'env' | 'now'>,
+  ): Promise<{ ref: string; expiresAt?: string | null }>;
+};
+
 export interface BankProvider {
   /** Lowercase slug, unique in the registry. It is the `:providerId` of the webhook route. */
   id: string;
@@ -181,6 +230,9 @@ export interface BankProvider {
    * the bank's API returns, never what the webhook body claims. Return null to ignore the call.
    */
   parseWebhook?(rawBody: string, context: WebhookContext): WebhookSignal | null;
+
+  /** Optional. How a person authorises access at the bank; see `ProviderConsent`. */
+  consent?: ProviderConsent;
 }
 
 /** Prefix every variable of a provider must carry: `my-bank` reads `BANK_MY_BANK_*`. */
@@ -204,12 +256,22 @@ export function defineBankProvider<const P extends BankProvider>(provider: P): P
   }
   if (Boolean(provider.verifyWebhook) !== Boolean(provider.parseWebhook))
     throw new Error(`Bank provider ${provider.id}: implement both verifyWebhook and parseWebhook, or neither`);
+  if (
+    provider.consent !== undefined &&
+    (typeof provider.consent.beginConsent !== 'function' || typeof provider.consent.completeConsent !== 'function')
+  )
+    throw new Error(`Bank provider ${provider.id}: consent needs both beginConsent and completeConsent`);
   if (provider.pollIntervalMs !== undefined) pollIntervalSchema.parse(provider.pollIntervalMs);
   return provider;
 }
 
 /** Polling cadence accepted for a connection: one second to one day. */
 export const pollIntervalSchema = z.number().int().min(1000).max(86_400_000);
+
+/** True when a person authorises this provider at the bank (`consent` is implemented). */
+export function supportsConsent(provider: BankProvider) {
+  return Boolean(provider.consent);
+}
 
 /** True when the provider implements the webhook pair. */
 export function supportsWebhooks(provider: BankProvider) {

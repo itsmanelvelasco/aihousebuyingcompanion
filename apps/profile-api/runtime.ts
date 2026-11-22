@@ -26,7 +26,24 @@ export function seedEmptyLedger(bank: BankStore) {
   return async (userId: string, provider: BankProvider) => {
     if (provider.id !== synthetic.id) return;
     const ledger = await bank.head(userId);
-    if (!ledger.accounts.length) await bank.seedDemo(userId);
+    if (ledger.accounts.length) return;
+    try {
+      await bank.seedDemo(userId);
+    } catch (error) {
+      // A person who signed up has no profile snapshot to script three months from. The feed still
+      // needs an account to put its fabricated movements in, so it gets an empty fictional one.
+      if (!(error instanceof z.ZodError)) throw error;
+      const opened = new Date();
+      opened.setUTCDate(1);
+      await bank.createAccount(userId, {
+        id: 'synthetic-feed',
+        name: 'Fictional demo account',
+        currency: 'EUR',
+        openingBalanceCents: 0,
+        openingDate: opened.toISOString().slice(0, 10),
+        synthetic: true,
+      });
+    }
   };
 }
 

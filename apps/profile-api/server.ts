@@ -6,9 +6,12 @@ import type { BankRegistry } from '../../packages/banks/registry.ts';
 import { loadBankRegistry } from '../../packages/banks/registry.ts';
 import type { BankSyncOptions, LedgerEvent } from '../../packages/banks/sync.ts';
 import { createBankSync } from '../../packages/banks/sync.ts';
+import type { Vault } from '../../packages/banks/vault.ts';
 import { safeId } from '../../packages/contracts/ids.ts';
+import { accountIdOfUser } from '../../packages/db/auth.ts';
 import type { Database } from '../../packages/db/database.ts';
 import { DatabaseBusyError } from '../../packages/db/database.ts';
+import { exportPersonRows } from '../../packages/db/person-data.ts';
 import { scenarioSchema, simulateSavings } from '../../packages/finance/cashflow.ts';
 import type { ApiAuthorizer } from '../../packages/http/server.ts';
 import {
@@ -25,6 +28,7 @@ import { createStore, profileSchema, sections } from '../../packages/profiles/st
 import { createBankStore, dateSchema } from './bank.ts';
 import { createInputStore } from './inputs.ts';
 import { createBankRuntime, seedEmptyLedger } from './runtime.ts';
+import { createStatementImports, maxStatementBytes } from './statements.ts';
 
 const body = (req: Parameters<typeof readJson>[0]) => readJson(req, 262_144, 'Body exceeds 256 KiB');
 
@@ -38,7 +42,15 @@ const bankRoutes = [
   'events',
   'connections',
   'sync',
+  'banks',
+  'consents',
+  'imports',
 ];
+/** What a person may send to connect a bank: which bank, and nothing else. The reference is never theirs to give. */
+const selfConnectBody = z.object({ providerId: safeId }).strict();
+const previewBody = z.object({ csv: z.string().min(1).max(maxStatementBytes) }).strict();
+const confirmBody = z.object({ previewHash: z.string().min(1).max(100) }).strict();
+const categoryBody = z.object({ category: z.string().max(40) }).strict();
 const emptyBody = z.object({}).strict();
 const syncBody = z.object({ connectionId: safeId.optional() }).strict();
 const cursorSchema = z.coerce.number().int().nonnegative().safe();
@@ -62,10 +74,27 @@ export type ProfileApiOptions = {
   authorize?: ApiAuthorizer;
   /** True when a person record belongs to an account, so its context is not labelled fictional. */
   ownedByAccount?: (userId: string) => boolean;
+  /** Seals bank credentials at rest. Without it nobody can connect a bank through a consent at the bank. */
+  vault?: Vault;
 };
 
-/** Routes a person may write with their own credential. Ledger, feed and profile documents stay admin-only. */
-const personWritable = (parts: string[]) => parts[2] === 'inputs';
+/**
+ * Routes a person may write with their own credential, and what each needs: `true` is a write of
+ * answers (`person:write`), `'bank'` a change to their own bank data (`bank:manage`). Everything
+ * else stays with the operator: raw ledger imports, accounts, the demo feed and profile documents.
+ */
+function personWritable(parts: string[], method: string): boolean | 'bank' {
+  if (parts[2] === 'inputs') return true;
+  if (parts[2] !== 'bank') return false;
+  const [route, length] = [parts[3], parts.length];
+  if (route === 'connections')
+    return (method === 'POST' && length === 4) || (method === 'DELETE' && length === 5) ? 'bank' : false;
+  if (route === 'sync') return method === 'POST' && length === 4 ? 'bank' : false;
+  if (route === 'imports')
+    return (method === 'POST' && length <= 5) || (method === 'DELETE' && length === 5) ? 'bank' : false;
+  if (route === 'transactions') return (method === 'PATCH' || method === 'DELETE') && length === 5 ? 'bank' : false;
+  return false;
+}
 
 /**
  * The profile, inputs and bank routes as a request handler, so one server can mount them under a
@@ -84,8 +113,10 @@ export function createProfileApiHandler(db: Database, token: string, options: Pr
     db,
     clock: options.clock,
     beforeSync: seedEmptyLedger(bank),
+    vault: options.vault,
     ...options.bankSync,
   });
+  const statements = createStatementImports(db, bank, options.clock);
   const clock = options.clock ?? (() => new Date());
   const runtime = createBankRuntime(bank, options.clock, sync);
   const heartbeatMs = options.heartbeatMs ?? 15_000;
@@ -227,10 +258,54 @@ export function createProfileApiHandler(db: Database, token: string, options: Pr
   }
 
   /**
+   * A person connects a bank themselves. They say which bank and nothing else: a bank that needs a
+   * consent is continued in the browser, on the account page, where the redirect to the bank
+   * starts from the person's own signed-in session; a synthetic feed is connected at once.
+   */
+  async function connectAsPerson(id: string, providerId: string) {
+    const bankChoice = (await sync.banks()).find(candidate => candidate.id === providerId);
+    if (!bankChoice) throw new ApiError(404, 'This bank cannot be connected here');
+    if (bankChoice.connect === 'consent_at_bank')
+      return {
+        status: 'consent_required' as const,
+        providerId: bankChoice.id,
+        displayName: bankChoice.displayName,
+        synthetic: bankChoice.synthetic,
+        /** Where the person continues, signed in, in their own browser. */
+        continuePath: '/account',
+        message: `Access is authorised at ${bankChoice.displayName} itself. Open your ReloCat account page, signed in, and choose Connect next to this bank: you are sent to the bank to approve, and back.`,
+      };
+    return { status: 'connected' as const, connection: await sync.connectSelf(id, providerId) };
+  }
+
+  /** Everything stored about a person, table by table; `apps/server` offers it as a download. */
+  function exportPerson(id: string) {
+    safeId.parse(id);
+    return exportPersonRows(db, { userId: id, accountId: accountIdOfUser(db, id) ?? '' }, clock());
+  }
+
+  /**
    * In-process reads and the one write the rest of the server needs for a person. Each takes the
    * user id explicitly; `apps/server/people.ts` binds them to one id before any tool sees them.
    */
   const people = {
+    /** Accounts with today's booked balance. Aggregates only: no movement is returned. */
+    async bankAccounts(id: string) {
+      const asOf = clock().toISOString().slice(0, 10);
+      const ledger = await bank.balances(id, asOf);
+      return { synthetic: ledger.synthetic, updatedAt: ledger.updatedAt || null, accounts: ledger.accounts };
+    },
+    connectableBanks: () => sync.banks(),
+    async bankConnections(id: string) {
+      return { connections: await sync.listConnections(id), pendingConsents: await sync.pendingConsents(id) };
+    },
+    connectBank: connectAsPerson,
+    disconnectBank: (id: string, connectionId: string) => sync.disconnect(id, connectionId),
+    syncBank: (id: string, connectionId?: string) => sync.sync(id, connectionId),
+    previewStatement: (id: string, csv: string) => statements.preview(id, csv),
+    confirmStatement: (id: string, previewHash: string) => statements.confirm(id, previewHash),
+    statementImports: (id: string) => statements.list(id),
+    deleteStatementImport: (id: string, importId: string) => statements.remove(id, importId),
     /** The resolved context. A person who belongs to an account is not labelled fictional. */
     async context(id: string) {
       const context = await inputs.context(id);
@@ -256,6 +331,8 @@ export function createProfileApiHandler(db: Database, token: string, options: Pr
       if (parts[0] === 'webhooks') return await webhook(req, res, parts);
       const access = apiAccess(req, token, options.authorize);
       requireOwnRoute(access, req, parts, personWritable);
+      /** A person acting on their own record, as opposed to the operator. */
+      const asPerson = access !== 'admin';
       const query = new URLSearchParams((req.url ?? '').split('?')[1] ?? '');
       if (parts[0] === 'bank' && parts[1] === 'providers' && parts.length === 2) {
         if (req.method !== 'GET') throw new ApiError(405, 'Method not allowed');
@@ -272,6 +349,12 @@ export function createProfileApiHandler(db: Database, token: string, options: Pr
         }
       } else {
         const id = safeId.parse(parts[1]);
+        if (parts[2] === 'export' && parts.length === 3) {
+          if (req.method !== 'GET') throw new ApiError(405, 'Method not allowed');
+          await bank.head(id);
+          res.setHeader('Content-Disposition', 'attachment; filename="relocat-export.json"');
+          return reply(res, 200, exportPerson(id));
+        }
         if (parts[2] === 'context' && parts.length === 3) {
           if (req.method !== 'GET') throw new ApiError(405, 'Method not allowed');
           return reply(res, 200, await people.context(id));
@@ -298,10 +381,33 @@ export function createProfileApiHandler(db: Database, token: string, options: Pr
           if (route === 'connections') {
             if (parts.length === 4 && req.method === 'GET')
               return reply(res, 200, { connections: await sync.listConnections(id) });
-            if (parts.length === 4 && req.method === 'POST')
-              return reply(res, 201, await sync.connect(id, await body(req)));
+            if (parts.length === 4 && req.method === 'POST') {
+              if (!asPerson) return reply(res, 201, await sync.connect(id, await body(req)));
+              const sent = await body(req);
+              // Only the operator names a bank reference: a person who could would attach somebody else's.
+              if (sent && typeof sent === 'object' && ('ref' in sent || 'id' in sent || 'pollIntervalMs' in sent))
+                throw new ApiError(403, 'Forbidden');
+              const outcome = await connectAsPerson(id, selfConnectBody.parse(sent).providerId);
+              return reply(res, outcome.status === 'connected' ? 201 : 202, outcome);
+            }
             if (parts.length === 5 && req.method === 'DELETE')
               return reply(res, 200, await sync.disconnect(id, itemId!));
+          }
+          if (route === 'banks' && parts.length === 4 && req.method === 'GET')
+            return reply(res, 200, { banks: await sync.banks() });
+          if (route === 'consents' && parts.length === 4 && req.method === 'GET')
+            return reply(res, 200, { consents: await sync.pendingConsents(id) });
+          if (route === 'imports') {
+            if (parts.length === 4 && req.method === 'GET')
+              return reply(res, 200, { imports: await statements.list(id) });
+            if (parts.length === 5 && itemId === 'preview' && req.method === 'POST') {
+              const sent = await readJson(req, maxStatementBytes * 2, 'The statement is too large');
+              return reply(res, 200, await statements.preview(id, previewBody.parse(sent).csv));
+            }
+            if (parts.length === 4 && req.method === 'POST')
+              return reply(res, 201, await statements.confirm(id, confirmBody.parse(await body(req)).previewHash));
+            if (parts.length === 5 && req.method === 'DELETE')
+              return reply(res, 200, await statements.remove(id, itemId!));
           }
           if (route === 'sync' && parts.length === 4 && req.method === 'POST') {
             const { connectionId } = syncBody.parse(await body(req));
@@ -355,8 +461,17 @@ export function createProfileApiHandler(db: Database, token: string, options: Pr
               return reply(res, 200, (await bank.importTransactions(id, await body(req))).result);
             if (parts.length === 5 && req.method === 'PUT')
               return reply(res, 200, (await bank.updateTransaction(id, itemId!, await body(req))).result);
-            if (parts.length === 5 && req.method === 'DELETE')
-              return reply(res, 200, (await bank.deleteTransaction(id, itemId!)).result);
+            if (parts.length === 5 && req.method === 'PATCH') {
+              const { category } = categoryBody.parse(await body(req));
+              return reply(res, 200, (await bank.setCategory(id, itemId!, category)).result);
+            }
+            if (parts.length === 5 && req.method === 'DELETE') {
+              // A person deletes only what they imported themselves; the operator may delete any movement.
+              const removed = asPerson
+                ? await bank.deleteManual(id, itemId!)
+                : await bank.deleteTransaction(id, itemId!);
+              return reply(res, 200, removed.result);
+            }
             if (parts.length === 4 && req.method === 'GET') {
               const { accounts } = await bank.head(id);
               const from = query.has('from') ? dateSchema.parse(query.get('from')) : undefined;
@@ -433,7 +548,14 @@ export function createProfileApiHandler(db: Database, token: string, options: Pr
     bankRuntime: { ...runtime, close },
     bank,
     people,
+    statements,
+    exportPerson,
     bankSync: sync,
+    /** Remove what expired: consents nobody finished and statements nobody confirmed. */
+    housekeeping() {
+      sync.housekeeping();
+      statements.housekeeping();
+    },
     /** In-process subscription to every persisted ledger revision: `bankEvents.onEvent(listener)`. */
     bankEvents: { onEvent: sync.onEvent },
     closeStreams,

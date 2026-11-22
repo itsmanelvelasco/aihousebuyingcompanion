@@ -22,6 +22,7 @@ import {
   tokenByHash,
   touchClient,
 } from '../db/auth.ts';
+import { liveGrantIds } from '../db/bank-person.ts';
 import type { Database } from '../db/database.ts';
 import { hashSecret, newSecret, safeEqual, verifyPkce } from './secrets.ts';
 import { createThrottle } from './throttle.ts';
@@ -39,10 +40,18 @@ import { createThrottle } from './throttle.ts';
 export const scopes = {
   'person:read': 'Read your household, finances, bank summary and habits',
   'person:write': 'Save answers and details to your profile',
+  'bank:manage':
+    'Manage your bank data for you: start connecting a bank (you still approve at the bank yourself), disconnect one, fetch new movements, import a bank statement after giving you its summary, and delete a statement you imported. It gets totals and states, never your individual movements, and it cannot move money',
 } as const;
 export type Scope = keyof typeof scopes;
 export const allScopes = Object.keys(scopes) as Scope[];
 const defaultScopes: Scope[] = ['person:read'];
+/**
+ * What a sign-in challenge asks for when nothing more specific is known: reading and saving
+ * answers. `bank:manage` is named only when a tool that needs it was refused, so a client asks a
+ * person for it at the moment they want something done with their bank data, not at first contact.
+ */
+const challengeScopes: Scope[] = ['person:read', 'person:write'];
 
 /** An OAuth error as the token, registration and revocation endpoints return it. */
 export class OAuthError extends Error {
@@ -252,7 +261,10 @@ export function createOAuth(db: Database, options: OAuthOptions) {
     },
 
     /** The `WWW-Authenticate` value of a 401 from the MCP endpoint. Never contains a token. */
-    challenge(error?: { code: 'invalid_token' | 'insufficient_scope'; description: string }, scope = allScopes) {
+    challenge(
+      error?: { code: 'invalid_token' | 'insufficient_scope'; description: string },
+      scope: readonly Scope[] = challengeScopes,
+    ) {
       const parts = [
         `resource_metadata="${issuer()}/.well-known/oauth-protected-resource"`,
         `scope="${scope.join(' ')}"`,
@@ -535,6 +547,18 @@ export function createOAuth(db: Database, options: OAuthOptions) {
       if (!grant || grant.accountId !== accountId) return false;
       endGrant(grant, now().toISOString());
       return true;
+    },
+
+    /**
+     * End every grant of an account: all access and refresh tokens and pending codes. Used when the
+     * password changes, so nothing issued before it keeps working. Returns how many grants ended.
+     */
+    disconnectAll(accountId: string) {
+      const stamp = now().toISOString();
+      const ids = liveGrantIds(db, accountId);
+      for (const id of ids) revokeGrant(db, id, stamp);
+      if (ids.length) options.onRevoke?.(accountId);
+      return ids.length;
     },
 
     /**

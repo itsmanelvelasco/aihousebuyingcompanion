@@ -17,6 +17,8 @@ import { countSeenWebhooks, listConnections, pendingWebhooks } from '../packages
 import type { Database } from '../packages/db/database.ts';
 import { open } from '../packages/db/database.ts';
 import { createStore } from '../packages/profiles/store.ts';
+import type { Browser } from './support/app.ts';
+import { startApp } from './support/app.ts';
 
 /**
  * Banc Demo and ReloCat's profile API in one process, on ephemeral loopback ports, talking real
@@ -889,4 +891,281 @@ test('the bank has its own tick variable and still honours the old shared one', 
   assert.equal(demoBankConfig({}).intervalMs, 5000);
   assert.equal(demoBankConfig({ DEMO_BANK_INTERVAL_MS: '2000' }).intervalMs, 2000);
   assert.equal(demoBankConfig({ DEMO_BANK_INTERVAL_MS: '2000', DEMO_BANK_TICK_MS: '750' }).intervalMs, 750);
+});
+
+// ------------------------------------------------------------------ consent at the bank
+
+/**
+ * The whole server (accounts, account page, `/api`, the sync engine) next to a real Banc Demo, over
+ * HTTP: what a person does to connect the fictional bank themselves.
+ */
+async function consentWorld() {
+  const signingSecret = 'consent-world-signing-secret';
+  const bank = createDemoBank({ apiKey, adminKey, seed: 'consent-seed', startDate: '2026-10-01', signingSecret });
+  await bank.ready;
+  const bankServer = createServer((request, response) => void bank.handle(request, response));
+  const bankUrl = await listen(bankServer);
+  const server = await startApp({
+    profileApi: {
+      bankRegistry: createBankRegistry([demoBankProvider], {
+        BANK_DEMO_BANK_BASE_URL: bankUrl,
+        BANK_DEMO_BANK_API_KEY: apiKey,
+        BANK_DEMO_BANK_WEBHOOK_SECRET: signingSecret,
+      }),
+      bankSync: { housekeepingMs: null },
+    },
+  });
+  const subscribed = await call(`${bankUrl}/webhooks`, apiKey, 'POST', {
+    url: `${server.origin}/api/webhooks/bank/demo-bank`,
+  });
+  assert.equal(subscribed.status, 201);
+  const admin = 'admin-test-token';
+  return {
+    bank,
+    bankUrl,
+    server,
+    /** Press Connect on the account page and return the bank's consent page address. */
+    async begin(browser: Browser) {
+      const csrf = await browser.csrf('/account');
+      const leave = await browser.request('/account/bank/connect', { form: { csrf, provider: 'demo-bank' } });
+      assert.equal(leave.status, 200);
+      const html = await leave.text();
+      assert.match(html, /You are leaving ReloCat/);
+      assert.match(html, /fictional bank/);
+      assert.doesNotMatch(html, /<script/i);
+      const link = /href="(http:\/\/127\.0\.0\.1:\d+\/consent\/consent-[0-9a-f]{32})"/.exec(html);
+      assert(link, 'the page links to the bank');
+      assert(link[1].startsWith(bankUrl));
+      return link[1];
+    },
+    /** Decide on the bank's page, as the customer; returns where the bank sends the browser. */
+    async decide(consentUrl: string, decision: 'approve' | 'deny', customer = 'cust-002') {
+      const answer = await fetch(consentUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ decision, customer_id: customer }),
+        redirect: 'manual',
+      });
+      return { status: answer.status, location: answer.headers.get('location') };
+    },
+    path: (location: string | null) => {
+      const url = new URL(location ?? 'http://missing');
+      assert.equal(url.origin, server.origin, 'the bank sends the person back to ReloCat');
+      return url.pathname + url.search;
+    },
+    idOf: (email: string) =>
+      server.db.get<{ user_id: string }>('SELECT user_id FROM accounts WHERE email = ?', email)!.user_id,
+    async movements(userId: string) {
+      const listed = await call(`${server.origin}/api/users/${userId}/bank/transactions?limit=500`, admin);
+      return listed.data as { total: number; synthetic: boolean; transactions: Json[] };
+    },
+    async settle() {
+      await bank.flushDeliveries();
+      await server.app.profiles.bankSync.idle();
+    },
+    async close() {
+      await server.close();
+      await bank.close();
+      await stop(bankServer);
+    },
+  };
+}
+
+test('a person connects Banc Demo by consenting at the bank, and its movements then arrive in their own ledger', async t => {
+  const world = await consentWorld();
+  t.after(() => world.close());
+  const { server, bankUrl } = world;
+  const ada = server.browser();
+  await ada.signUp('ada@example.com');
+  const adaId = world.idOf('ada@example.com');
+
+  // The bank's own page: fictional and labelled so, no script, and it names who is asking.
+  const consentUrl = await world.begin(ada);
+  const page = await fetch(consentUrl);
+  const html = await page.text();
+  assert.equal(page.status, 200);
+  assert.equal(page.headers.get('x-demo-bank'), 'fictional');
+  assert.match(
+    page.headers.get('content-security-policy') ?? '',
+    /default-src 'none'.*form-action 'self' http:\/\/127\.0\.0\.1:\d+/,
+  );
+  assert.match(html, /Fictional bank/);
+  assert.match(html, /Allow ReloCat to read the accounts of a customer\?/);
+  assert.match(html, /has no logins, its customers are invented/);
+  assert.match(html, /Client fictici 002 \(cust-002\)/);
+  assert.doesNotMatch(html, /<script/i);
+  const pending = (await (await ada.request(`/api/users/${adaId}/bank/consents`)).json()) as { consents: Json[] };
+  assert.deepEqual(
+    pending.consents.map(item => Object.keys(item).sort()),
+    [['createdAt', 'expiresAt', 'providerId']],
+    'a pending consent is listed without its state',
+  );
+
+  // Approve as customer 002: the bank sends the browser back with a one-time code and the state.
+  const approved = await world.decide(consentUrl, 'approve');
+  assert.equal(approved.status, 303);
+  const callback = world.path(approved.location);
+  assert.match(callback, /^\/bank\/consent\/callback\?state=[\w-]{43}&code=code-[0-9a-f]{48}$/);
+  // The request cannot be decided twice, and the page is gone.
+  assert.equal((await world.decide(consentUrl, 'approve')).status, 404);
+  assert.equal((await fetch(consentUrl)).status, 404);
+
+  const back = await ada.request(callback);
+  assert.deepEqual([back.status, back.headers.get('location')], [302, '/account?done=bank-connected#bank']);
+  const account = await (await ada.request('/account?done=bank-connected')).text();
+  assert.match(account, /Your bank is connected\./);
+  assert.match(account, /Banc Demo \(fictional bank\)/);
+  assert.match(account, /the bank tells ReloCat when something changes/);
+  assert.match(account, /consent until \d{4}-\d{2}-\d{2}/);
+
+  // The history was pulled into Ada's ledger, labelled synthetic; nobody else got anything.
+  const first = await world.movements(adaId);
+  assert(first.total > 20, `history pulled: ${first.total}`);
+  assert.equal(first.synthetic, true);
+  assert.equal((await world.movements('user-001')).total, 0);
+  // The customer reference is sealed: the connection row holds a fingerprint, and the code is spent.
+  const row = server.db.get<{ ref: string }>('SELECT ref FROM bank_connections WHERE user_id = ?', adaId)!;
+  assert.match(row.ref, /^sealed:[0-9a-f]{64}$/);
+  assert(!JSON.stringify(server.db.all('SELECT * FROM bank_connections')).includes('cust-002'));
+  const code = new URLSearchParams(callback.split('?')[1]).get('code')!;
+  assert.equal((await call(`${bankUrl}/consents/token`, apiKey, 'POST', { code })).status, 400, 'a code works once');
+  assert.equal((await ada.request(callback)).status, 400, 'and so does the state');
+
+  // A new movement at the bank reaches Ada's ledger through the signed webhook.
+  const fired = await call(`${bankUrl}/simulate/transaction`, adminKey, 'POST', {
+    customer_id: 'cust-002',
+    amount: '-23.45',
+    description: 'Forn Exemple consent test',
+    category: 'groceries',
+  });
+  assert.equal(fired.status, 201);
+  await world.settle();
+  const after = await world.movements(adaId);
+  assert.equal(after.total, first.total + 1);
+  assert(after.transactions.some(row => row.description === 'Forn Exemple consent test' && row.amountCents === -2345));
+  // A movement of another customer is nobody's here.
+  await call(`${bankUrl}/simulate/transaction`, adminKey, 'POST', {
+    customer_id: 'cust-003',
+    amount: '-1.00',
+    description: 'Somebody else',
+  });
+  await world.settle();
+  assert.equal((await world.movements(adaId)).total, first.total + 1);
+
+  // Bob cannot attach the same bank customer: one bank login, one person.
+  const bob = server.browser();
+  await bob.signUp('bob@example.com');
+  const bobId = world.idOf('bob@example.com');
+  const taken = await bob.request(world.path((await world.decide(await world.begin(bob), 'approve')).location));
+  assert.equal(taken.status, 409);
+  assert.match(await taken.text(), /already connected to a ReloCat account/);
+  assert.equal((await world.movements(bobId)).total, 0);
+
+  // Denying at the bank connects nothing.
+  const denied = await world.decide(await world.begin(bob), 'deny');
+  assert.match(denied.location ?? '', /error=access_denied/);
+  const refused = await bob.request(world.path(denied.location));
+  assert.deepEqual([refused.status, refused.headers.get('location')], [302, '/account?done=bank-denied#bank']);
+  assert.equal(server.db.get('SELECT 1 FROM bank_connections WHERE user_id = ?', bobId), undefined);
+
+  // A callback that reaches somebody else's browser is refused, and is then useless to its owner too.
+  const stolen = world.path((await world.decide(await world.begin(bob), 'approve', 'cust-003')).location);
+  assert.equal((await ada.request(stolen)).status, 403, 'another signed-in person');
+  const anonymous = await fetch(`${server.origin}${stolen}`, { redirect: 'manual' });
+  assert.deepEqual([anonymous.status, anonymous.headers.get('location')], [302, '/login?next=%2Faccount']);
+  assert.equal((await bob.request(stolen)).status, 400, 'the state was spent by the first presentation');
+  // The same person in a new session (signed in again) cannot finish a consent the old session started.
+  const fresh = world.path((await world.decide(await world.begin(bob), 'approve', 'cust-003')).location);
+  const bobAgain = server.browser();
+  await bobAgain.login('bob@example.com');
+  assert.equal((await bobAgain.request(fresh)).status, 403);
+  assert.equal(server.db.get('SELECT 1 FROM bank_connections WHERE user_id = ?', bobId), undefined);
+
+  // Disconnecting deletes the sealed credential; movements stay, and later webhooks write nothing.
+  const csrf = await ada.csrf('/account');
+  const connectionId = server.db.get<{ id: string }>('SELECT id FROM bank_connections WHERE user_id = ?', adaId)!.id;
+  const gone = await ada.request('/account/bank/disconnect', { form: { csrf, connection: connectionId } });
+  assert.equal(gone.status, 303);
+  assert.equal(server.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM bank_credentials')?.n, 0);
+  await call(`${bankUrl}/simulate/transaction`, adminKey, 'POST', {
+    customer_id: 'cust-002',
+    amount: '-2.00',
+    description: 'After disconnect',
+  });
+  await world.settle();
+  assert.equal((await world.movements(adaId)).total, first.total + 1);
+});
+
+test('the bank’s consent desk: API key, loopback return addresses, expiry and single use', async t => {
+  const time = { now: startedAt };
+  const bank = createDemoBank({
+    apiKey,
+    adminKey,
+    seed: 'desk',
+    startDate: '2026-11-01',
+    clock: () => new Date(time.now),
+  });
+  await bank.ready;
+  const bankServer = createServer((request, response) => void bank.handle(request, response));
+  const bankUrl = await listen(bankServer);
+  t.after(async () => {
+    await bank.close();
+    await stop(bankServer);
+  });
+  const request = { redirect_uri: 'http://127.0.0.1:8787/bank/consent/callback', state: 's'.repeat(43) };
+  const decide = (path: string, fields: Record<string, string>) =>
+    fetch(`${bankUrl}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(fields),
+      redirect: 'manual',
+    });
+
+  // Only the application, with its key, creates a consent request or exchanges a code.
+  assert.equal((await call(`${bankUrl}/consents`, null, 'POST', request)).status, 401);
+  assert.equal((await call(`${bankUrl}/consents`, 'wrong-key', 'POST', request)).status, 401);
+  assert.equal((await call(`${bankUrl}/consents/token`, null, 'POST', { code: 'c'.repeat(20) })).status, 401);
+  // The customer is only ever sent back to this machine, and a short state is refused.
+  for (const bad of [
+    { ...request, redirect_uri: 'https://evil.example/callback' },
+    { ...request, redirect_uri: 'http://user:pass@127.0.0.1/callback' },
+    { ...request, redirect_uri: 'javascript:alert(1)' },
+    { ...request, state: 'short' },
+    { redirect_uri: request.redirect_uri },
+  ])
+    assert.equal((await call(`${bankUrl}/consents`, apiKey, 'POST', bad)).status, 400, JSON.stringify(bad));
+
+  const created = await call(`${bankUrl}/consents`, apiKey, 'POST', request);
+  assert.equal(created.status, 201);
+  assert.match(created.data.consent_path, /^\/consent\/consent-[0-9a-f]{32}$/);
+  assert.equal(created.data.synthetic, true);
+  // The page needs no key, only the unguessable id; other ids are unknown.
+  assert.equal((await fetch(`${bankUrl}${created.data.consent_path}`)).status, 200);
+  assert.equal((await fetch(`${bankUrl}/consent/consent-${'0'.repeat(32)}`)).status, 404);
+  assert.equal((await fetch(`${bankUrl}/consent/not-an-id`)).status, 400);
+  // A customer the bank does not have is refused, and the request stays open for a real choice.
+  assert.equal((await decide(created.data.consent_path, { decision: 'approve', customer_id: 'cust-999' })).status, 400);
+  assert.equal((await decide(created.data.consent_path, { decision: 'maybe' })).status, 400);
+  const approved = await decide(created.data.consent_path, { decision: 'approve', customer_id: 'cust-001' });
+  const location = new URL(approved.headers.get('location')!);
+  assert.equal(location.searchParams.get('state'), request.state);
+  const code = location.searchParams.get('code')!;
+  const granted = await call(`${bankUrl}/consents/token`, apiKey, 'POST', { code });
+  assert.equal(granted.status, 200);
+  assert.deepEqual(
+    [granted.data.customer_id, granted.data.expires_at, granted.data.synthetic],
+    ['cust-001', new Date(startedAt + 90 * 86_400_000).toISOString(), true],
+  );
+  assert.equal((await call(`${bankUrl}/consents/token`, apiKey, 'POST', { code })).status, 400);
+
+  // A request nobody decides lapses after ten minutes, and a code after two.
+  const slow = await call(`${bankUrl}/consents`, apiKey, 'POST', request);
+  const quick = await call(`${bankUrl}/consents`, apiKey, 'POST', request);
+  const issued = await decide(quick.data.consent_path, { decision: 'approve', customer_id: 'cust-002' });
+  time.now += 2 * 60_000 + 1;
+  const stale = new URL(issued.headers.get('location')!).searchParams.get('code')!;
+  assert.equal((await call(`${bankUrl}/consents/token`, apiKey, 'POST', { code: stale })).status, 400);
+  time.now += 8 * 60_000;
+  assert.equal((await fetch(`${bankUrl}${slow.data.consent_path}`)).status, 404);
+  assert.deepEqual(bank.consents.waiting(), { requests: 0, codes: 0 });
 });

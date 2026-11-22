@@ -73,6 +73,16 @@ test('500 synthetic household profiles agree with their full JSON and CSV export
     }
     assert.equal(b.monthlyNetCashflowCents, b.monthlyIncomeCents - b.monthlyExpensesCents - b.debtPaymentsCents);
     assert.ok(b.balanceCents < b.estimatedUpfrontCashCents);
+    // Every household declares what it has set aside for the purchase: whole euros, part of the
+    // balance (the rest covers rent, bills and a reserve) and so still short of the upfront target.
+    assert.ok(Number.isSafeInteger(p.purchaseSavingsCents) && p.purchaseSavingsCents >= 0);
+    assert.equal(p.purchaseSavingsCents % 100, 0);
+    assert.ok(p.purchaseSavingsCents <= b.balanceCents, `${id}: savings exceed the balance`);
+    assert.ok(
+      p.purchaseSavingsCents >= Math.floor(b.balanceCents * 0.6) - 100,
+      `${id}: savings below 60% of the balance`,
+    );
+    assert.ok(p.purchaseSavingsCents < b.estimatedUpfrontCashCents);
     assert.ok(d.financialBarriers.includes('insufficient_upfront_savings'));
     assert.equal(d.creditHistory.numericScore, null);
     assert.equal(p.incentiveEligibility, 'needs_verification');
@@ -96,6 +106,13 @@ test('500 synthetic household profiles agree with their full JSON and CSV export
   assert.ok(idIndex >= 0);
   assert.deepEqual(new Set(rows.map(row => row[idIndex])), ids);
   for (const row of rows) assert.equal(row.length, header.length);
+  const savingsIndex = header.indexOf('purchaseSavingsCents');
+  const byId = new Map(dataset.users.map((user: { id: string }) => [user.id, user]));
+  for (const row of rows)
+    assert.equal(
+      Number(row[savingsIndex]),
+      (byId.get(row[idIndex]) as { preferences: { purchaseSavingsCents: number } }).preferences.purchaseSavingsCents,
+    );
 });
 
 const official = /^https:\/\/([a-z0-9-]+\.)*(idescat\.cat|gencat\.cat|transparenciacatalunya\.cat|fgc\.cat)\//;

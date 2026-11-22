@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createBankStore } from '../apps/profile-api/bank.ts';
+import { createBankStore, manualAccountId } from '../apps/profile-api/bank.ts';
 import { createProfileApi } from '../apps/profile-api/server.ts';
+import { createStatementImports, maxStatementRows, readStatement } from '../apps/profile-api/statements.ts';
+import { createAccounts } from '../packages/auth/accounts.ts';
+import { defineBankProvider } from '../packages/banks/provider.ts';
+import { createBankRegistry } from '../packages/banks/registry.ts';
+import type { BankEvent } from '../packages/banks/sync.ts';
+import { createBankSync } from '../packages/banks/sync.ts';
 import { open } from '../packages/db/database.ts';
 import { createStore } from '../packages/profiles/store.ts';
 
@@ -273,6 +279,328 @@ test('bank aggregates say all synthetic only when every record is, and never for
       ],
     );
   } finally {
+    db.close();
+  }
+});
+
+// ------------------------------------------------------------ statements a person imports
+
+const header = 'date,description,amount';
+const september = [
+  '2026-09-01,Salary September,2100.00',
+  '2026-09-03,Rent,-800.00',
+  '2026-09-05,Cafe Central,-2.40',
+  '2026-09-05,Cafe Central,-2.40',
+  '2026-09-10,Internal transfer to savings,-300.00',
+  '2026-09-20,Refund Amazon,19.99',
+  '2026-09-21,Free sample,0.00',
+  '2026-09-30,Mercadona,-64.20',
+];
+const october = ['2026-10-01,Salary October,2100.00', '2026-10-03,Rent,-800.00', '2026-10-31,Netflix,-12.99'];
+const statementA = [header, ...september, ...october].join('\n');
+
+/** A person who signed up (real, not fictional), the ledger store and the statement store with a clock. */
+async function importer() {
+  const db = open(':memory:');
+  const account = await createAccounts(db).signUp({
+    email: 'ada@example.com',
+    password: 'correct horse battery',
+    address: 'a',
+  });
+  const clock = { now: Date.parse('2026-11-22T10:00:00Z') };
+  const bank = createBankStore(db);
+  const statements = createStatementImports(db, bank, () => new Date(clock.now));
+  const events: BankEvent[] = [];
+  bank.onEvent(event => events.push(event));
+  return { db, userId: account.userId, clock, bank, statements, events };
+}
+
+test('a statement is summarised first and written only by confirming that summary; repeats and overlaps write each movement once', async () => {
+  const { db, userId, bank, statements, events } = await importer();
+  try {
+    const preview = await statements.preview(userId, statementA);
+    assert.deepEqual(
+      {
+        rows: preview.rowCount,
+        new: preview.newRows,
+        known: preview.alreadyInLedger,
+        zero: preview.skippedZeroAmountRows,
+        from: preview.coveredFrom,
+        to: preview.coveredTo,
+        basis: preview.averageBasis,
+        monthly: preview.monthlyFigures,
+        again: preview.alreadyImported,
+        synthetic: preview.synthetic,
+        account: preview.accountId,
+      },
+      {
+        rows: 10,
+        new: 10,
+        known: 0,
+        zero: 1,
+        from: '2026-09-01',
+        to: '2026-10-31',
+        basis: 'complete_months',
+        monthly: true,
+        again: false,
+        synthetic: false,
+        account: 'manual-import',
+      },
+    );
+    // Rows as they would be stored, per category; the totals leave the transfer between own accounts out.
+    assert.deepEqual(preview.byCategory, {
+      income: { count: 2, cents: 420000 },
+      housing: { count: 2, cents: -160000 },
+      food: { count: 3, cents: -6900 },
+      internal_transfer: { count: 1, cents: -30000 },
+      other: { count: 1, cents: 1999 },
+      subscriptions: { count: 1, cents: -1299 },
+    });
+    assert.deepEqual(preview.periodTotals, { inflowCents: 421999, outflowCents: 168199, netCents: 253800 });
+    assert.match(preview.previewHash, /^[0-9a-f]{40}$/);
+    // Nothing was written: no account, no movement, no revision, no event. Only the upload waits.
+    assert.deepEqual(
+      [(await bank.head(userId)).revision, (await bank.read(userId)).transactions.length, events.length],
+      [0, 0, 0],
+    );
+    assert.equal(db.get<{ n: number }>('SELECT COUNT(*) AS n FROM bank_import_previews')?.n, 1);
+
+    // A hash that is not this person's live preview confirms nothing.
+    for (const wrong of ['', 'not-a-hash', 'f'.repeat(40), preview.previewHash.toUpperCase(), undefined])
+      await assert.rejects(statements.confirm(userId, wrong), { status: 409 });
+    assert.equal((await bank.read(userId)).transactions.length, 0);
+
+    const written = await statements.confirm(userId, preview.previewHash);
+    assert.deepEqual(
+      [written.inserted, written.duplicates, written.alreadyImported, written.synthetic, written.revision],
+      [10, 0, false, false, 1],
+    );
+    const ledger = await bank.read(userId);
+    assert.deepEqual(ledger.accounts, [
+      {
+        id: manualAccountId,
+        name: 'Statements you imported',
+        currency: 'EUR',
+        openingBalanceCents: 0,
+        openingDate: '2026-09-01',
+        synthetic: false,
+      },
+    ]);
+    assert(
+      ledger.transactions.every(
+        row => row.synthetic === false && row.accountId === manualAccountId && row.status === 'booked',
+      ),
+    );
+    // Two identical rows of the statement are two movements; one revision and one event for the whole import.
+    assert.equal(ledger.transactions.filter(row => row.description === 'cafe central').length, 2);
+    assert.equal(new Set(ledger.transactions.map(row => row.id)).size, 10);
+    assert.deepEqual([ledger.revision, ledger.synthetic, events.length], [1, false, 1]);
+    const summary = await bank.summary(userId, { from: '2026-09-01', to: '2026-10-31' });
+    assert.deepEqual(
+      [summary.synthetic, summary.incomeCents, summary.expenseCents, summary.excludedInternalTransferCount],
+      [false, 421999, 168199, 1],
+    );
+    // The confirmation used the upload up.
+    await assert.rejects(statements.confirm(userId, preview.previewHash), { status: 409 });
+    assert.equal(db.get<{ n: number }>('SELECT COUNT(*) AS n FROM bank_import_previews')?.n, 0);
+
+    // The same statement again: the preview says so, and confirming it changes nothing at all.
+    const again = await statements.preview(userId, statementA);
+    assert.deepEqual(
+      [again.previewHash, again.newRows, again.alreadyInLedger, again.alreadyImported],
+      [preview.previewHash, 0, 10, true],
+    );
+    const repeated = await statements.confirm(userId, again.previewHash);
+    assert.deepEqual([repeated.inserted, repeated.alreadyImported, repeated.revision], [0, true, 1]);
+    assert.equal(events.length, 1);
+    // The same rows in another order, with other line endings and a BOM, are the same statement.
+    const shuffled = `\uFEFF${[header, ...october, ...september].join('\r\n')}\r\n`;
+    assert.equal(readStatement(shuffled).batch.importId, written.importId);
+    assert.deepEqual(
+      (({ newRows, alreadyImported }) => [newRows, alreadyImported])(await statements.preview(userId, shuffled)),
+      [0, true],
+    );
+
+    // An overlapping statement (October again, plus August and November) adds only what is new,
+    // and moves the account's opening date back so the earlier movements fit.
+    const statementB = [header, '2026-08-28,Mercadona,-31.10', ...october, '2026-11-02,Salary November,2100.00'].join(
+      '\n',
+    );
+    const overlap = await statements.preview(userId, statementB);
+    assert.deepEqual(
+      [overlap.rowCount, overlap.newRows, overlap.alreadyInLedger, overlap.alreadyImported],
+      [5, 2, 3, false],
+    );
+    const merged = await statements.confirm(userId, overlap.previewHash);
+    assert.deepEqual([merged.inserted, merged.duplicates], [2, 3]);
+    assert.equal((await bank.read(userId)).accounts[0].openingDate, '2026-08-28');
+    assert.equal((await bank.read(userId)).transactions.length, 12);
+    assert.deepEqual(
+      (await statements.list(userId)).map(item => [item.rowCount, item.coveredFrom, item.coveredTo]).sort(),
+      [
+        [10, '2026-09-01', '2026-10-31'],
+        [5, '2026-08-28', '2026-11-02'],
+      ].sort(),
+    );
+
+    // Deleting a statement removes the movements only it brought: October stays while B still states it.
+    const [idA, idB] = [written.importId, merged.importId];
+    assert.deepEqual(await statements.remove(userId, idA), { deleted: idA, removedMovements: 7 });
+    assert.deepEqual((await bank.read(userId)).transactions.map(row => row.date).sort(), [
+      '2026-08-28',
+      '2026-10-01',
+      '2026-10-03',
+      '2026-10-31',
+      '2026-11-02',
+    ]);
+    await assert.rejects(statements.remove(userId, idA), { status: 404 });
+    assert.deepEqual(await statements.remove(userId, idB), { deleted: idB, removedMovements: 5 });
+    assert.equal((await bank.read(userId)).transactions.length, 0);
+    assert.equal(db.get<{ n: number }>('SELECT COUNT(*) AS n FROM bank_import_rows')?.n, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test('a statement too short for a monthly figure says so, uploads expire, and what is not a statement is refused', async () => {
+  const { db, userId, clock, bank, statements } = await importer();
+  try {
+    // Three days: the reader gives no monthly figure, and the preview repeats that instead of scaling.
+    const short = await statements.preview(
+      userId,
+      [header, '2026-11-01,Salary,2100.00', '2026-11-03,Rent,-800.00'].join('\n'),
+    );
+    assert.deepEqual([short.averageBasis, short.monthlyFigures, short.coveredDays], ['period_too_short', false, 3]);
+    assert.match(short.averagingNote, /3 day\(s\)\. That is too short for a monthly figure, so none is given/);
+    assert.match(short.guidance ?? '', /Do not present any amount as monthly income, spending or an average/);
+    assert.deepEqual(short.periodTotals, { inflowCents: 210000, outflowCents: 80000, netCents: 130000 });
+    // The movements themselves are real and can be imported; only the monthly reading is withheld.
+    assert.equal((await statements.confirm(userId, short.previewHash)).inserted, 2);
+
+    // An upload waits fifteen minutes, then it has to be read again.
+    const waiting = await statements.preview(userId, statementA);
+    clock.now += 15 * 60_000 + 1;
+    await assert.rejects(statements.confirm(userId, waiting.previewHash), { status: 409 });
+    assert.equal(statements.housekeeping(), 1);
+    assert.equal((await bank.read(userId)).transactions.length, 2);
+    // At most three uploads wait per person; a fourth pushes the oldest out.
+    const hashes: string[] = [];
+    for (let n = 1; n <= 4; n++) {
+      clock.now += 1000;
+      hashes.push((await statements.preview(userId, `${header}\n2026-10-0${n},Coffee ${n},-1.00`)).previewHash);
+    }
+    assert.equal(db.get<{ n: number }>('SELECT COUNT(*) AS n FROM bank_import_previews')?.n, 3);
+    await assert.rejects(statements.confirm(userId, hashes[0]), { status: 409 });
+    assert.deepEqual(await statements.discard(userId, hashes[1]), { discarded: true });
+    assert.deepEqual(await statements.discard(userId, hashes[1]), { discarded: false });
+    assert.equal((await statements.confirm(userId, hashes[3])).inserted, 1);
+
+    // Refused: not a statement, no usable row, too many rows, too large, an unknown person.
+    const refusals: [string, number, RegExp][] = [
+      ['', 400, /empty/],
+      ['name,value\nx,1', 400, /date, description, and amount columns/],
+      [`${header}\n2026-13-45,Rent,-1.00`, 400, /Invalid transaction on data row 1/],
+      [`${header}\n2026-10-01,Rent,minus ten`, 400, /Invalid transaction/],
+      [`${header}\n2026-10-01,Free sample,0.00`, 400, /no row with an amount/],
+      [`${header}\n${'2026-10-01,Coffee,-1.00\n'.repeat(maxStatementRows + 1)}`, 400, /more than 2000 rows/],
+      [`${header}\n${`2026-10-01,${'x'.repeat(180)},-1.00\n`.repeat(1500)}`, 413, /larger than 256 KiB/],
+    ];
+    for (const [csv, status, message] of refusals)
+      await assert.rejects(statements.preview(userId, csv), { status, message }, csv.slice(0, 40));
+    await assert.rejects(statements.preview('p-000000000000000000000000000000', statementA), { status: 404 });
+    await assert.rejects(statements.confirm('p-000000000000000000000000000000', hashes[2]), { status: 404 });
+  } finally {
+    db.close();
+  }
+});
+
+test('a category the person chose is kept when the bank reports the movement again, and only imported movements can be deleted', async () => {
+  const { db, userId, bank, statements } = await importer();
+  const feed = { amountCents: -4500, status: 'pending' as 'pending' | 'booked', category: 'food' as const };
+  const provider = defineBankProvider({
+    id: 'tiny-bank',
+    displayName: 'Tiny Bank',
+    synthetic: false,
+    env: [],
+    listAccounts: async () => [
+      { id: 'tiny-main', name: 'Main', currency: 'EUR' as const, openingBalanceCents: 0, openingDate: '2026-01-01' },
+    ],
+    fetchTransactions: async () => ({
+      transactions: [
+        { id: 'tiny-1', accountId: 'tiny-main', date: '2026-11-10', description: 'Transfer to my savings', ...feed },
+      ],
+    }),
+  });
+  const sync = createBankSync({ ledger: bank, registry: createBankRegistry([provider], {}), db, housekeepingMs: null });
+  const stored = () =>
+    db.get<{ category: string; status: string; amount: number; locked: number }>(
+      "SELECT category, status, amount_cents AS amount, category_locked AS locked FROM bank_transactions WHERE id = 'tiny-1'",
+    )!;
+  try {
+    await sync.connect(userId, { providerId: 'tiny-bank', ref: 'link-1', pollIntervalMs: null });
+    await sync.sync(userId);
+    assert.deepEqual(stored(), { category: 'food', status: 'pending', amount: -4500, locked: 0 });
+
+    // The bank called it food; the person knows it was a transfer between their own accounts.
+    const revision = (await bank.head(userId)).revision;
+    assert.deepEqual((await bank.setCategory(userId, 'tiny-1', 'internal_transfer')).result, {
+      id: 'tiny-1',
+      category: 'internal_transfer',
+      categoryChosen: true,
+    });
+    assert.equal((await bank.head(userId)).revision, revision + 1);
+    assert.equal(
+      (await bank.setCategory(userId, 'tiny-1', 'internal_transfer')).ledger.revision,
+      revision + 1,
+      'saying it again changes nothing',
+    );
+    await assert.rejects(bank.setCategory(userId, 'tiny-1', 'income'), { status: 400, message: /cannot be income/ });
+    await assert.rejects(bank.setCategory(userId, 'tiny-1', 'groceries'), { name: 'ZodError' });
+    await assert.rejects(bank.setCategory(userId, 'tiny-2', 'other'), { status: 404 });
+
+    // The same movement again: nothing to do. The bank books it: the row is updated and the choice kept.
+    assert.deepEqual(
+      (({ inserted, updated, duplicates }) => [inserted, updated, duplicates])(
+        await sync.syncConnection(userId, (await sync.listConnections(userId))[0].id),
+      ),
+      [0, 0, 1],
+    );
+    feed.status = 'booked';
+    await sync.sync(userId);
+    assert.deepEqual(stored(), { category: 'internal_transfer', status: 'booked', amount: -4500, locked: 1 });
+    const listed = await bank.recent(userId, {}, { limit: 10, offset: 0 });
+    assert.deepEqual(
+      [listed.total, listed.movements[0].categoryChosen, listed.movements[0].category],
+      [1, true, 'internal_transfer'],
+    );
+    // A choice that no longer fits the amount (the bank now reports money in) gives way to the bank's.
+    await bank.setCategory(userId, 'tiny-1', 'transport');
+    feed.amountCents = 4500;
+    Object.assign(feed, { category: 'other' });
+    await sync.sync(userId);
+    assert.deepEqual([stored().category, stored().amount], ['other', 4500]);
+
+    // A movement that came from the bank is not deleted by the person: it would simply come back.
+    await assert.rejects(bank.deleteManual(userId, 'tiny-1'), {
+      status: 403,
+      message: /would come back with the next sync/,
+    });
+    await assert.rejects(bank.deleteManual(userId, 'unknown'), { status: 404 });
+    // One they imported can be; the statement then no longer brings it, and deleting the statement removes the rest.
+    const preview = await statements.preview(userId, [header, ...october].join('\n'));
+    const imported = await statements.confirm(userId, preview.previewHash);
+    const netflix = (await bank.read(userId)).transactions.find(row => row.description === 'netflix')!;
+    assert.deepEqual((await bank.deleteManual(userId, netflix.id)).result, { deleted: netflix.id });
+    assert.deepEqual(await statements.remove(userId, imported.importId), {
+      deleted: imported.importId,
+      removedMovements: 2,
+    });
+    assert.deepEqual(
+      (await bank.read(userId)).transactions.map(row => row.id),
+      ['tiny-1'],
+    );
+  } finally {
+    await sync.close();
     db.close();
   }
 });

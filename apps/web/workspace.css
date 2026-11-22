@@ -873,3 +873,237 @@ h4 {
 .save-details {
   margin-top: var(--rc-space-4);
 }
+
+/* Your details: the next question, the queue behind it and what the plan already knows. */
+.details-grid {
+  display: grid;
+  gap: var(--rc-space-5);
+  align-items: start;
+}
+.details h3 {
+  margin-bottom: var(--rc-space-2);
+}
+.details-note {
+  margin-bottom: var(--rc-space-3);
+}
+.question-card {
+  display: grid;
+  gap: var(--rc-space-3);
+  justify-items: start;
+  padding: var(--rc-space-4);
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-radius-md);
+  background: var(--rc-sunken);
+}
+.question-card > * {
+  margin: 0;
+}
+.question-why {
+  font-size: var(--rc-text-sm);
+}
+.question-effect {
+  display: flex;
+  gap: var(--rc-space-2);
+  align-items: flex-start;
+  color: var(--rc-accent);
+  font-size: var(--rc-text-sm);
+  font-weight: 600;
+}
+.question-effect .rc-icon {
+  flex: none;
+  margin-top: 2px;
+}
+.question-form {
+  display: grid;
+  gap: var(--rc-space-3);
+  width: 100%;
+}
+.question-form .rc-field,
+.question-text,
+.choice-set legend {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.choice-set {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.choice-set legend {
+  padding: 0;
+  margin-bottom: var(--rc-space-2);
+}
+.choice-row,
+.choice-column {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--rc-space-2);
+}
+.choice-column {
+  flex-direction: column;
+  align-items: stretch;
+}
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rc-space-2);
+  min-height: var(--rc-control);
+  padding: 6px 12px;
+  border: 1px solid var(--rc-line-strong);
+  border-radius: var(--rc-radius-sm);
+  background: var(--rc-surface);
+  font-weight: 500;
+  cursor: pointer;
+}
+.choice-set[aria-invalid="true"] .choice {
+  border-color: var(--rc-danger);
+}
+.choice:has(input:checked) {
+  border-color: var(--rc-accent);
+  box-shadow: inset 0 0 0 1px var(--rc-accent);
+}
+.choice:has(input:focus-visible) {
+  outline: 2px solid var(--rc-accent);
+  outline-offset: 2px;
+}
+.choice input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--rc-accent);
+}
+.typed-answer {
+  display: grid;
+  gap: var(--rc-space-2);
+  justify-items: start;
+}
+.typed-row {
+  display: flex;
+  align-items: center;
+  gap: var(--rc-space-2);
+  width: min(100%, 18rem);
+}
+.typed-unit {
+  color: var(--rc-muted);
+  font-weight: 600;
+}
+.child-rows,
+.per-child {
+  display: grid;
+  gap: var(--rc-space-3);
+  justify-items: start;
+}
+.child-rows {
+  margin-top: var(--rc-space-3);
+}
+.child-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--rc-space-2);
+  align-items: end;
+}
+.per-child .choice-set legend {
+  font-size: var(--rc-text-sm);
+  font-weight: 600;
+}
+.sensitive-note {
+  display: flex;
+  gap: var(--rc-space-2);
+  align-items: flex-start;
+  margin: 0;
+  font-size: var(--rc-text-sm);
+}
+.sensitive-note .rc-icon {
+  flex: none;
+  margin-top: 2px;
+}
+.field-error {
+  display: flex;
+  gap: var(--rc-space-2);
+  align-items: flex-start;
+  margin: 0;
+  color: var(--rc-danger);
+  font-size: var(--rc-text-sm);
+  font-weight: 600;
+}
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--rc-space-2);
+}
+.queue-item {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.queue-label,
+.known-label {
+  font-weight: 700;
+}
+.queue-item:hover .queue-label,
+.queue-item:focus-visible .queue-label {
+  text-decoration: underline;
+}
+.known-main {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px var(--rc-space-3);
+}
+.known-value {
+  overflow-wrap: anywhere;
+}
+.known-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--rc-space-2);
+  margin-top: 2px;
+}
+.known-change {
+  margin-inline-start: auto;
+}
+.known-list .hint-warn {
+  display: flex;
+  gap: var(--rc-space-2);
+  align-items: flex-start;
+}
+.changes p {
+  margin: 0 0 var(--rc-space-2);
+}
+.conflict {
+  display: grid;
+  gap: var(--rc-space-3);
+  justify-items: start;
+  margin-bottom: var(--rc-space-3);
+  padding: var(--rc-space-4);
+  border: 1px solid var(--rc-warn);
+  border-radius: var(--rc-radius-md);
+  background: var(--rc-warn-soft);
+}
+.conflict .choice-set legend {
+  font-weight: 500;
+}
+@media (min-width: 900px) {
+  .details-grid {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  }
+}
+
+/* A long name or id wraps instead of widening the page on a phone. */
+.person-facts {
+  min-width: 0;
+}
+.person-name {
+  overflow-wrap: anywhere;
+}

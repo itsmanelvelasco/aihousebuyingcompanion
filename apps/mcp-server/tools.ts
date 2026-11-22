@@ -395,6 +395,6 @@ export function createMcpServer(options: McpServerOptions) {
     );
   }
   // Person and place entities and the savings plan. A stored person is reached only through the caller.
-  registerPlannerTools(server, { snapshot, policies, today, caller });
+  registerPlannerTools(server, { snapshot, policies, today, caller }).registerNextQuestions();
   return server;
 }

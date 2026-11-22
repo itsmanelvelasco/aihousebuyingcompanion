@@ -75,19 +75,33 @@ One consequence: after pruning, deleting the newest record of a field no longer 
 
 ## Available groups
 
-All listed fields are optional and nullable. Each record must contain at least one leaf field; unknown keys are rejected.
+All listed fields are optional and nullable (in `eligibility`, a child's own `birthDate`, `birthYear` and `age` are not: leave out what is not known). Each record must contain at least one leaf field; unknown keys are rejected.
 
 | Group | Fields |
 | --- | --- |
-| `housing` | `tenure` (`buy`/`rent`), `budgetCents`, `homeSizeM2`, `minimumBedrooms`, `allowComarcaEstimate` |
+| `housing` | `tenure` (`buy`/`rent`), `budgetCents`, `homeSizeM2`, `minimumBedrooms`, `allowComarcaEstimate`, `depositRate` (share of the price paid upfront, 0–1) |
 | `household` | `size`, `dependants`, `employmentStatus` |
 | `school` | `stages` (`nursery`, `infantil`, `primary`, `eso`, `batxillerat`, `fp`), `mode` (`car_free`/`rail`), `maxJourneyMinutes` |
 | `transport` | `destinationCode` (six-digit official code), `maxCommuteMinutes`, `travelDate` (ISO date) |
 | `finance` | `currentSavingsCents`, `monthlyIncomeCents`, `monthlyExpensesCents`, `debtPaymentsCents`, `targetCashCents`, `emergencyReserveCents` |
 | `location` | `currentMunicipality`, `selectedMunicipalityCode` |
 | `rural` | `required` (boolean) |
+| `eligibility` | The facts that decide tax measures and aids: `birthDate` (ISO date; preferred over `age`), `children`, `primaryResidence`, `firstRuralMove`, `singleParent`, `largeFamily`, `disability65`, `filing` (`individual`/`joint`), the tax bases in euros (`irpfNetTaxBaseEur`, `irpfIndividualNetTaxBaseEur`, `itpFamilyNetTaxBaseEur`, `itpBuyerNetTaxBaseEur`), `itpTransaction`, `satisfiesItpOccupancyRules`, `ownsHomeInSpain`, `incomeWithinFiveIprem` and the other fields of the incentive screening (`household` in `packages/contracts/places.ts`), except the purchase price. |
+
+`eligibility.children` is the whole list of dependent children, replaced as one value; `[]` means none. Each child states exactly one of `birthDate`, `birthYear` or `age`, and may carry `meetsItpSchooling` and `inDesignatedSchool` (`true`, `false`, or `null` for "I don't know").
 
 Money uses integer EUR cents. Finance amounts are nonnegative; debt payments are separate from monthly expenses. The contract rejects negative finance aggregates; a negative cash-flow result belongs in the bank analysis response, not an income/expense input. `homeSizeM2` is floor area, not inferred from bedroom count. Omitted fields mean “no update”; `null` means explicitly unknown. Empty school lists, zero financial values and `false` are preserved.
+
+## The question set and the plan
+
+The questions behind these fields are defined once, in `packages/model/questions.ts`: for each fact its id, the input path it writes, the question, why it is asked, how it is answered and validated, when it applies and a note for sensitive facts. The workspace, the interviewer and the chat all ask from that list and write the same fields.
+
+- **Unknown is an answer.** "I don't know" is saved as `null` at the field's path, confirmed like any other answer. It records that the person was asked; the plan keeps the benefit at `needs_verification` and lists the question as `said_unknown` instead of asking it again as new. It is never stored as zero, `false` or a guess.
+- **Only confirmed household facts count.** `buildPerson` (`packages/model/person.ts`) reads an `eligibility` fact only from a confirmed input. An unconfirmed one is reported as `unconfirmed` and asked again. The plan's own figures (`finance`, `housing`) are used unconfirmed, as before.
+- **A date of birth, not an age.** A confirmed `eligibility.birthDate` replaces a stored `eligibility.age`: the planner derives the age on the date of each plan and on the day of the purchase, so it cannot go stale. Children given with a `birthDate` are aged the same way; with a `birthYear` alone the birthday is open, so the planner takes the age reached during the plan year, the cautious reading of a rule with an upper age limit.
+- **What to ask next.** `plan_home_savings` returns `nextQuestions`: the facts whose answers could still change the plan for the places compared, most valuable first, each with what it could change ("Could shorten the wait by up to 6 months in Talarn"). `missingFacts` in `packages/planner/next-questions.ts` computes it with the planner itself. A fact that cannot change the plan for those places is not asked.
+- **Conflicts are shown.** A field in conflict (see below) resolves to `null`; the plan returns it in `conflicts` with every candidate, counts no benefit on it, and the workspace lets the person pick. The pick is saved under each source that disagreed, so the conflict closes. Nothing takes the newest value silently.
+- **Stale facts are flagged.** `knownFacts` lists each known fact with its source, the date it was given and whether it was confirmed. A stated age older than a month, a tax figure given in an earlier year and a schooling answer from before the current school year carry a `stale` note with that date. Each place's `assumptions` end with the household facts the plan relied on and where each came from.
 
 ## Resolution rules
 

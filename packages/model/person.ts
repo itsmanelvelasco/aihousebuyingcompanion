@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import { stateSchema } from '../contracts/habits.ts';
+import { childInput } from '../contracts/inputs.ts';
 import { household as householdFacts } from '../contracts/places.ts';
-import type { Habit, Person } from '../contracts/planner.ts';
+import type { FactAnswer, Habit, Person } from '../contracts/planner.ts';
 import { person } from '../contracts/planner.ts';
+import { questions } from './questions.ts';
 
 /**
  * The person entity: one household with its finances, home needs and habits.
@@ -28,12 +30,15 @@ export const bankSummaryInput = z.object({
 export type BankSummaryInput = z.infer<typeof bankSummaryInput>;
 export type HabitState = z.input<typeof stateSchema>;
 
-type FieldProvenance = { confirmed: boolean; observedAt: string };
+type FieldProvenance = { confirmed: boolean; observedAt: string; source?: string };
+type FieldConflict = { field: string; candidates: (FieldProvenance & { value?: unknown })[] };
 /** The `resolved` part of `GET /users/:id/context` (`resolveInputs`); only the fields read here matter. */
 export type PersonContext = {
   resolved: {
     data: Record<string, Record<string, unknown> | undefined>;
     provenance?: Record<string, FieldProvenance[] | undefined>;
+    /** Fields whose latest answers disagree; such a field resolves to null and is reported, never picked. */
+    conflicts?: FieldConflict[];
   };
 };
 
@@ -80,13 +85,112 @@ function householdFrom(
 ): Person['household'] {
   const known: Record<string, unknown> = {};
   for (const [field, value] of Object.entries(facts ?? {})) {
-    if (value === null || value === undefined || field === 'purchasePriceEur') continue;
+    // The children are read by `childrenFrom`: they can carry dates of birth, which the screening does not hold.
+    if (value === null || value === undefined || field === 'purchasePriceEur' || field === 'children') continue;
     if (!provenance[`eligibility.${field}`]?.some(item => item.confirmed)) continue;
     const schema = (householdFacts.shape as Record<string, z.ZodType | undefined>)[field];
     const parsed = schema?.safeParse(value);
     if (parsed?.success) known[field] = parsed.data;
   }
   return Object.keys(known).length ? householdFacts.parse(known) : undefined;
+}
+
+type Born = NonNullable<Person['born']>;
+type BornChild = NonNullable<Born['children']>[number];
+
+/**
+ * The children of a confirmed `eligibility.children` input. A schooling flag that is `null` (the
+ * person does not know) is left off, so the screening keeps the measure unverified. A list where
+ * every child has a plain age goes to the screening as it is; a list with a date or a year of birth
+ * is kept as stated, and the planner derives each age on the date of the plan.
+ */
+function childrenFrom(
+  value: unknown,
+  confirmed: boolean,
+): { born?: BornChild[]; ages?: NonNullable<Person['household']>['children'] } {
+  const parsed = confirmed ? z.array(childInput).max(30).safeParse(value) : undefined;
+  if (!parsed?.success) return {};
+  const children = parsed.data.map(({ inDesignatedSchool, meetsItpSchooling, ...when }) => ({
+    ...when,
+    ...(typeof inDesignatedSchool === 'boolean' ? { inDesignatedSchool } : {}),
+    ...(typeof meetsItpSchooling === 'boolean' ? { meetsItpSchooling } : {}),
+  }));
+  if (children.every(child => child.age !== undefined))
+    return { ages: children.map(({ birthDate: _, birthYear: __, ...child }) => ({ ...child, age: child.age ?? 0 })) };
+  return { born: children };
+}
+
+const answerSources = new Set(['profile', 'interview', 'manual', 'bank', 'listing']);
+
+/**
+ * Where each answer of the question set came from, by question id. A field in conflict is reported
+ * with its candidates; a field stated as `null` is "I don't know"; a household fact nobody confirmed
+ * is `unconfirmed`, because the screening does not read it. A question that was never answered has
+ * no entry.
+ */
+function answersFrom(context: PersonContext['resolved']): Record<string, FactAnswer> {
+  const { data, provenance = {}, conflicts = [] } = context;
+  const answers: Record<string, FactAnswer> = {};
+  for (const question of questions) {
+    const [group, field] = question.path.split('.');
+    const items = provenance[question.path] ?? [];
+    if (!items.length) continue;
+    const latest = items.reduce((a, b) => (a.observedAt >= b.observedAt ? a : b));
+    const confirmed = items.some(item => item.confirmed);
+    const stamp = {
+      ...(latest.source && answerSources.has(latest.source) ? { source: latest.source as FactAnswer['source'] } : {}),
+      observedAt: latest.observedAt,
+      confirmed,
+    };
+    const conflict = conflicts.find(item => item.field === question.path);
+    const value = data[group]?.[field];
+    if (conflict) {
+      answers[question.id] = {
+        ...stamp,
+        status: 'conflict',
+        candidates: conflict.candidates.slice(0, 10).map(candidate => ({
+          value: candidate.value ?? null,
+          source: candidate.source ?? 'unknown',
+          observedAt: candidate.observedAt,
+          confirmed: candidate.confirmed,
+        })),
+      };
+      continue;
+    }
+    if (value === null || value === undefined) {
+      answers[question.id] = { ...stamp, status: 'said_unknown' };
+      continue;
+    }
+    if (question.kind.type === 'per_child') {
+      // The flags live on each child: the question is answered once a child carries its flag.
+      const flag = question.kind.flag;
+      const flags = Array.isArray(value) ? value.map(child => (child as Record<string, unknown> | null)?.[flag]) : [];
+      if (!flags.some(item => item !== undefined)) continue;
+      answers[question.id] = {
+        ...stamp,
+        status: !confirmed ? 'unconfirmed' : flags.some(item => item === null) ? 'said_unknown' : 'known',
+      };
+      continue;
+    }
+    // The plan's own figures are used even when unconfirmed (see `buildPerson`); a household fact is not.
+    answers[question.id] = {
+      ...stamp,
+      status: confirmed || question.group === 'plan' ? 'known' : 'unconfirmed',
+    };
+  }
+  // An age stored instead of a date of birth answers the same question, and its date says how old it is.
+  const age = provenance['eligibility.age'] ?? [];
+  if (!answers.birthDate && age.length && typeof data.eligibility?.age === 'number') {
+    const latest = age.reduce((a, b) => (a.observedAt >= b.observedAt ? a : b));
+    const confirmed = age.some(item => item.confirmed);
+    answers.birthDate = {
+      ...(latest.source && answerSources.has(latest.source) ? { source: latest.source as FactAnswer['source'] } : {}),
+      observedAt: latest.observedAt,
+      confirmed,
+      status: confirmed ? 'known' : 'unconfirmed',
+    };
+  }
+  return answers;
 }
 
 /**
@@ -125,7 +229,11 @@ export function habitsFromState(state: HabitState | undefined): Habit[] {
  * the debt movements, so declared debt is not added to them.
  *
  * Household facts for incentive screening come only from confirmed `eligibility` inputs (see
- * `householdFrom`). `synthetic` is whatever the caller states; it has no default.
+ * `householdFrom`). A confirmed date of birth goes to `born.self` and replaces a stored age: the
+ * planner derives the age on the date of each plan, so it cannot go stale. Children stated with a
+ * date or a year of birth go to `born.children` the same way. `answers` says where each answer came
+ * from and which were "I don't know" or in conflict. `synthetic` is whatever the caller states; it
+ * has no default.
  *
  * Savings and the emergency reserve are always declared: a bank balance is never assumed to be
  * money available for the purchase. An undeclared reserve is 0, which the plan states out loud.
@@ -165,12 +273,30 @@ export function buildPerson(input: BuildPersonInput): Person {
   const asOf = usesBank && observed ? observed.to : (declaredDates.at(-1) ?? null);
 
   const size = data.household?.size;
-  const facts = householdFrom(data.eligibility, provenance);
+  const isConfirmed = (path: string) => provenance[path]?.some(item => item.confirmed) ?? false;
+  const children = childrenFrom(data.eligibility?.children, isConfirmed('eligibility.children'));
+  const birthDate = isConfirmed('eligibility.birthDate') ? z.iso.date().safeParse(data.eligibility?.birthDate) : null;
+  const screened = householdFrom(data.eligibility, provenance);
+  // A date of birth is the better source of an age; a stored age stays only without one.
+  const { age: storedAge, ...otherFacts } = screened ?? {};
+  const facts = {
+    ...otherFacts,
+    ...(storedAge !== undefined && !birthDate?.success ? { age: storedAge } : {}),
+    ...(children.ages ? { children: children.ages } : {}),
+  };
+  const born = {
+    ...(birthDate?.success ? { self: birthDate.data } : {}),
+    ...(children.born ? { children: children.born } : {}),
+  };
+  const answers = answersFrom(input.context.resolved);
+  const depositRate = data.housing?.depositRate;
   return person.parse({
     id: input.userId,
     ...(input.displayName ? { displayName: input.displayName } : {}),
     synthetic: input.synthetic,
-    ...(facts ? { household: facts } : {}),
+    ...(Object.keys(facts).length ? { household: facts } : {}),
+    ...(Object.keys(born).length ? { born } : {}),
+    ...(Object.keys(answers).length ? { answers } : {}),
     householdSize: typeof size === 'number' && Number.isInteger(size) && size >= 1 ? size : null,
     currentMunicipalityCode: input.currentMunicipalityCode ?? null,
     finances: {
@@ -188,6 +314,8 @@ export function buildPerson(input: BuildPersonInput): Person {
       floorAreaM2: positiveOrNull(data.housing?.homeSizeM2),
       // A budget of zero is not a price: it is left unknown.
       budgetCents: centsOrNull(data.housing?.budgetCents) || null,
+      // The share of the price paid upfront, when the person stated one; the contract defaults to 20%.
+      ...(typeof depositRate === 'number' && depositRate >= 0 && depositRate <= 1 ? { depositRate } : {}),
     },
     habits: habitsFromState(input.habitState),
   });

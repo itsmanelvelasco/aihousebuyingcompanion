@@ -1,5 +1,6 @@
 import { type FormEvent, useId, useState } from 'react';
 import type { Habit, Person, PlanResult } from '../../../packages/contracts/planner.ts';
+import { blankPerson } from '../../../packages/model/questions.ts';
 import type { ToolClient } from '../client.ts';
 import { formatDate, formatEuros, formatMonthly, formatShare } from '../format.ts';
 import type { PlanState } from '../hooks.ts';
@@ -127,8 +128,21 @@ function NoPerson(props: Props) {
           </div>
         </>
       ) : null}
+      <p>
+        Or answer for yourself without an account. The questions appear under “Your details”, the most useful first, and
+        your answers stay on this page: nothing is saved.
+      </p>
+      <div className="choices">
+        <button
+          type="button"
+          className="rc-btn rc-btn--primary rc-btn--sm"
+          onClick={() => props.onInline(blankPerson())}
+        >
+          Start an estimate
+        </button>
+      </div>
       <details>
-        <summary>Try a what-if with your own numbers (nothing is saved)</summary>
+        <summary>Or type four figures at once (nothing is saved)</summary>
         <FiguresForm submit="Estimate" onSubmit={whatIf} />
       </details>
     </div>

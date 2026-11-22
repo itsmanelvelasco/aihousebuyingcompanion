@@ -84,6 +84,14 @@
   #typed-answer, #guided-answer { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px auto 0; max-width: 500px; }
   #typed-answer input, #guide-field { flex: 1; min-width: 130px; }
   #guide-field > * { width: 100%; }
+  #guide-field fieldset { margin: 0; padding: 0; border: 0; display: grid; gap: 8px; text-align: left; }
+  #guide-field label { display: grid; gap: 4px; font-size: .9rem; text-align: left; }
+  #guide-field { display: grid; gap: 8px; align-content: start; }
+  #guide-field label.check { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+  #guide-field label.check input { width: 18px; height: 18px; margin: 0; padding: 0; }
+  .guide-why, .guide-error { flex-basis: 100%; margin: 0; text-align: left; }
+  .guide-error { color: #ffccbd; font-size: .9rem; }
+  .facts { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
   .more { margin-top: 13px; color: var(--muted); font-size: .87rem; }
   .more button { border: 0; text-decoration: underline; text-underline-offset: 3px; }
   dialog {
@@ -150,10 +158,12 @@
       <input id="answer" aria-label="Type an interview answer" placeholder="Type your answer" maxlength="1000" required>
       <button id="send-answer" disabled>Send</button>
     </form>
-    <form id="guided-answer" hidden>
+    <form id="guided-answer" novalidate hidden>
       <div id="guide-field"></div>
       <button class="primary">Continue</button>
       <button id="skip" type="button">Skip</button>
+      <p id="guide-error" class="guide-error" role="alert" hidden></p>
+      <p id="guide-why" class="hint guide-why" hidden></p>
     </form>
     <div class="more"><button data-open="options-panel">Conversation options</button></div>
     <audio id="audio" autoplay></audio>
@@ -196,6 +206,16 @@
     </form>
     <p class="hint" id="save-status" role="status">Your summary and answers are saved in this browser.</p>
   </details>
+  <section class="facts" aria-labelledby="facts-heading">
+    <h3 id="facts-heading">Details that decide your plan</h3>
+    <p class="hint">Asked after the money questions: they decide which tax measures and aids can be counted.</p>
+    <dl id="facts"></dl>
+    <p id="profile-status" class="hint" role="status">These answers are only on this device.</p>
+    <div class="actions">
+      <button id="save-profile" class="primary" hidden>Save my answers to my ReloCat profile</button>
+      <a id="profile-signin" class="button" href="../login?next=%2Finterview%2F" hidden>Sign in to save them</a>
+    </div>
+  </section>
 </dialog>
 <dialog id="options-panel" aria-labelledby="options-heading">
   <div class="panel-head"><h2 id="options-heading">Conversation options</h2><button data-close>Close</button></div>
