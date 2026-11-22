@@ -87,13 +87,20 @@ export const inputSchema = z
     source: z.enum(['profile', 'interview', 'manual', 'bank', 'listing']),
     observedAt: z.iso.datetime(),
     confirmed: z.boolean(),
-    synthetic: z.literal(true),
+    /**
+     * True for a fabricated record (a fixture, a demo persona, a value derived from a fictional
+     * bank), false for something a real person stated or a real source reported. Never defaulted.
+     */
+    synthetic: z.boolean(),
     data: dataSchema,
   })
   .strict();
 export type AppInput = z.infer<typeof inputSchema>;
+/** Most input records kept per user; see the retention rule in `apps/profile-api/INPUTS.md`. */
+export const maxInputs = 500;
 type Value = string | number | boolean | string[] | null;
-type Provenance = Pick<AppInput, 'source' | 'observedAt' | 'confirmed'> & { inputId: string };
+/** `synthetic` is absent only in provenance produced before the field existed. */
+type Provenance = Pick<AppInput, 'source' | 'observedAt' | 'confirmed'> & { inputId: string; synthetic?: boolean };
 type Candidate = Provenance & { value: Value };
 
 export function resolveInputs(inputs: AppInput[]) {
@@ -109,6 +116,7 @@ export function resolveInputs(inputs: AppInput[]) {
           source: input.source,
           observedAt: input.observedAt,
           confirmed: input.confirmed,
+          synthetic: input.synthetic,
         };
         fields.set(path, [...(fields.get(path) ?? []), candidate]);
       }

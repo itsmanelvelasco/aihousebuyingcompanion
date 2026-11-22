@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { goalSchema, summarySchema } from '../../packages/contracts/habits.ts';
 import { safeId } from '../../packages/contracts/ids.ts';
 import type { Database } from '../../packages/db/database.ts';
+import { DatabaseBusyError } from '../../packages/db/database.ts';
 import { suggestHabits } from '../../packages/finance/habits.ts';
 import type { ApiAuthorizer } from '../../packages/http/server.ts';
 import { ApiError, apiAccess, pathParts, readJson, requireOwnRoute, sendJson } from '../../packages/http/server.ts';
@@ -85,6 +86,10 @@ export function createHabitsHandler(options: HabitsOptions) {
     } catch (error) {
       if (error instanceof ApiError) return reply(error.status, { error: error.message });
       if (error instanceof z.ZodError) return reply(400, { error: 'Invalid request', issues: error.issues });
+      if (error instanceof DatabaseBusyError) {
+        res.setHeader('Retry-After', String(error.retryAfterSeconds));
+        return reply(503, { error: 'Storage is busy; try again shortly', retryable: true });
+      }
       reply(500, { error: 'Habit storage unavailable' });
     }
   };

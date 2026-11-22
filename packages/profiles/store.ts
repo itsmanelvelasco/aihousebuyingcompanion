@@ -3,13 +3,24 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { safeId } from '../contracts/ids.ts';
 import type { Database } from '../db/database.ts';
-import { insertUser, listUserIds, readSection, userExists, writeSection } from '../db/profiles.ts';
+import {
+  insertUser,
+  listUserIds,
+  personIsSynthetic,
+  readSection,
+  sectionIsSynthetic,
+  userExists,
+  writeSection,
+} from '../db/profiles.ts';
 import { ApiError } from '../http/server.ts';
 
 export const sections = ['details', 'preferences', 'bank-account'] as const;
 export type Section = (typeof sections)[number];
-// Preserve evolving team fields while requiring explicit synthetic provenance.
-export const documentSchema = z.object({ schemaVersion: z.literal(1), synthetic: z.literal(true) }).catchall(z.json());
+/**
+ * Preserve evolving team fields while requiring explicit provenance: `synthetic` is true for a
+ * fixture or a demo persona and false for a person who belongs to an account. It has no default.
+ */
+export const documentSchema = z.object({ schemaVersion: z.literal(1), synthetic: z.boolean() }).catchall(z.json());
 export const profileSchema = z
   .object({
     details: documentSchema,
@@ -40,6 +51,9 @@ export function createStore(db: Database) {
       const profile = profileSchema.parse(input);
       if (profile.details.id !== id) throw new ApiError(400, 'details.id must match user ID');
       safeId.parse(id);
+      // A person is fictional or real as a whole; documents that disagree would make every summary ambiguous.
+      if (new Set(sections.map(section => profile[section].synthetic)).size > 1)
+        throw new ApiError(400, 'The three profile documents must carry the same synthetic flag');
       db.transaction(() => {
         const now = new Date().toISOString();
         if (!insertUser(db, id, now)) throw new ApiError(409, 'User already exists');
@@ -52,9 +66,19 @@ export function createStore(db: Database) {
       if (section === 'details' && value.id !== id) throw new ApiError(400, 'details.id must match user ID');
       db.transaction(() => {
         requireUser(db, id);
+        // Whether a person is fictional is settled when the person is created. Replacing a document
+        // never relabels it: real data does not become synthetic, nor the reverse.
+        const stored = sectionIsSynthetic(db, id, section);
+        if (stored !== undefined && value.synthetic !== stored)
+          throw new ApiError(400, 'The synthetic flag of a stored document cannot be changed');
         writeSection(db, id, section, value, new Date().toISOString());
       });
       return value;
+    },
+    /** True only when every profile document of the person is fictional. */
+    isSynthetic(id: string) {
+      requireUser(db, id);
+      return personIsSynthetic(db, id);
     },
   };
 }

@@ -7,7 +7,9 @@ import {
   clientById,
   codeByHash,
   countClients,
+  deleteDeadGrants,
   deleteExpiredOauth,
+  deleteOldestUnusedClients,
   deleteUnusedClients,
   grantById,
   insertClient,
@@ -22,6 +24,7 @@ import {
 } from '../db/auth.ts';
 import type { Database } from '../db/database.ts';
 import { hashSecret, newSecret, safeEqual, verifyPkce } from './secrets.ts';
+import { createThrottle } from './throttle.ts';
 
 /**
  * The OAuth 2.1 authorization server that lets an MCP client (ChatGPT, Claude, Cursor…) act for one
@@ -45,10 +48,13 @@ const defaultScopes: Scope[] = ['person:read'];
 export class OAuthError extends Error {
   readonly error: string;
   readonly status: number;
-  constructor(error: string, description: string, status = 400) {
+  /** For a 429: seconds until the request may be tried again. */
+  readonly retryAfterSeconds: number;
+  constructor(error: string, description: string, status = 400, retryAfterSeconds = 0) {
     super(description);
     this.error = error;
     this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -61,9 +67,20 @@ export type OAuthOptions = {
   codeTtlMs?: number;
   /** Private-use redirect schemes accepted besides https and loopback http, such as `cursor`. */
   redirectSchemes?: string[];
-  /** Registered clients kept at most; abandoned registrations are removed first. */
+  /** Registered clients kept at most; registrations without a grant are removed first, oldest first. */
   maxClients?: number;
+  /**
+   * Client registrations allowed per hour: from one address (default 60: many people reach this
+   * server through the same agent service), from an address that may be every visitor at once
+   * (default 300) and from everybody together (default 600).
+   */
+  registrations?: { perAddress?: number; shared?: number; global?: number };
+  /** Called with the account whenever one of its grants ends, so the server can close what the grant had open. */
+  onRevoke?: (accountId: string) => void;
 };
+
+/** Where a registration comes from; see `Origin` in `accounts.ts`. */
+export type RegistrationOrigin = { address: string; shared?: boolean };
 
 export type AuthorizeRequest = {
   client: { id: string; name: string };
@@ -101,6 +118,15 @@ export function createOAuth(db: Database, options: OAuthOptions) {
     (options.redirectSchemes ?? []).map(s => s.toLowerCase()).filter(s => !forbiddenSchemes.has(s)),
   );
   const maxClients = options.maxClients ?? 5000;
+  const registrations = {
+    perAddress: options.registrations?.perAddress ?? 60,
+    shared: options.registrations?.shared ?? 300,
+    global: options.registrations?.global ?? 600,
+  };
+  const registrationWindowMs = 60 * 60_000;
+  const throttle = createThrottle(db, now);
+  /** A client without a grant that nobody has used for this long is forgotten by the housekeeping. */
+  const idleClientMs = 30 * 24 * 60 * 60_000;
   const issuer = () => options.issuer().replace(/\/$/, '');
   /** The canonical URI of the MCP endpoint; the audience of every token (RFC 8707). */
   const resource = () => `${issuer()}/mcp`;
@@ -137,9 +163,21 @@ export function createOAuth(db: Database, options: OAuthOptions) {
     return candidate === resource() || candidate === issuer();
   }
 
-  function issueTokens(grantId: string, grantedScopes: string) {
+  /** End a grant: its codes and tokens are deleted, and the server is told so it can close open streams. */
+  function endGrant(grant: { id: string; accountId: string }, stamp: string) {
+    revokeGrant(db, grant.id, stamp);
+    options.onRevoke?.(grant.accountId);
+  }
+
+  /**
+   * Issue the token pair of a grant. `narrowed` is the subset of the grant's scopes a refresh asked
+   * for: it applies to this access token only, and is written into the token's own prefix (a bit
+   * per scope), which the stored hash covers. The refresh token keeps the scope of the grant.
+   */
+  function issueTokens(grantId: string, grantedScopes: string, narrowed?: Scope[]) {
     const time = now();
-    const accessToken = newSecret('rc_at_');
+    const mask = narrowed?.reduce((bits, scope) => bits | (1 << allScopes.indexOf(scope)), 0);
+    const accessToken = newSecret(mask === undefined ? 'rc_at_' : `rc_at_s${mask}_`);
     const refreshToken = newSecret('rc_rt_');
     db.transaction(() => {
       insertToken(db, hashSecret(accessToken), {
@@ -160,7 +198,7 @@ export function createOAuth(db: Database, options: OAuthOptions) {
       token_type: 'Bearer' as const,
       expires_in: Math.floor(accessTtl / 1000),
       refresh_token: refreshToken,
-      scope: grantedScopes,
+      scope: narrowed ? narrowed.join(' ') : grantedScopes,
     };
   }
 
@@ -223,8 +261,24 @@ export function createOAuth(db: Database, options: OAuthOptions) {
       return `Bearer ${parts.join(', ')}`;
     },
 
-    /** RFC 7591 dynamic client registration. Returns the response body; the secret appears only here. */
-    registerClient(body: unknown) {
+    /**
+     * RFC 7591 dynamic client registration. Returns the response body; the secret appears only here.
+     * Registrations are budgeted per hour for the address they come from and for everybody together.
+     */
+    registerClient(body: unknown, origin?: RegistrationOrigin) {
+      const addressKey = `register:${origin?.address ?? 'unknown'}`;
+      const allowed = origin?.shared ? registrations.shared : registrations.perAddress;
+      for (const [key, limit] of [
+        [addressKey, allowed],
+        ['register:all', registrations.global],
+      ] as const)
+        if (throttle.spent(key, registrationWindowMs) >= limit)
+          throw new OAuthError(
+            'temporarily_unavailable',
+            'Too many client registrations; try again later',
+            429,
+            throttle.windowEndsIn(key, registrationWindowMs),
+          );
       const parsed = OAuthClientMetadataSchema.safeParse(body);
       if (!parsed.success) throw new OAuthError('invalid_client_metadata', 'The client metadata is not valid');
       const metadata = parsed.data;
@@ -249,8 +303,14 @@ export function createOAuth(db: Database, options: OAuthOptions) {
       if (metadata.response_types?.some(type => type !== 'code'))
         throw new OAuthError('invalid_client_metadata', 'Only the code response type is supported');
       const time = now();
+      throttle.spend(addressKey, registrationWindowMs);
+      throttle.spend('register:all', registrationWindowMs);
       if (countClients(db) >= maxClients) {
-        deleteUnusedClients(db, new Date(time.getTime() - 60 * 60_000).toISOString());
+        // Make room: grants nobody can use any more, then the oldest registrations without a grant.
+        deleteExpiredOauth(db, time.toISOString());
+        deleteDeadGrants(db);
+        const over = countClients(db) - maxClients + 1;
+        if (over > 0) deleteOldestUnusedClients(db, over);
         if (countClients(db) >= maxClients)
           throw new OAuthError('temporarily_unavailable', 'Client registration is full; try again later', 503);
       }
@@ -377,7 +437,7 @@ export function createOAuth(db: Database, options: OAuthOptions) {
         if (!stored || !grant || grant.clientId !== client.id)
           throw new OAuthError('invalid_grant', 'The authorization code is not valid');
         if (stored.usedAt) {
-          revokeGrant(db, grant.id, stamp);
+          endGrant(grant, stamp);
           throw new OAuthError('invalid_grant', 'The authorization code was already used');
         }
         if (grant.revokedAt || stored.expiresAt <= stamp)
@@ -390,7 +450,6 @@ export function createOAuth(db: Database, options: OAuthOptions) {
           throw new OAuthError('invalid_target', 'The resource is not this MCP server');
         markCodeUsed(db, codeHash, stamp);
         touchClient(db, client.id, stamp);
-        deleteExpiredOauth(db, stamp);
         return issueTokens(grant.id, grant.scopes);
       }
       if (params.grant_type === 'refresh_token') {
@@ -403,19 +462,22 @@ export function createOAuth(db: Database, options: OAuthOptions) {
           throw new OAuthError('invalid_grant', 'The refresh token is not valid');
         if (stored.usedAt) {
           // Reuse of a rotated token: end the family so neither holder keeps access.
-          revokeGrant(db, grant.id, stamp);
+          endGrant(grant, stamp);
           throw new OAuthError('invalid_grant', 'The refresh token was already used; access was revoked');
         }
         if (grant.revokedAt || stored.expiresAt <= stamp)
           throw new OAuthError('invalid_grant', 'The refresh token expired');
         if (!acceptResource(params.resource))
           throw new OAuthError('invalid_target', 'The resource is not this MCP server');
-        const narrowed = params.scope === undefined ? null : parseScopes(params.scope);
-        if (narrowed?.some(scope => !grant.scopes.split(' ').includes(scope)))
+        // RFC 6749 section 6: `scope` may ask for less than was granted, never for more; left out,
+        // it means everything that was granted.
+        const asked = params.scope === undefined || params.scope === '' ? undefined : parseScopes(params.scope);
+        if (asked === null) throw new OAuthError('invalid_scope', 'None of the requested scopes is supported');
+        if (asked?.some(scope => !grant.scopes.split(' ').includes(scope)))
           throw new OAuthError('invalid_scope', 'A refresh cannot widen the granted scopes');
         markTokenUsed(db, tokenHash, stamp);
         touchClient(db, client.id, stamp);
-        return issueTokens(grant.id, grant.scopes);
+        return issueTokens(grant.id, grant.scopes, asked);
       }
       throw new OAuthError('unsupported_grant_type', 'Use authorization_code or refresh_token');
     },
@@ -427,7 +489,7 @@ export function createOAuth(db: Database, options: OAuthOptions) {
       if (!token) throw new OAuthError('invalid_request', 'token is required');
       const stored = tokenByHash(db, hashSecret(token));
       const grant = stored && grantById(db, stored.grantId);
-      if (grant && grant.clientId === client.id) revokeGrant(db, grant.id, now().toISOString());
+      if (grant && grant.clientId === client.id) endGrant(grant, now().toISOString());
     },
 
     /**
@@ -441,12 +503,18 @@ export function createOAuth(db: Database, options: OAuthOptions) {
       if (!grant || grant.revokedAt || grant.resource !== resource()) return null;
       const account = accountById(db, grant.accountId);
       if (!account) return null;
+      // An access token issued by a refresh that asked for less carries its own narrower scope.
+      const narrowed = /^rc_at_s(\d+)_/.exec(token);
+      const mask = narrowed ? Number(narrowed[1]) : undefined;
       return {
         accountId: account.id,
         userId: account.userId,
         clientId: grant.clientId,
         grantId: grant.id,
-        scopes: grant.scopes.split(' ').filter((scope): scope is Scope => scope in scopes),
+        scopes: grant.scopes
+          .split(' ')
+          .filter((scope): scope is Scope => scope in scopes)
+          .filter(scope => mask === undefined || (mask & (1 << allScopes.indexOf(scope))) !== 0),
         expiresAt: new Date(stored.expiresAt),
       };
     },
@@ -465,8 +533,22 @@ export function createOAuth(db: Database, options: OAuthOptions) {
     disconnect(accountId: string, grantId: string) {
       const grant = grantById(db, grantId);
       if (!grant || grant.accountId !== accountId) return false;
-      revokeGrant(db, grantId, now().toISOString());
+      endGrant(grant, now().toISOString());
       return true;
+    },
+
+    /**
+     * Housekeeping, run by the server on a timer: expired codes and tokens, grants nothing can use
+     * any more (revoked, or with every code and token expired), and clients left without a grant
+     * that nobody has used for 30 days.
+     */
+    housekeeping() {
+      const time = now();
+      db.transaction(() => {
+        deleteExpiredOauth(db, time.toISOString());
+        deleteDeadGrants(db);
+        deleteUnusedClients(db, new Date(time.getTime() - idleClientMs).toISOString());
+      });
     },
   };
 }

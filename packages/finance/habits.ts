@@ -15,7 +15,7 @@ export function suggestHabits(input: FinancialSummary) {
   if (summary.dataStatus !== 'observed')
     return {
       source: 'rules',
-      synthetic: true,
+      synthetic: summary.synthetic,
       suggestions,
       warnings: ['History is incomplete; no spending reduction or savings amount is assumed.'],
     };
@@ -52,7 +52,8 @@ export function suggestHabits(input: FinancialSummary) {
     };
   return {
     source: 'rules',
-    synthetic: true,
+    // Suggestions are as fabricated or as real as the aggregates they were made from.
+    synthetic: summary.synthetic,
     suggestions: suggestions.slice(0, 5),
     warnings: [
       'Suggestions are optional habits for review, not financial transactions, credit decisions or guaranteed savings.',

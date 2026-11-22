@@ -290,7 +290,7 @@
           <div class="endpoint rc-field" id="endpoint-box">
             <label for="endpoint">ReloCat MCP server URL</label>
             <div class="endpoint-row">
-              <input id="endpoint" type="url" value="https://relo.cat/mcp" spellcheck="false" autocomplete="off" aria-describedby="endpoint-note">
+              <input id="endpoint" type="url" value="{{mcp-endpoint}}" spellcheck="false" autocomplete="off" aria-describedby="endpoint-note">
               <button class="rc-btn rc-btn--primary" id="copy-url" type="button"><!-- ICON:copy -->Copy URL</button>
             </div>
             <p id="endpoint-note" class="meta"></p>
@@ -330,11 +330,11 @@
         </div>
         <div>
           <h2>Running ReloCat yourself?</h2>
-          <p>Use fictional profiles for the local connected demo. Add authentication and access controls before sharing a public deployment.</p>
+          <p>Agents connect to <code>/mcp</code>. Town, school, transport and incentive tools need no sign-in. Tools that read or save a person’s own household, finances, bank summary or habits ask the agent to sign in with OAuth: the person signs in to their ReloCat account and approves the connection. Where the public demo is on, four fictional households can be read without an account; nothing in the demo is saved.</p>
           <details>
             <summary>Local server and live listing setup</summary>
             <pre>npm run dev</pre>
-            <p>The local MCP endpoint is <code>http://127.0.0.1:8787/mcp</code>. Cloud agents need an HTTPS URL from your server operator or a supported private tunnel.</p>
+            <p>The local MCP endpoint is <code>http://127.0.0.1:8787/mcp</code>. Cloud agents need an HTTPS URL: deploy behind HTTPS with <code>PUBLIC_ORIGIN</code> set to that origin, which also becomes the OAuth issuer and the address this page offers. Accounts are created at <code>/signup</code>; <code>/account</code> lists connected agents and removes them.</p>
             <p>Set <code>TREG_TOKEN</code> in the server environment to enable live example links. The provider may charge for searches. Town research runs without the key.</p>
           </details>
         </div>
@@ -359,7 +359,7 @@
         kind: 'Cloud connection',
         docs: 'https://developers.openai.com/plugins/deploy/connect-chatgpt',
         intro: 'Add ReloCat as a custom MCP plugin to use its tools in your conversations.',
-        steps: ['Open ChatGPT’s Plugins page. Select the plus button, then “Add custom MCP server”.','Name it ReloCat. Choose a public URL connection and paste the MCP server URL shown above. A configured Secure MCP Tunnel is another option.','Use the authentication settings supplied by the operator. Review the tools and create the plugin.','Install it, start a new chat, and type @ to select ReloCat. Try one of the prompts below.']
+        steps: ['Open ChatGPT’s Plugins page. Select the plus button, then “Add custom MCP server”.','Name it ReloCat. Choose a public URL connection and paste the MCP server URL shown above. A configured Secure MCP Tunnel is another option.','For authentication choose OAuth if you want your own saved household and finances; ChatGPT then opens ReloCat’s sign-in and consent page. Without authentication the town tools and the public demo still work. Review the tools and create the plugin.','Install it, start a new chat, and type @ to select ReloCat. Try one of the prompts below.']
       },
       {
         id: 'claude',
@@ -367,7 +367,7 @@
         kind: 'Cloud connection',
         docs: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
         intro: 'Add a custom connector in Claude. Remote connectors connect from Claude’s cloud, including in Claude Desktop.',
-        steps: ['Open Customize → Connectors. Choose “+ Add”, then “Add custom connector”.','Name the connector ReloCat and paste the MCP server URL shown above.','Review the detected authentication and follow your operator’s settings. Team or Enterprise users may need an administrator to add it first.','Enable ReloCat from the chat’s + menu → Connectors, then ask about a town.']
+        steps: ['Open Customize → Connectors. Choose “+ Add”, then “Add custom connector”.','Name the connector ReloCat and paste the MCP server URL shown above.','ReloCat announces OAuth sign-in. When Claude asks you to connect, sign in to your ReloCat account and approve the access it lists; town tools work without it. Team or Enterprise users may need an administrator to add the connector first.','Enable ReloCat from the chat’s + menu → Connectors, then ask about a town.']
       },
       {
         id: 'hermes',
@@ -375,7 +375,7 @@
         kind: 'Local or remote',
         docs: 'https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp',
         intro: 'Add ReloCat to the MCP servers in your active Hermes profile. Localhost works when Hermes and ReloCat run on the same machine.',
-        steps: ['Merge this entry into mcp_servers in your active profile’s config.yaml (default: ~/.hermes/config.yaml). Preserve your existing servers.','Start a fresh Hermes session and ask it to use ReloCat’s town tools.'],
+        steps: ['Merge this entry into mcp_servers in your active profile’s config.yaml (default: ~/.hermes/config.yaml). Preserve your existing servers.','Start a fresh Hermes session and ask it to use ReloCat’s town tools. They need no sign-in.','Personal tools answer with an OAuth sign-in challenge. If your Hermes version supports OAuth for MCP servers, follow its prompt to sign in to ReloCat; otherwise use the town tools and the public demo.'],
         snippet: url=>`mcp_servers:\n  relocat:\n    url: ${JSON.stringify(url)}`
       },
       {
@@ -384,7 +384,7 @@
         kind: 'Local or remote',
         docs: 'https://docs.openclaw.ai/tools/mcp',
         intro: 'Register ReloCat as a Streamable HTTP MCP server in OpenClaw.',
-        steps: ['Run the command below in the environment where OpenClaw runs.','Probe the connection, then ask your agent to use ReloCat. A remote OpenClaw installation cannot reach your laptop’s localhost.'],
+        steps: ['Run the command below in the environment where OpenClaw runs.','Probe the connection, then ask your agent to use ReloCat. A remote OpenClaw installation cannot reach your laptop’s localhost.','Town tools need no sign-in. Personal tools answer with an OAuth sign-in challenge; complete the sign-in if your OpenClaw version offers it for MCP servers.'],
         snippet: url=>`openclaw mcp add relocat --url '${url}' --transport streamable-http\nopenclaw mcp doctor relocat --probe`
       },
       {
@@ -393,7 +393,7 @@
         kind: 'Local or remote',
         docs: 'https://developers.openai.com/codex/mcp',
         intro: 'Add ReloCat to Codex’s MCP configuration using the CLI.',
-        steps: ['Run the command below on the machine where Codex runs.','Start a new session, check that ReloCat’s tools are available, and ask a town question.'],
+        steps: ['Run the command below on the machine where Codex runs.','Start a new session, check that ReloCat’s tools are available, and ask a town question. Town tools need no sign-in.','For your own saved household and finances, sign in with OAuth when Codex offers it for this server (see Codex’s MCP guide for the login command of your version); the browser opens ReloCat’s sign-in and consent page.'],
         snippet: url=>`codex mcp add relocat --url '${url}'`
       },
       {
@@ -402,7 +402,7 @@
         kind: 'Local or remote',
         docs: 'https://cursor.com/docs/context/mcp',
         intro: 'Give Cursor Agent access to ReloCat’s tools through an MCP server entry.',
-        steps: ['Merge this entry into .cursor/mcp.json for this project, or ~/.cursor/mcp.json for your account. Preserve other servers.','Enable ReloCat in Cursor’s MCP settings, then use it from Agent.'],
+        steps: ['Merge this entry into .cursor/mcp.json for this project, or ~/.cursor/mcp.json for your account. Preserve other servers.','Enable ReloCat in Cursor’s MCP settings, then use it from Agent. Town tools need no sign-in.','When Cursor shows that the server needs a login, sign in to your ReloCat account in the browser and approve the access. The server operator must allow Cursor’s return address (the cursor scheme in OAUTH_REDIRECT_SCHEMES).'],
         snippet: url=>JSON.stringify({mcpServers:{relocat:{url}}},null,2)
       },
       {
@@ -411,7 +411,7 @@
         kind: 'Local or remote',
         docs: 'https://geminicli.com/docs/tools/mcp-server/',
         intro: 'Connect the Gemini terminal agent using a Streamable HTTP endpoint. These instructions are for Gemini CLI.',
-        steps: ['Merge this into your Gemini CLI settings.json under mcpServers. Keep any existing servers.','Start a new CLI session and use /mcp to inspect the available tools.'],
+        steps: ['Merge this into your Gemini CLI settings.json under mcpServers. Keep any existing servers.','Start a new CLI session and use /mcp to inspect the available tools. Town tools need no sign-in.','Personal tools need an OAuth sign-in: follow Gemini CLI’s MCP authentication prompt if your version shows one, then sign in to ReloCat in the browser and approve the access.'],
         snippet: url=>JSON.stringify({mcpServers:{relocat:{httpUrl:url}}},null,2)
       },
       {
@@ -428,7 +428,7 @@
         kind: 'Streamable HTTP',
         docs: 'https://modelcontextprotocol.io/docs/learn/client-concepts',
         intro: 'Use any MCP client that supports Streamable HTTP and can reach your ReloCat server.',
-        steps: ['Add a server named ReloCat in your agent’s MCP settings.','Select Streamable HTTP and enter the MCP server URL shown above. Use the authentication required by your server operator.','Connect, list the available tools, and try get_town_profile or recommend_towns. Client configuration formats differ; follow your client’s documentation.']
+        steps: ['Add a server named ReloCat in your agent’s MCP settings.','Select Streamable HTTP and enter the MCP server URL shown above. Choose OAuth where the client offers it: ReloCat supports discovery, dynamic client registration and PKCE, and its personal tools answer 401 with a sign-in challenge until you have signed in. No authentication is enough for the town tools and the public demo.','Connect, list the available tools, and try get_town_profile or recommend_towns. Client configuration formats differ; follow your client’s documentation.']
       }
     ];
 
@@ -493,7 +493,7 @@
         ? "Enter a valid HTTP or HTTPS URL without credentials."
         : local
           ? "This address works for local agents. ChatGPT and Claude need an HTTPS URL they can reach or a supported tunnel."
-          : "Use the address and authentication settings from your server operator.";
+          : "Paste this address into your agent. Personal tools ask you to sign in to ReloCat with OAuth; town tools need no sign-in.";
 
       const config = get("config");
       config.hidden = !url || !active.snippet;

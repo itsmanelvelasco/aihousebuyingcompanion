@@ -2,12 +2,20 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Transaction } from '../packages/finance/cashflow.ts';
 import {
+  aggregateTransactions,
   analyzeTransactions,
+  recurringSince,
   scenarioSchema,
   simulateSavings,
   transactionSchema,
 } from '../packages/finance/cashflow.ts';
-import { compareSavings, parseTransactions, summarizeCsv, summarizeTransactions } from '../packages/finance/csv.ts';
+import {
+  cashFlowStatements,
+  compareSavings,
+  parseTransactions,
+  summarizeCsv,
+  summarizeTransactions,
+} from '../packages/finance/csv.ts';
 import { maxPlanningMonths, monthsToTarget } from '../packages/finance/savings.ts';
 import { generateFirstScenario } from '../packages/finance/scenario.ts';
 
@@ -179,31 +187,126 @@ test('a CSV is averaged over its complete months only, and the partial ones are 
 });
 
 test('a CSV with only partial months says so instead of presenting a monthly average', () => {
-  // A salary on 28 October and a coffee on 1 November: five days, no complete month.
-  const summary = summarizeCsv(csv('2026-10-28,Salary,2000', '2026-11-01,Coffee,-3'));
-  assert.deepEqual(
-    [summary.completeMonths, summary.partialMonths, summary.averageBasis],
-    [[], ['2026-10', '2026-11'], 'partial_months_only'],
-  );
-  assert.match(summary.averagingNote, /covers no complete calendar month \(2026-10, 2026-11 are partial\)/);
-  assert.match(summary.averagingNote, /5 day\(s\) spread over 1 month\(s\): a rough indication, not a monthly average/);
-  // The totals of the days covered, never divided by the two calendar months the rows touch.
-  assert.deepEqual(
-    [summary.estimatedMonthlySalary, summary.monthlyCostOfLiving, summary.monthlyNetCashFlow, summary.salaryMonths],
-    [2000, 3, 1997, 1],
-  );
-  // Thirty-seven days across two calendar months are about 1.2 months (365.25 / 12 days each), not two.
+  // Thirty-seven days across two calendar months and no complete one: about 1.2 months (365.25 / 12 days
+  // each), never the two calendar months the rows touch.
   const span = summarizeCsv(csv('2026-10-15,Salary,2000', '2026-11-20,Rent,-900'));
-  assert.equal(span.averageBasis, 'partial_months_only');
-  assert.deepEqual([span.estimatedMonthlySalary, span.monthlyCostOfLiving], [1645.27, 740.37]);
-  assert.match(span.averagingNote, /37 day\(s\) spread over 1.22 month\(s\)/);
-  // A single row is one day, counted as one month at least: never a salary multiplied by thirty.
-  const single = summarizeCsv(csv('2026-10-28,Salary,2000'));
-  assert.deepEqual([single.estimatedMonthlySalary, single.averageBasis], [2000, 'partial_months_only']);
+  assert.deepEqual(
+    [span.completeMonths, span.partialMonths, span.averageBasis, span.coveredDays],
+    [[], ['2026-10', '2026-11'], 'partial_months_only', 37],
+  );
+  assert.deepEqual([span.estimatedMonthlySalary, span.monthlyCostOfLiving, span.salaryMonths], [1645.27, 740.37, 1]);
+  assert.match(span.averagingNote, /covers no complete calendar month \(2026-10, 2026-11 are partial\)/);
+  assert.match(
+    span.averagingNote,
+    /37 day\(s\) spread over 1.22 month\(s\): a rough indication, not a monthly average/,
+  );
+  // Twenty-eight days is the least that is scaled to a month, and it counts as one month at least.
+  const fourWeeks = summarizeCsv(csv('2026-10-02,Salary,2000', '2026-10-29,Rent,-900'));
+  assert.deepEqual(
+    [fourWeeks.averageBasis, fourWeeks.coveredDays, fourWeeks.monthlyCostOfLiving],
+    ['partial_months_only', 28, 900],
+  );
   // The summary can be built from parsed rows, which carry their date.
   const rows = parseTransactions(csv('2026-10-28,Salary,2000'));
   assert.deepEqual(rows, [{ date: '2026-10-28', month: '2026-10', label: 'salary', cents: 200_000 }]);
-  assert.deepEqual(summarizeTransactions(rows), single);
+  assert.deepEqual(summarizeTransactions(rows), summarizeCsv(csv('2026-10-28,Salary,2000')));
+});
+
+test('a statement shorter than a month gives no monthly figure at all, and says to ask for more', () => {
+  // One day: a salary and a supermarket. It used to be reported as €2,000 of monthly pay and €45 of monthly spending.
+  const day = summarizeCsv(csv('2026-10-28,Salary,2000', '2026-10-28,Mercadona,-45'));
+  assert.deepEqual(
+    [day.averageBasis, day.coveredDays, day.coveredFrom, day.coveredTo],
+    ['period_too_short', 1, '2026-10-28', '2026-10-28'],
+  );
+  assert.deepEqual(
+    [
+      day.estimatedMonthlySalary,
+      day.monthlyOtherIncome,
+      day.monthlyInflows,
+      day.monthlyCostOfLiving,
+      day.monthlyNetCashFlow,
+      day.monthlyExpenses,
+    ],
+    [null, null, null, null, null, {}],
+  );
+  // What the day holds is still there, named as totals of the period and never as a month.
+  assert.deepEqual(day.periodTotals, { inflows: 2000, outflows: 45, net: 1955 });
+  assert.match(
+    day.averagingNote,
+    /2026-10-28 to 2026-10-28: 1 day\(s\)\. That is too short for a monthly figure, so none is given/,
+  );
+  assert.match(day.averagingNote, /Ask for a statement that covers at least one complete calendar month/);
+  // Twenty-seven days are still too short; own-account transfers stay out of the totals.
+  const weeks = summarizeCsv(
+    csv('2026-10-03,Salary,2000', '2026-10-10,Internal transfer,-500', '2026-10-29,Coffee,-3'),
+  );
+  assert.deepEqual(
+    [weeks.averageBasis, weeks.coveredDays, weeks.monthlyInflows, weeks.excludedTransfers],
+    ['period_too_short', 27, null, 1],
+  );
+  assert.deepEqual(weeks.periodTotals, { inflows: 2000, outflows: 3, net: 1997 });
+
+  // The interviewer's questions follow the same rule: no amount, a reason, and a request for more.
+  const euros = (amount: number) => `€${amount}`;
+  const short = cashFlowStatements(day, euros);
+  assert.equal(short.monthlyFigures, false);
+  for (const question of [short.salaryQuestion, short.spendingQuestion]) {
+    assert.match(question, /covers only a single day \(2026-10-28\), which is too short/);
+    assert.doesNotMatch(question, /€|Average|a month\./);
+  }
+  assert.match(short.spendingQuestion, /add a statement that covers at least one full calendar month/);
+  assert.match(short.guidance ?? '', /Do not present any amount as monthly income, spending or an average/);
+  assert.match(cashFlowStatements(weeks, euros).spendingQuestion, /covers only 27 days \(2026-10-03 to 2026-10-29\)/);
+  // A rough indication is worded as one; only complete months are called an average.
+  const rough = cashFlowStatements(summarizeCsv(csv('2026-10-15,Salary,2000', '2026-11-20,Rent,-900')), euros);
+  assert.match(rough.spendingQuestion, /rough indication, not a monthly average: about €740.37 of spending a month/);
+  assert.match(rough.salaryQuestion, /rough indication.*about €1645.27 in monthly pay/);
+  assert.doesNotMatch(rough.spendingQuestion, /Average spending was/);
+  const complete = cashFlowStatements(
+    summarizeCsv(csv('2026-08-31,Coffee,-3', '2026-09-01,Salary,2000', '2026-09-15,Rent,-900', '2026-10-01,Coffee,-3')),
+    euros,
+  );
+  assert.deepEqual(
+    [complete.spendingQuestion, complete.guidance],
+    ['Average spending was €900 a month. Was anything unusual or missing?', null],
+  );
+  // A summary saved by an older version of the page has no basis: it is not called an average.
+  const legacy = cashFlowStatements({ estimatedMonthlySalary: 2000, monthlyCostOfLiving: 900 }, euros);
+  assert.match(legacy.spendingQuestion, /rough indication/);
+});
+
+test('recurring expenses are looked for in the period and the twelve months before it, no further', () => {
+  const gym = (id: string, date: string): Transaction => ({
+    id,
+    accountId: 'main',
+    date,
+    description: 'Gym',
+    amountCents: -3000,
+    currency: 'EUR',
+    category: 'other',
+    status: 'booked',
+    synthetic: true,
+  });
+  const recurring = (rows: Transaction[]) => analyzeTransactions(rows, '2026-10-01', '2026-10-31').recurringExpenses;
+  assert.equal(recurringSince('2026-10-01'), '2025-10-01');
+  // A yearly payment: this October and last October.
+  assert.deepEqual(
+    recurring([gym('a', '2025-10-05'), gym('b', '2026-10-05')]).map(expense => expense.observedMonths),
+    [['2025-10', '2026-10']],
+  );
+  // The earlier occurrence is older than the window: one occurrence is not a recurring expense.
+  assert.deepEqual(recurring([gym('a', '2025-09-30'), gym('b', '2026-10-05')]), []);
+  // The in-memory aggregates are what the database is asked for.
+  const aggregates = aggregateTransactions(
+    [gym('a', '2025-09-30'), gym('b', '2026-10-05')],
+    '2026-10-01',
+    '2026-10-31',
+  );
+  assert.deepEqual(
+    [aggregates.cells.length, aggregates.expenseGroups.map(group => [group.description, group.months])],
+    [1, [['Gym', ['2026-10']]]],
+  );
 });
 
 test('the demo statement is averaged over August and September; the cut-off October is left out', async () => {

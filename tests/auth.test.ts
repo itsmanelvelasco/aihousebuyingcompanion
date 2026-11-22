@@ -2,15 +2,32 @@ import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import test from 'node:test';
 import { createHabitStore } from '../apps/habits-agent/store.ts';
+import { mcpEndpoint } from '../apps/mcp-server/connect-page.ts';
 import { createMcpServer } from '../apps/mcp-server/tools.ts';
-import { AuthError, createAccounts } from '../packages/auth/accounts.ts';
+import { type AuthError, createAccounts } from '../packages/auth/accounts.ts';
 import { hashPassword, verifyPassword } from '../packages/auth/passwords.ts';
 import { csrfToken, verifyCsrf } from '../packages/auth/secrets.ts';
+import { createThrottle } from '../packages/auth/throttle.ts';
+import { defineBankProvider } from '../packages/banks/provider.ts';
+import { createBankRegistry } from '../packages/banks/registry.ts';
 import { accessConfig, envText, publicOriginConfig } from '../packages/config/env.ts';
 import { remainingRows } from '../packages/db/auth.ts';
 import { open } from '../packages/db/database.ts';
 import { loadData } from '../packages/places/data.ts';
-import { Browser, bearer, connectClient, mcp, pkce, postForm, registerClient, startApp } from './support/app.ts';
+import {
+  Browser,
+  bearer,
+  connectClient,
+  mcp,
+  pkce,
+  postForm,
+  productionSite,
+  registerClient,
+  shapes,
+  startApp,
+  startProductionApp,
+  type TestApp,
+} from './support/app.ts';
 
 const password = 'correct horse battery';
 
@@ -81,32 +98,208 @@ test('sign-up creates one empty person with an unguessable id; sign-in checks th
   db.close();
 });
 
-test('sign-in is throttled per account and per address, and unlocks after the lock time', async () => {
+/** The refusal a promise ends with; a promise that succeeds fails the test. */
+const refused = (attempt: Promise<unknown>) =>
+  attempt.then(
+    () => assert.fail('expected a refusal'),
+    error => error as AuthError,
+  );
+
+test('a stranger’s wrong passwords slow the stranger down and never lock the person out', async () => {
+  const db = open(':memory:');
+  let now = Date.parse('2026-11-22T10:00:00Z');
+  const accounts = createAccounts(db, { now: () => new Date(now) });
+  await accounts.signUp({ email: 'ada@example.com', password, address: 'signup' });
+  const attempt = (secret: string, address: string) =>
+    accounts.login({ email: 'ada@example.com', password: secret, address });
+  const refusal = (secret: string, address: string) => refused(attempt(secret, address));
+
+  // Five wrong passwords from one address are free; from the sixth on that address waits, longer each time.
+  for (let n = 0; n < 5; n++) await assert.rejects(attempt('wrong', 'attacker'), { code: 'invalid_credentials' });
+  await assert.rejects(attempt('wrong', 'attacker'), { code: 'invalid_credentials' });
+  const first = await refusal('wrong', 'attacker');
+  assert.deepEqual([first.code, first.retryAfterSeconds], ['throttled', 30]);
+  // While it waits, not even the right password is looked at from that address: it is its own budget.
+  assert.equal((await refusal(password, 'attacker')).code, 'throttled');
+  const waits = [];
+  for (let n = 0; n < 6; n++) {
+    now += (await refusal('wrong', 'attacker')).retryAfterSeconds * 1000;
+    await assert.rejects(attempt('wrong', 'attacker'), { code: 'invalid_credentials' });
+    waits.push((await refusal('wrong', 'attacker')).retryAfterSeconds);
+  }
+  assert.deepEqual(waits, [60, 120, 240, 480, 900, 900], 'the wait doubles up to 15 minutes');
+
+  // The reviewer's scenario: all of that happened, and the person signs in from their own address at once.
+  const { session } = await attempt(password, 'home');
+  assert(accounts.session(session.id));
+  // The person's own typo costs them nothing but one of their own five tries.
+  await assert.rejects(attempt('typo', 'home'), { code: 'invalid_credentials' });
+  await attempt(password, 'home');
+  // And they can delete the account: the sign-in counters play no part in an authenticated action.
+  const account = accounts.session(session.id)!.account;
+  assert(await accounts.deleteAccount(account.id, password, { sessionId: session.id }));
+  assert.equal(accounts.account(account.id), null);
+  db.close();
+});
+
+test('an address that guesses across accounts waits as an address; a careful account still checks a right password', async () => {
   const db = open(':memory:');
   let now = Date.parse('2026-11-22T10:00:00Z');
   const accounts = createAccounts(db, {
     now: () => new Date(now),
-    throttle: { perAccount: 3, perAddress: 5, windowMs: 60_000, lockMs: 120_000 },
+    throttle: { perAddress: 4, accountCeiling: 6 },
   });
-  await accounts.signUp({ email: 'ada@example.com', password, address: 'signup' });
-  await accounts.signUp({ email: 'bob@example.com', password, address: 'signup' });
+  for (const name of ['ada', 'bob']) await accounts.signUp({ email: `${name}@example.com`, password, address: name });
   const attempt = (email: string, secret: string, address: string) =>
     accounts.login({ email, password: secret, address });
-  for (let n = 0; n < 3; n++)
-    await assert.rejects(attempt('ada@example.com', 'wrong', `ip-${n}`), { code: 'invalid_credentials' });
-  // The right password does not get through a locked account, from any address.
-  const locked = await attempt('ada@example.com', password, 'ip-9').catch(error => error as AuthError);
-  assert(locked instanceof AuthError && locked.code === 'throttled' && locked.retryAfterSeconds > 0);
-  // Another account is not affected by that lock.
-  await attempt('bob@example.com', password, 'ip-9');
-  now += 121_000;
-  await attempt('ada@example.com', password, 'ip-9');
+  const refusal = (email: string, secret: string, address: string) => refused(attempt(email, secret, address));
 
-  // One address trying many accounts is locked as an address.
+  // Credential stuffing: one address, one guess per account. After four failures the address waits.
   for (let n = 0; n < 5; n++)
-    await assert.rejects(attempt(`guess${n}@example.com`, 'wrong', 'attacker'), { code: 'invalid_credentials' });
-  await assert.rejects(attempt('bob@example.com', password, 'attacker'), { code: 'throttled' });
+    await assert.rejects(attempt(`guess${n}@example.com`, 'wrong', 'stuffer'), { code: 'invalid_credentials' });
+  assert.equal((await refusal('bob@example.com', password, 'stuffer')).code, 'throttled');
   await attempt('bob@example.com', password, 'elsewhere');
+
+  // Many addresses, one account: past the ceiling the account turns careful. It is not locked:
+  // a right password from an address with no failures of its own still signs in...
+  for (let n = 0; n < 7; n++)
+    await assert.rejects(attempt('ada@example.com', 'wrong', `bot-${n}`), { code: 'invalid_credentials' });
+  await attempt('ada@example.com', password, 'home');
+  // ...but every address now gets one wrong try and then the longest wait.
+  await assert.rejects(attempt('ada@example.com', 'wrong', 'bot-99'), { code: 'invalid_credentials' });
+  const careful = await refusal('ada@example.com', 'wrong', 'bot-99');
+  assert.deepEqual([careful.code, careful.retryAfterSeconds], ['throttled', 900]);
+  // An hour later the account counts from zero again.
+  now += 61 * 60_000;
+  await assert.rejects(attempt('ada@example.com', 'wrong', 'bot-100'), { code: 'invalid_credentials' });
+  await assert.rejects(attempt('ada@example.com', 'wrong', 'bot-100'), { code: 'invalid_credentials' });
+  db.close();
+});
+
+test('an address that may be everybody is never locked as one client: per-account waits and a ceiling instead', async () => {
+  const db = open(':memory:');
+  let now = Date.parse('2026-11-22T10:00:00Z');
+  const accounts = createAccounts(db, {
+    now: () => new Date(now),
+    throttle: {
+      attempts: 2,
+      perAddress: 3,
+      sharedCeiling: 12,
+      signUpsPerAddress: 2,
+      signUpsShared: 5,
+      signUpsGlobal: 9,
+    },
+  });
+  const proxy = { address: '172.17.0.1', shared: true };
+  await accounts.signUp({ email: 'ada@example.com', password, ...proxy });
+  await accounts.signUp({ email: 'bob@example.com', password, ...proxy });
+  const attempt = (email: string, secret: string) => accounts.login({ email, password: secret, ...proxy });
+  const refusal = (email: string, secret: string) => refused(attempt(email, secret));
+
+  // Far more failures than the per-address limit, through the proxy: nobody else is locked out.
+  for (let n = 0; n < 8; n++)
+    await assert.rejects(attempt(`guess${n}@example.com`, 'wrong'), { code: 'invalid_credentials' });
+  await attempt('ada@example.com', password);
+  await attempt('bob@example.com', password);
+  // Guessing one account through the proxy is still slowed, for that account only.
+  for (let n = 0; n < 3; n++)
+    await assert.rejects(attempt('bob@example.com', 'wrong'), { code: 'invalid_credentials' });
+  assert.deepEqual([(await refusal('bob@example.com', password)).retryAfterSeconds], [30]);
+  await attempt('ada@example.com', password);
+  // The ceiling for everybody behind the proxy: twelve failures in five minutes, then a pause that ends with the window.
+  await assert.rejects(attempt('guess9@example.com', 'wrong'), { code: 'invalid_credentials' });
+  const ceiling = await refusal('ada@example.com', password);
+  assert.equal(ceiling.code, 'throttled');
+  assert(ceiling.retryAfterSeconds > 0 && ceiling.retryAfterSeconds <= 300, String(ceiling.retryAfterSeconds));
+  now += 5 * 60_000;
+  await attempt('ada@example.com', password);
+
+  // Sign-ups: a shared address gets the larger budget, a single address the smaller one.
+  for (let n = 0; n < 3; n++) await accounts.signUp({ email: `new${n}@example.com`, password, ...proxy });
+  const full = await refused(accounts.signUp({ email: 'late@example.com', password, ...proxy }));
+  assert(full.code === 'throttled' && full.retryAfterSeconds <= 900);
+  for (let n = 0; n < 2; n++) await accounts.signUp({ email: `one${n}@example.com`, password, address: '8.8.8.8' });
+  await assert.rejects(accounts.signUp({ email: 'one2@example.com', password, address: '8.8.8.8' }), {
+    code: 'throttled',
+  });
+  // Everybody together meets a ceiling too, so rotating addresses does not create accounts without bound.
+  await accounts.signUp({ email: 'two0@example.com', password, address: '8.8.4.4' });
+  await accounts.signUp({ email: 'two1@example.com', password, address: '9.9.9.9' });
+  await assert.rejects(accounts.signUp({ email: 'two2@example.com', password, address: '1.1.1.1' }), {
+    code: 'throttled',
+  });
+  now += 61 * 60_000;
+  await accounts.signUp({ email: 'two2@example.com', password, address: '1.1.1.1' });
+  db.close();
+});
+
+test('deleting an account is throttled per session, not by the sign-in counters', async () => {
+  const db = open(':memory:');
+  const now = Date.parse('2026-11-22T10:00:00Z');
+  const accounts = createAccounts(db, { now: () => new Date(now) });
+  const account = await accounts.signUp({ email: 'ada@example.com', password, address: 'home' });
+  const mine = accounts.startSession(account.id);
+  const stolen = accounts.startSession(account.id);
+  // A stranger hammers the sign-in for this email from many addresses.
+  for (let n = 0; n < 8; n++)
+    await accounts.login({ email: 'ada@example.com', password: 'wrong', address: `bot-${n % 2}` }).catch(() => {});
+  // Somebody with a session but not the password gets five tries, then waits: for that session only.
+  const refusal = (sessionId: string, secret: string) =>
+    refused(accounts.deleteAccount(account.id, secret, { sessionId }));
+  for (let n = 0; n < 6; n++) assert.equal((await refusal(stolen.id, 'wrong')).code, 'invalid_credentials');
+  const waiting = await refusal(stolen.id, password);
+  assert.deepEqual([waiting.code, waiting.retryAfterSeconds], ['throttled', 30]);
+  assert(accounts.account(account.id), 'nothing was deleted');
+  // The person's own session is not affected by any of it.
+  const calls: string[] = [];
+  const outcome = await accounts.deleteAccount(account.id, password, {
+    sessionId: mine.id,
+    beforeDelete: userId => void calls.push(userId),
+  });
+  assert(outcome && outcome.removed.accounts === 1);
+  assert.deepEqual(calls, [account.userId], 'the hook ran once, after the password was confirmed');
+  // A wrong password never reaches the hook.
+  const other = await accounts.signUp({ email: 'bob@example.com', password, address: 'home' });
+  await assert.rejects(accounts.deleteAccount(other.id, 'wrong', { beforeDelete: () => assert.fail('must not run') }), {
+    code: 'invalid_credentials',
+  });
+  db.close();
+});
+
+test('housekeeping removes what expired without anybody signing in, and the counter table is bounded', async () => {
+  const db = open(':memory:');
+  let now = Date.parse('2026-11-22T10:00:00Z');
+  const accounts = createAccounts(db, { now: () => new Date(now), throttle: { maxRows: 300 } });
+  const account = await accounts.signUp({ email: 'ada@example.com', password, address: 'home' });
+  accounts.startSession(account.id);
+  const count = (table: string) => db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table}`)!.n;
+  // Failed sign-ins for emails that do not exist leave counters behind; nobody ever signs in to clear them.
+  for (let n = 0; n < 3; n++)
+    await accounts.login({ email: `nobody${n}@example.com`, password: 'wrong', address: `ip-${n}` }).catch(() => {});
+  assert(count('auth_throttle') >= 9);
+  assert.equal(
+    db.get("SELECT 1 FROM auth_throttle WHERE key LIKE '%example.com%'"),
+    undefined,
+    'counter keys hold a hash of the email, never the text somebody typed',
+  );
+  accounts.housekeeping();
+  assert(count('auth_throttle') >= 9, 'fresh counters stay');
+  now += 3 * 60 * 60_000;
+  accounts.housekeeping();
+  assert.equal(count('auth_throttle'), 0);
+  assert.equal(count('auth_sessions'), 1);
+  now += 31 * 24 * 60 * 60_000;
+  accounts.housekeeping();
+  assert.equal(count('auth_sessions'), 0, 'a session past its end is removed by the timer, not by the next sign-in');
+
+  // A flood of distinct keys cannot grow the table without bound: the oldest rows go first.
+  const throttle = createThrottle(db, () => new Date(now), 300);
+  for (let n = 0; n < 2000; n++) {
+    now += 10;
+    throttle.spend(`flood:${n}`, 60_000);
+  }
+  assert(count('auth_throttle') <= 500, String(count('auth_throttle')));
+  assert(db.get("SELECT 1 FROM auth_throttle WHERE key = 'flood:1999'"), 'the newest counters are the ones kept');
   db.close();
 });
 
@@ -259,408 +452,422 @@ test('get_data_sources returns only what a person needs', async () => {
 
 // ---------------------------------------------------------------- HTTP: pages
 
-test('sign-up, sign-in and sign-out over HTTP: cookies, CSRF and security headers', async t => {
-  const server = await startApp();
-  t.after(() => server.close());
-  const browser = new Browser(server.origin);
+for (const shape of shapes)
+  test(`sign-up, sign-in and sign-out over HTTP: cookies, CSRF and security headers [${shape.name}]`, async t => {
+    const server = await shape.start();
+    t.after(() => server.close());
+    const browser = server.browser();
 
-  const page = await browser.request('/signup');
-  const csp = page.headers.get('content-security-policy') ?? '';
-  assert.match(csp, /default-src 'none'/);
-  assert.doesNotMatch(csp, /script-src/);
-  assert.equal(page.headers.get('x-frame-options'), 'DENY');
-  assert.doesNotMatch(await page.text(), /<script|onclick=|onsubmit=/i);
+    const page = await browser.request('/signup');
+    const csp = page.headers.get('content-security-policy') ?? '';
+    assert.match(csp, /default-src 'none'/);
+    assert.doesNotMatch(csp, /script-src/);
+    assert.equal(page.headers.get('x-frame-options'), 'DENY');
+    assert.doesNotMatch(await page.text(), /<script|onclick=|onsubmit=/i);
 
-  // A form without the CSRF token, with a token of another visitor, or from another site is refused.
-  const csrf = await browser.csrf('/signup');
-  const form = { email: 'ada@example.com', password };
-  assert.equal((await browser.request('/signup', { form })).status, 403);
-  assert.equal((await new Browser(server.origin).request('/signup', { form: { ...form, csrf } })).status, 403);
-  const crossSite = await browser.request('/signup', {
-    form: { ...form, csrf },
-    headers: { Origin: 'https://evil.example' },
+    // A form without the CSRF token, with a token of another visitor, or from another site is refused.
+    const csrf = await browser.csrf('/signup');
+    const form = { email: 'ada@example.com', password };
+    assert.equal((await browser.request('/signup', { form })).status, 403);
+    assert.equal((await server.browser().request('/signup', { form: { ...form, csrf } })).status, 403);
+    const crossSite = await browser.request('/signup', {
+      form: { ...form, csrf },
+      headers: { Origin: 'https://evil.example' },
+    });
+    assert.equal(crossSite.status, 403);
+    assert.equal(server.db.get('SELECT 1 FROM accounts'), undefined);
+
+    const created = await browser.request('/signup', { form: { ...form, csrf } });
+    assert.equal(created.status, 303);
+    assert.equal(created.headers.get('location'), '/account');
+    const cookie = created.headers.getSetCookie().find(value => value.startsWith(`${server.sessionCookie}=`));
+    assert(cookie && /HttpOnly/.test(cookie) && /SameSite=Lax/.test(cookie) && /Path=\//.test(cookie));
+    // Plain HTTP on localhost cannot carry a Secure cookie; behind HTTPS it is Secure with the __Host- prefix.
+    assert.equal(/; Secure/.test(cookie), server.secure);
+    const firstSession = browser.cookies.get(server.sessionCookie);
+
+    const account = await (await browser.request('/account')).text();
+    assert.match(account, /ada@example\.com/);
+    assert.match(account, /What is stored about you/);
+
+    // GET /logout only asks; the POST with the session's token signs out.
+    assert.equal((await browser.request('/logout')).status, 200);
+    assert.equal((await browser.request('/account')).status, 200);
+    assert.equal((await browser.request('/logout', { form: { csrf: 'wrong' } })).status, 403);
+    const logoutCsrf = await browser.csrf('/logout');
+    assert.equal((await browser.request('/logout', { form: { csrf: logoutCsrf } })).status, 303);
+    assert.equal((await browser.request('/account')).status, 303);
+
+    // Signing in issues a new session id; the old one stays dead.
+    const wrong = await browser.login('ada@example.com', 'not the password');
+    assert.equal(wrong.status, 400);
+    assert.match(await wrong.text(), /email or the password is not right/);
+    assert.equal((await browser.login('ada@example.com')).status, 303);
+    assert.notEqual(browser.cookies.get(server.sessionCookie), firstSession);
+    const stale = server.browser();
+    stale.cookies.set(server.sessionCookie, firstSession ?? '');
+    assert.equal((await stale.request('/account')).status, 303);
+
+    // An open redirect through ?next is not possible.
+    for (const next of ['https://evil.example', '//evil.example', '/\\evil.example', '/api/users']) {
+      // Each from another address, so these sign-ins are not one visitor's burst.
+      const fresh = server.browser(`203.0.113.${20 + next.length}`);
+      const token = await fresh.csrf('/login');
+      const response = await fresh.request('/login', {
+        form: { csrf: token, email: 'ada@example.com', password, next },
+      });
+      assert.equal(response.headers.get('location'), '/account', next);
+    }
   });
-  assert.equal(crossSite.status, 403);
-  assert.equal(server.db.get('SELECT 1 FROM accounts'), undefined);
 
-  const created = await browser.request('/signup', { form: { ...form, csrf } });
-  assert.equal(created.status, 303);
-  assert.equal(created.headers.get('location'), '/account');
-  const cookie = created.headers.getSetCookie().find(value => value.startsWith('rc_session='));
-  assert(cookie && /HttpOnly/.test(cookie) && /SameSite=Lax/.test(cookie) && /Path=\//.test(cookie));
-  assert.doesNotMatch(cookie, /Secure/, 'plain HTTP on localhost cannot carry a Secure cookie');
-  const firstSession = browser.cookies.get('rc_session');
+for (const shape of shapes)
+  test(`the account page escapes what it prints, lists connected clients, revokes them and deletes everything [${shape.name}]`, async t => {
+    const server = await shape.start();
+    t.after(() => server.close());
+    const browser = server.browser();
+    await browser.signUp('ada@example.com');
+    const { body: client } = await registerClient(server.origin, { client_name: '<img src=x onerror=alert(1)>' });
+    assert.equal(typeof client.client_id, 'string');
+    const { verifier: _verifier, challenge } = pkce();
+    const params = {
+      response_type: 'code',
+      client_id: client.client_id,
+      redirect_uri: 'https://client.example/callback',
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+      scope: 'person:read',
+    };
+    const consent = await browser.request(`/oauth/authorize?${new URLSearchParams(params)}`);
+    const html = await consent.text();
+    assert.doesNotMatch(html, /<img src=x/);
+    assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+    assert.match(html, /client\.example/, 'the consent page names where the person is sent back to');
+    assert.match(consent.headers.get('content-security-policy') ?? '', /form-action 'self' https:\/\/client\.example/);
 
-  const account = await (await browser.request('/account')).text();
-  assert.match(account, /ada@example\.com/);
-  assert.match(account, /What is stored about you/);
+    const connected = await connectClient(browser);
+    assert.equal(connected.status, 200);
+    const page = await (await browser.request('/account')).text();
+    assert.match(page, /Test client/);
+    const grant = /name="grant" value="([^"]+)"/.exec(page)?.[1] ?? '';
+    const csrf = await browser.csrf('/account');
+    // Another signed-in person cannot remove this grant.
+    const stranger = server.browser();
+    await stranger.signUp('eve@example.com');
+    await stranger.request('/account/disconnect', { form: { csrf: await stranger.csrf('/account'), grant } });
+    assert.equal((await mcp(server.origin, 'get_person', {}, bearer(connected.tokens.access_token))).status, 200);
+    assert.equal((await browser.request('/account/disconnect', { form: { csrf, grant } })).status, 303);
+    assert.equal((await mcp(server.origin, 'get_person', {}, bearer(connected.tokens.access_token))).status, 401);
+    assert.equal(
+      (
+        await postForm(server.origin, '/oauth/token', {
+          grant_type: 'refresh_token',
+          refresh_token: connected.tokens.refresh_token,
+          client_id: connected.clientId,
+        })
+      ).status,
+      400,
+    );
 
-  // GET /logout only asks; the POST with the session's token signs out.
-  assert.equal((await browser.request('/logout')).status, 200);
-  assert.equal((await browser.request('/account')).status, 200);
-  assert.equal((await browser.request('/logout', { form: { csrf: 'wrong' } })).status, 403);
-  const logoutCsrf = await browser.csrf('/logout');
-  assert.equal((await browser.request('/logout', { form: { csrf: logoutCsrf } })).status, 303);
-  assert.equal((await browser.request('/account')).status, 303);
-
-  // Signing in issues a new session id; the old one stays dead.
-  const wrong = await browser.login('ada@example.com', 'not the password');
-  assert.equal(wrong.status, 400);
-  assert.match(await wrong.text(), /email or the password is not right/);
-  assert.equal((await browser.login('ada@example.com')).status, 303);
-  assert.notEqual(browser.cookies.get('rc_session'), firstSession);
-  const stale = new Browser(server.origin);
-  stale.cookies.set('rc_session', firstSession ?? '');
-  assert.equal((await stale.request('/account')).status, 303);
-
-  // An open redirect through ?next is not possible.
-  for (const next of ['https://evil.example', '//evil.example', '/\\evil.example', '/api/users']) {
-    const fresh = new Browser(server.origin);
-    const token = await fresh.csrf('/login');
-    const response = await fresh.request('/login', { form: { csrf: token, email: 'ada@example.com', password, next } });
-    assert.equal(response.headers.get('location'), '/account', next);
-  }
-});
-
-test('the account page escapes what it prints, lists connected clients, revokes them and deletes everything', async t => {
-  const server = await startApp();
-  t.after(() => server.close());
-  const browser = new Browser(server.origin);
-  await browser.signUp('ada@example.com');
-  const { body: client } = await registerClient(server.origin, { client_name: '<img src=x onerror=alert(1)>' });
-  assert.equal(typeof client.client_id, 'string');
-  const { verifier: _verifier, challenge } = pkce();
-  const params = {
-    response_type: 'code',
-    client_id: client.client_id,
-    redirect_uri: 'https://client.example/callback',
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
-    scope: 'person:read',
-  };
-  const consent = await browser.request(`/oauth/authorize?${new URLSearchParams(params)}`);
-  const html = await consent.text();
-  assert.doesNotMatch(html, /<img src=x/);
-  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
-  assert.match(html, /client\.example/, 'the consent page names where the person is sent back to');
-  assert.match(consent.headers.get('content-security-policy') ?? '', /form-action 'self' https:\/\/client\.example/);
-
-  const connected = await connectClient(browser);
-  assert.equal(connected.status, 200);
-  const page = await (await browser.request('/account')).text();
-  assert.match(page, /Test client/);
-  const grant = /name="grant" value="([^"]+)"/.exec(page)?.[1] ?? '';
-  const csrf = await browser.csrf('/account');
-  // Another signed-in person cannot remove this grant.
-  const stranger = new Browser(server.origin);
-  await stranger.signUp('eve@example.com');
-  await stranger.request('/account/disconnect', { form: { csrf: await stranger.csrf('/account'), grant } });
-  assert.equal((await mcp(server.origin, 'get_person', {}, bearer(connected.tokens.access_token))).status, 200);
-  assert.equal((await browser.request('/account/disconnect', { form: { csrf, grant } })).status, 303);
-  assert.equal((await mcp(server.origin, 'get_person', {}, bearer(connected.tokens.access_token))).status, 401);
-  assert.equal(
-    (
-      await postForm(server.origin, '/oauth/token', {
-        grant_type: 'refresh_token',
-        refresh_token: connected.tokens.refresh_token,
-        client_id: connected.clientId,
-      })
-    ).status,
-    400,
-  );
-
-  // Deleting needs the password and the confirmation; afterwards nothing is left and the cookie is dead.
-  const again = await connectClient(browser);
-  const refused = await browser.request('/account/delete', { form: { csrf, password: 'wrong', confirm: 'yes' } });
-  assert.equal(refused.status, 400);
-  const account = server.db.get<{ id: string; user_id: string }>(
-    "SELECT id, user_id FROM accounts WHERE email = 'ada@example.com'",
-  )!;
-  const deleted = await browser.request('/account/delete', { form: { csrf, password, confirm: 'yes' } });
-  assert.equal(deleted.status, 200);
-  assert.equal(remainingRows(server.db, account.id, account.user_id), 0);
-  assert.equal((await browser.request('/account')).status, 303);
-  assert.equal((await mcp(server.origin, 'get_person', {}, bearer(again.tokens.access_token))).status, 401);
-  assert.equal(server.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM accounts')?.n, 1, 'the other account remains');
-});
+    // Deleting needs the password and the confirmation; afterwards nothing is left and the cookie is dead.
+    const again = await connectClient(browser);
+    const refused = await browser.request('/account/delete', { form: { csrf, password: 'wrong', confirm: 'yes' } });
+    assert.equal(refused.status, 400);
+    const account = server.db.get<{ id: string; user_id: string }>(
+      "SELECT id, user_id FROM accounts WHERE email = 'ada@example.com'",
+    )!;
+    const deleted = await browser.request('/account/delete', { form: { csrf, password, confirm: 'yes' } });
+    assert.equal(deleted.status, 200);
+    assert.equal(remainingRows(server.db, account.id, account.user_id), 0);
+    assert.equal((await browser.request('/account')).status, 303);
+    assert.equal((await mcp(server.origin, 'get_person', {}, bearer(again.tokens.access_token))).status, 401);
+    assert.equal(server.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM accounts')?.n, 1, 'the other account remains');
+  });
 
 // ---------------------------------------------------------------- HTTP: OAuth
 
-test('OAuth 2.1 for MCP: discovery, registration, PKCE, tokens, refresh rotation, reuse detection and revocation', async t => {
-  const server = await startApp();
-  t.after(() => server.close());
-  const { origin } = server;
+for (const shape of shapes)
+  test(`OAuth 2.1 for MCP: discovery, registration, PKCE, tokens, refresh rotation, reuse detection and revocation [${shape.name}]`, async t => {
+    const server = await shape.start();
+    t.after(() => server.close());
+    // `origin` is where requests go; `site` is the origin the server issues tokens and links for.
+    const { origin, site } = server;
 
-  // 1. An anonymous call to a personal tool is a 401 that tells the client where to start.
-  const challenge = await mcp(origin, 'get_person');
-  assert.equal(challenge.status, 401);
-  const header = challenge.headers.get('www-authenticate') ?? '';
-  assert.match(header, new RegExp(`^Bearer resource_metadata="${origin}/\\.well-known/oauth-protected-resource"`));
-  assert.match(header, /scope="person:read person:write"/);
-  assert.deepEqual(challenge.result?._meta?.['mcp/www_authenticate'], [header]);
-  assert.equal(challenge.result?.isError, true);
+    // 1. An anonymous call to a personal tool is a 401 that tells the client where to start.
+    const challenge = await mcp(origin, 'get_person');
+    assert.equal(challenge.status, 401);
+    const header = challenge.headers.get('www-authenticate') ?? '';
+    assert.match(header, new RegExp(`^Bearer resource_metadata="${site}/\\.well-known/oauth-protected-resource"`));
+    assert.match(header, /scope="person:read person:write"/);
+    assert.deepEqual(challenge.result?._meta?.['mcp/www_authenticate'], [header]);
+    assert.equal(challenge.result?.isError, true);
 
-  // 2. Discovery.
-  for (const path of ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp']) {
-    const resource = (await (await fetch(origin + path)).json()) as Record<string, unknown>;
-    assert.deepEqual(resource.authorization_servers, [origin]);
-    assert.equal(resource.resource, `${origin}/mcp`);
-  }
-  const metadata = (await (await fetch(`${origin}/.well-known/oauth-authorization-server`)).json()) as Record<
-    string,
-    unknown
-  >;
-  assert.equal(metadata.issuer, origin);
-  assert.deepEqual(metadata.code_challenge_methods_supported, ['S256']);
-  assert.equal(metadata.registration_endpoint, `${origin}/oauth/register`);
-  assert.equal(metadata.authorization_response_iss_parameter_supported, true);
+    // 2. Discovery.
+    for (const path of ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp']) {
+      const resource = (await (await fetch(origin + path)).json()) as Record<string, unknown>;
+      assert.deepEqual(resource.authorization_servers, [site]);
+      assert.equal(resource.resource, `${site}/mcp`);
+    }
+    const metadata = (await (await fetch(`${origin}/.well-known/oauth-authorization-server`)).json()) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(metadata.issuer, site);
+    assert.deepEqual(metadata.code_challenge_methods_supported, ['S256']);
+    assert.equal(metadata.registration_endpoint, `${site}/oauth/register`);
+    assert.equal(metadata.authorization_response_iss_parameter_supported, true);
 
-  // 3. Registration validates redirect URIs.
-  for (const redirect of [
-    'http://evil.example/cb',
-    'javascript:alert(1)',
-    'https://client.example/cb#fragment',
-    'not a url',
-  ])
-    assert.equal((await registerClient(origin, { redirect_uris: [redirect] })).status, 400, redirect);
-  assert.equal((await registerClient(origin, { redirect_uris: [] })).status, 400);
-  assert.equal((await registerClient(origin, { redirect_uris: ['http://127.0.0.1:7777/callback'] })).status, 201);
-  const confidential = await registerClient(origin, { token_endpoint_auth_method: 'client_secret_post' });
-  assert.match(confidential.body.client_secret, /^rc_cs_/);
-  assert.equal(
-    server.db.get('SELECT 1 FROM oauth_clients WHERE secret_hash = ?', confidential.body.client_secret),
-    undefined,
-  );
+    // 3. Registration validates redirect URIs.
+    for (const redirect of [
+      'http://evil.example/cb',
+      'javascript:alert(1)',
+      'https://client.example/cb#fragment',
+      'not a url',
+    ])
+      assert.equal((await registerClient(origin, { redirect_uris: [redirect] })).status, 400, redirect);
+    assert.equal((await registerClient(origin, { redirect_uris: [] })).status, 400);
+    assert.equal((await registerClient(origin, { redirect_uris: ['http://127.0.0.1:7777/callback'] })).status, 201);
+    const confidential = await registerClient(origin, { token_endpoint_auth_method: 'client_secret_post' });
+    assert.match(confidential.body.client_secret, /^rc_cs_/);
+    assert.equal(
+      server.db.get('SELECT 1 FROM oauth_clients WHERE secret_hash = ?', confidential.body.client_secret),
+      undefined,
+    );
 
-  // 4. Authorization: not signed in → sign-in page first, with the request kept.
-  const { body: client } = await registerClient(origin);
-  const { verifier, challenge: codeChallenge } = pkce();
-  const base = {
-    response_type: 'code',
-    client_id: client.client_id,
-    redirect_uri: 'https://client.example/callback',
-    state: 'xyz',
-    scope: 'person:read person:write',
-    code_challenge: codeChallenge,
-    code_challenge_method: 'S256',
-    resource: `${origin}/mcp`,
-  };
-  const authorizeUrl = (params: Record<string, string>) => `/oauth/authorize?${new URLSearchParams(params)}`;
-  const browser = new Browser(origin);
-  const toLogin = await browser.request(authorizeUrl(base));
-  assert.equal(toLogin.status, 302);
-  const loginUrl = new URL(toLogin.headers.get('location') ?? '', origin);
-  assert.equal(loginUrl.pathname, '/login');
-  assert(loginUrl.searchParams.get('next')?.startsWith('/oauth/authorize?'));
+    // 4. Authorization: not signed in → sign-in page first, with the request kept.
+    const { body: client } = await registerClient(origin);
+    const { verifier, challenge: codeChallenge } = pkce();
+    const base = {
+      response_type: 'code',
+      client_id: client.client_id,
+      redirect_uri: 'https://client.example/callback',
+      state: 'xyz',
+      scope: 'person:read person:write',
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      resource: `${site}/mcp`,
+    };
+    const authorizeUrl = (params: Record<string, string>) => `/oauth/authorize?${new URLSearchParams(params)}`;
+    const browser = server.browser();
+    const toLogin = await browser.request(authorizeUrl(base));
+    assert.equal(toLogin.status, 302);
+    const loginUrl = new URL(toLogin.headers.get('location') ?? '', origin);
+    assert.equal(loginUrl.pathname, '/login');
+    assert(loginUrl.searchParams.get('next')?.startsWith('/oauth/authorize?'));
 
-  await browser.signUp('ada@example.com');
-  const ada = server.db.get<{ user_id: string }>(
-    "SELECT user_id FROM accounts WHERE email = 'ada@example.com'",
-  )!.user_id;
+    await browser.signUp('ada@example.com');
+    const ada = server.db.get<{ user_id: string }>(
+      "SELECT user_id FROM accounts WHERE email = 'ada@example.com'",
+    )!.user_id;
 
-  // A redirect URI that is not registered exactly is never redirected to.
-  for (const redirect_uri of [
-    'https://client.example/callback/',
-    'https://client.example/other',
-    'https://evil.example/callback',
-  ]) {
-    const response = await browser.request(authorizeUrl({ ...base, redirect_uri }));
-    assert.equal(response.status, 400, redirect_uri);
-    assert.equal(response.headers.get('location'), null);
-  }
-  assert.equal((await browser.request(authorizeUrl({ ...base, client_id: 'client-unknown' }))).status, 400);
-  // PKCE is required and only S256 is accepted; the error goes back to the registered redirect URI with state and iss.
-  const { code_challenge: _c, code_challenge_method: _m, ...withoutPkce } = base;
-  for (const [params, pattern] of [
-    [withoutPkce, /code_challenge is missing/],
-    [{ ...base, code_challenge_method: 'plain' }, /must be S256/],
-    [{ ...withoutPkce, code_challenge: codeChallenge }, /must be S256/],
-    [{ ...base, response_type: 'token' }, /response_type=code/],
-    [{ ...base, resource: 'https://other.example/mcp' }, /resource/],
-    [{ ...base, scope: 'admin' }, /scopes/],
-  ] as const) {
-    const response = await browser.request(authorizeUrl(params as Record<string, string>));
-    assert.equal(response.status, 302);
-    const back = new URL(response.headers.get('location') ?? '');
-    assert.equal(back.origin + back.pathname, 'https://client.example/callback');
-    assert.match(back.searchParams.get('error_description') ?? '', pattern);
+    // A redirect URI that is not registered exactly is never redirected to.
+    for (const redirect_uri of [
+      'https://client.example/callback/',
+      'https://client.example/other',
+      'https://evil.example/callback',
+    ]) {
+      const response = await browser.request(authorizeUrl({ ...base, redirect_uri }));
+      assert.equal(response.status, 400, redirect_uri);
+      assert.equal(response.headers.get('location'), null);
+    }
+    assert.equal((await browser.request(authorizeUrl({ ...base, client_id: 'client-unknown' }))).status, 400);
+    // PKCE is required and only S256 is accepted; the error goes back to the registered redirect URI with state and iss.
+    const { code_challenge: _c, code_challenge_method: _m, ...withoutPkce } = base;
+    for (const [params, pattern] of [
+      [withoutPkce, /code_challenge is missing/],
+      [{ ...base, code_challenge_method: 'plain' }, /must be S256/],
+      [{ ...withoutPkce, code_challenge: codeChallenge }, /must be S256/],
+      [{ ...base, response_type: 'token' }, /response_type=code/],
+      [{ ...base, resource: 'https://other.example/mcp' }, /resource/],
+      [{ ...base, scope: 'admin' }, /scopes/],
+    ] as const) {
+      const response = await browser.request(authorizeUrl(params as Record<string, string>));
+      assert.equal(response.status, 302);
+      const back = new URL(response.headers.get('location') ?? '');
+      assert.equal(back.origin + back.pathname, 'https://client.example/callback');
+      assert.match(back.searchParams.get('error_description') ?? '', pattern);
+      assert.equal(back.searchParams.get('state'), 'xyz');
+      assert.equal(back.searchParams.get('iss'), site);
+      assert.equal(back.searchParams.get('code'), null);
+    }
+
+    // Consent: the decision needs the session's CSRF token.
+    const consent = await browser.request(authorizeUrl(base));
+    assert.equal(consent.status, 200);
+    const consentHtml = await consent.text();
+    assert.match(consentHtml, /Connect Test client\?/);
+    assert.match(consentHtml, /Save answers and details to your profile/);
+    const csrf = /name="csrf" value="([^"]+)"/.exec(consentHtml)?.[1] ?? '';
+    assert.equal(
+      (await browser.request('/oauth/authorize', { form: { ...base, decision: 'allow', csrf: 'forged' } })).status,
+      403,
+    );
+    const denied = await browser.request('/oauth/authorize', { form: { ...base, decision: 'deny', csrf } });
+    assert.equal(new URL(denied.headers.get('location') ?? '').searchParams.get('error'), 'access_denied');
+    const allowed = await browser.request('/oauth/authorize', { form: { ...base, decision: 'allow', csrf } });
+    assert.equal(allowed.status, 303);
+    const back = new URL(allowed.headers.get('location') ?? '');
+    const code = back.searchParams.get('code') ?? '';
+    assert.match(code, /^rc_ac_/);
     assert.equal(back.searchParams.get('state'), 'xyz');
-    assert.equal(back.searchParams.get('iss'), origin);
-    assert.equal(back.searchParams.get('code'), null);
-  }
+    assert.equal(back.searchParams.get('iss'), site);
 
-  // Consent: the decision needs the session's CSRF token.
-  const consent = await browser.request(authorizeUrl(base));
-  assert.equal(consent.status, 200);
-  const consentHtml = await consent.text();
-  assert.match(consentHtml, /Connect Test client\?/);
-  assert.match(consentHtml, /Save answers and details to your profile/);
-  const csrf = /name="csrf" value="([^"]+)"/.exec(consentHtml)?.[1] ?? '';
-  assert.equal(
-    (await browser.request('/oauth/authorize', { form: { ...base, decision: 'allow', csrf: 'forged' } })).status,
-    403,
-  );
-  const denied = await browser.request('/oauth/authorize', { form: { ...base, decision: 'deny', csrf } });
-  assert.equal(new URL(denied.headers.get('location') ?? '').searchParams.get('error'), 'access_denied');
-  const allowed = await browser.request('/oauth/authorize', { form: { ...base, decision: 'allow', csrf } });
-  assert.equal(allowed.status, 303);
-  const back = new URL(allowed.headers.get('location') ?? '');
-  const code = back.searchParams.get('code') ?? '';
-  assert.match(code, /^rc_ac_/);
-  assert.equal(back.searchParams.get('state'), 'xyz');
-  assert.equal(back.searchParams.get('iss'), origin);
+    // 5. Token: wrong verifier, wrong redirect URI and another client are refused; the code works once.
+    const exchange = {
+      grant_type: 'authorization_code',
+      code,
+      client_id: client.client_id,
+      redirect_uri: base.redirect_uri,
+    };
+    const badVerifier = await postForm(origin, '/oauth/token', { ...exchange, code_verifier: pkce().verifier });
+    assert.deepEqual([badVerifier.status, badVerifier.body.error], [400, 'invalid_grant']);
+    const noVerifier = await postForm(origin, '/oauth/token', exchange);
+    assert.equal(noVerifier.status, 400);
+    const badRedirect = await postForm(origin, '/oauth/token', {
+      ...exchange,
+      code_verifier: verifier,
+      redirect_uri: 'https://client.example/other',
+    });
+    assert.equal(badRedirect.body.error, 'invalid_grant');
+    const otherClient = (await registerClient(origin)).body.client_id;
+    assert.equal(
+      (await postForm(origin, '/oauth/token', { ...exchange, code_verifier: verifier, client_id: otherClient })).body
+        .error,
+      'invalid_grant',
+    );
+    const issued = await postForm(origin, '/oauth/token', {
+      ...exchange,
+      code_verifier: verifier,
+      resource: `${site}/mcp`,
+    });
+    assert.equal(issued.status, 200);
+    const tokens = issued.body;
+    assert.match(tokens.access_token, /^rc_at_/);
+    assert.match(tokens.refresh_token, /^rc_rt_/);
+    assert.equal(tokens.token_type, 'Bearer');
+    assert.equal(tokens.scope, 'person:read person:write');
+    // Only hashes are stored.
+    for (const secret of [tokens.access_token, tokens.refresh_token, code])
+      assert.equal(server.db.get('SELECT 1 FROM oauth_tokens WHERE token_hash = ?', secret), undefined);
 
-  // 5. Token: wrong verifier, wrong redirect URI and another client are refused; the code works once.
-  const exchange = {
-    grant_type: 'authorization_code',
-    code,
-    client_id: client.client_id,
-    redirect_uri: base.redirect_uri,
-  };
-  const badVerifier = await postForm(origin, '/oauth/token', { ...exchange, code_verifier: pkce().verifier });
-  assert.deepEqual([badVerifier.status, badVerifier.body.error], [400, 'invalid_grant']);
-  const noVerifier = await postForm(origin, '/oauth/token', exchange);
-  assert.equal(noVerifier.status, 400);
-  const badRedirect = await postForm(origin, '/oauth/token', {
-    ...exchange,
-    code_verifier: verifier,
-    redirect_uri: 'https://client.example/other',
+    // 6. The token reads and writes the caller's own person through /mcp.
+    const me = await mcp(origin, 'get_person', {}, bearer(tokens.access_token));
+    assert.equal(me.status, 200);
+    assert.equal(me.result?.structuredContent?.id, ada);
+    assert.equal(
+      me.result?.structuredContent?.synthetic,
+      false,
+      'a person who belongs to an account is not labelled fictional',
+    );
+    const saved = await mcp(
+      origin,
+      'save_my_inputs',
+      {
+        data: { finance: { monthlyIncomeCents: 310_000, currentSavingsCents: 2_000_000 }, household: { size: 2 } },
+        confirmed: true,
+      },
+      bearer(tokens.access_token),
+    );
+    assert.equal(saved.result?.structuredContent?.saved, true);
+    const inputs = await mcp(origin, 'get_my_inputs', {}, bearer(tokens.access_token));
+    const resolved = inputs.result?.structuredContent?.resolved as {
+      data: { finance: { monthlyIncomeCents: number } };
+    };
+    assert.equal(resolved.data.finance.monthlyIncomeCents, 310_000);
+    const after = await mcp(origin, 'get_person', {}, bearer(tokens.access_token));
+    assert.equal(
+      (after.result?.structuredContent?.finances as { monthlyIncomeCents: number } | undefined)?.monthlyIncomeCents,
+      310_000,
+    );
+    assert.equal(after.result?.structuredContent?.householdSize, 2);
+    const plan = await mcp(
+      origin,
+      'plan_home_savings',
+      { me: true, municipalityCodes: ['251207'] },
+      bearer(tokens.access_token),
+    );
+    assert.equal((plan.result?.structuredContent?.person as { id: string } | undefined)?.id, ada);
+    // A refresh token is not an access token, and a made-up token is refused even for a public tool.
+    assert.equal((await mcp(origin, 'get_person', {}, bearer(tokens.refresh_token))).status, 401);
+    const madeUp = await mcp(origin, 'list_catalonia_municipalities', {}, bearer('rc_at_made_up'));
+    assert.equal(madeUp.status, 401);
+    assert.match(madeUp.headers.get('www-authenticate') ?? '', /error="invalid_token"/);
+
+    // The authorization code cannot be replayed: the replay revokes what it issued.
+    const replay = await postForm(origin, '/oauth/token', { ...exchange, code_verifier: verifier });
+    assert.equal(replay.body.error, 'invalid_grant');
+    assert.equal((await mcp(origin, 'get_person', {}, bearer(tokens.access_token))).status, 401);
+
+    // 7. Refresh rotation and reuse detection on a fresh grant.
+    const second = await connectClient(browser);
+    const refresh = (refresh_token: string) =>
+      postForm(origin, '/oauth/token', { grant_type: 'refresh_token', refresh_token, client_id: second.clientId });
+    const rotated = await refresh(second.tokens.refresh_token);
+    assert.equal(rotated.status, 200);
+    assert.notEqual(rotated.body.refresh_token, second.tokens.refresh_token);
+    assert.notEqual(rotated.body.access_token, second.tokens.access_token);
+    assert.equal((await mcp(origin, 'get_person', {}, bearer(rotated.body.access_token))).status, 200);
+    const wrongClient = await postForm(origin, '/oauth/token', {
+      grant_type: 'refresh_token',
+      refresh_token: rotated.body.refresh_token,
+      client_id: otherClient,
+    });
+    assert.equal(wrongClient.body.error, 'invalid_grant');
+    // The old refresh token is presented again: the whole family is revoked.
+    const reuse = await refresh(second.tokens.refresh_token);
+    assert.deepEqual([reuse.status, reuse.body.error], [400, 'invalid_grant']);
+    assert.equal((await refresh(rotated.body.refresh_token)).body.error, 'invalid_grant');
+    assert.equal((await mcp(origin, 'get_person', {}, bearer(rotated.body.access_token))).status, 401);
+
+    // 8. Revocation.
+    const third = await connectClient(browser);
+    assert.equal((await mcp(origin, 'get_person', {}, bearer(third.tokens.access_token))).status, 200);
+    const foreign = await postForm(origin, '/oauth/revoke', {
+      token: third.tokens.access_token,
+      client_id: otherClient,
+    });
+    assert.equal(foreign.status, 200);
+    assert.equal(
+      (await mcp(origin, 'get_person', {}, bearer(third.tokens.access_token))).status,
+      200,
+      'another client cannot revoke it',
+    );
+    assert.equal(
+      (await postForm(origin, '/oauth/revoke', { token: third.tokens.refresh_token, client_id: third.clientId }))
+        .status,
+      200,
+    );
+    assert.equal((await mcp(origin, 'get_person', {}, bearer(third.tokens.access_token))).status, 401);
+    assert.equal(
+      (
+        await postForm(origin, '/oauth/token', {
+          grant_type: 'refresh_token',
+          refresh_token: third.tokens.refresh_token,
+          client_id: third.clientId,
+        })
+      ).status,
+      400,
+    );
+
+    // A read-only grant cannot write.
+    const readOnly = await connectClient(browser, 'person:read');
+    assert.equal(readOnly.tokens.scope, 'person:read');
+    const refusedWrite = await mcp(
+      origin,
+      'save_my_inputs',
+      { data: { household: { size: 5 } }, confirmed: true },
+      bearer(readOnly.tokens.access_token),
+    );
+    assert.equal(refusedWrite.status, 403);
+    assert.match(refusedWrite.headers.get('www-authenticate') ?? '', /error="insufficient_scope"/);
+    assert.equal(
+      (await mcp(origin, 'get_person', {}, bearer(readOnly.tokens.access_token))).result?.structuredContent
+        ?.householdSize,
+      2,
+    );
+
+    // No token ever appears in a redirect or a page.
+    assert.doesNotMatch(back.href + consentHtml, /rc_at_|rc_rt_/);
   });
-  assert.equal(badRedirect.body.error, 'invalid_grant');
-  const otherClient = (await registerClient(origin)).body.client_id;
-  assert.equal(
-    (await postForm(origin, '/oauth/token', { ...exchange, code_verifier: verifier, client_id: otherClient })).body
-      .error,
-    'invalid_grant',
-  );
-  const issued = await postForm(origin, '/oauth/token', {
-    ...exchange,
-    code_verifier: verifier,
-    resource: `${origin}/mcp`,
-  });
-  assert.equal(issued.status, 200);
-  const tokens = issued.body;
-  assert.match(tokens.access_token, /^rc_at_/);
-  assert.match(tokens.refresh_token, /^rc_rt_/);
-  assert.equal(tokens.token_type, 'Bearer');
-  assert.equal(tokens.scope, 'person:read person:write');
-  // Only hashes are stored.
-  for (const secret of [tokens.access_token, tokens.refresh_token, code])
-    assert.equal(server.db.get('SELECT 1 FROM oauth_tokens WHERE token_hash = ?', secret), undefined);
-
-  // 6. The token reads and writes the caller's own person through /mcp.
-  const me = await mcp(origin, 'get_person', {}, bearer(tokens.access_token));
-  assert.equal(me.status, 200);
-  assert.equal(me.result?.structuredContent?.id, ada);
-  assert.equal(
-    me.result?.structuredContent?.synthetic,
-    false,
-    'a person who belongs to an account is not labelled fictional',
-  );
-  const saved = await mcp(
-    origin,
-    'save_my_inputs',
-    {
-      data: { finance: { monthlyIncomeCents: 310_000, currentSavingsCents: 2_000_000 }, household: { size: 2 } },
-      confirmed: true,
-    },
-    bearer(tokens.access_token),
-  );
-  assert.equal(saved.result?.structuredContent?.saved, true);
-  const inputs = await mcp(origin, 'get_my_inputs', {}, bearer(tokens.access_token));
-  const resolved = inputs.result?.structuredContent?.resolved as { data: { finance: { monthlyIncomeCents: number } } };
-  assert.equal(resolved.data.finance.monthlyIncomeCents, 310_000);
-  const after = await mcp(origin, 'get_person', {}, bearer(tokens.access_token));
-  assert.equal(
-    (after.result?.structuredContent?.finances as { monthlyIncomeCents: number } | undefined)?.monthlyIncomeCents,
-    310_000,
-  );
-  assert.equal(after.result?.structuredContent?.householdSize, 2);
-  const plan = await mcp(
-    origin,
-    'plan_home_savings',
-    { me: true, municipalityCodes: ['251207'] },
-    bearer(tokens.access_token),
-  );
-  assert.equal((plan.result?.structuredContent?.person as { id: string } | undefined)?.id, ada);
-  // A refresh token is not an access token, and a made-up token is refused even for a public tool.
-  assert.equal((await mcp(origin, 'get_person', {}, bearer(tokens.refresh_token))).status, 401);
-  const madeUp = await mcp(origin, 'list_catalonia_municipalities', {}, bearer('rc_at_made_up'));
-  assert.equal(madeUp.status, 401);
-  assert.match(madeUp.headers.get('www-authenticate') ?? '', /error="invalid_token"/);
-
-  // The authorization code cannot be replayed: the replay revokes what it issued.
-  const replay = await postForm(origin, '/oauth/token', { ...exchange, code_verifier: verifier });
-  assert.equal(replay.body.error, 'invalid_grant');
-  assert.equal((await mcp(origin, 'get_person', {}, bearer(tokens.access_token))).status, 401);
-
-  // 7. Refresh rotation and reuse detection on a fresh grant.
-  const second = await connectClient(browser);
-  const refresh = (refresh_token: string) =>
-    postForm(origin, '/oauth/token', { grant_type: 'refresh_token', refresh_token, client_id: second.clientId });
-  const rotated = await refresh(second.tokens.refresh_token);
-  assert.equal(rotated.status, 200);
-  assert.notEqual(rotated.body.refresh_token, second.tokens.refresh_token);
-  assert.notEqual(rotated.body.access_token, second.tokens.access_token);
-  assert.equal((await mcp(origin, 'get_person', {}, bearer(rotated.body.access_token))).status, 200);
-  const wrongClient = await postForm(origin, '/oauth/token', {
-    grant_type: 'refresh_token',
-    refresh_token: rotated.body.refresh_token,
-    client_id: otherClient,
-  });
-  assert.equal(wrongClient.body.error, 'invalid_grant');
-  // The old refresh token is presented again: the whole family is revoked.
-  const reuse = await refresh(second.tokens.refresh_token);
-  assert.deepEqual([reuse.status, reuse.body.error], [400, 'invalid_grant']);
-  assert.equal((await refresh(rotated.body.refresh_token)).body.error, 'invalid_grant');
-  assert.equal((await mcp(origin, 'get_person', {}, bearer(rotated.body.access_token))).status, 401);
-
-  // 8. Revocation.
-  const third = await connectClient(browser);
-  assert.equal((await mcp(origin, 'get_person', {}, bearer(third.tokens.access_token))).status, 200);
-  const foreign = await postForm(origin, '/oauth/revoke', { token: third.tokens.access_token, client_id: otherClient });
-  assert.equal(foreign.status, 200);
-  assert.equal(
-    (await mcp(origin, 'get_person', {}, bearer(third.tokens.access_token))).status,
-    200,
-    'another client cannot revoke it',
-  );
-  assert.equal(
-    (await postForm(origin, '/oauth/revoke', { token: third.tokens.refresh_token, client_id: third.clientId })).status,
-    200,
-  );
-  assert.equal((await mcp(origin, 'get_person', {}, bearer(third.tokens.access_token))).status, 401);
-  assert.equal(
-    (
-      await postForm(origin, '/oauth/token', {
-        grant_type: 'refresh_token',
-        refresh_token: third.tokens.refresh_token,
-        client_id: third.clientId,
-      })
-    ).status,
-    400,
-  );
-
-  // A read-only grant cannot write.
-  const readOnly = await connectClient(browser, 'person:read');
-  assert.equal(readOnly.tokens.scope, 'person:read');
-  const refusedWrite = await mcp(
-    origin,
-    'save_my_inputs',
-    { data: { household: { size: 5 } }, confirmed: true },
-    bearer(readOnly.tokens.access_token),
-  );
-  assert.equal(refusedWrite.status, 403);
-  assert.match(refusedWrite.headers.get('www-authenticate') ?? '', /error="insufficient_scope"/);
-  assert.equal(
-    (await mcp(origin, 'get_person', {}, bearer(readOnly.tokens.access_token))).result?.structuredContent
-      ?.householdSize,
-    2,
-  );
-
-  // No token ever appears in a redirect or a page.
-  assert.doesNotMatch(back.href + consentHtml, /rc_at_|rc_rt_/);
-});
 
 test('an access token expires, and a token issued for another resource is refused', async t => {
   let now = Date.now();
@@ -1188,4 +1395,485 @@ test('bank webhooks are rate limited before their signature is checked, on their
   // Ordinary requests from the same address still have their own allowance.
   assert.equal((await fetch(`${server.origin}/health`, { headers })).status, 200);
   assert.equal((await fetch(`${server.origin}/connect`, { headers })).status, 200);
+});
+
+// ------------------------------------------- availability, in the deployed shape
+//
+// The scenarios a second review ran against a production-shaped server. Each test states what the
+// stranger does and asserts that the people who did nothing wrong are not affected.
+
+const accountOf = (server: { db: TestApp['db'] }, email: string) =>
+  server.db.get<{ id: string; userId: string }>('SELECT id, user_id AS userId FROM accounts WHERE email = ?', email)!;
+
+test('scenario 1: wrong passwords from a stranger do not lock the person out of signing in or of deleting', async t => {
+  const server = await startProductionApp();
+  t.after(() => server.close());
+  const victim = server.browser('203.0.113.5');
+  await victim.signUp('ada@example.com');
+  // The stranger sends more wrong passwords than any limit allows, from an address of their own.
+  const stranger = server.browser('198.51.100.66');
+  const statuses: number[] = [];
+  for (let n = 0; n < 9; n++) statuses.push((await stranger.login('ada@example.com', `guess number ${n}`)).status);
+  assert.deepEqual(statuses.slice(0, 6), [400, 400, 400, 400, 400, 400]);
+  assert.deepEqual(statuses.slice(6), [429, 429, 429], 'the stranger, and only the stranger, is made to wait');
+  const waiting = await stranger.login('ada@example.com', 'another guess');
+  const retryAfter = Number(waiting.headers.get('retry-after'));
+  assert(retryAfter > 20 && retryAfter <= 30, `the first wait is 30 seconds, got ${retryAfter}`);
+  // The person, signed in already, deletes a connection and signs in again elsewhere: nothing is locked.
+  assert.equal((await victim.request('/account')).status, 200);
+  const elsewhere = server.browser('203.0.113.6');
+  assert.equal((await elsewhere.login('ada@example.com')).status, 303);
+  // And the account can be deleted, with the password, while the stranger keeps trying.
+  await stranger.login('ada@example.com', 'still guessing');
+  const csrf = await victim.csrf('/account');
+  const deleted = await victim.request('/account/delete', { form: { csrf, password, confirm: 'yes' } });
+  assert.equal(deleted.status, 200);
+  assert.equal(server.db.get('SELECT 1 FROM accounts'), undefined);
+  assert.deepEqual(server.warnings, [], 'every request carried a client address');
+});
+
+test('scenario 1b: wrong passwords on the delete form are counted for that session only', async t => {
+  const server = await startProductionApp();
+  t.after(() => server.close());
+  const browser = server.browser('203.0.113.5');
+  await browser.signUp('ada@example.com');
+  const second = server.browser('203.0.113.7');
+  await second.login('ada@example.com');
+  const csrf = await browser.csrf('/account');
+  const statuses: number[] = [];
+  for (let n = 0; n < 7; n++)
+    statuses.push(
+      (await browser.request('/account/delete', { form: { csrf, password: 'not it', confirm: 'yes' } })).status,
+    );
+  assert.deepEqual(statuses, [400, 400, 400, 400, 400, 400, 429]);
+  // The other session of the same person is not affected, and signing in is not either.
+  assert.equal((await server.browser('203.0.113.8').login('ada@example.com')).status, 303);
+  const deleted = await second.request('/account/delete', {
+    form: { csrf: await second.csrf('/account'), password, confirm: 'yes' },
+  });
+  assert.equal(deleted.status, 200);
+});
+
+for (const proxy of ['no-address', 'nginx-default'] as const)
+  test(`scenario 2: behind a proxy that states no client address (${proxy}), one stranger cannot close sign-in and sign-up for everybody`, async t => {
+    // nginx's default rewrites Host as well, so the server is reached under its local name: forms are
+    // exercised straight on that name here, and the Host problem has a test of its own below.
+    const server = await startProductionApp({ proxy });
+    t.after(() => server.close());
+    const visitor = (address: string) =>
+      proxy === 'nginx-default' ? new Browser(server.origin, server.direct, address) : server.browser(address);
+    const existing = visitor('203.0.113.5');
+    assert.equal((await existing.signUp('ada@example.com')).status, 303);
+    // What locked everybody out for 15 minutes before: 20 failed sign-ins and 10 sign-ups from "one address".
+    const stranger = visitor('198.51.100.66');
+    for (let n = 0; n < 24; n++)
+      assert.equal((await stranger.login(`nobody${n}@example.com`, 'wrong password')).status, 400, `attempt ${n}`);
+    for (let n = 0; n < 12; n++) {
+      const fresh = visitor('198.51.100.66');
+      assert.equal((await fresh.signUp(`throwaway${n}@example.com`)).status, 303, `sign-up ${n}`);
+    }
+    // Everybody else still signs in and signs up.
+    assert.equal((await visitor('203.0.113.9').login('ada@example.com')).status, 303);
+    assert.equal((await visitor('203.0.113.10').signUp('bob@example.com')).status, 303);
+    // The operator is told, in the log and in /health, that visitors cannot be told apart.
+    assert.match(server.warnings[0] ?? '', /WARNING: \d+ request\(s\) arrived without a usable client address/);
+    assert.match(server.warnings[0] ?? '', /x-forwarded-for/);
+    const health = (await (await fetch(`${server.direct}/health`)).json()) as {
+      clientAddress: { ok: boolean; mode: string; undeterminedRequests: number };
+    };
+    assert.equal(health.clientAddress.ok, false);
+    assert(health.clientAddress.undeterminedRequests > 50);
+  });
+
+test('scenario 2b: with the address forwarded, /health reports the client address as determined', async t => {
+  const server = await startProductionApp();
+  t.after(() => server.close());
+  await server.browser('203.0.113.5').signUp('ada@example.com');
+  const health = (await (await fetch(`${server.origin}/health`)).json()) as Record<string, unknown>;
+  assert.deepEqual(health.clientAddress, {
+    mode: 'x-forwarded-for (1 trusted hop(s))',
+    ok: true,
+    undeterminedRequests: 0,
+    lastUndeterminedAt: null,
+  });
+  // /health says which schema the database has, never where it is.
+  assert.deepEqual(Object.keys(health).sort(), ['clientAddress', 'publicDemo', 'status']);
+  assert.doesNotMatch(JSON.stringify(health), /\.db|memory|path/i);
+});
+
+test('scenario 3: a proxy on this machine that adds no forwarding header does not switch rate limiting off', async t => {
+  for (const proxy of ['no-address', 'nginx-default'] as const) {
+    const server = await startProductionApp({ proxy, rateLimit: { perMinute: 20 } });
+    const statuses: number[] = [];
+    for (let n = 0; n < 30; n++) statuses.push((await fetch(`${server.origin}/connect`)).status);
+    await server.close();
+    assert.deepEqual(statuses.slice(0, 20), Array(20).fill(200), proxy);
+    assert.deepEqual(statuses.slice(20), Array(10).fill(429), `${proxy}: the 21st request is refused`);
+  }
+  // The same on a laptop: a request from this machine is counted like any other.
+  const local = await startApp({ rateLimit: { perMinute: 5 } });
+  t.after(() => local.close());
+  const statuses: number[] = [];
+  for (let n = 0; n < 8; n++) statuses.push((await fetch(`${local.origin}/connect`)).status);
+  assert.deepEqual(statuses, [200, 200, 200, 200, 200, 429, 429, 429]);
+  // Only the operator's own calls with the admin token are not counted; a wrong token is.
+  for (let n = 0; n < 8; n++)
+    assert.equal((await fetch(`${local.origin}/api/users`, { headers: bearer('admin-test-token') })).status, 200);
+  assert.equal((await fetch(`${local.origin}/api/users`, { headers: bearer('admin-test-tokem') })).status, 429);
+  // With the address forwarded, one noisy visitor does not use up another's allowance.
+  const forwarded = await startProductionApp({ rateLimit: { perMinute: 5 } });
+  t.after(() => forwarded.close());
+  const noisy = forwarded.browser('198.51.100.66');
+  const quiet = forwarded.browser('203.0.113.5');
+  for (let n = 0; n < 8; n++) await noisy.request('/connect');
+  assert.equal((await noisy.request('/connect')).status, 429);
+  assert.equal((await quiet.request('/connect')).status, 200);
+  // A visitor cannot pick their own address: what they write in X-Forwarded-For lands left of the proxy's entry.
+  const forged = await noisy.request('/connect', { headers: { 'X-Forwarded-For': '203.0.113.200' } });
+  assert.equal(forged.status, 429);
+});
+
+test('a proxy that replaces Host is told apart from a cross-site form, and the page says what to fix', async t => {
+  const server = await startProductionApp({ proxy: 'nginx-default' });
+  t.after(() => server.close());
+  // The browser is on the public site; the proxy handed the request over under the upstream's name.
+  const browser = server.browser('203.0.113.5');
+  const csrf = await browser.csrf('/signup');
+  const refused = await browser.request('/signup', { form: { csrf, email: 'ada@example.com', password } });
+  assert.equal(refused.status, 403);
+  assert.match(await refused.text(), /proxy that does not pass the original Host header/);
+  // A form from somewhere else gets the ordinary answer.
+  const foreign = await browser.request('/signup', {
+    form: { csrf, email: 'ada@example.com', password },
+    headers: { Origin: 'https://evil.example' },
+  });
+  assert.match(await foreign.text(), /sent from another site/);
+  assert.equal(server.db.get('SELECT 1 FROM accounts'), undefined);
+});
+
+test('scenario 4: the connect page offers the MCP address this server answers on', async t => {
+  const production = await startProductionApp();
+  t.after(() => production.close());
+  const endpointOf = async (origin: string) =>
+    /<input id="endpoint" type="url" value="([^"]*)"/.exec(await (await fetch(`${origin}/connect`)).text())?.[1];
+  const offered = await endpointOf(production.origin);
+  assert.equal(offered, `${productionSite}/mcp`);
+  // The address offered is one the server accepts, and its OAuth metadata names the same resource.
+  const metadata = (await (await fetch(`${production.origin}/.well-known/oauth-protected-resource`)).json()) as {
+    resource: string;
+  };
+  assert.equal(metadata.resource, offered);
+  // Locally the page offers the address it was opened on.
+  const local = await startApp();
+  t.after(() => local.close());
+  assert.equal(await endpointOf(local.origin), `${local.origin}/mcp`);
+  assert.match(
+    (await rawGet(local.port, '/connect', `localhost:${local.port}`)).body,
+    new RegExp(`<input id="endpoint" type="url" value="http://localhost:${local.port}/mcp"`),
+  );
+  // A Host that is not this machine is never echoed into the page.
+  assert.equal(mcpEndpoint('evil.example', null), 'https://www.relo.cat/mcp');
+  assert.equal(mcpEndpoint('127.0.0.1:8787.evil.example', null), 'https://www.relo.cat/mcp');
+  assert.equal(mcpEndpoint('[::1]:8787', null), 'http://[::1]:8787/mcp');
+  assert.equal(mcpEndpoint('evil.example', 'https://www.relo.cat'), 'https://www.relo.cat/mcp');
+  // The page describes OAuth sign-in and no longer tells operators to add authentication themselves.
+  const html = await (await fetch(`${local.origin}/connect`)).text();
+  assert.doesNotMatch(html, /Add authentication and access controls|relo\.cat\/mcp"|settings supplied by the operator/);
+  assert.match(html, /sign in with OAuth/);
+});
+
+/** A fictional bank with webhooks, to see what the sync engine keeps after a person is deleted. */
+function webhookBank() {
+  const secret = 'webhook-bank-secret';
+  const calls = { fetches: 0 };
+  const provider = defineBankProvider({
+    id: 'hook-bank',
+    displayName: 'Hook Bank',
+    synthetic: true,
+    env: [{ name: 'BANK_HOOK_BANK_WEBHOOK_SECRET', description: 'Fictional signing secret.' }],
+    async listAccounts() {
+      return [
+        { id: 'hook-main', name: 'Main', currency: 'EUR' as const, openingBalanceCents: 0, openingDate: '2026-11-01' },
+      ];
+    },
+    async fetchTransactions() {
+      calls.fetches++;
+      return { transactions: [] };
+    },
+    verifyWebhook: ({ headers }) => headers['x-hook-secret'] === secret,
+    parseWebhook(rawBody) {
+      const body = JSON.parse(rawBody) as { link?: unknown };
+      return typeof body.link === 'string' ? { connectionRef: body.link, hint: 'movement' } : null;
+    },
+  });
+  return { calls, secret, registry: createBankRegistry([provider], { BANK_HOOK_BANK_WEBHOOK_SECRET: secret }) };
+}
+
+test('scenario 5: deleting an account takes its bank connection out of the running engine', async t => {
+  const bank = webhookBank();
+  const server = await startProductionApp({
+    profileApi: { bankRegistry: bank.registry, bankSync: { housekeepingMs: null } },
+  });
+  t.after(() => server.close());
+  const admin = { ...bearer('admin-test-token'), 'Content-Type': 'application/json' };
+  const link = (userId: string) =>
+    fetch(`${server.origin}/api/users/${userId}/bank/connections`, {
+      method: 'POST',
+      headers: admin,
+      body: JSON.stringify({ providerId: 'hook-bank', ref: 'link-ada' }),
+    });
+  const notify = () =>
+    fetch(`${server.origin}/api/webhooks/bank/hook-bank`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-hook-secret': bank.secret },
+      body: JSON.stringify({ link: 'link-ada' }),
+    });
+  const engine = server.app.profiles.bankSync;
+  const queued = () => server.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM bank_webhook_queue')!.n;
+
+  const ada = server.browser('203.0.113.5');
+  await ada.signUp('ada@example.com');
+  const { userId } = accountOf(server, 'ada@example.com');
+  assert.equal((await link(userId)).status, 201);
+  assert.equal((await notify()).status, 202);
+  await engine.idle();
+  assert.equal(bank.calls.fetches, 1, 'the notification was synced');
+
+  // While Ada has the connection nobody else can link the same bank reference.
+  const bob = server.browser('203.0.113.6');
+  await bob.signUp('bob@example.com');
+  const bobId = accountOf(server, 'bob@example.com').userId;
+  assert.equal((await link(bobId)).status, 409);
+
+  const csrf = await ada.csrf('/account');
+  assert.equal((await ada.request('/account/delete', { form: { csrf, password, confirm: 'yes' } })).status, 200);
+  // The bank keeps notifying: nothing is queued, nothing is fetched, and nothing is written back.
+  assert.equal((await notify()).status, 202, 'the answer does not reveal that the reference is gone');
+  await engine.idle();
+  await engine.runDue();
+  assert.equal(queued(), 0);
+  assert.equal(bank.calls.fetches, 1);
+  assert.equal(server.db.get('SELECT 1 FROM bank_connections WHERE user_id = ?', userId), undefined);
+  // The reference is free again without a restart.
+  assert.equal((await link(bobId)).status, 201);
+  assert.equal((await notify()).status, 202);
+  await engine.idle();
+  assert.equal(bank.calls.fetches, 2, 'the reference now feeds its new owner');
+
+  // The engine also copes with rows that vanished without it being told (another process, a restore).
+  server.db.run('DELETE FROM bank_connections WHERE user_id = ?', bobId);
+  assert.deepEqual(await engine.acceptWebhook('hook-bank', { connectionRef: 'link-ada' }), {
+    known: false,
+    duplicate: false,
+  });
+  assert.equal(queued(), 0);
+  const carol = server.browser('203.0.113.7');
+  await carol.signUp('carol@example.com');
+  assert.equal((await link(accountOf(server, 'carol@example.com').userId)).status, 201);
+});
+
+test('event streams: a cap per person, and they close on sign-out, revocation and deletion', async t => {
+  const server = await startProductionApp();
+  t.after(() => server.close());
+  const browser = server.browser('203.0.113.5');
+  await browser.signUp('ada@example.com');
+  const { userId } = accountOf(server, 'ada@example.com');
+  const path = `/api/users/${userId}/bank/events/stream`;
+  const open = () => server.app.profiles.openStreams();
+  /** Resolves when the server ends the stream. */
+  const ended = async (response: Response) => {
+    const reader = response.body!.getReader();
+    while (!(await reader.read()).done);
+  };
+  const settle = async (count: number) => {
+    for (let n = 0; n < 100 && open() !== count; n++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(open(), count);
+  };
+
+  // Five streams for one person; the sixth is refused, and another person still gets theirs.
+  const streams = [];
+  for (let n = 0; n < 5; n++) streams.push(await browser.request(path));
+  assert.deepEqual(
+    streams.map(stream => stream.status),
+    [200, 200, 200, 200, 200],
+  );
+  const sixth = await browser.request(path);
+  assert.equal(sixth.status, 429);
+  const other = server.browser('203.0.113.6');
+  await other.signUp('bob@example.com');
+  const otherStream = await other.request(
+    `/api/users/${accountOf(server, 'bob@example.com').userId}/bank/events/stream`,
+  );
+  assert.equal(otherStream.status, 200);
+  await settle(6);
+
+  // Signing out ends that person's streams; the other person's stays open.
+  const csrf = await browser.csrf('/logout');
+  assert.equal((await browser.request('/logout', { form: { csrf } })).status, 303);
+  await Promise.all(streams.map(ended));
+  await settle(1);
+
+  // A stream opened with an access token ends when the grant is revoked.
+  await browser.login('ada@example.com');
+  const connected = await connectClient(browser);
+  const byToken = await fetch(`${server.origin}${path}`, { headers: bearer(connected.tokens.access_token) });
+  assert.equal(byToken.status, 200);
+  await settle(2);
+  await postForm(server.origin, '/oauth/revoke', {
+    token: connected.tokens.access_token,
+    client_id: connected.clientId,
+  });
+  await ended(byToken);
+  await settle(1);
+  assert.equal(
+    (await fetch(`${server.origin}${path}`, { headers: bearer(connected.tokens.access_token) })).status,
+    401,
+  );
+
+  // Deleting the account ends its streams too.
+  const last = await browser.request(path);
+  assert.equal(last.status, 200);
+  const deleteCsrf = await browser.csrf('/account');
+  await browser.request('/account/delete', { form: { csrf: deleteCsrf, password, confirm: 'yes' } });
+  await ended(last);
+  await settle(1);
+});
+
+test('client registration: a budget per address and for everybody, room made from unused registrations', async t => {
+  let now = Date.parse('2026-11-22T10:00:00Z');
+  const server = await startProductionApp({
+    housekeepingMs: null,
+    oauth: { now: () => new Date(now), maxClients: 4, registrations: { perAddress: 3, global: 7 } },
+  });
+  t.after(() => server.close());
+  const register = (address: string) => registerClient(server.origin, {}, address);
+  const count = (table: string) => server.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table}`)!.n;
+
+  // One address: three registrations an hour, then 429 with the time to wait.
+  for (let n = 0; n < 3; n++) assert.equal((await register('198.51.100.66')).status, 201);
+  const refused = await fetch(`${server.origin}/oauth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-test-client': '198.51.100.66' },
+    body: JSON.stringify({ redirect_uris: ['https://client.example/callback'] }),
+  });
+  assert.equal(refused.status, 429);
+  assert.equal(refused.headers.get('retry-after'), '3600');
+  assert.equal(((await refused.json()) as { error: string }).error, 'temporarily_unavailable');
+  // Another address is not affected, and a client that somebody actually uses is never evicted.
+  const browser = server.browser('203.0.113.5');
+  await browser.signUp('ada@example.com');
+  const used = await connectClient(browser);
+  assert.equal(count('oauth_clients'), 4);
+  // The table is full: a new registration pushes out the oldest one nobody authorised, not the used one.
+  const oldest = server.db.get<{ id: string }>('SELECT id FROM oauth_clients ORDER BY created_at, rowid LIMIT 1')!.id;
+  now += 1000;
+  assert.equal((await register('203.0.113.9')).status, 201);
+  assert.equal(count('oauth_clients'), 4);
+  assert.equal(server.db.get('SELECT 1 FROM oauth_clients WHERE id = ?', oldest), undefined);
+  assert(server.db.get('SELECT 1 FROM oauth_clients WHERE id = ?', used.clientId));
+  // Everybody together: seven an hour. Rotating addresses meets that ceiling.
+  assert.equal((await register('203.0.113.10')).status, 201);
+  assert.equal((await register('203.0.113.11')).status, 201);
+  assert.equal((await register('203.0.113.12')).status, 429);
+  now += 61 * 60_000;
+  assert.equal((await register('203.0.113.12')).status, 201);
+
+  // Housekeeping: a revoked grant goes, and so do expired codes and tokens and the grants they leave empty.
+  const second = await connectClient(browser);
+  assert.equal(count('oauth_grants'), 2);
+  await postForm(server.origin, '/oauth/revoke', { token: second.tokens.access_token, client_id: second.clientId });
+  assert.equal(count('oauth_grants'), 2, 'a revoked grant stays until the next pass');
+  assert(server.app.housekeeping());
+  assert.equal(count('oauth_grants'), 1);
+  assert.equal((await mcp(server.origin, 'get_person', {}, bearer(used.tokens.access_token))).status, 401, 'expired');
+  assert(count('oauth_clients') > 0);
+  now += 31 * 24 * 60 * 60_000;
+  assert(server.app.housekeeping());
+  assert.deepEqual([count('oauth_grants'), count('oauth_tokens'), count('oauth_codes')], [0, 0, 0]);
+  // Clients left without a grant and unused for 30 days are forgotten as well.
+  assert.equal(count('oauth_clients'), 0);
+});
+
+test('housekeeping runs on a timer, without any request, and stops when the app closes', async t => {
+  const server = await startApp({ housekeepingMs: 15 });
+  t.after(() => server.close());
+  const count = () => server.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM auth_throttle')!.n;
+  const stale = () =>
+    server.db.run(
+      "INSERT INTO auth_throttle (key, failures, window_start) VALUES ('pair:stale|203.0.113.1', 3, '2020-01-01T00:00:00.000Z')",
+    );
+  stale();
+  server.db.run(
+    "INSERT INTO oauth_clients (id, name, redirect_uris, auth_method, created_at) VALUES ('client-old', 'Old', '[]', 'none', '2020-01-01T00:00:00.000Z')",
+  );
+  for (let n = 0; n < 200 && count() > 0; n++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(count(), 0, 'no sign-in happened, and the stale counter is gone');
+  assert.equal(server.db.get("SELECT 1 FROM oauth_clients WHERE id = 'client-old'"), undefined);
+  // The timer ends with the app.
+  await server.app.close();
+  stale();
+  await new Promise(resolve => setTimeout(resolve, 80));
+  assert.equal(count(), 1, 'after close no pass runs');
+});
+
+test('token endpoint: malformed Basic credentials are 401, and a refresh may ask for less, never for more', async t => {
+  const server = await startProductionApp();
+  t.after(() => server.close());
+  const { origin } = server;
+  const browser = server.browser('203.0.113.5');
+  await browser.signUp('ada@example.com');
+  const basic = (text: string) => ({ Authorization: `Basic ${Buffer.from(text).toString('base64')}` });
+  // Percent-encoding that does not decode is a wrong credential, not a server error.
+  for (const path of ['/oauth/token', '/oauth/revoke'])
+    for (const credentials of ['%E0%A4%A:secret', 'client-x:%', '%:%']) {
+      const response = await postForm(origin, path, { grant_type: 'refresh_token', token: 'x' }, basic(credentials));
+      assert.deepEqual([response.status, response.body.error], [401, 'invalid_client'], `${path} ${credentials}`);
+    }
+  // A well-formed Basic header still authenticates a confidential client.
+  const confidential = await registerClient(origin, { token_endpoint_auth_method: 'client_secret_basic' });
+  const unknownToken = await postForm(
+    origin,
+    '/oauth/token',
+    { grant_type: 'refresh_token', refresh_token: 'rc_rt_unknown' },
+    basic(`${encodeURIComponent(confidential.body.client_id)}:${encodeURIComponent(confidential.body.client_secret)}`),
+  );
+  assert.deepEqual([unknownToken.status, unknownToken.body.error], [400, 'invalid_grant']);
+
+  const granted = await connectClient(browser, 'person:read person:write');
+  const refresh = (refresh_token: string, scope?: string) =>
+    postForm(origin, '/oauth/token', {
+      grant_type: 'refresh_token',
+      refresh_token,
+      client_id: granted.clientId,
+      ...(scope === undefined ? {} : { scope }),
+    });
+  const save = (token: string) =>
+    mcp(origin, 'save_my_inputs', { data: { household: { size: 3 } }, confirmed: true }, bearer(token));
+  // Asking for less is applied: the new access token cannot write.
+  const narrowed = await refresh(granted.tokens.refresh_token, 'person:read');
+  assert.equal(narrowed.status, 200);
+  assert.equal(narrowed.body.scope, 'person:read');
+  assert.equal((await mcp(origin, 'get_person', {}, bearer(narrowed.body.access_token))).status, 200);
+  const refusedWrite = await save(narrowed.body.access_token);
+  assert.equal(refusedWrite.status, 403);
+  assert.match(refusedWrite.headers.get('www-authenticate') ?? '', /insufficient_scope/);
+  // The narrowing is part of what the server stored: changing the token's prefix makes it unknown.
+  const tampered = narrowed.body.access_token.replace(/^rc_at_s\d+_/, 'rc_at_');
+  assert.notEqual(tampered, narrowed.body.access_token);
+  assert.equal((await save(tampered)).status, 401);
+  // Asking for more than was granted, or for nothing this server has, is refused and uses nothing up.
+  const readOnly = await connectClient(browser, 'person:read');
+  const wider = await postForm(origin, '/oauth/token', {
+    grant_type: 'refresh_token',
+    refresh_token: readOnly.tokens.refresh_token,
+    client_id: readOnly.clientId,
+    scope: 'person:read person:write',
+  });
+  assert.deepEqual([wider.status, wider.body.error], [400, 'invalid_scope']);
+  const unknown = await refresh(narrowed.body.refresh_token, 'admin');
+  assert.deepEqual([unknown.status, unknown.body.error], [400, 'invalid_scope']);
+  // The refresh token kept the scope of the grant: left out, `scope` means everything that was granted.
+  const full = await refresh(narrowed.body.refresh_token);
+  assert.equal(full.body.scope, 'person:read person:write');
+  assert.equal((await save(full.body.access_token)).result?.structuredContent?.saved, true);
 });

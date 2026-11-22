@@ -48,6 +48,24 @@ function completeMonths(today: string, count: number) {
   return { from: day(new Date(Date.UTC(year, month - 1 - count, 1))), to: day(new Date(Date.UTC(year, month - 1, 0))) };
 }
 
+/**
+ * What is fictional and what is not, in one sentence for the model to repeat. The person and the
+ * bank movements behind their figures are labelled separately: a real person can be connected to a
+ * fictional bank, and then the profile is real and the movements are synthetic.
+ */
+export function provenanceNote(who: Person): string {
+  const bank = who.finances.bankSynthetic;
+  if (who.synthetic)
+    return bank === false
+      ? 'This is a fictional persona (synthetic: true), but the bank figures include real bank data.'
+      : 'This is a fictional persona: every figure is synthetic demo data.';
+  if (bank === true)
+    return 'The profile is the person’s own (synthetic: false). The monthly figures observed in the bank come from a fictional bank feed (bankSynthetic: true), not from a real bank.';
+  return bank === false
+    ? 'The profile is the person’s own and the bank figures come from real bank data (synthetic: false).'
+    : 'The profile is the person’s own (synthetic: false).';
+}
+
 /** A message that is safe to show: never an upstream body or a URL. */
 class PersonUnavailable extends Error {}
 
@@ -144,7 +162,7 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
     {
       title: 'Estimate months of saving to buy in each place',
       description:
-        'For one person and up to eight municipalities, compute the upfront cash to buy (deposit, transfer tax, purchase fees) and the months of saving needed: with current savings, with the person’s habits, and with the benefits each place offers. Pass exactly one of: me:true for the signed-in person (needs sign-in), an inline person, or demoId for a fictional demo persona. There is no user id argument. Benefits are counted only when eligibility is confirmed unless includeUnverifiedBenefits is set; closed calls are never counted. This is arithmetic on supplied figures: it is not mortgage approval and no aid is guaranteed. Present assumptions, dataMissing and limitations with the result.',
+        'For one person and up to eight municipalities, compute the upfront cash to buy (deposit, transfer tax, purchase fees) and the months of saving needed: with current savings, with the person’s habits, and with the benefits each place offers. Pass exactly one of: me:true for the signed-in person (needs sign-in), an inline person, or demoId for a fictional demo persona. There is no user id argument. Benefits are counted only when eligibility is confirmed unless includeUnverifiedBenefits is set; closed calls are never counted. habits says for each habit whether it was counted and why: say so instead of assuming an active habit was counted. A benefit with a null amountCents and an ineligible status brings the person nothing; nominalAmountCents is only what it is worth to someone who qualifies. person.synthetic and person.finances.bankSynthetic say separately whether the person and the bank movements are fictional: repeat them as given. This is arithmetic on supplied figures: it is not mortgage approval and no aid is guaranteed. Present assumptions, dataMissing and limitations with the result.',
       inputSchema: planToolInput,
       outputSchema: planResult,
       annotations: readOnly,
@@ -168,7 +186,16 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
         const summary = best
           ? `Shortest estimate: ${best.withPlaceBenefits?.months} months of saving for ${best.place.name}. An arithmetic estimate, not mortgage approval or guaranteed aid.`
           : 'No finite savings timeline could be estimated; see status and dataMissing for each place.';
-        return result(summary, { ...plan, limitations: [...plan.limitations, ...loaded.notes] });
+        const withheld = (plan.habits ?? []).filter(
+          effect => effect.reason === 'inside_bank_figures' || effect.reason === 'start_unknown',
+        ).length;
+        const habitNote = withheld
+          ? ` ${withheld} active habit(s) are shown but not counted; habits says why for each.`
+          : '';
+        return result(`${summary}${habitNote} ${provenanceNote(plan.person)}`, {
+          ...plan,
+          limitations: [...plan.limitations, ...loaded.notes],
+        });
       }),
   );
 
@@ -177,7 +204,7 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
     {
       title: 'Read my person: finances, home needs and habits',
       description:
-        'Assemble the signed-in person from their saved inputs, recent bank cash flow and habit goals. Takes no arguments: it always reads the caller’s own person and needs sign-in. Unknown facts are null, not zero. finances.basis says whether figures were declared or observed in bank movements.',
+        'Assemble the signed-in person from their saved inputs, recent bank cash flow and habit goals. Takes no arguments: it always reads the caller’s own person and needs sign-in. Unknown facts are null, not zero. finances.basis says whether figures were declared or observed in bank movements; finances.bankSynthetic says whether those movements come from a fictional bank feed, which is separate from the person being real (synthetic: false). Savings for the purchase are only what the person declared: a bank balance is never used for them.',
       inputSchema: z.object({}).strict(),
       outputSchema: person,
       annotations: readOnly,
@@ -188,7 +215,10 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
         const own = ownPerson(caller, 'person:read');
         if ('error' in own) return own.error;
         const loaded = await loadPerson(own.me);
-        return result(['Your person, assembled from your saved inputs.', ...loaded.notes].join(' '), loaded.person);
+        return result(
+          ['Your person, assembled from your saved inputs.', provenanceNote(loaded.person), ...loaded.notes].join(' '),
+          loaded.person,
+        );
       }),
   );
 
@@ -197,7 +227,7 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
     {
       title: 'Read what I have saved',
       description:
-        'Return the signed-in person’s saved input records and the resolved context built from them (which value wins per field, its source, and unresolved conflicts). Takes no arguments and needs sign-in.',
+        'Return the signed-in person’s saved input records and the resolved context built from them (which value wins per field, its source, and unresolved conflicts). Each record carries synthetic: false for what the person stated, true only for a record derived from a fictional source. bankSnapshot, when present, is an account balance kept as its own unconfirmed fact: it is not savings for the purchase. Takes no arguments and needs sign-in.',
       inputSchema: z.object({}).strict(),
       outputSchema: z.object({
         inputCount: z.number().int().nonnegative(),
@@ -205,6 +235,7 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
         resolved: z.record(z.string(), z.unknown()),
         recommendation: z.record(z.string(), z.unknown()).nullable(),
         warnings: z.array(z.string()),
+        bankSnapshot: z.record(z.string(), z.unknown()).nullable().optional(),
       }),
       annotations: readOnly,
       _meta: security('personal'),
@@ -218,11 +249,12 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
         const stored = z.object({ inputs: z.array(z.record(z.string(), z.unknown())) }).parse(await own.me.inputs());
         return result(`${stored.inputs.length} saved input records.`, {
           inputCount: stored.inputs.length,
-          // The storage flag is not a statement about the person; ownership by an account is.
-          inputs: stored.inputs.map(({ synthetic: _flag, ...input }) => input),
+          // Each record carries its own flag: false for what the person stated, true for a fabricated source.
+          inputs: stored.inputs,
           resolved: (context.resolved ?? {}) as Record<string, unknown>,
           recommendation: (context.recommendation ?? null) as Record<string, unknown> | null,
           warnings: Array.isArray(context.warnings) ? (context.warnings as string[]) : [],
+          bankSnapshot: (context.bankSnapshot ?? null) as Record<string, unknown> | null,
         });
       }),
   );
@@ -255,8 +287,8 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
             source: input.source,
             observedAt: new Date().toISOString(),
             confirmed: input.confirmed,
-            // Required literal of the input contract; see packages/auth/README.md on the storage flag.
-            synthetic: true,
+            // What a signed-in person states about themselves is real; the handle knows which it is.
+            synthetic: own.me.synthetic,
             data: input.data,
           },
         ]);
@@ -280,7 +312,7 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
       ({ demoId: id }) =>
         guarded(async () => {
           const loaded = await loadPerson(demoPerson(id));
-          return result(['Fictional demo persona.', ...loaded.notes].join(' '), loaded.person);
+          return result([provenanceNote(loaded.person), ...loaded.notes].join(' '), loaded.person);
         }),
     );
 

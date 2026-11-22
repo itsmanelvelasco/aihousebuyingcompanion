@@ -108,7 +108,11 @@ test('the verified transfer-tax figures give the tax a real purchase pays', () =
   }
   // Outside the rural list the general rate stays and nothing is saved.
   const city = planned(balaguer, 150_000, family);
-  assert.deepEqual([city.benefit('itp_buy').amountCents, city.benefit('itp_buy').counted], [0, false]);
+  // The place is not covered: no amount of the buyer's own, and the nominal saving there is nothing.
+  assert.deepEqual(
+    [city.benefit('itp_buy').amountCents, city.benefit('itp_buy').nominalAmountCents, city.benefit('itp_buy').counted],
+    [null, 0, false],
+  );
   assert.equal(city.plan.withPlaceBenefits?.upfrontCashCents, 4_800_000);
 
   // The general tariff by value: €700,000 pays 10% of €600,000 and 11% of the rest, €71,000.
@@ -183,7 +187,10 @@ test('the verified deduction and aid figures give the amounts a household is sho
     [75_000, 1_500_000],
     [150_000, 1_500_000],
   ]) {
-    assert.equal(planned(termens, budgetEur, family).benefit('youth_purchase_small_town').amountCents, amount);
+    const aid = planned(termens, budgetEur, family).benefit('youth_purchase_small_town');
+    assert.equal(aid.nominalAmountCents, amount);
+    // The amount is the household's own only while it is not ruled out.
+    assert.equal(aid.amountCents, aid.eligibilityStatus === 'ineligible' ? null : amount);
   }
   // The renovation grant is real but depends on works the purchase plan does not model: it is not listed there.
   assert.equal(policies.find(entry => entry.id === 'renovation_grant_2026')?.effect?.kind, 'unquantified');

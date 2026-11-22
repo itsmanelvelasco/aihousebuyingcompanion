@@ -4,6 +4,7 @@ import { createInputStore, maxInputs, supersededInputs } from '../apps/profile-a
 import { createProfileApi } from '../apps/profile-api/server.ts';
 import { inputSchema, resolveInputs } from '../packages/contracts/inputs.ts';
 import { open } from '../packages/db/database.ts';
+import { buildPerson } from '../packages/model/person.ts';
 import { createStore } from '../packages/profiles/store.ts';
 
 test('multiple app inputs persist, combine partial answers, expose conflicts and preserve isolation', async () => {
@@ -41,7 +42,21 @@ test('multiple app inputs persist, combine partial answers, expose conflicts and
     assert.equal(context.recommendation.input.housing.maxBudgetEur, 130000);
     assert.equal(context.recommendation.input.housing.allowComarcaEstimate, false);
     assert.equal(context.recommendation.ready, true);
-    assert.equal(context.resolved.data.finance.currentSavingsCents, 1000000);
+    // The balance of the bank snapshot is kept as its own unconfirmed fact. It is not savings for the purchase.
+    assert.equal(context.resolved.data.finance, undefined);
+    assert.equal(context.resolved.provenance['finance.currentSavingsCents'], undefined);
+    assert.deepEqual(context.bankSnapshot, {
+      balanceCents: 1000000,
+      observedAt: '2026-11-21',
+      confirmed: false,
+      synthetic: true,
+    });
+    assert.ok(
+      context.warnings.some((warning: string) => /balance is not counted as savings for the purchase/.test(warning)),
+    );
+    // A fixture persona and its records are fictional, and the context says so.
+    assert.equal(context.synthetic, true);
+    assert.equal(context.resolved.provenance['housing.budgetCents'][0].synthetic, true);
     const manual = { ...input, id: 'manual-1', source: 'manual', data: { housing: { budgetCents: 14000000 } } };
     assert.equal((await post([manual])).status, 200);
     context = await (await fetch(`${base}/context`, { headers })).json();
@@ -81,6 +96,137 @@ test('multiple app inputs persist, combine partial answers, expose conflicts and
     assert.equal((await fetch(`${base.replace('/demo', '/missing')}/inputs`, { headers })).status, 404);
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
+    db.close();
+  }
+});
+
+test('savings for the purchase are declared or confirmed, never taken from a balance', async () => {
+  const db = open(':memory:');
+  const document = { schemaVersion: 1, synthetic: true };
+  const store = createStore(db);
+  // One persona whose profile declares savings for the purchase, one with only a balance.
+  await store.create('declared', {
+    details: { ...document, id: 'declared' },
+    preferences: { ...document, purchaseSavingsCents: 2_500_000 },
+    'bank-account': { ...document, snapshotDate: '2026-11-21', balanceCents: 4_498_200, monthlyIncomeCents: 213_800 },
+  });
+  await store.create('balance-only', {
+    details: { ...document, id: 'balance-only' },
+    preferences: document,
+    'bank-account': { ...document, snapshotDate: '2026-11-21', balanceCents: 4_498_200, monthlyIncomeCents: 213_800 },
+  });
+  const inputs = createInputStore(db);
+  try {
+    const declared = await inputs.context('declared');
+    assert.equal(declared.resolved.data.finance?.currentSavingsCents, 2_500_000);
+    assert.deepEqual(
+      declared.resolved.provenance['finance.currentSavingsCents'].map(item => [item.source, item.confirmed]),
+      [['profile', false]],
+    );
+    assert.equal(declared.bankSnapshot?.balanceCents, 4_498_200);
+    assert.ok(!declared.warnings.some(warning => /not counted as savings/.test(warning)));
+
+    const balanceOnly = await inputs.context('balance-only');
+    assert.equal(balanceOnly.resolved.data.finance?.currentSavingsCents, undefined);
+    assert.equal(
+      balanceOnly.resolved.data.finance?.monthlyIncomeCents,
+      213_800,
+      'other snapshot figures still propose',
+    );
+    assert.ok(balanceOnly.warnings.some(warning => /not counted as savings/.test(warning)));
+    // The person built from it has unknown savings, and the plan names what is missing.
+    const person = buildPerson({ userId: 'balance-only', synthetic: true, context: balanceOnly });
+    assert.equal(person.finances.currentSavingsCents, null);
+
+    // Once the person states their savings, that is the figure, and the warning goes.
+    await inputs.add('balance-only', {
+      inputs: [
+        {
+          id: 'savings',
+          source: 'interview',
+          observedAt: '2026-11-22T09:00:00Z',
+          confirmed: true,
+          synthetic: true,
+          data: { finance: { currentSavingsCents: 1_200_000 } },
+        },
+      ],
+    });
+    const confirmed = await inputs.context('balance-only');
+    assert.equal(confirmed.resolved.data.finance?.currentSavingsCents, 1_200_000);
+    assert.equal(confirmed.bankSnapshot?.balanceCents, 4_498_200, 'the balance stays a fact of its own');
+    assert.ok(!confirmed.warnings.some(warning => /not counted as savings/.test(warning)));
+  } finally {
+    db.close();
+  }
+});
+
+test('what a real person states is stored and returned as real; only a fictional source stays synthetic', async () => {
+  const db = open(':memory:');
+  const real = { schemaVersion: 1, synthetic: false };
+  const store = createStore(db);
+  await store.create('p-real', {
+    details: { ...real, id: 'p-real', householdSize: 2 },
+    preferences: { ...real, goal: 'buy_primary_home' },
+    'bank-account': real,
+  });
+  const inputs = createInputStore(db);
+  const stated = (id: string, source: string, synthetic: boolean, size = 2) => ({
+    id,
+    source,
+    observedAt: '2026-11-22T09:00:00Z',
+    confirmed: true,
+    synthetic,
+    data: { household: { size } },
+  });
+  try {
+    // No records yet: nothing about a real person is called synthetic.
+    assert.deepEqual(
+      [(await inputs.read('p-real')).synthetic, (await inputs.context('p-real')).synthetic],
+      [false, false],
+    );
+    // A client built when the flag was the literal `true` still sends it; the store keeps the truth.
+    await inputs.add('p-real', {
+      inputs: [stated('said', 'interview', true), stated('typed', 'manual', false), stated('feed', 'bank', true)],
+    });
+    const file = await inputs.read('p-real');
+    assert.deepEqual(
+      [file.synthetic, ...file.inputs.map(input => [input.id, input.synthetic])],
+      [false, ['said', false], ['typed', false], ['feed', true]],
+    );
+    // Sending the same record again is a duplicate, not a change of provenance.
+    assert.deepEqual(await inputs.add('p-real', { inputs: [stated('said', 'interview', true)] }), {
+      inserted: 0,
+      replaced: 0,
+      duplicates: 1,
+      pruned: 0,
+    });
+    assert.equal((await inputs.replace('p-real', 'typed', stated('typed', 'manual', true, 3))).synthetic, false);
+    const context = await inputs.context('p-real');
+    assert.equal(context.synthetic, false);
+    // The profile snapshot of a real person is real too, and the provenance of each field carries its flag.
+    assert.deepEqual(
+      context.resolved.provenance['housing.tenure'].map(item => [item.source, item.synthetic]),
+      [['profile', false]],
+    );
+    assert.ok(
+      context.resolved.provenance['household.size'].every(item => item.synthetic === (item.inputId === 'feed')),
+    );
+    // A fictional persona keeps the flags its records arrive with.
+    const fictional = { schemaVersion: 1, synthetic: true };
+    await store.create('user-001', {
+      details: { ...fictional, id: 'user-001' },
+      preferences: fictional,
+      'bank-account': fictional,
+    });
+    await inputs.add('user-001', { inputs: [stated('said', 'interview', true)] });
+    assert.deepEqual(
+      [(await inputs.read('user-001')).synthetic, (await inputs.context('user-001')).synthetic],
+      [true, true],
+    );
+    // One real record among a persona's records: the aggregate is no longer "all synthetic".
+    await inputs.add('user-001', { inputs: [stated('listing', 'listing', false, 4)] });
+    assert.equal((await inputs.read('user-001')).synthetic, false);
+  } finally {
     db.close();
   }
 });

@@ -31,7 +31,7 @@ export function createOpenAIHabits(
           max_output_tokens: maxOutputTokens,
           reasoning: { effort: 'low' },
           instructions:
-            'Suggest 1–5 optional, kind, practical money habits using only the supplied synthetic aggregates. Do not infer identity, diagnose, shame, recommend loans/investments, promise credit approval or savings, reduce essential needs, or perform actions. Incomplete history requires a review habit, not an assumed reduction. Never include a monetary savings claim. Return the required JSON.',
+            'Suggest 1–5 optional, kind, practical money habits using only the supplied aggregates. Do not infer identity, diagnose, shame, recommend loans/investments, promise credit approval or savings, reduce essential needs, or perform actions. Incomplete history requires a review habit, not an assumed reduction. Never include a monetary savings claim. Return the required JSON.',
           input: aggregate,
           text: {
             format: {
@@ -93,7 +93,8 @@ export function createOpenAIHabits(
       const parsed = suggestionsSchema.parse(JSON.parse(text));
       return {
         source: 'openai',
-        synthetic: true,
+        // The suggestions describe the aggregates they were made from, fabricated or real.
+        synthetic: summary.synthetic,
         model,
         ...parsed,
         usage: { inputTokens: result.usage?.input_tokens ?? null, outputTokens: result.usage?.output_tokens ?? null },

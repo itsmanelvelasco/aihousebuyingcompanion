@@ -25,6 +25,28 @@ export function insertUser(db: Database, userId: string, createdAt: string) {
   return outcome.changes === 1;
 }
 
+/**
+ * Whether a person is fictional: true only when every profile document they have says so. A person
+ * without documents is not called fictional, because nothing states it.
+ */
+export function personIsSynthetic(db: Database, userId: string) {
+  const row = db.get<{ total: number; fictional: number | null }>(
+    'SELECT COUNT(*) AS total, SUM(synthetic) AS fictional FROM profile_sections WHERE user_id = ?',
+    userId,
+  )!;
+  return row.total > 0 && row.fictional === row.total;
+}
+
+/** The stored flag of one profile document, or undefined when the user has no such section. */
+export function sectionIsSynthetic(db: Database, userId: string, section: string) {
+  const row = db.get<{ synthetic: number }>(
+    'SELECT synthetic FROM profile_sections WHERE user_id = ? AND section = ?',
+    userId,
+    section,
+  );
+  return row === undefined ? undefined : row.synthetic === 1;
+}
+
 /** One profile document as parsed JSON, or undefined when the user has no such section. */
 export function readSection(db: Database, userId: string, section: string): unknown {
   const row = db.get<{ document: string }>(

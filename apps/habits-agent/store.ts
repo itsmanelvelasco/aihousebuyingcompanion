@@ -13,15 +13,27 @@ import {
   usageAttempts,
   writeUsage,
 } from '../../packages/db/habits.ts';
+import { personIsSynthetic } from '../../packages/db/profiles.ts';
 import { ApiError } from '../../packages/http/server.ts';
 import { requireUser } from '../../packages/profiles/store.ts';
 
-/** Habit goals and check-ins of each user, and the daily AI attempt counter, in the runtime database. */
-export function createHabitStore(db: Database) {
+/**
+ * Habit goals and check-ins of each user, and the daily AI attempt counter, in the runtime database.
+ *
+ * When a habit started (`startedOn`) decides whether the planner may add it on top of spending
+ * observed in bank movements, so the store keeps it:
+ * - a goal created active starts on the day it is created, unless the request states a day;
+ * - a goal switched back on starts on that day, unless the request states a day other than the stored one;
+ * - any other replacement keeps the stored day when the request does not state one;
+ * - a day more than one day ahead is refused, because a habit that has not started is not active.
+ */
+export function createHabitStore(db: Database, clock: () => Date = () => new Date()) {
+  const today = () => clock().toISOString().slice(0, 10);
   function state(id: string) {
     return stateSchema.parse({
       schemaVersion: 1,
-      synthetic: true,
+      // Goals and check-ins are the person's own: fictional for a demo persona, real otherwise.
+      synthetic: personIsSynthetic(db, id),
       userId: id,
       goals: listGoals(db, id),
       checkins: listCheckins(db, id),
@@ -29,7 +41,7 @@ export function createHabitStore(db: Database) {
   }
   async function read(id: string) {
     requireUser(db, id);
-    return db.transaction(() => state(id));
+    return db.read(() => state(id));
   }
   /** Run one change for an existing user in a transaction and check the limits of the whole state. */
   function mutate<T>(id: string, change: () => T) {
@@ -44,11 +56,25 @@ export function createHabitStore(db: Database) {
   return {
     read,
     async saveGoal(id: string, value: unknown, replace = false) {
-      const goal = goalSchema.parse(value);
+      const submitted = goalSchema.parse(value);
+      // One day of slack: the person's calendar day can be ahead of the server's (UTC).
+      const latest = new Date(clock().getTime() + 86_400_000).toISOString().slice(0, 10);
+      if (submitted.startedOn !== null && submitted.startedOn > latest)
+        throw new ApiError(400, 'startedOn must not be in the future');
       return mutate(id, () => {
-        const existing = getGoal(db, id, goal.id);
+        const existing = getGoal(db, id, submitted.id);
         if (!replace && existing) throw new ApiError(409, 'Habit already exists');
         if (replace && !existing) throw new ApiError(404, 'Habit not found');
+        const reactivated = existing !== undefined && !existing.active && submitted.active;
+        const stated = submitted.startedOn;
+        const startedOn = !existing
+          ? (stated ?? (submitted.active ? today() : null))
+          : reactivated
+            ? stated !== null && stated !== existing.startedOn
+              ? stated
+              : today()
+            : (stated ?? existing.startedOn);
+        const goal = { ...submitted, startedOn };
         if (existing) updateGoal(db, id, goal);
         else insertGoal(db, id, goal);
         return goal;

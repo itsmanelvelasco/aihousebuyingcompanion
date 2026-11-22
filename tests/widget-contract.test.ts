@@ -27,7 +27,7 @@ const period = lastCompleteMonths(new Date().toISOString().slice(0, 10), 3);
 test('the widget client parses real tool answers for a demo persona, a signed-in person and nobody', async t => {
   const server = await startApp();
   t.after(() => server.close());
-  const { origin } = server;
+  const { origin, db } = server;
   // user-001 gets a ledger with history and a first event, as the demo feed provides.
   const seeded = await fetch(`${origin}/api/users/user-001/bank/demo`, {
     method: 'POST',
@@ -113,6 +113,9 @@ test('the widget client parses real tool answers for a demo persona, a signed-in
   // A new account has nothing saved: the plan says what is missing instead of inventing figures.
   const empty = await signedIn.plan({ subject: me, municipalityCodes: codes, assumptions });
   assert.equal(empty.person.synthetic, false);
+  // Nothing about a real person is labelled synthetic before they have any bank data.
+  assert.equal((await signedIn.bankSummary(me, period)).synthetic, false);
+  assert.equal((await signedIn.bankUpdates(me, 0)).synthetic, false);
   assert.equal(empty.person.finances.monthlyIncomeCents, null);
   assert(
     empty.plans.every(plan => plan.baseline === null || plan.baseline.months === null || plan.dataMissing.length > 0),
@@ -125,6 +128,15 @@ test('the widget client parses real tool answers for a demo persona, a signed-in
     true,
   );
   assert.deepEqual([saved.saved, saved.inputCount], [true, 1]);
+  // What the person saved is stored as real, and so are the documents of their profile.
+  const ownId = db.get<{ user_id: string }>('SELECT user_id FROM accounts')?.user_id ?? '';
+  assert.deepEqual(db.all('SELECT synthetic FROM input_records WHERE user_id = ?', ownId), [{ synthetic: 0 }]);
+  assert.deepEqual(db.all('SELECT DISTINCT synthetic FROM profile_sections WHERE user_id = ?', ownId), [
+    { synthetic: 0 },
+  ]);
+  assert.deepEqual(db.all("SELECT DISTINCT synthetic FROM profile_sections WHERE user_id = 'user-001'"), [
+    { synthetic: 1 },
+  ]);
   const planned = await signedIn.plan({ subject: me, municipalityCodes: codes, assumptions });
   assert.equal(planned.person.finances.monthlyIncomeCents, 320_000);
   assert.equal(planned.person.home.budgetCents, 15_000_000);
@@ -143,5 +155,11 @@ test('the widget client parses real tool answers for a demo persona, a signed-in
   // Signed in, a demo persona can still be looked at; it stays the persona's data, not the person's.
   const looked = await signedIn.plan({ subject: demo, municipalityCodes: codes, assumptions });
   assert.equal(looked.person.id, 'user-001');
+  assert.equal(looked.person.synthetic, true);
+  // The plan says for each habit what it did, and the widget reads that instead of the habit's status.
+  assert.deepEqual(planned.habits, []);
+  // A demo persona declares no savings for the purchase: its balance is not used for them, so no timeline is invented.
+  assert.equal(looked.person.finances.currentSavingsCents, null);
+  assert.ok(looked.plans.every(plan => plan.dataMissing.includes('person.finances.currentSavingsCents')));
   assert.notEqual(looked.person.finances.monthlyIncomeCents, 320_000);
 });

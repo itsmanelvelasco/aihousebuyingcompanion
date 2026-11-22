@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import { createServer } from 'node:http';
+import type { Server } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import type { AppOptions } from '../../apps/server/app.ts';
 import { createApp } from '../../apps/server/app.ts';
 import { accessConfig } from '../../packages/config/env.ts';
@@ -11,6 +12,9 @@ import { createStore } from '../../packages/profiles/store.ts';
  * The real ReloCat request handler over a private in-memory database, listening on a free port.
  * Four fictional personas (`user-001`…`user-004`) are created the way the fixtures are, so the
  * public demo has something to show. Nothing touches `data/` or the ports of a running server.
+ *
+ * This is the local shape: no `PUBLIC_ORIGIN`, every request straight from this machine, and the
+ * sign-in limits at their defaults. `startProductionApp` is the deployed shape.
  */
 export async function startApp(overrides: Partial<AppOptions> & { accessEnv?: Record<string, string> } = {}) {
   const db = open(':memory:');
@@ -32,14 +36,15 @@ export async function startApp(overrides: Partial<AppOptions> & { accessEnv?: Re
   }
   let port = 0;
   const { accessEnv, ...options } = overrides;
+  /** Operator warnings the app raised, kept out of the test output. */
+  const warnings: string[] = [];
   const app = createApp({
     db,
     adminToken: 'admin-test-token',
     publicOrigin: null,
     port: () => port,
     access: accessConfig({ ...accessEnv }),
-    // Every test request comes from this machine; the sign-in limits get their own tests.
-    accounts: { throttle: { perAddress: 10_000, signUpsPerAddress: 10_000 } },
+    warn: message => void warnings.push(message),
     ...options,
   });
   const server = createServer(app.handle);
@@ -52,8 +57,16 @@ export async function startApp(overrides: Partial<AppOptions> & { accessEnv?: Re
   return {
     app,
     db,
+    /** Where requests are sent. */
     origin,
+    /** The origin the server believes it has: links, the OAuth issuer and the `Origin` of its own forms. */
+    site: options.publicOrigin ?? origin,
+    sessionCookie: 'rc_session',
+    secure: false,
+    shape: 'local' as string,
+    warnings,
     port,
+    browser: (client?: string) => new Browser(origin, options.publicOrigin ?? origin, client),
     async close() {
       await app.close().catch(() => {});
       server.closeAllConnections();
@@ -65,23 +78,124 @@ export async function startApp(overrides: Partial<AppOptions> & { accessEnv?: Re
 
 export type TestApp = Awaited<ReturnType<typeof startApp>>;
 
+/** The header a test puts on a request to say which visitor it is; the test proxy turns it into `X-Forwarded-For`. */
+const clientHeader = 'x-test-client';
+export const productionSite = 'https://relocat.test';
+
+export type ProxyMode =
+  /** A correctly configured reverse proxy: the original `Host` is passed on and the visitor is appended to `X-Forwarded-For`. */
+  | 'forwarding'
+  /** A proxy that passes `Host` but states no client address at all. */
+  | 'no-address'
+  /** nginx's default `proxy_pass`: `Host` becomes the upstream's and no forwarding header is added. */
+  | 'nginx-default';
+
+/**
+ * A small reverse proxy in front of an app, so the app sees what it sees when deployed: every
+ * connection comes from the proxy's address, with the public host name in `Host`. Visitors are
+ * told apart only by what the proxy writes in `X-Forwarded-For`.
+ */
+export async function startProxy(upstreamPort: number, mode: ProxyMode, publicHost: string) {
+  const server: Server = createServer((incoming, outgoing) => {
+    const headers: Record<string, string | string[] | undefined> = { ...incoming.headers };
+    const visitor = String(headers[clientHeader] ?? '198.51.100.7');
+    delete headers[clientHeader];
+    // Whatever a visitor wrote in these headers stays; a real proxy appends to it or leaves it.
+    if (mode === 'forwarding') {
+      const sent = headers['x-forwarded-for'];
+      headers['x-forwarded-for'] = sent ? `${String(sent)}, ${visitor}` : visitor;
+      headers['x-forwarded-proto'] = 'https';
+    }
+    headers.host = mode === 'nginx-default' ? `127.0.0.1:${upstreamPort}` : publicHost;
+    const forwarded = httpRequest(
+      { host: '127.0.0.1', port: upstreamPort, method: incoming.method, path: incoming.url, headers },
+      answer => {
+        outgoing.writeHead(answer.statusCode ?? 502, answer.headers);
+        answer.pipe(outgoing);
+      },
+    );
+    forwarded.on('error', () => outgoing.writeHead(502).end());
+    outgoing.on('close', () => forwarded.destroy());
+    incoming.pipe(forwarded);
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('No port');
+  return {
+    origin: `http://127.0.0.1:${address.port}`,
+    async close() {
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    },
+  };
+}
+
+/**
+ * The deployed shape: `NODE_ENV=production`, a `PUBLIC_ORIGIN`, every limit at its default, and
+ * every request arriving through a reverse proxy on this machine. `proxy` chooses how well that
+ * proxy is configured; `clientAddress` is the server's `CLIENT_IP_HEADER` setting.
+ */
+export async function startProductionApp(
+  overrides: Partial<AppOptions> & { accessEnv?: Record<string, string>; proxy?: ProxyMode } = {},
+) {
+  const { proxy: mode = 'forwarding', accessEnv, ...options } = overrides;
+  const server = await startApp({
+    publicOrigin: productionSite,
+    accessEnv: { NODE_ENV: 'production', PUBLIC_ORIGIN: productionSite, ...accessEnv },
+    ...options,
+    rateLimit: { clientAddress: { kind: 'x-forwarded-for', trustedHops: 1 }, ...options.rateLimit },
+  });
+  const proxy = await startProxy(server.port, mode, new URL(productionSite).host);
+  return {
+    ...server,
+    /** Where requests are sent: the proxy. */
+    origin: proxy.origin,
+    /** Straight to the server, around the proxy. */
+    direct: server.origin,
+    site: productionSite,
+    sessionCookie: '__Host-rc_session',
+    secure: true,
+    shape: `production (${mode})`,
+    browser: (client?: string) => new Browser(proxy.origin, productionSite, client),
+    async close() {
+      await proxy.close();
+      await server.close();
+    },
+  };
+}
+
+/** Both shapes, for tests that must hold on a laptop and behind a proxy alike. */
+export const shapes = [
+  { name: 'local', start: startApp },
+  { name: 'production', start: startProductionApp },
+] as const;
+
 /** A browser as far as these tests need one: a cookie jar and form posts that never follow redirects. */
 export class Browser {
   cookies = new Map<string, string>();
+  /** Where requests are sent. */
   origin: string;
-  constructor(origin: string) {
+  /** The origin the pages believe they are on: the `Origin` header of a form post. */
+  site: string;
+  /** The visitor's address, as a test proxy reports it. */
+  client: string | undefined;
+  constructor(origin: string, site = origin, client?: string) {
     this.origin = origin;
+    this.site = site;
+    this.client = client;
   }
   async request(
     path: string,
     init: { method?: string; form?: Record<string, string>; headers?: Record<string, string>; json?: unknown } = {},
   ) {
     const headers: Record<string, string> = { ...init.headers };
+    if (this.client) headers[clientHeader] = this.client;
     if (this.cookies.size) headers.Cookie = [...this.cookies].map(([name, value]) => `${name}=${value}`).join('; ');
     let body: string | undefined;
     if (init.form) {
       headers['Content-Type'] = 'application/x-www-form-urlencoded';
-      headers.Origin ??= this.origin;
+      headers.Origin ??= this.site;
       body = new URLSearchParams(init.form).toString();
     } else if (init.json !== undefined) {
       headers['Content-Type'] = 'application/json';
@@ -126,10 +240,10 @@ export function pkce() {
 const redirectUri = 'https://client.example/callback';
 
 /** Register a public client the way an MCP client does. */
-export async function registerClient(origin: string, metadata: Record<string, unknown> = {}) {
+export async function registerClient(origin: string, metadata: Record<string, unknown> = {}, client?: string) {
   const response = await fetch(`${origin}/oauth/register`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(client ? { [clientHeader]: client } : {}) },
     body: JSON.stringify({ client_name: 'Test client', redirect_uris: [redirectUri], ...metadata }),
   });
   return { status: response.status, body: (await response.json()) as Record<string, string> };
@@ -150,7 +264,7 @@ export async function connectClient(browser: Browser, scope = 'person:read perso
     scope,
     code_challenge: challenge,
     code_challenge_method: 'S256',
-    resource: `${browser.origin}/mcp`,
+    resource: `${browser.site}/mcp`,
   };
   const query = `/oauth/authorize?${new URLSearchParams(params)}`;
   const csrf = await browser.csrf(query);
@@ -163,7 +277,7 @@ export async function connectClient(browser: Browser, scope = 'person:read perso
     code_verifier: verifier,
     client_id: client.client_id,
     redirect_uri: redirectUri,
-    resource: `${browser.origin}/mcp`,
+    resource: `${browser.site}/mcp`,
   });
   return {
     clientId: client.client_id,
@@ -176,10 +290,15 @@ export async function connectClient(browser: Browser, scope = 'person:read perso
   };
 }
 
-export async function postForm(origin: string, path: string, fields: Record<string, string>) {
+export async function postForm(
+  origin: string,
+  path: string,
+  fields: Record<string, string>,
+  headers: Record<string, string> = {},
+) {
   const response = await fetch(`${origin}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...headers },
     body: new URLSearchParams(fields),
   });
   return { status: response.status, body: (await response.json()) as Record<string, string> };

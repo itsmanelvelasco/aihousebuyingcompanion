@@ -20,6 +20,8 @@ RUN npm ci --omit=dev
 
 COPY --from=build --chown=node:node /app/apps ./apps
 COPY --chown=node:node packages ./packages
+# The one script the running image needs: `npm run db:backup -- data/db/backups/<name>.db`.
+COPY --chown=node:node scripts/backup-db.ts ./scripts/backup-db.ts
 COPY --chown=node:node data ./data
 RUN mkdir -p data/db data/cache data/runtime-users data/runtime-habits && chown -R node:node data
 
@@ -30,4 +32,7 @@ VOLUME ["/app/data/db", "/app/data/cache", "/app/data/runtime-users", "/app/data
 
 USER node
 EXPOSE 8787
+# NODE_ENV=production makes the server refuse to start until CLIENT_IP_HEADER says how a visitor's
+# address reaches it (x-forwarded-for, a header name such as cf-connecting-ip, or none):
+#   docker run -e PUBLIC_ORIGIN=https://www.example.org -e CLIENT_IP_HEADER=x-forwarded-for ...
 CMD ["node", "apps/server/index.ts"]

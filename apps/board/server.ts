@@ -239,7 +239,7 @@ export function createBoardApp({
     const url = new URL(req.url ?? '/', 'http://localhost');
     const path = url.pathname;
     try {
-      if (handleConnectPage(req, res)) return;
+      if (handleConnectPage(req, res, publicOrigin)) return;
       if (path === '/test' || path.startsWith('/test/')) {
         if (await handleTestUi(req, res, data().snapshot, data().policies, undefined, data().travelEstimates)) return;
       }

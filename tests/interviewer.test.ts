@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { after, test } from 'node:test';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createInterviewerHandler, type InterviewerOptions, interviewerEnv } from '../apps/interviewer/server.ts';
+import { registerInterviewerTools } from '../apps/mcp-server/interview-tools.ts';
 
 const prefix = '/interview';
 const fakeKey = 'fake-test-key';
@@ -271,4 +276,60 @@ test('environment options keep public AI off unless it is switched on explicitly
   assert.equal(interviewerEnv({ INTERVIEWER_PUBLIC_AI: 'on', OPENAI_API_KEY: '' }).publicAi, true);
   assert.equal(interviewerEnv({ OPENAI_API_KEY: '' }).apiKey, undefined);
   assert.equal(interviewerEnv({ INTERVIEWER_AI_REQUESTS_PER_HOUR: '5' }).aiRequestsPerHour, 5);
+});
+
+test('a statement of a single day is never presented as a monthly figure, by the tool or by the interview', async () => {
+  const server = new McpServer({ name: 'interview-test', version: '1' });
+  registerInterviewerTools(server);
+  const client = new Client({ name: 'test', version: '1' });
+  const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  type Block = { type: string; text: string };
+  const summarize = async (rows: string[]) => {
+    const result = await client.callTool({
+      name: 'summarize_bank_csv',
+      arguments: { csv: ['date,description,amount', ...rows].join('\n') },
+    });
+    assert(!result.isError, JSON.stringify(result.content));
+    return { content: result.content as Block[], data: result.structuredContent as Record<string, unknown> };
+  };
+  try {
+    // One day of movements. The output passes the tool's own schema with every monthly figure null.
+    const day = await summarize(['2026-10-28,Salary,2000', '2026-10-28,Mercadona,-45']);
+    assert.deepEqual(
+      [day.data.averageBasis, day.data.coveredDays, day.data.monthlyCostOfLiving, day.data.estimatedMonthlySalary],
+      ['period_too_short', 1, null, null],
+    );
+    assert.deepEqual(day.data.periodTotals, { inflows: 2000, outflows: 45, net: 1955 });
+    // The first thing the model reads is that the period is too short and that it must ask for more.
+    assert.match(day.content[0].text, /^The statement covers only a single day \(2026-10-28\), which is too short/);
+    assert.match(day.content[0].text, /Do not present any amount as monthly income, spending or an average/);
+    assert.match(day.content[0].text, /ask for a statement covering at least one complete calendar month/);
+    assert.equal(JSON.parse(day.content[1].text).averageBasis, 'period_too_short');
+    // Partial months: a caution. Complete months: no caution, just the figures.
+    const partial = await summarize(['2026-10-15,Salary,2000', '2026-11-20,Rent,-900']);
+    assert.match(partial.content[0].text, /rough indication, not a monthly average/);
+    const complete = await summarize([
+      '2026-08-31,Coffee,-3',
+      '2026-09-01,Salary,2000',
+      '2026-09-15,Rent,-900',
+      '2026-10-01,Coffee,-3',
+    ]);
+    assert.equal(complete.content.length, 1);
+    assert.deepEqual([complete.data.averageBasis, complete.data.monthlyCostOfLiving], ['complete_months', 900]);
+    const tool = (await client.listTools()).tools.find(entry => entry.name === 'summarize_bank_csv');
+    assert.match(tool?.description ?? '', /period_too_short.*say the period is too short for a monthly figure/);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+  // The interview page takes its questions and the note for the voice model from the same rule, and
+  // no longer builds a sentence around the raw figure.
+  const page = await readFile(new URL('../apps/interviewer/app.ts', import.meta.url), 'utf8');
+  assert.match(page, /cashFlowStatements\(state\.cash, money\)\.salaryQuestion/);
+  assert.match(page, /cashFlowStatements\(state\.cash, money\)\.spendingQuestion/);
+  assert.match(page, /cashFlowStatements\(state\.cash, money\)\.guidance/);
+  assert.doesNotMatch(page, /Average spending was/);
+  assert.match(page, /period_too_short[^`]*say the period is too short for a monthly figure/);
 });

@@ -35,8 +35,14 @@ export type AccountRouteOptions = {
   oauth: OAuth;
   /** The origin a request was addressed to (already checked against the allowed hosts). */
   requestOrigin: (request: IncomingMessage) => string;
-  /** The address sign-in attempts are counted under. */
-  clientAddress: (request: IncomingMessage) => string;
+  /** Who sign-in attempts and registrations are counted as, and whether that key may be every visitor at once. */
+  client: (request: IncomingMessage) => { address: string; shared: boolean };
+  /** `PUBLIC_ORIGIN`, to explain a proxy that does not pass the original `Host`. */
+  publicOrigin?: string | null;
+  /** A person signed out: the server closes what their session had open. */
+  onSignOut?: (userId: string) => void;
+  /** Runs before an account's rows are deleted: bank connections leave the sync engine, streams close. */
+  forgetPerson?: (userId: string) => Promise<unknown>;
   /** The resolved context of a person, for "what is stored about me". */
   context: (userId: string) => Promise<Record<string, unknown>>;
   /** False closes `/signup`; existing accounts keep working. */
@@ -81,8 +87,15 @@ export function createAccountRoutes(options: AccountRouteOptions) {
   /** A form post must come from this origin and carry the CSRF token of the session (or pre-session). */
   function assertForm(request: IncomingMessage, key: string | undefined, fields: Record<string, string>) {
     const origin = request.headers.origin;
-    if (origin !== undefined && origin !== options.requestOrigin(request))
+    if (origin !== undefined && origin !== options.requestOrigin(request)) {
+      // The page is ours but the request arrived under another name: a proxy replaced `Host`.
+      if (origin === options.publicOrigin)
+        throw new ApiError(
+          403,
+          'This server is behind a proxy that does not pass the original Host header, so it cannot check where this form came from. The operator must configure the proxy to preserve Host.',
+        );
       throw new ApiError(403, 'This form was sent from another site.');
+    }
     if (!verifyCsrf(key, fields.csrf))
       throw new ApiError(403, 'This form expired. Go back, reload the page and try again.');
   }
@@ -141,7 +154,12 @@ export function createAccountRoutes(options: AccountRouteOptions) {
     const match = /^Basic ([A-Za-z0-9+/=]+)$/.exec(request.headers.authorization ?? '');
     if (!match) return undefined;
     const [id, ...secret] = Buffer.from(match[1], 'base64').toString('utf8').split(':');
-    return { id: decodeURIComponent(id), secret: decodeURIComponent(secret.join(':')) };
+    try {
+      return { id: decodeURIComponent(id), secret: decodeURIComponent(secret.join(':')) };
+    } catch {
+      // RFC 6749 section 2.3.1 form-encodes both parts; credentials that do not decode are wrong credentials.
+      throw new OAuthError('invalid_client', 'Client authentication failed', 401);
+    }
   }
 
   function sendOAuth(response: ServerResponse, status: number, body: unknown) {
@@ -180,7 +198,7 @@ export function createAccountRoutes(options: AccountRouteOptions) {
       }
       if (request.method !== 'POST') throw new OAuthError('invalid_request', 'Use POST', 405);
       if (path === '/oauth/register') {
-        sendOAuth(response, 201, oauth.registerClient(await readJson(request, 16_384)));
+        sendOAuth(response, 201, oauth.registerClient(await readJson(request, 16_384), options.client(request)));
         return true;
       }
       const fields = await readForm(request);
@@ -192,6 +210,7 @@ export function createAccountRoutes(options: AccountRouteOptions) {
     } catch (error) {
       if (error instanceof OAuthError) {
         if (error.status === 401) response.setHeader('WWW-Authenticate', 'Basic realm="oauth"');
+        if (error.retryAfterSeconds) response.setHeader('Retry-After', String(error.retryAfterSeconds));
         sendOAuth(response, error.status, { error: error.error, error_description: error.message });
       } else if (error instanceof ApiError)
         sendOAuth(response, error.status, { error: 'invalid_request', error_description: error.message });
@@ -256,7 +275,7 @@ export function createAccountRoutes(options: AccountRouteOptions) {
     if (!get && !post) throw new ApiError(405, 'Method not allowed');
     if (path === '/oauth/authorize') return authorize(request, response, url);
     const session = sessionOf(request);
-    const address = options.clientAddress(request);
+    const client = options.client(request);
 
     if (path === '/signup' || path === '/login') {
       const signUp = path === '/signup';
@@ -275,13 +294,13 @@ export function createAccountRoutes(options: AccountRouteOptions) {
         assertForm(request, pre.cookie ? undefined : pre.key, fields);
         if (signUp) {
           if (!options.signUps) throw new ApiError(403, 'New accounts are closed on this server.');
-          const account = await accounts.signUp({ email: fields.email, password: fields.password, address });
+          const account = await accounts.signUp({ email: fields.email, password: fields.password, ...client });
           startBrowserSession(request, response, accounts.startSession(account.id));
         } else {
           const { session: started } = await accounts.login({
             email: fields.email,
             password: fields.password,
-            address,
+            ...client,
           });
           // Rotation: the browser leaves with a new session id; one it arrived with is ended.
           accounts.logout(parseCookies(request)[sessionCookie(secureOf(request))]);
@@ -312,6 +331,7 @@ export function createAccountRoutes(options: AccountRouteOptions) {
       if (get) return sendHtml(response, 200, logoutPage({ csrf: session.csrf, account: session.account }));
       assertForm(request, session.id, await readForm(request));
       accounts.logout(session.id);
+      options.onSignOut?.(session.account.userId);
       const secure = secureOf(request);
       response.appendHeader('Set-Cookie', serializeCookie(sessionCookie(secure), '', { secure, maxAgeSeconds: 0 }));
       return redirect(response, '/login');
@@ -344,9 +364,15 @@ export function createAccountRoutes(options: AccountRouteOptions) {
       try {
         if (fields.confirm !== 'yes')
           throw new AuthError('invalid_credentials', 'Tick the box to confirm the deletion.');
-        await accounts.deleteAccount(session.account.id, fields.password);
+        // Counted for this session only: no stranger's wrong guesses can stand between a person and this.
+        await accounts.deleteAccount(session.account.id, fields.password, {
+          sessionId: session.id,
+          beforeDelete: options.forgetPerson,
+        });
       } catch (error) {
         const message = error instanceof AuthError ? error.message : 'The account could not be deleted.';
+        if (error instanceof AuthError && error.retryAfterSeconds)
+          response.setHeader('Retry-After', String(error.retryAfterSeconds));
         return sendHtml(
           response,
           error instanceof AuthError && error.code === 'throttled' ? 429 : 400,

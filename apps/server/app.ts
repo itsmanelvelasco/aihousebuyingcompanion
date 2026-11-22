@@ -3,7 +3,7 @@ import type { AccountsOptions } from '../../packages/auth/accounts.ts';
 import { createAccounts } from '../../packages/auth/accounts.ts';
 import type { OAuthOptions } from '../../packages/auth/oauth.ts';
 import { createOAuth } from '../../packages/auth/oauth.ts';
-import { verifyCsrf } from '../../packages/auth/secrets.ts';
+import { safeEqual, verifyCsrf } from '../../packages/auth/secrets.ts';
 import type { accessConfig } from '../../packages/config/env.ts';
 import { listingBudgetConfig, listingSearchConfig } from '../../packages/config/env.ts';
 import type { Database } from '../../packages/db/database.ts';
@@ -55,8 +55,19 @@ export type AppOptions = {
   habits?: Pick<HabitsOptions, 'openai' | 'dailyCalls'>;
   profileApi?: Omit<ProfileApiOptions, 'authorize' | 'ownedByAccount'>;
   accounts?: AccountsOptions;
-  oauth?: Omit<OAuthOptions, 'issuer' | 'redirectSchemes'>;
+  oauth?: Omit<OAuthOptions, 'issuer' | 'redirectSchemes' | 'onRevoke'>;
+  /**
+   * Milliseconds between housekeeping passes (expired sessions, sign-in counters, OAuth codes,
+   * tokens, dead grants and idle clients). Default ten minutes; null runs none, for tests that
+   * call `housekeeping()` themselves.
+   */
+  housekeepingMs?: number | null;
+  /** Where operator warnings go. Default `console.warn`. */
+  warn?: (message: string) => void;
 };
+
+/** How long a warning about undetermined client addresses stays quiet before it is repeated. */
+const warningEveryMs = 5 * 60_000;
 
 const apiPrefix = '/api';
 
@@ -68,7 +79,15 @@ export function createApp(options: AppOptions) {
     ...options.oauth,
     issuer: () => publicOrigin ?? localOrigin(),
     redirectSchemes: access.oauthRedirectSchemes,
+    // A grant ended: the event streams it authorised are closed; one that is still allowed reconnects.
+    onRevoke: accountId => {
+      const account = accounts.account(accountId);
+      if (account) profiles.closeStreams(account.userId);
+    },
   });
+  /** A public deployment: here a client address that cannot be determined is an operator's problem. */
+  const publicService = access.production || publicOrigin !== null;
+  const warn = options.warn ?? (message => console.warn(message));
   const ownedByAccount = (userId: string) => accounts.ownerOf(userId) !== undefined;
 
   // ---------------------------------------------------------------- hosts
@@ -104,10 +123,15 @@ export function createApp(options: AppOptions) {
 
   // ----------------------------------------------------------- rate limits
 
+  // Every request is counted, also one from this machine: a proxy on the same machine that adds no
+  // forwarding header looks exactly like the server calling itself. Only the operator's own calls
+  // with the admin token are exempt.
+  const adminHeader = `Bearer ${options.adminToken}`;
   const limiterOptions = {
     windowMs: 60_000,
     trustProxy: options.rateLimit?.trustProxy,
     clientAddress: options.rateLimit?.clientAddress,
+    exempt: (request: IncomingMessage) => safeEqual(request.headers.authorization ?? '', adminHeader),
   };
   const limiter = createRateLimiter({ ...limiterOptions, limit: options.rateLimit?.perMinute ?? 300 });
   // Bank webhooks are limited before their signature is checked, on a budget of their own, so an
@@ -115,7 +139,49 @@ export function createApp(options: AppOptions) {
   const webhookLimiter = createRateLimiter({ ...limiterOptions, limit: options.rateLimit?.webhooksPerMinute ?? 120 });
   // New board runs per address, so one visitor cannot fill the store and push other visitors' runs out.
   const newRuns = createRateLimiter({ ...limiterOptions, limit: 30, windowMs: 10 * 60_000, globalLimit: 1500 });
-  const clientAddress = (request: IncomingMessage) => limiter.clientKey(request) ?? 'local';
+  /** Who a sign-in, sign-up or registration is counted as; `shared` when the key may be every visitor at once. */
+  const client = (request: IncomingMessage) => {
+    const { key, shared } = limiter.clientIdentity(request);
+    return { address: key, shared };
+  };
+
+  /**
+   * Requests that could not be told apart from other visitors. On a public deployment this means
+   * the proxy does not state the client address the way `CLIENT_IP_HEADER` says: every visitor then
+   * shares one rate-limit allowance, so it is logged (repeatedly, at most every five minutes) and
+   * shown in `/health`.
+   */
+  const undetermined = { count: 0, lastAt: 0, lastPeer: '', warnedAt: 0, warnedCount: 0 };
+  function noteClient(request: IncomingMessage) {
+    if (!limiter.clientIdentity(request).shared) return;
+    undetermined.count++;
+    undetermined.lastAt = Date.now();
+    undetermined.lastPeer = request.socket.remoteAddress ?? 'unknown';
+    if (!publicService || undetermined.lastAt - undetermined.warnedAt < warningEveryMs) return;
+    warn(
+      `WARNING: ${undetermined.count - undetermined.warnedCount} request(s) arrived without a usable client address ` +
+        `(CLIENT_IP_HEADER=${describeSource()}, last peer ${undetermined.lastPeer}). All such visitors share one ` +
+        'rate-limit allowance and sign-in is throttled per account only. Make the proxy send the header, or fix ' +
+        'CLIENT_IP_HEADER / TRUSTED_PROXY_HOPS; see docs/areas/integration-deployment.md.',
+    );
+    undetermined.warnedAt = undetermined.lastAt;
+    undetermined.warnedCount = undetermined.count;
+  }
+  function describeSource() {
+    const source = limiter.source;
+    if (source.kind === 'x-forwarded-for') return `x-forwarded-for (${source.trustedHops} trusted hop(s))`;
+    return source.kind === 'header' ? source.name : source.kind;
+  }
+  /** The `clientAddress` field of `/health`. `ok` is false while requests keep arriving without a client address. */
+  function clientAddressStatus() {
+    const recent = undetermined.lastAt > 0 && Date.now() - undetermined.lastAt < 2 * warningEveryMs;
+    return {
+      mode: describeSource(),
+      ok: !(publicService && recent),
+      undeterminedRequests: undetermined.count,
+      lastUndeterminedAt: undetermined.lastAt ? new Date(undetermined.lastAt).toISOString() : null,
+    };
+  }
 
   // -------------------------------------------------------------- identity
 
@@ -148,10 +214,34 @@ export function createApp(options: AppOptions) {
     accounts,
     oauth,
     requestOrigin,
-    clientAddress,
+    client,
+    publicOrigin,
     context: profiles.people.context,
     signUps: access.signUps,
+    onSignOut: userId => void profiles.closeStreams(userId),
+    forgetPerson: userId => profiles.forgetPerson(userId),
   });
+
+  // ----------------------------------------------------------- housekeeping
+
+  /** One pass over everything that expires. Never throws: a failed pass is tried again at the next one. */
+  function housekeeping() {
+    try {
+      accounts.housekeeping();
+      oauth.housekeeping();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  const housekeepingMs = options.housekeepingMs === undefined ? 10 * 60_000 : options.housekeepingMs;
+  let housekeepingTimer: ReturnType<typeof setInterval> | undefined;
+  if (housekeepingMs !== null) {
+    housekeeping();
+    housekeepingTimer = setInterval(housekeeping, housekeepingMs);
+    // The timer alone must not keep the process alive.
+    housekeepingTimer.unref();
+  }
 
   /**
    * Who calls `/mcp`. A bearer token must be a valid access token for this server; a wrong one is
@@ -207,9 +297,15 @@ export function createApp(options: AppOptions) {
     const path = (request.url ?? '/').split('?')[0];
     if (!allowedHost(request.headers.host)) return sendJson(response, 421, { error: 'This host is not served here' });
     if (path === '/health' && request.method === 'GET')
-      return sendJson(response, 200, { status: 'ok', ...options.health?.(), publicDemo: access.publicDemo });
+      return sendJson(response, 200, {
+        status: 'ok',
+        ...options.health?.(),
+        publicDemo: access.publicDemo,
+        clientAddress: clientAddressStatus(),
+      });
     const webhook = path.startsWith(`${apiPrefix}/webhooks/`);
     const { allowed, retryAfterSeconds } = (webhook ? webhookLimiter : limiter).check(request);
+    if (!limiterOptions.exempt(request)) noteClient(request);
     if (!allowed) return limited(response, retryAfterSeconds);
     if (path === apiPrefix || path.startsWith(`${apiPrefix}/`)) {
       request.url = (request.url ?? '').slice(apiPrefix.length) || '/';
@@ -236,7 +332,13 @@ export function createApp(options: AppOptions) {
     oauth,
     /** The origin tokens are issued for; also where the MCP endpoint lives. */
     origin: () => publicOrigin ?? localOrigin(),
-    close: () => profiles.close(),
+    housekeeping,
+    clientAddressStatus,
+    /** Stop the housekeeping timer, then the bank engine and its event streams. */
+    close() {
+      clearInterval(housekeepingTimer);
+      return profiles.close();
+    },
   };
 }
 

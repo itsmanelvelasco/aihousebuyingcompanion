@@ -16,7 +16,7 @@
 | `/signup`, `/login`, `/logout`, `/account` | `apps/server` (`account-routes.ts`, `pages.ts`) | Accounts: server-rendered forms, no script. |
 | `/oauth/*`, `/.well-known/oauth-*` | `apps/server`, logic in `packages/auth` | OAuth 2.1 for MCP clients. |
 | `/api/...` | `apps/profile-api`, `apps/habits-agent` | Profiles, inputs, bank ledger, connections, events, webhooks and habits. |
-| `/health` | `apps/server` | Readiness, snapshot version, data-source freshness, database path and schema version. |
+| `/health` | `apps/server` | Readiness, snapshot version, data-source freshness, the database schema version (never its path) and `clientAddress`: how visitor addresses are determined and whether requests are arriving without one. |
 
 `apps/server/index.ts` reads the environment, opens the database and listens; `apps/server/app.ts` is the request handler (`createApp`), which tests build over a temporary database.
 
@@ -29,7 +29,8 @@ Every stored person belongs to an account, and nothing reads or writes a person 
 - **`/api`** accepts the admin token (`PROFILE_API_TOKEN`, operators and tests) for everything. A person's own OAuth token or session reaches only `/users/<their own id>/…`: every read, and writes to `inputs` and `habits` (a session write also needs the `X-CSRF-Token` header). Anything else is `403`, whether or not the other id exists. `/api/webhooks/bank/<provider>` keeps its provider-signature check and has its own rate limit, applied before the signature is verified.
 - **Public demo** (`PUBLIC_DEMO`, on outside production, off in production unless set to `on`): the personas in `DEMO_USER_IDS` (default `user-001` to `user-004`) are readable without an account through `get_demo_person`, `get_demo_bank_summary`, `get_demo_bank_updates`, `get_demo_bank_runtime`, `plan_home_savings` with `demoId`, and the journey board. These paths can name only an allowlisted id that no account owns, and none of them writes.
 - **Journey board**: every action changes only the run's own scripted state; answers typed into it are never saved to a stored person, and it cannot start or stop a bank feed. A run is addressed by its unguessable id. `SHARED_BOARD` (one board everybody joins and may restart) is on only outside production and without a `PUBLIC_ORIGIN`; otherwise each visitor gets a private run and new runs are limited per address. `/preview/state` sends no CORS header.
-- **Hosts**: a request whose `Host` is not the `PUBLIC_ORIGIN` host, `localhost`/`127.0.0.1`/`[::1]` on the listening port, or an entry of `ALLOWED_HOSTS` is refused with `421`, so DNS rebinding cannot pass the same-origin checks. Links, cookies' `Secure` flag and the OAuth issuer come from `PUBLIC_ORIGIN`, never from the header.
+- **Hosts**: a request whose `Host` is not the `PUBLIC_ORIGIN` host, `localhost`/`127.0.0.1`/`[::1]` on the listening port, or an entry of `ALLOWED_HOSTS` is refused with `421`, so DNS rebinding cannot pass the same-origin checks. Links, cookies' `Secure` flag and the OAuth issuer come from `PUBLIC_ORIGIN`, never from the header. Only the exact `PUBLIC_ORIGIN` host is served: with `https://www.relo.cat`, a request for `relo.cat` gets `421`, so redirect the apex domain to `www` at the proxy. `/connect` offers `<PUBLIC_ORIGIN>/mcp` as the address to paste into an agent.
+- **Throttling and housekeeping**: sign-in, sign-up and client registration are slowed per visitor address, without locking an account from outside; the rules and what they leave open are in [`packages/auth/README.md`](../../packages/auth/README.md#throttling). The server runs one housekeeping pass every ten minutes (expired sessions, counters, OAuth codes, tokens, dead grants, idle clients) on a timer that stops at shutdown.
 
 ### Connecting ChatGPT (or another MCP client) with OAuth
 
@@ -59,12 +60,88 @@ Build the image from the repository root and run it with the public origin:
 
 ```powershell
 docker build -t relocat .
-docker run --rm -p 8787:8787 -e PUBLIC_ORIGIN=https://www.relo.cat relocat
+docker run --rm -p 127.0.0.1:8787:8787 -v relocat-db:/app/data/db -v relocat-cache:/app/data/cache -e PUBLIC_ORIGIN=https://www.relo.cat -e CLIENT_IP_HEADER=x-forwarded-for relocat
 ```
 
-Put it behind HTTPS. Runtime state is one SQLite database (`DATABASE_FILE`; `data/db/relocat.db` in the image) that the server opens at start, migrates forward and closes on shutdown; it refuses a database written by a newer build. It lives inside the container, like `data/cache`, unless you mount volumes for `/app/data/db` and `/app/data/cache`. Back it up while the server runs with `npm run db:backup -- <file>`. `data/runtime-users` and `data/runtime-habits` matter only when upgrading a deployment that kept JSON files there: they are imported once into an empty database and left untouched. The image sets `NODE_ENV=production`, so no demo bank feed runs in it.
+The server speaks plain HTTP: put a reverse proxy that terminates HTTPS in front of it, configured as described under [The reverse proxy](#the-reverse-proxy). Publishing the port on `127.0.0.1` keeps visitors from reaching the server around that proxy.
 
-Behind a reverse proxy, tell the server which header carries the visitor's address, or every visitor shares one rate-limit allowance: `CLIENT_IP_HEADER=x-forwarded-for` with `TRUSTED_PROXY_HOPS` set to the number of proxies you run in front (default 1), or `CLIENT_IP_HEADER=cf-connecting-ip` when Cloudflare is the only way in. A proxy or tunnel on the same machine needs no setting. Each client gets `RATE_LIMIT_PER_MINUTE` requests a minute and all clients together twenty times that. `/mcp` already refuses browser requests from other origins: only the site's own pages, `PUBLIC_ORIGIN` and the origins in `ALLOWED_ORIGINS` may call it, while agents, which send no `Origin`, are not affected. If `TREG_TOKEN` is set, `search_homes` spends money on behalf of anyone who can reach `/mcp`; `LISTINGS_DAILY_LIMIT` and `LISTINGS_PER_MINUTE_LIMIT` bound it.
+Runtime state is one SQLite database (`DATABASE_FILE`; `data/db/relocat.db` in the image) that the server opens at start, migrates forward and closes on shutdown; it refuses a database written by a newer build. It lives inside the container, like `data/cache`, unless you mount volumes for `/app/data/db` and `/app/data/cache` as above. `data/runtime-users` and `data/runtime-habits` matter only when upgrading a deployment that kept JSON files there: they are imported once into an empty database and left untouched. The image sets `NODE_ENV=production`, so no demo bank feed runs in it.
+
+### Backups
+
+Back the database up while the server runs with `npm run db:backup -- <file>`. In the image, write into the database volume so the copy outlives the container:
+
+```powershell
+docker exec <container> npm run db:backup -- data/db/backups/relocat-2026-11-22.db
+```
+
+The command writes to `<file>.partial`, runs SQLite's integrity check on the copy and only then renames it, so `<file>` is either absent or a complete backup in a single file (no `-wal` or `-shm` beside it). A failed run removes what it wrote and exits with status 1; an existing `<file>` is never overwritten. To restore, stop the server, replace `DATABASE_FILE` with the backup (and delete any `-wal`/`-shm` files of the old database), then start it.
+
+### Client addresses: `CLIENT_IP_HEADER` is required in production
+
+The rate limits and the sign-in throttle count per visitor address. Behind a proxy, or in a container, the connecting address is the proxy or the Docker bridge, never the visitor, so the server has to be told where the address is:
+
+| Setting | When |
+| --- | --- |
+| `CLIENT_IP_HEADER=x-forwarded-for` | Your reverse proxy appends the visitor to `X-Forwarded-For`. Set `TRUSTED_PROXY_HOPS` to the number of proxies you run in front (default 1; a CDN in front of a load balancer is 2). |
+| `CLIENT_IP_HEADER=cf-connecting-ip` (or another header name) | One proxy overwrites that single-value header on every request, and visitors cannot reach the server around it. |
+| `CLIENT_IP_HEADER=none` | Nothing states the address. Every visitor behind the proxy is counted as one client. |
+
+**With `NODE_ENV=production` or a `PUBLIC_ORIGIN`, the server refuses to start while `CLIENT_IP_HEADER` is unset or `auto`**: it prints the three choices and exits with status 1. A deployment that silently counted every visitor as one would let a single stranger use up everybody's allowance, and nobody would notice until it happened, so the choice has to be made on purpose. `auto` remains the default for local work.
+
+When requests still arrive without a usable address (the header is missing, or `none` was chosen and a proxy is in front), the server keeps working in a degraded mode and says so: a `WARNING` line in the log, repeated at most every five minutes while it goes on, and `clientAddress.ok: false` with a count in `/health`. In that mode all such visitors share one `RATE_LIMIT_PER_MINUTE` allowance, nobody is locked out as an "address", sign-in is slowed per account only, and failed sign-ins through that address meet a ceiling of 300 per five minutes. Fix the proxy rather than run like this.
+
+Every request is counted, including requests from the machine the server runs on; a proxy on the same machine that adds no forwarding header is not exempt. Only calls that carry the admin token (`PROFILE_API_TOKEN`) are not counted. Each client gets `RATE_LIMIT_PER_MINUTE` requests a minute and all clients together twenty times that. An IPv6 visitor is counted by /64 network.
+
+### The reverse proxy
+
+The proxy must do two things, and neither is nginx's default:
+
+1. **Pass the original `Host` header.** nginx's `proxy_pass` replaces it with the upstream's (`127.0.0.1:8787`). The server then believes it was reached as `http://127.0.0.1:8787`, and every form (sign-up, sign-in, consent, account) answers `403`, because the browser's `Origin` is the public site. The page says so when that is the cause.
+2. **State the visitor's address** in the header named by `CLIENT_IP_HEADER`, replacing or appending to whatever the visitor sent.
+
+nginx, on the same machine as the server (`CLIENT_IP_HEADER=x-forwarded-for`, `TRUSTED_PROXY_HOPS=1`):
+
+```nginx
+server {
+  listen 443 ssl;
+  server_name www.relo.cat;
+  # ssl_certificate and ssl_certificate_key go here.
+
+  location / {
+    proxy_pass http://127.0.0.1:8787;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    # Bank events are server-sent: do not buffer them.
+    proxy_buffering off;
+    proxy_read_timeout 1h;
+  }
+}
+
+server {
+  listen 443 ssl;
+  server_name relo.cat;
+  return 308 https://www.relo.cat$request_uri;
+}
+```
+
+Caddy passes `Host` unchanged and writes `X-Forwarded-For` itself, so the same settings need only:
+
+```caddyfile
+www.relo.cat {
+  reverse_proxy 127.0.0.1:8787
+}
+
+relo.cat {
+  redir https://www.relo.cat{uri} 308
+}
+```
+
+At start the server logs the origin it checks forms against, the `Host` values it accepts and where it takes client addresses from; compare those three lines with the proxy when something answers `403` or `421`.
+
+`/mcp` already refuses browser requests from other origins: only the site's own pages, `PUBLIC_ORIGIN` and the origins in `ALLOWED_ORIGINS` may call it, while agents, which send no `Origin`, are not affected. If `TREG_TOKEN` is set, `search_homes` spends money on behalf of anyone who can reach `/mcp`; `LISTINGS_DAILY_LIMIT` and `LISTINGS_PER_MINUTE_LIMIT` bound it.
 
 Set `ALLOWED_HOSTS` when the server is reached under a name other than the `PUBLIC_ORIGIN` host or `localhost:<PORT>` (a tunnel hostname, or `localhost:8080` when Docker publishes another port). The server exits with a non-zero status when its port is taken or after an uncaught exception, so a supervisor restarts it; a failed background job is logged and does not stop it.
 
@@ -76,7 +153,7 @@ Before a real launch, note what is still missing: email verification, password r
 npm run check
 ```
 
-Then rehearse on the running server: `/health` shows fresh sources; `plan_home_savings` returns a plan for `user-001`; `/workspace` updates when the bank feed adds a movement; the board saves interview answers. Do not claim a successful end-to-end connection from unit tests alone, and do not claim a ChatGPT widget works until it has been seen in ChatGPT.
+Then rehearse on the running server: `/health` shows fresh sources and `clientAddress.ok: true`; `plan_home_savings` returns a plan for `user-001`; `/workspace` updates when the bank feed adds a movement; the board saves interview answers. Do not claim a successful end-to-end connection from unit tests alone, and do not claim a ChatGPT widget works until it has been seen in ChatGPT.
 
 ## Release handoff
 

@@ -151,3 +151,30 @@ test('npm scripts that read .env settings load the file', () => {
   }
   assert.deepEqual(forgetful, []);
 });
+
+test('.env.example names each variable once', () => {
+  // A second assignment of the same name silently wins when the file is copied to `.env`.
+  const seen = new Map<string, number>();
+  for (const [index, line] of read('.env.example').split(/\r?\n/).entries()) {
+    const name = /^#?\s?([A-Z][A-Z0-9_]*)=/.exec(line)?.[1];
+    if (!name) continue;
+    if (seen.has(name)) assert.fail(`${name} is set on line ${seen.get(name)} and again on line ${index + 1}`);
+    seen.set(name, index + 1);
+  }
+  assert.ok(seen.size > 20, 'the variables were found');
+});
+
+test('every documented way to run the image says where client addresses come from', () => {
+  // The image sets NODE_ENV=production, where the server refuses to start without CLIENT_IP_HEADER.
+  const commands = markdown.flatMap(path =>
+    read(path)
+      .split(/\r?\n/)
+      .flatMap(line => [...line.matchAll(/docker run [^`\n]*/g)].map(match => ({ path, command: match[0] }))),
+  );
+  assert.ok(commands.length >= 2, 'the commands were found');
+  const missing = commands.filter(({ command }) => !/-e CLIENT_IP_HEADER=\S+/.test(command));
+  assert.deepEqual(missing, []);
+  assert.match(read('Dockerfile'), /COPY [^\n]*scripts\/backup-db\.ts/, 'the image can run npm run db:backup');
+  // /health reports the schema version of the database, never where the file is.
+  assert.doesNotMatch(read('docs/areas/integration-deployment.md'), /database path/);
+});

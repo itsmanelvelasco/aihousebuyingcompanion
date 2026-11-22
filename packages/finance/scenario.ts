@@ -30,7 +30,7 @@ export async function generateFirstScenario(input: z.infer<typeof firstScenarioI
   const complete = demo.averageBasis === 'complete_months';
   const months = complete ? demo.completeMonths : demo.observedMonths;
   // The summary holds monthly averages; the habit rules take totals for the period.
-  const cents = (monthly: number) => Math.round(monthly * 100) * months.length;
+  const cents = (monthly: number | null) => Math.round((monthly ?? 0) * 100) * months.length;
   const expense = (category: string) => demo.monthlyExpenses[category] ?? 0;
   const firstMonth = months[0];
   const lastMonth = months.at(-1)!;

@@ -9,9 +9,10 @@ import {
   baselineMonthlySavingsCents,
   basisLabel,
   eurosToCents,
-  habitCounted,
   habitMonthlyEffectCents,
+  habitPlanView,
   habitStatusLabel,
+  habitSwitchedOn,
 } from '../view-model.ts';
 import { Badge, ErrorNote, Icon, Skeleton, Switch } from './bits.tsx';
 
@@ -285,6 +286,9 @@ function PersonDetails(props: Props & { person: Person; result: PlanResult | nul
         </dl>
         <p className="provenance">
           <strong>{basisLabel(finances.basis)}.</strong>{' '}
+          {finances.bankSynthetic === true && !person.synthetic
+            ? 'Those bank movements come from a fictional bank feed, not a real bank. '
+            : null}
           {finances.asOf ? `Figures as of ${formatDate(finances.asOf)}.` : 'The date of these figures is unknown.'}{' '}
           {home.budgetCents !== null
             ? `Looking for a home up to ${formatEuros(home.budgetCents)}`
@@ -309,10 +313,12 @@ function PersonDetails(props: Props & { person: Person; result: PlanResult | nul
         ) : (
           <ul className="habit-list">
             {person.habits.map(habit => {
-              const on = habitCounted(habit, includeProposed, overrides);
-              const changed = overrides[habit.id] !== undefined && on !== habitCounted(habit, includeProposed);
+              const on = habitSwitchedOn(habit, includeProposed, overrides);
+              const changed = overrides[habit.id] !== undefined && on !== habitSwitchedOn(habit, includeProposed);
+              // What the plan did with it comes from the plan, never from the habit's status.
+              const verdict = habitPlanView(habit, result, on);
               return (
-                <li key={habit.id} className={on ? 'habit habit-on' : 'habit'}>
+                <li key={habit.id} className={verdict.state === 'counted' ? 'habit habit-on' : 'habit'}>
                   <Switch checked={on} onChange={value => props.onToggleHabit(habit, value)} describedBy={noteId}>
                     <span className="habit-title">{habit.title}</span>
                     <span className="habit-meta">
@@ -324,10 +330,21 @@ function PersonDetails(props: Props & { person: Person; result: PlanResult | nul
                       <Badge tone={habit.status === 'active' ? 'ok' : habit.status === 'proposed' ? 'warn' : 'off'}>
                         {habitStatusLabel(habit.status)}
                       </Badge>
+                      {verdict.label ? (
+                        <Badge
+                          tone={verdict.state === 'counted' ? 'ok' : 'warn'}
+                          title={verdict.explanation ?? undefined}
+                        >
+                          {verdict.label}
+                        </Badge>
+                      ) : null}
                       {changed ? (
-                        <Badge tone="violet">{on ? 'Counted in what-if' : 'Left out in what-if'}</Badge>
+                        <Badge tone="violet">{on ? 'Switched on in what-if' : 'Switched off in what-if'}</Badge>
                       ) : null}
                     </span>
+                    {verdict.state === 'withheld' && verdict.explanation ? (
+                      <span className="habit-note">{verdict.explanation}</span>
+                    ) : null}
                     <span className="adherence">
                       {habit.adherence === null ? (
                         'No check-ins yet'

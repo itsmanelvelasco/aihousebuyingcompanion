@@ -28,35 +28,68 @@ export type RateLimitOptions = {
    */
   trustProxy?: boolean;
   /**
-   * Count requests this machine makes to itself too. By default a loopback request without any
-   * forwarding header is the server calling itself and is exempt.
+   * Requests that are never counted, decided by the caller: the operator's own calls that carry the
+   * admin token, for example. Nothing is exempt by default, a request from this machine included: a
+   * proxy on the same machine that adds no forwarding header looks exactly like one.
    */
+  exempt?: (request: IncomingMessage) => boolean;
+  /** No longer has an effect: requests from this machine are always counted. Kept so callers still compile. */
   countLocal?: boolean;
 };
-
-/** Headers a tunnel or reverse proxy adds. Their presence means the request did not start on this machine. */
-const forwardingHeaders = [
-  'forwarded',
-  'x-forwarded-for',
-  'x-forwarded-host',
-  'x-forwarded-proto',
-  'x-real-ip',
-  'cf-connecting-ip',
-  'true-client-ip',
-];
 
 const isLoopback = (address: string) =>
   address === '::1' || address.startsWith('127.') || address.startsWith('::ffff:127.');
 
-/** An address as a counting key, or undefined when the text is not an IP address (optionally with a port). */
+/**
+ * Addresses that are never a visitor of a public site: this machine, private networks (RFC 1918,
+ * the Docker bridge among them), carrier-grade NAT, link-local, and the IPv6 unique-local range.
+ * A request that is counted under such a socket address may be every visitor behind one proxy.
+ */
+function isPrivate(value: string) {
+  if (isLoopback(value)) return true;
+  if (isIP(value) === 4) {
+    const [a, b] = value.split('.').map(Number);
+    return (
+      a === 10 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254) ||
+      (a === 100 && b >= 64 && b <= 127)
+    );
+  }
+  return /^f[cd]/.test(value) || /^fe[89ab]/.test(value);
+}
+
+/** The eight groups of an IPv6 address, without leading zeroes. */
+function ipv6Groups(value: string) {
+  const [head, tail] = value.split('::');
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const groups =
+    tail === undefined
+      ? left
+      : [...left, ...Array<string>(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right];
+  return groups.map(group => group.replace(/^0+(?=.)/, ''));
+}
+
+/**
+ * An address as a counting key, or undefined when the text is not an IP address (optionally with a
+ * port). An IPv6 address is counted by its /64 network, the block one subscriber is given: counted
+ * one by one, a single visitor would have 2^64 separate allowances.
+ */
 function address(text: string | undefined) {
   if (!text) return undefined;
   let value = text.trim().toLowerCase();
   const bracketed = value.match(/^\[([^\]]+)\](?::\d+)?$/);
   if (bracketed) value = bracketed[1];
   else if (/^\d+\.\d+\.\d+\.\d+:\d+$/.test(value)) value = value.slice(0, value.lastIndexOf(':'));
+  value = value.replace(/%.*$/, '');
   if (value.startsWith('::ffff:') && isIP(value.slice(7)) === 4) value = value.slice(7);
-  return isIP(value) ? value : undefined;
+  if (isIP(value) === 4) return value;
+  if (isIP(value) !== 6) return undefined;
+  // The loopback address stays as it is; an address with an embedded IPv4 part is rare enough to count whole.
+  if (value === '::1' || value.includes('.')) return value;
+  return `${ipv6Groups(value).slice(0, 4).join(':')}::/64`;
 }
 
 /** Every value of a header, split on commas, in the order the proxies wrote them. */
@@ -68,17 +101,29 @@ function headerValues(request: IncomingMessage, name: string) {
     .filter(Boolean);
 }
 
+/** Who a request is counted as. */
+export type ClientIdentity = {
+  /** The counting key: an IPv4 address, an IPv6 /64 network, or the raw socket address. */
+  key: string;
+  /**
+   * True when the key is a socket address that cannot be a visitor of a public site (this machine or
+   * a private network), or the address of a proxy whose configured header was missing. Such a key
+   * may stand for every visitor at once, so nothing may lock it the way one client is locked.
+   */
+  shared: boolean;
+};
+
 /**
- * The address a request is counted under, or null when it is not counted at all.
+ * Who a request is counted as. Every request is counted; none is exempt for where it comes from.
  *
  * A client can put anything in a header, so a header is believed only when configuration says
  * which proxy writes it:
  *
- * - `auto` (default): a peer that is not this machine is counted by its socket address and its
- *   headers are ignored. A loopback peer is a tunnel or proxy on this machine, so the last
- *   `X-Forwarded-For` entry (the address that proxy saw) is used. `CF-Connecting-IP` is not
- *   believed here: only Cloudflare overwrites it, and a local proxy that is not Cloudflare would
- *   pass along whatever the client sent.
+ * - `auto` (default; `apps/server` refuses it in production): a peer that is not this machine is
+ *   counted by its socket address and its headers are ignored. A loopback peer may be a tunnel or
+ *   proxy on this machine, so the last `X-Forwarded-For` entry (the address that proxy saw) is
+ *   used when there is one. `CF-Connecting-IP` is not believed here: only Cloudflare overwrites it,
+ *   and a local proxy that is not Cloudflare would pass along whatever the client sent.
  * - `none`: the socket address, always. Behind any proxy all visitors share one allowance.
  * - `x-forwarded-for` with `trustedHops` N: there are N proxies you control in front (the peer is
  *   the nearest). The entry N from the end of `X-Forwarded-For` is the address the outermost of
@@ -87,24 +132,30 @@ function headerValues(request: IncomingMessage, name: string) {
  *   header on every request. Use it only when clients cannot reach the server around the proxy.
  *
  * When the configured header is missing or does not hold an IP address the socket address is
- * used, so a broken proxy setup narrows to one shared allowance instead of opening a bypass.
+ * used, so a broken proxy setup narrows to one shared allowance instead of opening a bypass, and
+ * the identity says `shared` so that callers do not lock every visitor out together.
  */
-export function clientAddressOf(request: IncomingMessage, source: ClientAddressSource, countLocal = false) {
+export function clientIdentityOf(request: IncomingMessage, source: ClientAddressSource): ClientIdentity {
   const peer = request.socket.remoteAddress ?? 'unknown';
   const peerKey = address(peer) ?? peer;
-  const local = isLoopback(peer);
   const forwardedFor = headerValues(request, 'x-forwarded-for');
   let stated: string | undefined;
-  if (source.kind === 'auto') stated = local ? address(forwardedFor.at(-1)) : undefined;
+  if (source.kind === 'auto') stated = isLoopback(peer) ? address(forwardedFor.at(-1)) : undefined;
   else if (source.kind === 'x-forwarded-for') stated = address(forwardedFor.at(-source.trustedHops));
   else if (source.kind === 'header') {
     const values = headerValues(request, source.name);
     stated = values.length === 1 ? address(values[0]) : undefined;
   }
-  if (stated) return stated;
-  // No believable header. A loopback request with no proxy header at all is the server calling itself.
-  if (local && !countLocal && forwardingHeaders.every(name => request.headers[name] === undefined)) return null;
-  return peerKey;
+  if (stated) return { key: stated, shared: false };
+  // No believable header. With a header configured the peer is the proxy; otherwise a peer on this
+  // machine or on a private network may be one.
+  const expectsProxy = source.kind === 'x-forwarded-for' || source.kind === 'header';
+  return { key: peerKey, shared: expectsProxy || isPrivate(peerKey) };
+}
+
+/** The address a request is counted under. See `clientIdentityOf`. */
+export function clientAddressOf(request: IncomingMessage, source: ClientAddressSource, _countLocal?: boolean) {
+  return clientIdentityOf(request, source).key;
 }
 
 /**
@@ -113,7 +164,7 @@ export function clientAddressOf(request: IncomingMessage, source: ClientAddressS
  * a single-process server; not a distributed limiter.
  */
 export function createRateLimiter(options: RateLimitOptions) {
-  const { limit, windowMs, now = Date.now, countLocal = false } = options;
+  const { limit, windowMs, now = Date.now } = options;
   const configured = options.clientAddress ?? clientAddressConfig();
   const source: ClientAddressSource =
     options.clientAddress === undefined && configured.kind === 'auto' && options.trustProxy
@@ -122,8 +173,11 @@ export function createRateLimiter(options: RateLimitOptions) {
   const globalLimit = options.globalLimit === undefined ? limit * 20 : options.globalLimit;
   const windows = new Map<string, { start: number; count: number }>();
   let everyone = { start: 0, count: 0 };
+  /** Requests counted so far, and how many of them under a key that may be every visitor at once. */
+  const counted = { total: 0, shared: 0 };
 
-  const clientKey = (request: IncomingMessage) => clientAddressOf(request, source, countLocal);
+  const clientIdentity = (request: IncomingMessage) => clientIdentityOf(request, source);
+  const clientKey = (request: IncomingMessage) => clientIdentity(request).key;
   const secondsLeft = (window: { start: number }, time: number) => Math.ceil((window.start + windowMs - time) / 1000);
 
   /**
@@ -131,8 +185,10 @@ export function createRateLimiter(options: RateLimitOptions) {
    * again. A request refused for its own client's limit does not use up the shared ceiling.
    */
   function check(request: IncomingMessage) {
-    const key = clientKey(request);
-    if (key === null) return { allowed: true, retryAfterSeconds: 0 };
+    if (options.exempt?.(request)) return { allowed: true, retryAfterSeconds: 0 };
+    const { key, shared } = clientIdentity(request);
+    counted.total++;
+    if (shared) counted.shared++;
     const time = now();
     const known = windows.get(key);
     const window = known && time - known.start < windowMs ? known : { start: time, count: 0 };
@@ -152,5 +208,13 @@ export function createRateLimiter(options: RateLimitOptions) {
     return { allowed: true, retryAfterSeconds: secondsLeft(window, time) };
   }
 
-  return { check, clientKey };
+  return {
+    check,
+    clientKey,
+    clientIdentity,
+    /** The address source in use, after the environment and the older switch were applied. */
+    source,
+    /** Requests counted since the start, and how many of them could not be told apart from other visitors. */
+    counted: () => ({ ...counted }),
+  };
 }

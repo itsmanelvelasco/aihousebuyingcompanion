@@ -8,7 +8,8 @@ import type { BankSyncOptions, LedgerEvent } from '../../packages/banks/sync.ts'
 import { createBankSync } from '../../packages/banks/sync.ts';
 import { safeId } from '../../packages/contracts/ids.ts';
 import type { Database } from '../../packages/db/database.ts';
-import { analyzeTransactions, periodSchema, scenarioSchema, simulateSavings } from '../../packages/finance/cashflow.ts';
+import { DatabaseBusyError } from '../../packages/db/database.ts';
+import { scenarioSchema, simulateSavings } from '../../packages/finance/cashflow.ts';
 import type { ApiAuthorizer } from '../../packages/http/server.ts';
 import {
   ApiError,
@@ -42,6 +43,8 @@ const emptyBody = z.object({}).strict();
 const syncBody = z.object({ connectionId: safeId.optional() }).strict();
 const cursorSchema = z.coerce.number().int().nonnegative().safe();
 const maxEventStreams = 100;
+/** Open event streams one person may have, so one account cannot hold all of them. */
+const maxEventStreamsPerPerson = 5;
 
 export type ProfileApiOptions = {
   /** Bank providers to serve. Defaults to every file in `packages/banks/providers/`. */
@@ -86,18 +89,46 @@ export function createProfileApiHandler(db: Database, token: string, options: Pr
   const clock = options.clock ?? (() => new Date());
   const runtime = createBankRuntime(bank, options.clock, sync);
   const heartbeatMs = options.heartbeatMs ?? 15_000;
-  /** One function per open event stream; calling it ends the stream and releases its listener. */
-  const streams = new Set<() => void>();
+  /**
+   * One function per open event stream, with the person it shows; calling the function ends the
+   * stream and releases its listener.
+   */
+  const streams = new Map<() => void, string>();
   let closing: Promise<void> | undefined;
 
   /** Stop feeds and polling, end event streams and wait for syncs in flight. Safe to call twice. */
   function close() {
     closing ??= (async () => {
-      for (const end of [...streams]) end();
+      for (const end of [...streams.keys()]) end();
       await runtime.close();
       await sync.close();
     })();
     return closing;
+  }
+
+  /**
+   * End every open event stream of a person. A stream is authorised when it opens, so the server
+   * calls this when that authority ends: sign-out, a revoked grant, a deleted account. A client
+   * that is still allowed simply connects again.
+   */
+  function closeStreams(userId: string) {
+    let closed = 0;
+    for (const [end, owner] of [...streams]) {
+      if (owner !== userId) continue;
+      end();
+      closed++;
+    }
+    return closed;
+  }
+
+  /**
+   * Before a person is deleted: end their event streams and take their bank connections out of the
+   * running sync engine, so no timer, retry or queued notification outlives the rows.
+   */
+  async function forgetPerson(userId: string) {
+    closeStreams(userId);
+    const connections = await sync.forgetUser(userId);
+    return { connections };
   }
 
   /**
@@ -144,6 +175,8 @@ export function createProfileApiHandler(db: Database, token: string, options: Pr
    */
   async function streamEvents(req: IncomingMessage, res: ServerResponse, id: string, after: number) {
     if (streams.size >= maxEventStreams) throw new ApiError(503, 'Too many open event streams');
+    if ([...streams.values()].filter(owner => owner === id).length >= maxEventStreamsPerPerson)
+      throw new ApiError(429, 'Too many open event streams for this person');
     let cursor = after;
     let live = false;
     const waiting: LedgerEvent[] = [];
@@ -165,7 +198,7 @@ export function createProfileApiHandler(db: Database, token: string, options: Pr
       clearInterval(heartbeat);
       res.end();
     };
-    streams.add(end);
+    streams.set(end, id);
     try {
       const ledger = await bank.eventLog(id);
       const oldest = ledger.events[0]?.sequence ?? ledger.revision + 1;
@@ -205,18 +238,8 @@ export function createProfileApiHandler(db: Database, token: string, options: Pr
     },
     inputs: (id: string) => inputs.read(id),
     addInputs: (id: string, value: unknown) => inputs.add(id, value),
-    /** Cash-flow aggregates of complete calendar months; never movements. */
-    async bankSummary(id: string, period: { from: unknown; to: unknown }) {
-      const { from, to } = periodSchema.parse(period);
-      // Only the movements up to the end of the period are loaded; later ones cannot affect it.
-      const ledger = await bank.history(id, to);
-      return {
-        ...analyzeTransactions(ledger.transactions, from, to),
-        // Provenance covers the whole ledger: one real movement anywhere makes it real.
-        synthetic: ledger.transactionsSynthetic,
-        ledgerUpdatedAt: ledger.updatedAt || null,
-      };
-    },
+    /** Cash-flow aggregates of complete calendar months, summed by the database; never movements. */
+    bankSummary: (id: string, period: { from: unknown; to: unknown }) => bank.summary(id, period),
     bankEvents: (id: string, after: number, limit: number) => bank.events(id, after, limit),
     bankRuntime: (id: string) => runtime.status(id),
     /** Sum of today's booked balances in cents, or null when there are no accounts. */
@@ -396,6 +419,11 @@ export function createProfileApiHandler(db: Database, token: string, options: Pr
       if (res.headersSent) return void res.destroy();
       if (error instanceof ApiError) return reply(res, error.status, { error: error.message });
       if (error instanceof z.ZodError) return reply(res, 400, { error: 'Invalid request data', issues: error.issues });
+      if (error instanceof DatabaseBusyError) {
+        // Another process holds the database: nothing was written and the same request can be repeated.
+        res.setHeader('Retry-After', String(error.retryAfterSeconds));
+        return reply(res, 503, { error: 'Storage is busy; try again shortly', retryable: true });
+      }
       reply(res, 500, { error: 'Profile storage failure' });
     }
   };
@@ -408,6 +436,10 @@ export function createProfileApiHandler(db: Database, token: string, options: Pr
     bankSync: sync,
     /** In-process subscription to every persisted ledger revision: `bankEvents.onEvent(listener)`. */
     bankEvents: { onEvent: sync.onEvent },
+    closeStreams,
+    forgetPerson,
+    /** Event streams open right now. */
+    openStreams: () => streams.size,
     close,
   };
 }

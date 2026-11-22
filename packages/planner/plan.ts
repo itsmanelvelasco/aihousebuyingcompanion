@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import type { eligibility, Municipality, Policy } from '../contracts/places.ts';
-import type { Person, Place, PlaceBenefit, PlacePlan, PlanResult } from '../contracts/planner.ts';
+import type { HabitEffect, Person, Place, PlaceBenefit, PlacePlan, PlanResult } from '../contracts/planner.ts';
 import { person as personSchema, planAssumptions, planResult } from '../contracts/planner.ts';
 import { maxPlanningMonths, monthsToTarget } from '../finance/savings.ts';
 import { callStatusOn, evaluateIncentives } from '../places/eligibility.ts';
@@ -35,6 +35,13 @@ import { callStatusOn, evaluateIncentives } from '../places/eligibility.ts';
  *
  * The three timelines (baseline, with habits, with place benefits) each settle on their own purchase
  * day, so a faster timeline can keep a rate that a slower one loses with age.
+ *
+ * Two rules keep the three consistent with each other:
+ *   - Saving more never gives a later day. The cash of a slower timeline is there on that timeline's
+ *     day, so a faster one that settles later (or not at all) is held at the slower one's day:
+ *     with habits is never later than the baseline, with place benefits never later than with habits.
+ *   - A timeline without a finite number of months has no purchase day. Its benefits are then listed
+ *     as screened on the plan date, and say so; none is described against a day that does not exist.
  */
 type Eligibility = z.infer<typeof eligibility>;
 type Household = NonNullable<Person['household']>;
@@ -79,6 +86,9 @@ const maxSettleRounds = 8;
 const screenedIntents = new Set<Policy['intent']>(['buy', 'move', 'rent']);
 const unsettledReason =
   'whether it applies depends on the day you could buy, and that day depends on whether it is counted. The two did not settle, so the plan takes the cautious figure and leaves it out.';
+/** Why a benefit that holds on the plan date is left out of a timeline that has no purchase day. */
+const noDayReason = (asOf: string) =>
+  `no day of purchase can be estimated, so this is the screening on the plan date (${asOf}). It holds on that date, but it would no longer hold by the time the cash could be saved, and without it the upfront cash is beyond what this plan estimates.`;
 
 export const planLimitations = [
   'This is an arithmetic estimate from the figures supplied. It is not a mortgage offer, a credit assessment or a promise that a lender will approve a loan.',
@@ -233,31 +243,74 @@ function priceFor(person: Person, place: Place): Pick<PlacePlan, 'purchasePriceC
 /**
  * Monthly saving of the habits that count: planned amount × adherence (full amount when unknown).
  *
- * When the monthly figures were observed in bank movements (`bank_observed` or `mixed`), an active
- * habit that was already running during the observed period is inside those figures. It counts on
- * top of them only when `startedOn` is after `finances.asOf`, the end of the observed period. An
- * active habit without a start date, or a bank basis without a period end, is `withheld`: shown, not
- * counted. A proposed habit has not started, so it is never inside the observed figures.
+ * A habit changes what the person spends. When the monthly spending was observed in bank movements,
+ * an active habit that was already running during the observed period is inside that figure. It
+ * counts on top of it only when `startedOn` is after `finances.asOf`, the end of the observed
+ * period. An active habit without a start date, or a bank period without an end date, is withheld:
+ * shown, not counted. A proposed habit has not started, so it is never inside the observed figure.
+ *
+ * Only the spending figure matters: income observed in the bank next to declared spending does not
+ * hide a habit. `finances.expensesBasis` says where spending came from; a person built before that
+ * field existed has only `basis`, and `mixed` is then read cautiously as observed spending.
+ *
+ * The result states, habit by habit, what was done and why (`effects`), so no display has to derive it.
  */
 function habitSavings(person: Person, includeProposed: boolean) {
   const { basis, asOf } = person.finances;
-  const observed = basis === 'bank_observed' || basis === 'mixed';
-  const quantified = person.habits.filter(habit => habit.monthlySavingCents !== null);
-  const active = quantified.filter(habit => habit.status === 'active');
-  const afterPeriod = (habit: Person['habits'][number]) =>
-    asOf !== null && habit.startedOn !== undefined && habit.startedOn > asOf;
-  const withheld = observed ? active.filter(habit => !afterPeriod(habit)) : [];
-  const counted = [
-    ...active.filter(habit => !withheld.includes(habit)),
-    ...(includeProposed ? quantified.filter(habit => habit.status === 'proposed') : []),
-  ];
-  // Rounded down per habit: a partly kept habit never counts for more than it saved.
-  const monthlyCents = counted.reduce(
-    (total, habit) => total + Math.floor((habit.monthlySavingCents ?? 0) * (habit.adherence ?? 1)),
-    0,
-  );
-  return { counted, withheld, monthlyCents };
+  const spendingObserved =
+    person.finances.expensesBasis === undefined
+      ? basis === 'bank_observed' || basis === 'mixed'
+      : person.finances.expensesBasis === 'bank_observed';
+  const period = asOf ? ` up to ${asOf}` : '';
+  const effects: HabitEffect[] = person.habits.map(habit => {
+    // Rounded down per habit: a partly kept habit never counts for more than it saved.
+    const amount = Math.floor((habit.monthlySavingCents ?? 0) * (habit.adherence ?? 1));
+    const left = (reason: HabitEffect['reason'], explanation: string): HabitEffect => ({
+      habitId: habit.id,
+      counted: false,
+      countedMonthlyCents: 0,
+      reason,
+      explanation,
+    });
+    const taken = (reason: HabitEffect['reason'], explanation: string): HabitEffect => ({
+      habitId: habit.id,
+      counted: true,
+      countedMonthlyCents: amount,
+      reason,
+      explanation: `${explanation}${habit.adherence === null ? '' : ` Scaled by the ${percent(habit.adherence)} of check-ins kept.`}`,
+    });
+    if (habit.status === 'paused') return left('paused', 'Not counted: the habit is paused.');
+    if (habit.monthlySavingCents === null)
+      return left('no_amount', 'Not counted: no monthly saving is attached to this habit.');
+    if (habit.status === 'proposed')
+      return includeProposed
+        ? taken('counted_as_proposed', `Counted as if adopted: ${euros(amount)} a month.`)
+        : left('not_adopted', 'Not counted: the habit is only proposed. Switch it on to see its effect.');
+    if (!spendingObserved) return taken('counted', `Counted: ${euros(amount)} a month on top of your stated spending.`);
+    if (asOf === null || habit.startedOn === undefined)
+      return left(
+        'start_unknown',
+        `Shown, not counted: your monthly spending comes from bank movements${period}, and ${habit.startedOn === undefined ? 'the day this habit started is not known' : 'the end of that period is not known'}, so the plan cannot tell whether its effect is already in that spending.`,
+      );
+    return habit.startedOn > asOf
+      ? taken(
+          'counted',
+          `Counted: ${euros(amount)} a month. It started on ${habit.startedOn}, after the bank movements your spending comes from (up to ${asOf}).`,
+        )
+      : left(
+          'inside_bank_figures',
+          `Shown, not counted: it started on ${habit.startedOn}, and your monthly spending comes from bank movements up to ${asOf}, which already include its effect.`,
+        );
+  });
+  const of = (keep: (effect: HabitEffect) => boolean) => person.habits.filter((_, index) => keep(effects[index]));
+  return {
+    effects,
+    counted: of(effect => effect.counted),
+    withheld: of(effect => effect.reason === 'inside_bank_figures' || effect.reason === 'start_unknown'),
+    monthlyCents: effects.reduce((total, effect) => total + effect.countedMonthlyCents, 0),
+  };
 }
+type HabitSavings = ReturnType<typeof habitSavings>;
 
 /** Turn a screened policy into the kind, amount and timing of a benefit for this price and place. */
 function translate(result: Eligibility, place: Place, priceCents: number | null, tax: TaxReference): Translated {
@@ -416,6 +469,7 @@ function benefitFor(
       'Not counted: you already live here, so if you receive it, it is already part of your income and savings.';
   }
   const counted = blocker === null && amountCents !== null;
+  const excluded = result.geographicStatus === 'does_not_apply' || result.eligibilityStatus === 'ineligible';
   const caveat = unverified ? ' Counted at your request although eligibility is not verified.' : '';
   const how =
     timing === 'at_purchase'
@@ -427,7 +481,9 @@ function benefitFor(
     policyId: result.id,
     title: result.title,
     kind: translated.kind,
-    amountCents,
+    // An amount the person would not receive is not shown as theirs; the nominal figure stays for reference.
+    amountCents: excluded ? null : amountCents,
+    nominalAmountCents: amountCents,
     eligibilityStatus: result.eligibilityStatus,
     callStatus: result.callStatus,
     counted,
@@ -461,7 +517,8 @@ function generalRateBenefit(
   applied: Eligibility | null,
   isLower: boolean,
   when: When,
-  unsettled: boolean,
+  /** Why a rate that would be the baseline was left out; null when it was not. */
+  leftOut: string | null,
 ): PlaceBenefit {
   const { result } = screened;
   const { amountCents, what } = translated;
@@ -477,8 +534,8 @@ function generalRateBenefit(
     outcome = `Not applied: the measure is not confirmed to be in force on ${when.date}.`;
   } else if (result.eligibilityStatus === 'needs_verification') {
     outcome = `Not applied to your baseline until verified: ${result.missingCriteria.join(' ')}${isLower ? ' If you qualify, you pay less transfer tax everywhere, and the transfer-tax saving of this place is smaller than shown.' : ''}`;
-  } else if (unsettled) {
-    outcome = `Not applied: ${unsettledReason}`;
+  } else if (leftOut !== null) {
+    outcome = `Not applied: ${leftOut}`;
   } else if (applied !== null) {
     outcome = 'Not applied: another reduced rate is already your baseline, and reduced rates do not add up.';
   } else {
@@ -488,7 +545,8 @@ function generalRateBenefit(
     policyId: result.id,
     title: result.title,
     kind: translated.kind,
-    amountCents,
+    amountCents: result.eligibilityStatus === 'ineligible' ? null : amountCents,
+    nominalAmountCents: amountCents,
     eligibilityStatus: result.eligibilityStatus,
     callStatus: result.callStatus,
     counted: false,
@@ -535,6 +593,10 @@ type Outcome = {
   when: When;
   /** False when the purchase day and what is counted did not agree, and nothing was counted. */
   settled: boolean;
+  /** True when the timeline has no purchase day although the screening on the plan date gave one. */
+  noDay: boolean;
+  /** True when a faster timeline settled later than a slower one and is held at the slower one's day. */
+  held: boolean;
   /** The Catalonia-wide rate that is the baseline on that day; null for the general tax. */
   applied: { result: Eligibility; rate: number } | null;
   possiblyLower: { result: Eligibility; rate: number }[];
@@ -556,6 +618,7 @@ function planOne(
   options: Assumptions,
   asOf: string,
   standard: StandardTax | null,
+  habits: HabitSavings,
 ): PlacePlan {
   const { finances, home } = person;
   const assumptions: string[] = [];
@@ -648,15 +711,18 @@ function planOne(
   /**
    * One timeline with the purchase screened `months` after the plan date.
    * `withPlace`: the benefits of the place lower the upfront cash and add delayed cash.
-   * `cautious`: the purchase day did not settle, so benefits are left out. `place` leaves out what the
-   * place offers and keeps the baseline rate; `all` also falls back to the general transfer tax.
+   * `cautious`: benefits are left out. `place` leaves out what the place offers and keeps the
+   * baseline rate; `all` also falls back to the general transfer tax. `why` says which of the two
+   * reasons applies: the purchase day did not settle, or there is no purchase day at all.
    */
   const evaluate = (
     months: number,
     monthlyCents: number | null,
     withPlace: boolean,
     cautious: 'no' | 'place' | 'all' = 'no',
+    why: 'unsettled' | 'no_day' = 'unsettled',
   ): Outcome => {
+    const leftOutReason = why === 'no_day' ? noDayReason(asOf) : unsettledReason;
     const when: When = { months, date: addMonths(asOf, months), ages: agesOn(person.household, months) };
     const screened = screenedAt(months);
 
@@ -702,7 +768,7 @@ function planOne(
             applied?.result ?? null,
             possiblyLower.some(entry => entry.result === item.result),
             when,
-            cautious === 'all' && candidate?.result === item.result,
+            cautious === 'all' && candidate?.result === item.result ? leftOutReason : null,
           )
         : benefitFor(item, translated, person, place, options, when);
       return { translated, benefit };
@@ -717,12 +783,23 @@ function planOne(
     };
     for (const item of taxCuts.slice(1))
       leaveOut(item, 'another reduced transfer-tax rate is already counted, and reduced rates do not add up.');
-    if (cautious !== 'no')
-      for (const item of listed.filter(entry => entry.benefit.counted)) leaveOut(item, unsettledReason);
+    // The cautious figure differs from the plain one only when something was in fact left out.
+    const leftOut =
+      cautious === 'no'
+        ? []
+        : [
+            ...listed.filter(entry => entry.benefit.counted),
+            ...(cautious === 'all' && candidate
+              ? listed.filter(entry => entry.benefit.policyId === candidate.result.id)
+              : []),
+          ];
+    for (const item of leftOut.filter(entry => entry.benefit.counted)) leaveOut(item, leftOutReason);
 
     const outcome = {
       when,
-      settled: cautious === 'no',
+      settled: why === 'no_day' || leftOut.length === 0,
+      noDay: why === 'no_day',
+      held: false,
       applied,
       possiblyLower,
       standardCents,
@@ -779,22 +856,49 @@ function planOne(
   };
 
   /**
+   * A timeline that turned out to have no purchase day on a day other than the plan date: the
+   * screening on the plan date gave a number of months, and on the day that number leads to a benefit
+   * no longer holds and the upfront cash is beyond the horizon. There is no later day either, because
+   * the cautious upfront cash (general tax, no benefit) is the largest there is. The result is that
+   * cautious figure with the benefits as screened on the plan date, each saying so.
+   */
+  const withoutDay = (monthlyCents: number | null, withPlace: boolean): Outcome => ({
+    ...evaluate(0, monthlyCents, withPlace, 'all', 'no_day'),
+    months: null,
+  });
+  /**
    * Find the purchase day on which the timeline and what is counted agree.
    *
    * It starts on the plan date and re-screens on the day each result gives, until that day stops
-   * moving. A timeline without a finite number of months has no purchase day and is returned as it
-   * is. If the day keeps moving after `maxSettleRounds` rounds, the cautious timeline is returned:
-   * the general transfer tax and no benefit, screened on its own purchase day.
+   * moving. A timeline without a finite number of months has no purchase day: it is screened on the
+   * plan date (`withoutDay` when a later round found that out). If the day keeps moving after
+   * `maxSettleRounds` rounds, the cautious timeline is returned: the general transfer tax and no
+   * benefit, screened on its own purchase day.
+   *
+   * Every finite result is screened on its own day: `months === when.months`.
    */
   const settle = (monthlyCents: number | null): Outcome => {
     let outcome = evaluate(0, monthlyCents, false);
-    for (let round = 0; round < maxSettleRounds; round++) {
-      if (outcome.months === null || outcome.months === outcome.when.months) return outcome;
-      outcome = evaluate(outcome.months, monthlyCents, false);
+    for (let round = 0; round <= maxSettleRounds; round++) {
+      if (outcome.months === null) return outcome.when.months === 0 ? outcome : withoutDay(monthlyCents, false);
+      if (outcome.months === outcome.when.months) return outcome;
+      if (round < maxSettleRounds) outcome = evaluate(outcome.months, monthlyCents, false);
     }
-    if (outcome.months === null || outcome.months === outcome.when.months) return outcome;
     const cautious = evaluate(0, monthlyCents, false, 'all');
     return evaluate(cautious.months ?? 0, monthlyCents, false, 'all');
+  };
+  /**
+   * The timeline with habits. Saving more never gives a later day: on the baseline's day the cash of
+   * the baseline is there, and with habits there is more. So when the search with the higher savings
+   * settles later than the baseline, or not at all (an earlier day can lose a rate that only starts
+   * later), the timeline is held at the baseline's day, screened as the baseline is.
+   */
+  const settleHabits = (monthlyCents: number | null, baseline: Outcome): Outcome => {
+    const outcome = settle(monthlyCents);
+    const later = baseline.months !== null && (outcome.months === null || outcome.months > baseline.months);
+    if (!later) return outcome;
+    const cautious = baseline.settled ? 'no' : 'all';
+    return { ...evaluate(baseline.when.months, monthlyCents, false, cautious), months: baseline.months, held: true };
   };
   /**
    * The same search with the benefits of the place counted. `without` is the settled timeline with
@@ -810,14 +914,17 @@ function planOne(
     }
     const agreed = outcome.months === null || outcome.months === outcome.when.months;
     const longer = without.months !== null && (outcome.months === null || outcome.months > without.months);
-    if (agreed && !longer) return outcome;
-    return evaluate(without.when.months, monthlyCents, true, without.settled ? 'place' : 'all');
+    if (agreed && !longer)
+      return outcome.months === null && outcome.when.months !== 0 ? withoutDay(monthlyCents, true) : outcome;
+    if (without.noDay) return withoutDay(monthlyCents, true);
+    const cautious = without.settled ? 'place' : 'all';
+    // Without the place's benefits the upfront cash is that of `without`, and so is the day.
+    return { ...evaluate(without.when.months, monthlyCents, true, cautious), months: without.months };
   };
 
-  const habits = habitSavings(person, options.includeProposedHabits);
   const withHabitsMonthly = monthly === null ? null : monthly + habits.monthlyCents;
   const baselineOutcome = settle(monthly);
-  const habitsOutcome = habits.monthlyCents === 0 ? baselineOutcome : settle(withHabitsMonthly);
+  const habitsOutcome = habits.monthlyCents === 0 ? baselineOutcome : settleHabits(withHabitsMonthly, baselineOutcome);
   const placeOutcome = settleWithPlace(withHabitsMonthly, habitsOutcome);
 
   const { applied, possiblyLower, baselineCents, tax } = baselineOutcome;
@@ -902,7 +1009,7 @@ function planOne(
     );
   if (habits.withheld.length)
     assumptions.push(
-      `${habits.withheld.length} active habit(s) are shown but not counted (${habits.withheld.map(habit => habit.title).join(', ')}): your monthly savings come from bank movements${finances.asOf ? ` up to ${finances.asOf}` : ''}, which already include the effect of a habit that was running then. A habit is added on top only when it has a start date after that period.`,
+      `${habits.withheld.length} active habit(s) are shown but not counted (${habits.withheld.map(habit => habit.title).join(', ')}): your monthly spending comes from bank movements${finances.asOf ? ` up to ${finances.asOf}` : ''}, which already include the effect of a habit that was running then. A habit is added on top only when it has a start date after that period.`,
     );
   if (options.includeProposedHabits) assumptions.push('Habits that are only proposed are counted as if adopted.');
 
@@ -916,6 +1023,19 @@ function planOne(
   if (placeOutcome.applied?.result.id !== applied?.result.id)
     assumptions.push(
       `The transfer tax anywhere in Catalonia differs between the two days: ${tax.baselineLabel} for the baseline and ${placeOutcome.tax.baselineLabel} with the benefits of this place, which is the rate this place is compared with.`,
+    );
+  if (habitsOutcome.held)
+    assumptions.push(
+      `With your habits the cash would be there before ${habitsOutcome.when.date}, but on that earlier day the transfer tax the baseline relies on does not apply, and the plan does not look for a day in between. The timeline with habits is therefore the baseline's day, ${habitsOutcome.when.date}: saving more never makes the purchase later.`,
+    );
+  const dayless = [
+    ...(baselineOutcome.noDay ? ['baseline'] : []),
+    ...(habitsOutcome.noDay ? ['with habits'] : []),
+    ...(placeOutcome.noDay ? ['with the benefits of this place'] : []),
+  ];
+  if (dayless.length)
+    assumptions.push(
+      `For the timeline ${[...new Set(dayless)].join(', ')} no day of purchase exists: a benefit that holds on the plan date would no longer hold by the time the cash could be saved, and without it the upfront cash is beyond the horizon. The benefits are listed as screened on the plan date, ${asOf}, and none of them is counted.`,
     );
   const unsettled = [
     ...(baselineOutcome.settled ? [] : ['baseline']),
@@ -987,13 +1107,15 @@ export function planForPlaces(
     ? { standardRate: taxEffect.standardRate, standardTariff: taxEffect.standardTariff }
     : null;
   const order = (plan: PlacePlan) => plan.withPlaceBenefits?.months ?? Number.POSITIVE_INFINITY;
+  // What the habits add is the same for every place: it depends on the person only.
+  const habits = habitSavings(who, options.includeProposedHabits);
   const plans = places
-    .map(place => planOne(who, place, policies, options, date, standard))
+    .map(place => planOne(who, place, policies, options, date, standard, habits))
     .map((plan, index) => ({ plan, index }))
     .sort((a, b) => {
       const [left, right] = [order(a.plan), order(b.plan)];
       return left === right ? a.index - b.index : left < right ? -1 : 1;
     })
     .map(({ plan }) => plan);
-  return planResult.parse({ person: who, asOf: date, plans, limitations: planLimitations });
+  return planResult.parse({ person: who, asOf: date, habits: habits.effects, plans, limitations: planLimitations });
 }

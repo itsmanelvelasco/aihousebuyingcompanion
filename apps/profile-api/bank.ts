@@ -5,14 +5,17 @@ import type { TransactionFilter } from '../../packages/db/ledger.ts';
 import {
   appendRevision,
   bookedTotals,
+  cashflowCells,
   countAccounts,
   countTransactions,
   deleteTransaction,
   earliestMovementDate,
+  expenseGroups,
   getAccount,
   getTransaction,
   insertAccount,
   insertTransaction,
+  ledgerHasRecords,
   ledgerHead,
   ledgerIsSynthetic,
   listAccounts,
@@ -21,39 +24,28 @@ import {
   oldestEventSequence,
   pageTransactions,
   transactionsAreSynthetic,
-  transactionsThrough,
   updateAccount,
   updateTransaction,
 } from '../../packages/db/ledger.ts';
-import type { Transaction } from '../../packages/finance/cashflow.ts';
-import { dateSchema, transactionSchema } from '../../packages/finance/cashflow.ts';
+import { personIsSynthetic } from '../../packages/db/profiles.ts';
+import type { Account, Transaction } from '../../packages/finance/cashflow.ts';
+import {
+  accountSchema,
+  dateSchema,
+  defaultMaxTransactions,
+  maxAccounts,
+  periodSchema,
+  recurringSince,
+  summarizeCashflow,
+  transactionSchema,
+} from '../../packages/finance/cashflow.ts';
 import { ApiError } from '../../packages/http/server.ts';
 import { createStore, requireUser } from '../../packages/profiles/store.ts';
 
-export { dateSchema } from '../../packages/finance/cashflow.ts';
+export type { Account } from '../../packages/finance/cashflow.ts';
+export { accountSchema, dateSchema, defaultMaxTransactions } from '../../packages/finance/cashflow.ts';
 
 const money = z.number().int().min(-100_000_000_000).max(100_000_000_000);
-export const accountSchema = z
-  .object({
-    id: safeId,
-    name: z.string().trim().min(1).max(100),
-    currency: z.literal('EUR'),
-    openingBalanceCents: money,
-    openingDate: dateSchema,
-    /** True for fabricated accounts, false for accounts of a real bank. */
-    synthetic: z.boolean(),
-  })
-  .strict();
-export type Account = z.infer<typeof accountSchema>;
-const maxAccounts = 20;
-/**
- * Most movements kept per user. The cap was 10,000 when a ledger was one JSON file rewritten on
- * every change; with one SQLite row per movement and indexed, selective reads it only has to stop
- * a runaway feed from growing the database without end, so it is 100,000 (Banc Demo at its default
- * pace takes about three weeks to produce that for one customer). The cap stays rather than going
- * away because a period analysis still loads the movements up to its end date.
- */
-export const defaultMaxTransactions = 100_000;
 
 /**
  * Thrown when a write would take a ledger past its cap. Nothing of the batch is stored. Trying the
@@ -115,18 +107,26 @@ export function createBankStore(db: Database, options: { maxTransactions?: numbe
       }
     }
   }
+  /**
+   * The flag of an aggregate: true only when every record it draws on is fabricated. A ledger
+   * without records has nothing to say, so the person decides: fictional for a fixture persona, and
+   * never "synthetic" for a real person who simply has no bank data yet.
+   */
+  function provenance(id: string, recordsAreSynthetic: boolean) {
+    return recordsAreSynthetic && (ledgerHasRecords(db, id) || personIsSynthetic(db, id));
+  }
   function headOf(id: string): LedgerHead {
     // The provenance flag is not stored; the records decide.
-    return { schemaVersion: 1, synthetic: ledgerIsSynthetic(db, id), ...ledgerHead(db, id) };
+    return { schemaVersion: 1, synthetic: provenance(id, ledgerIsSynthetic(db, id)), ...ledgerHead(db, id) };
   }
   /** Revision, freshness and accounts of a ledger: what most callers need, without its movements. */
   async function head(id: string) {
     requireUser(db, id);
-    return db.transaction(() => ({ ...headOf(id), accounts: listAccounts(db, id) as Account[] }));
+    return db.read(() => ({ ...headOf(id), accounts: listAccounts(db, id) as Account[] }));
   }
   async function read(id: string): Promise<Ledger> {
     requireUser(db, id);
-    return db.transaction(() => ({
+    return db.read(() => ({
       ...headOf(id),
       accounts: listAccounts(db, id) as Account[],
       transactions: listTransactions(db, id) as Transaction[],
@@ -167,7 +167,7 @@ export function createBankStore(db: Database, options: { maxTransactions?: numbe
     },
     async events(id: string, after: number, limit: number) {
       requireUser(db, id);
-      return db.transaction(() => {
+      return db.read(() => {
         const ledger = headOf(id);
         const oldest = oldestEventSequence(db, id) ?? ledger.revision + 1;
         const requiresRefresh = after > ledger.revision || after < oldest - 1;
@@ -187,12 +187,12 @@ export function createBankStore(db: Database, options: { maxTransactions?: numbe
     /** The ledger head and every event still kept, read together for the replay of an event stream. */
     async eventLog(id: string) {
       requireUser(db, id);
-      return db.transaction(() => ({ ...headOf(id), events: listEvents(db, id) as LedgerEvent[] }));
+      return db.read(() => ({ ...headOf(id), events: listEvents(db, id) as LedgerEvent[] }));
     },
     /** Accounts with their booked balance on `asOf`, summed by the database. */
     async balances(id: string, asOf: string) {
       requireUser(db, id);
-      return db.transaction(() => ({
+      return db.read(() => ({
         ...headOf(id),
         accounts: accountBalances(listAccounts(db, id) as Account[], bookedTotals(db, id, asOf), asOf),
       }));
@@ -200,23 +200,31 @@ export function createBankStore(db: Database, options: { maxTransactions?: numbe
     /** One page of movements by date then ID. Filtering by an unknown account is a 404. */
     async transactions(id: string, filter: TransactionFilter, page: { limit: number; offset: number }) {
       requireUser(db, id);
-      return db.transaction(() => {
+      return db.read(() => {
         if (filter.accountId && !getAccount(db, id, filter.accountId)) throw new ApiError(404, 'Account not found');
         const selected = pageTransactions(db, id, filter, page);
         return { ...headOf(id), total: selected.total, transactions: selected.transactions as Transaction[] };
       });
     },
     /**
-     * What a period analysis needs and no more: the movements dated up to `to` (recurring expenses
-     * are recognised from earlier months too) and whether any movement at all is real bank data.
+     * Cash flow of the complete calendar months `from`–`to`. The database sums the movements per
+     * month and category and groups the candidates for recurring expenses, so no movement is loaded
+     * however large the ledger is. `synthetic` covers the whole ledger: one real movement anywhere
+     * makes the summary real.
      */
-    async history(id: string, to: string) {
+    async summary(id: string, period: { from: unknown; to: unknown }) {
       requireUser(db, id);
-      return db.transaction(() => ({
-        ...headOf(id),
-        transactions: transactionsThrough(db, id, to) as Transaction[],
-        transactionsSynthetic: transactionsAreSynthetic(db, id),
-      }));
+      const { from, to } = periodSchema.parse(period);
+      return db.read(() => {
+        const aggregates = {
+          cells: cashflowCells(db, id, from, to),
+          expenseGroups: expenseGroups(db, id, recurringSince(from), to),
+        };
+        return {
+          ...summarizeCashflow(aggregates, from, to, provenance(id, transactionsAreSynthetic(db, id))),
+          ledgerUpdatedAt: ledgerHead(db, id).updatedAt || null,
+        };
+      });
     },
     async createAccount(id: string, input: unknown) {
       const account = accountSchema.parse(input);

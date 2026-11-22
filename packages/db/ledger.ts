@@ -62,6 +62,15 @@ export function ledgerHead(db: Database, userId: string) {
   );
 }
 
+/** True when the user's ledger has a head row, that is, it has been written at least once. */
+export function ledgerExists(db: Database, userId: string) {
+  return db.get('SELECT 1 FROM bank_ledgers WHERE user_id = ?', userId) !== undefined;
+}
+
+export function countEvents(db: Database, userId: string) {
+  return db.get<{ total: number }>('SELECT COUNT(*) AS total FROM bank_events WHERE user_id = ?', userId)!.total;
+}
+
 /** A user's accounts in the order they were created. */
 export function listAccounts(db: Database, userId: string) {
   return db
@@ -201,56 +210,116 @@ export function listTransactions(db: Database, userId: string) {
 
 export type TransactionFilter = { from?: string; to?: string; accountId?: string };
 
-/** One page of movements by date then ID, with the total that matches the filter. */
+/**
+ * One page of movements by date then ID, with the total that matches the filter. Only the
+ * conditions that were asked for are in the query, so the date range is read from the index.
+ */
 export function pageTransactions(
   db: Database,
   userId: string,
   filter: TransactionFilter,
   page: { limit: number; offset: number },
 ) {
-  const where = `
-    user_id = :userId
-    AND (:from IS NULL OR date >= :from)
-    AND (:to IS NULL OR date <= :to)
-    AND (:accountId IS NULL OR account_id = :accountId)
-  `;
-  const bound = {
-    userId,
-    from: filter.from ?? null,
-    to: filter.to ?? null,
-    accountId: filter.accountId ?? null,
-  };
+  const conditions = ['user_id = ?'];
+  const bound: string[] = [userId];
+  if (filter.accountId !== undefined) {
+    conditions.push('account_id = ?');
+    bound.push(filter.accountId);
+  }
+  if (filter.from !== undefined) {
+    conditions.push('date >= ?');
+    bound.push(filter.from);
+  }
+  if (filter.to !== undefined) {
+    conditions.push('date <= ?');
+    bound.push(filter.to);
+  }
+  const where = conditions.join(' AND ');
   const total = db.get<{ total: number }>(
     `SELECT COUNT(*) AS total FROM bank_transactions WHERE ${where}`,
-    bound,
+    ...bound,
   )!.total;
   const rows = db.all<Flagged<LedgerTransaction>>(
-    `
-      SELECT ${transactionColumns}
-      FROM bank_transactions
-      WHERE ${where}
-      ORDER BY date, id
-      LIMIT :limit OFFSET :offset
-    `,
-    { ...bound, limit: page.limit, offset: page.offset },
+    `SELECT ${transactionColumns} FROM bank_transactions WHERE ${where} ORDER BY date, id LIMIT ? OFFSET ?`,
+    ...bound,
+    page.limit,
+    page.offset,
   );
   return { total, transactions: rows.map(flag) as LedgerTransaction[] };
 }
 
-/** Movements dated on or before `to`, oldest first: the history a period analysis needs. */
-export function transactionsThrough(db: Database, userId: string, to: string) {
+/** Movements of one month, category and status, summed by the database. */
+export type CashflowCell = {
+  month: string;
+  category: string;
+  status: string;
+  count: number;
+  incomeCents: number;
+  expenseCents: number;
+};
+
+/**
+ * Totals of the movements dated from `from` to `to`, per calendar month, category and status.
+ * One range scan of the date index; the result has at most a few hundred rows however large the
+ * ledger is.
+ */
+export function cashflowCells(db: Database, userId: string, from: string, to: string) {
+  return db.all<CashflowCell>(
+    `
+      SELECT substr(date, 1, 7) AS month, category, status, COUNT(*) AS count,
+             SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END) AS incomeCents,
+             SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END) AS expenseCents
+      FROM bank_transactions
+      WHERE user_id = ? AND date >= ? AND date <= ?
+      GROUP BY month, category, status
+      ORDER BY month, category, status
+    `,
+    userId,
+    from,
+    to,
+  );
+}
+
+/** Booked expenses that share an account, a category and an exact description. */
+export type ExpenseGroup = {
+  accountId: string;
+  category: string;
+  description: string;
+  occurrenceCount: number;
+  totalCents: number;
+  /** The distinct `YYYY-MM` months with an occurrence, sorted. */
+  months: string[];
+};
+
+/**
+ * Booked expenses dated from `from` to `to`, grouped by account, category and exact description,
+ * in the order each group first appeared in the ledger. Transfers between own accounts are left out.
+ */
+export function expenseGroups(db: Database, userId: string, from: string, to: string): ExpenseGroup[] {
   return db
-    .all<Flagged<LedgerTransaction>>(
+    .all<Omit<ExpenseGroup, 'months'> & { months: string }>(
       `
-        SELECT ${transactionColumns}
+        SELECT account_id AS accountId, category, description, COUNT(*) AS occurrenceCount,
+               SUM(-amount_cents) AS totalCents, group_concat(DISTINCT substr(date, 1, 7)) AS months,
+               MIN(row_id) AS firstRow
         FROM bank_transactions
-        WHERE user_id = ? AND date <= ?
-        ORDER BY row_id
+        WHERE user_id = ? AND date >= ? AND date <= ?
+          AND status = 'booked' AND category <> 'internal_transfer' AND amount_cents < 0
+        GROUP BY account_id, category, description
+        ORDER BY firstRow
       `,
       userId,
+      from,
       to,
     )
-    .map(flag) as LedgerTransaction[];
+    .map(({ accountId, category, description, occurrenceCount, totalCents, months }) => ({
+      accountId,
+      category,
+      description,
+      occurrenceCount,
+      totalCents,
+      months: months.split(',').sort(),
+    }));
 }
 
 /** Sum of booked movements per account up to and including `asOf`. Accounts without any are absent. */
@@ -266,6 +335,14 @@ export function bookedTotals(db: Database, userId: string, asOf: string) {
     asOf,
   );
   return new Map(rows.map(row => [row.accountId, row.totalCents]));
+}
+
+/** True when the user has at least one account or movement. */
+export function ledgerHasRecords(db: Database, userId: string) {
+  return (
+    db.get('SELECT 1 FROM bank_accounts WHERE user_id = ? LIMIT 1', userId) !== undefined ||
+    db.get('SELECT 1 FROM bank_transactions WHERE user_id = ? LIMIT 1', userId) !== undefined
+  );
 }
 
 /** True when no movement of the user is real bank data. */

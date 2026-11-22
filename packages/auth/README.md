@@ -7,7 +7,8 @@ account's authority. This package holds the logic; `apps/server` holds the HTTP 
 | --- | --- |
 | `passwords.ts` | scrypt hashing (`node:crypto`), a random salt per password, constant-time verification |
 | `secrets.ts` | random secrets, their SHA-256 hashes, the CSRF token of a session, the PKCE check |
-| `accounts.ts` | sign-up, sign-in, throttling, browser sessions, account deletion |
+| `accounts.ts` | sign-up, sign-in, browser sessions, account deletion, and the rules that slow guessing |
+| `throttle.ts` | the counters behind those rules: budgets per window and waits that double |
 | `oauth.ts` | the OAuth 2.1 authorization server for MCP clients |
 
 SQL lives in `packages/db/auth.ts`; the tables are migration 2 in `packages/db/schema.ts`. Nothing
@@ -28,13 +29,69 @@ return plain values, so they are tested without a server (`tests/auth.test.ts`).
 - **CSRF**: every form carries an HMAC keyed with the session id (before sign-in, with a
   pre-session cookie). A cross-site page cannot read the cookie, so it cannot compute the token.
   Form posts whose `Origin` is another site are refused as well.
-- **Throttling**: failed sign-ins are counted per account (5) and per address (20) in a 15-minute
-  window; reaching the limit locks that key for 15 minutes. Sign-ups are limited per address. The
-  counters are rows of `auth_throttle`.
-- **Deletion**: `/account` deletes the account after the password is confirmed. One transaction
-  removes the account, its sessions, grants, codes and tokens, and every row of its person: profile
-  documents, inputs, ledger, accounts, movements, events, bank connections, queued bank
-  notifications, habit goals and check-ins.
+- **Throttling**: guessing is slowed for whoever guesses, and no account is ever locked from
+  outside. The rules are under [Throttling](#throttling) below.
+- **Deletion**: `/account` deletes the account after the password is confirmed. The password check
+  is counted for the session that sends it and has nothing to do with the sign-in counters, so
+  nobody else can stand between a person and deleting their account. First the person's bank
+  connections are taken out of the running sync engine (timers, retries and queued notifications
+  go, and the bank reference is free again at once) and their event streams are closed; then one
+  transaction removes the account, its sessions, grants, codes and tokens, and every row of its
+  person: profile documents, inputs, ledger, accounts, movements, events, bank connections, queued
+  bank notifications, habit goals and check-ins.
+- **Event streams** (`/api/users/<id>/bank/events/stream`) are authorised when they open. A person
+  may have five open; they are closed when the person signs out, when a grant of theirs is revoked
+  and when the account is deleted. A client that is still allowed connects again.
+
+## Throttling
+
+There is no password reset (no mail service), so a lock that a stranger can cause is a lock nobody
+can lift. The design therefore never refuses a person because of what somebody else did:
+
+| What is counted | Limit | What happens past it |
+| --- | --- | --- |
+| Wrong passwords for one account **from one address** | 5 free | That address waits before its next try for that account: 30 seconds, doubling with every further failure up to 15 minutes. Forgotten after an hour without a failure. |
+| Wrong passwords from one address across all accounts | 20 free | The same doubling wait, for that address. |
+| Wrong passwords for one account from all addresses | 100 an hour | The account turns *careful*: every address gets one wrong try and then the 15-minute wait. A right password from an address that is not waiting still signs in. |
+| Wrong passwords on the delete-account form | 5 free per session | The same doubling wait, for that session only. |
+| Sign-ups from one address | 10 per 15 minutes | Refused until the window ends. |
+| Sign-ups from everybody | 300 an hour | Refused until the window ends. |
+| OAuth client registrations | 60 an hour per address, 600 an hour in all | `429` with `Retry-After`. |
+
+A request is refused without looking at its password only when its own (account, address) pair, or
+its own address, is waiting. An IPv6 visitor is one /64 network. Counter keys hold a hash of the
+email, never the text somebody typed. The counters are rows of `auth_throttle`; the table is swept
+every ten minutes and bounded at 50,000 rows (oldest first).
+
+**When the server cannot tell visitors apart** (the request is counted under this machine's or a
+private network's address, or the proxy's configured header is missing: see
+[`CLIENT_IP_HEADER`](../../docs/areas/integration-deployment.md#client-addresses-client_ip_header-is-required-in-production)),
+that address is never made to wait as an address. Sign-in is then slowed per account only, failed
+sign-ins through it meet a ceiling of 300 per five minutes (a pause that ends with the window), and
+sign-ups through it get 60 per 15 minutes. In production the server refuses to start in the
+configuration that leads here by accident, and warns in the log and in `/health` when it happens
+anyway.
+
+What this leaves open, stated plainly:
+
+- **Guessing is slowed, not stopped.** One address gets about five guesses an hour per account
+  once it is waiting. An attacker with many addresses gets five each until the account turns
+  careful, then one per address per 15 minutes; a botnet of ten thousand addresses still gets ten
+  thousand guesses per quarter of an hour at one account. The 10-character minimum is the only
+  other defence: there is no breached-password check, no MFA and no notification to the person.
+- **A person who shares an address with an attacker waits with them.** Behind the same NAT, office
+  or VPN exit, the attacker's failures for the person's own account count against the pair they
+  share, and their failures across accounts against the address. The wait is at most 15 minutes.
+- **While visitors cannot be told apart, a stranger can slow one person down.** Per-account
+  throttling is all that is left then, so wrong passwords for a known email make that person wait
+  up to 15 minutes at a time for as long as the stranger keeps going, and a sustained flood of one
+  failed sign-in a second pauses sign-in for everybody behind that address. That is the reason the
+  server does not start that way in production without being told to (`CLIENT_IP_HEADER=none`).
+- **Sign-up and registration ceilings can be used up.** Somebody who rotates addresses can spend
+  the hourly sign-up or registration budget of everybody; existing accounts and registered clients
+  are not affected, and the budget returns within the hour. There is no CAPTCHA.
+- **In careful mode a typo is expensive.** While an account is under a distributed attack, its
+  owner gets one wrong try per address before the 15-minute wait.
 
 ## OAuth 2.1 for MCP
 
@@ -60,6 +117,9 @@ guidance for authenticated MCP servers (<https://developers.openai.com/apps-sdk/
    or `http` on `localhost`/`127.0.0.1`/`[::1]`, with no fragment; other schemes only when listed in
    `OAUTH_REDIRECT_SCHEMES`. Public clients (`none`) and clients with a secret
    (`client_secret_post`, `client_secret_basic`) are accepted; a secret is stored hashed.
+   Registrations are budgeted per address and in all (see [Throttling](#throttling)). At most 5,000
+   clients are kept: when the table is full, a new registration pushes out the oldest client that
+   has no grant, so a flood of registrations evicts itself and never a client somebody uses.
 3. `/oauth/authorize` requires `response_type=code`, a registered client, a `redirect_uri` that
    matches a registered one exactly, and PKCE with `code_challenge_method=S256` (a missing method
    or `plain` is refused). An unknown client or redirect URI is shown as a page and never redirected
@@ -69,13 +129,21 @@ guidance for authenticated MCP servers (<https://developers.openai.com/apps-sdk/
    verifier, and issues an opaque access token (1 hour) and a refresh token (30 days). Tokens are
    random, stored only as SHA-256, and bound to the account, the client, the scopes and the
    resource. Refresh tokens rotate; presenting a used code or a used refresh token revokes the
-   whole grant, since one of the two holders stole it.
+   whole grant, since one of the two holders stole it. A refresh may send `scope` to ask for less
+   than was granted (RFC 6749 section 6): the access token it gets is limited to that, while the
+   new refresh token keeps the scope of the grant. Asking for more, or for no scope this server
+   has, is `invalid_scope`. Malformed client credentials in `Authorization: Basic` are `401
+   invalid_client`.
 5. `/mcp` accepts the token only in the `Authorization` header and only when it was issued for this
    resource. A token that is not valid gets `401`, also on a public tool: it is never treated as
    anonymous.
 
 Scopes: `person:read` (household, finances, bank summaries, habits) and `person:write` (save
 answers). A request without `scope` gets `person:read` only.
+
+Housekeeping runs from the server every ten minutes, whether or not anybody signs in: expired
+sessions, expired codes and tokens, grants nothing can use any more (revoked, or with every code
+and token expired) and clients that have no grant and were not used for 30 days.
 
 ### What could not be confirmed without a real ChatGPT connection
 
@@ -96,6 +164,8 @@ answers). A request without `scope` gets `person:read` only.
 - **Multi-factor authentication** and passkeys.
 - **Rate limits shared between instances.** Sign-in throttles are in the database, but the request
   limiter is in memory: correct for the single process ReloCat runs as.
+- **A CAPTCHA, a breached-password check and sign-in notifications.** See what
+  [Throttling](#throttling) leaves open.
 - **A person-facing export** of stored data; `/account` shows it and can delete it.
 - **Consent for real bank connections.** A person's own credential cannot create bank connections
   or start a feed through `/api`; that stays with the operator's token.

@@ -68,6 +68,29 @@ export function clientAddressConfig(env: Env = process.env): ClientAddressSource
   return { kind: 'header', name };
 }
 
+/**
+ * Why a public deployment must not start with its client-address setting, or null when it may.
+ *
+ * A public deployment is `NODE_ENV=production` or a set `PUBLIC_ORIGIN`: something terminates TLS
+ * in front of the server, so the connecting address is that proxy (or the Docker bridge), not the
+ * visitor. With `CLIENT_IP_HEADER` left at `auto` every visitor would then share one rate-limit
+ * allowance and one sign-in budget without anybody noticing, so the operator has to say which
+ * header carries the address, or say `none` to accept the shared allowance knowingly.
+ */
+export function clientAddressProblem(env: Env = process.env): string | null {
+  const publicService = env.NODE_ENV === 'production' || Boolean(envString('PUBLIC_ORIGIN', env));
+  if (!publicService || clientAddressConfig(env).kind !== 'auto') return null;
+  return [
+    'CLIENT_IP_HEADER is not set, and this is a public deployment (NODE_ENV=production or PUBLIC_ORIGIN).',
+    'Behind a proxy or in a container the connecting address is not the visitor, so every visitor would share',
+    'one rate-limit allowance. Say how the visitor address reaches this server:',
+    '  CLIENT_IP_HEADER=x-forwarded-for   your reverse proxy appends it (set TRUSTED_PROXY_HOPS when there are several)',
+    '  CLIENT_IP_HEADER=cf-connecting-ip  Cloudflare (or another proxy that overwrites one header) is the only way in',
+    '  CLIENT_IP_HEADER=none              no proxy states it; all visitors behind a proxy are counted as one',
+    'See docs/areas/integration-deployment.md.',
+  ].join('\n');
+}
+
 /** Default OpenAI model IDs. Each can be overridden without touching code. */
 export function openaiModels(env: Env = process.env) {
   return {

@@ -1,6 +1,6 @@
 # Habits agent
 
-Optional money habits, explicit goals and check-ins for the fictional demo users. It is a request handler (`createHabitsHandler` in `server.ts`) that the one ReloCat server mounts under `/api`, next to the profile and bank routes; it is not a process of its own. It uses aggregate spending categories, not transaction descriptions, bank identifiers or personal demographics. Rules work without OpenAI or paid calls. Suggestions never create goals, cancel commitments, move money or assess credit automatically.
+Optional money habits, explicit goals and check-ins, for the fictional demo users and for people who belong to an account. It is a request handler (`createHabitsHandler` in `server.ts`) that the one ReloCat server mounts under `/api`, next to the profile and bank routes; it is not a process of its own. It uses aggregate spending categories, not transaction descriptions, bank identifiers or personal demographics. Rules work without OpenAI or paid calls. Suggestions never create goals, cancel commitments, move money or assess credit automatically.
 
 ## Entry point and local setup
 
@@ -25,7 +25,16 @@ The routes below are served at `http://127.0.0.1:8787/api` (`PORT` changes the p
 | PUT | `/users/:id/habits/:goalId` | Replace a goal, including setting `active:false`. |
 | POST | `/users/:id/habits/:goalId/checkins` | Record an explicit check-in; identical ID/data retries are idempotent. |
 
-Goals use `{id,title,action,category,targetDaysPerWeek,plannedMonthlySavingCents:null,active:true}`. Categories follow the bank API's expense categories. Planned savings are optional user-supplied assumptions, never generated savings guarantees. Check-ins use `{id,date:"2026-11-21",completed:true,note?:"..."}`. Notes remain local and are never included in AI prompts. A check-in ID reused with different content returns 409. To avoid overstating daily progress, consumers should count distinct completed dates rather than rows. There are at most 20 goals and 1000 check-ins per user.
+Goals use `{id,title,action,category,targetDaysPerWeek,plannedMonthlySavingCents:null,active:true,startedOn:null}`. Categories follow the bank API's expense categories.
+
+`startedOn` (`YYYY-MM-DD` or `null`) is the day the habit started. The planner needs it: when a person's monthly spending was observed in bank movements, a habit that was already running is inside that figure, so it is added on top only when it started after the observed period, and a habit without a start day is shown but not counted. The store keeps the day so that this works without the client doing anything:
+
+- a goal created active starts on the day it is created, unless the request states a day;
+- a goal switched back on (`active:false` to `active:true`) starts on that day, unless the request states a day other than the stored one;
+- any other replacement keeps the stored day when the request does not state one, so a client that does not know the field never erases it;
+- a goal created with `active:false` has no day until it is switched on, and a day more than one day in the future is refused (400).
+
+Goals stored before the field existed have `startedOn: null`: neither their start nor their creation time was recorded, so the day is unknown rather than guessed. Stating the real day with a `PUT` makes such a habit count. Planned savings are optional user-supplied assumptions, never generated savings guarantees. Check-ins use `{id,date:"2026-11-21",completed:true,note?:"..."}`. Notes remain local and are never included in AI prompts. A check-in ID reused with different content returns 409. To avoid overstating daily progress, consumers should count distinct completed dates rather than rows. There are at most 20 goals and 1000 check-ins per user.
 
 ## Aggregate input
 
@@ -47,6 +56,8 @@ Goals use `{id,title,action,category,targetDaysPerWeek,plannedMonthlySavingCents
 }
 ```
 
+`synthetic` is a required boolean taken from the bank summary: `true` only when every movement behind the totals is fabricated, `false` when real bank data is included. Suggestions are returned with the same flag. The state returned by `GET /users/:id/habits` carries `synthetic: true` for a demo persona and `false` for a person who belongs to an account.
+
 Use integer EUR cents for totals over the specified period. Send only the allowlisted fields from the bank summary, converting recurring candidates into category counts and removing descriptions/account IDs. The service does not independently attest that the aggregate history is complete. `partial`/`unknown` data yields a review habit without assuming spending reductions. No identities or protected attributes are used to assign habits.
 
 ## Optional Sol suggestions and cost controls
@@ -61,7 +72,7 @@ These limits **do not enforce a $100 dollar budget** or know the account credit 
 
 ## Storage and integration boundaries
 
-Goals and check-ins are rows of the runtime SQLite database (`DATABASE_FILE`, default `data/relocat.db`): tables `habit_goals` and `habit_checkins`, written through `packages/db/habits.ts`, each change in one transaction. The daily counter of paid calls is a row of `ai_usage`, so it survives a restart. `HABITS_DATA_DIR` (`data/runtime-habits`) is only a legacy import source: JSON files an earlier version wrote there are imported once into an empty database and left untouched. This is a shared-token local demo; production per-user authorization, audited history and provider consent are not implemented. The service does not initiate check-in reminders or send messages.
+Goals and check-ins are rows of the runtime SQLite database (`DATABASE_FILE`, default `data/relocat.db`): tables `habit_goals` and `habit_checkins`, written through `packages/db/habits.ts`, each change in one transaction. The daily counter of paid calls is a row of `ai_usage`, so it survives a restart. `HABITS_DATA_DIR` (`data/runtime-habits`) is only a legacy import source: JSON files an earlier version wrote there are imported once into an empty database and left untouched; a file that was skipped can be imported after repair with `npm run db:import-legacy` (see the profile API README). A write that finds the database busy is answered with 503 and `Retry-After`. This is a shared-token local demo; production per-user authorization, audited history and provider consent are not implemented. The service does not initiate check-in reminders or send messages.
 
 The profile/bank service remains the authoritative writer of bank data. A frontend or server adapter can read bank aggregates, request habit suggestions and allow the person to adopt a goal. No MCP registration or frontend wiring is claimed here.
 

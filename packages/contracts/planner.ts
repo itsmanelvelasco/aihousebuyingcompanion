@@ -49,6 +49,9 @@ export const habit = z
   })
   .strict();
 
+/** Where one monthly figure came from. */
+export const figureBasis = z.enum(['declared', 'bank_observed', 'unknown']);
+
 export const person = z
   .object({
     id: safeId,
@@ -68,6 +71,19 @@ export const person = z
         /** Where the figures came from: declared in the interview or observed in bank movements. */
         basis: z.enum(['declared', 'bank_observed', 'mixed', 'unknown']),
         asOf: isoDate.nullable(),
+        /**
+         * Where each of the two monthly figures came from. `basis` summarises them; these say which
+         * one is which, so the plan knows whether spending was observed in bank movements. Absent on
+         * persons built before the fields existed.
+         */
+        incomeBasis: figureBasis.optional(),
+        expensesBasis: figureBasis.optional(),
+        /**
+         * Whether the bank movements behind a bank-observed figure are fabricated: true for a
+         * fictional bank feed, false for real bank data, null or absent when no figure came from a bank.
+         * It is separate from `synthetic`: a real person can be connected to a fictional bank.
+         */
+        bankSynthetic: z.boolean().nullable().optional(),
       })
       .strict(),
     home: z
@@ -101,8 +117,18 @@ export const placeBenefit = z
     title: z.string(),
     /** How the benefit acts on the plan. */
     kind: z.enum(['upfront_cost_reduction', 'one_off_cash', 'annual_cash', 'unquantified']),
-    /** Screened amount for this person and place. Null when it cannot be computed from known facts. */
+    /**
+     * What the measure is worth to this person in this place. Null when it cannot be computed from
+     * the known facts, and null when the person is screened ineligible: an amount they would not
+     * receive is never shown as theirs.
+     */
     amountCents: positiveCents.nullable(),
+    /**
+     * What the measure is worth to someone who qualifies, at this price and in this place, whatever
+     * this person's eligibility. For reference next to an ineligible or unverified benefit. Absent
+     * in results produced before this field existed.
+     */
+    nominalAmountCents: positiveCents.nullable().optional(),
     eligibilityStatus: z.enum(['eligible', 'ineligible', 'needs_verification']),
     callStatus: z.enum(['open', 'closed', 'upcoming', 'unknown']),
     /** True only when the amount was counted in the plan. Unverified benefits are shown, not counted. */
@@ -233,10 +259,49 @@ export const planInput = z
   })
   .strict();
 
+/** What the plan did with one habit of the person. */
+export const habitEffect = z
+  .object({
+    habitId: safeId,
+    /** True when the habit's monthly saving is inside the with-habits timeline. */
+    counted: z.boolean(),
+    /** The monthly saving that was counted, after adherence; 0 when not counted. */
+    countedMonthlyCents: positiveCents,
+    /**
+     * - `counted`: an active habit added to the monthly savings.
+     * - `counted_as_proposed`: a proposed habit counted because `includeProposedHabits` is set.
+     * - `not_adopted`: a proposed habit; counted only with `includeProposedHabits`.
+     * - `paused`: switched off by the person.
+     * - `no_amount`: the habit has no monthly saving attached.
+     * - `inside_bank_figures`: it started before the observed bank period ended, so its effect is
+     *   already in the monthly spending.
+     * - `start_unknown`: spending was observed in bank movements and the habit has no start date (or
+     *   the period has no end date), so the plan cannot tell whether it is already in the spending.
+     */
+    reason: z.enum([
+      'counted',
+      'counted_as_proposed',
+      'not_adopted',
+      'paused',
+      'no_amount',
+      'inside_bank_figures',
+      'start_unknown',
+    ]),
+    explanation: z.string(),
+  })
+  .strict();
+export type HabitEffect = z.infer<typeof habitEffect>;
+
 export const planResult = z
   .object({
     person,
     asOf: isoDate,
+    /**
+     * One entry per habit of the person, in the same order: whether the plan counted it and why.
+     * Displays read this instead of deriving it from the habit's status. Absent in results produced
+     * before this field existed.
+     */
+    habits: z.array(habitEffect).optional(),
     /** Sorted by the shortest finite timeline with place benefits; places without one come last. */
     plans: z.array(placePlan),
     limitations: z.array(z.string()),

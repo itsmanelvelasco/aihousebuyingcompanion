@@ -4,6 +4,8 @@ import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import {
   accessConfig,
+  clientAddressConfig,
+  clientAddressProblem,
   defaultPorts,
   demoBankConfig,
   envInteger,
@@ -50,6 +52,22 @@ const access = accessConfig();
 // The admin token never leaves the server; a random one per start is enough when none is configured.
 const token = envString('PROFILE_API_TOKEN') ?? randomUUID();
 const apiPrefix = '/api';
+
+// A public deployment that cannot tell its visitors apart does not start: see `clientAddressProblem`.
+const addressProblem = clientAddressProblem();
+if (addressProblem) {
+  console.error(`The server did not start.\n${addressProblem}`);
+  process.exit(1);
+}
+const clientAddress = clientAddressConfig();
+const clientAddressMode =
+  clientAddress.kind === 'x-forwarded-for'
+    ? `X-Forwarded-For, ${clientAddress.trustedHops} trusted prox${clientAddress.trustedHops === 1 ? 'y' : 'ies'}`
+    : clientAddress.kind === 'header'
+      ? `the ${clientAddress.name} header`
+      : clientAddress.kind === 'none'
+        ? 'the connecting address (none): all visitors behind one proxy are counted as one'
+        : 'auto: the connecting address, or X-Forwarded-For from a proxy on this machine';
 
 const storage = storageConfig();
 const db = open(storage.databaseFile);
@@ -207,6 +225,20 @@ server.listen(port, host, async () => {
     access.demoUserIds.join(', '),
     access.sharedBoard ? 'on' : 'off',
   );
+  // What a proxy in front has to match: the origin forms are checked against, and where addresses come from.
+  console.log(
+    '  origin    %s (forms and OAuth are checked against it; accepted Host: %s)',
+    app.origin(),
+    [publicOrigin ? new URL(publicOrigin).host : null, `localhost:${boundPort}`, ...access.allowedHosts]
+      .filter(Boolean)
+      .join(', '),
+  );
+  console.log('  client address from %s', clientAddressMode);
+  if (publicOrigin)
+    console.log(
+      '  A reverse proxy must pass the original Host header (%s), or every form answers 403.',
+      new URL(publicOrigin).host,
+    );
   if (access.production && !publicOrigin)
     console.warn('  PUBLIC_ORIGIN is not set: sign-in links and OAuth metadata point at %s.', local);
 });

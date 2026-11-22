@@ -8,8 +8,13 @@ import type { Caller, PersonReader, PersonWriter } from '../apps/mcp-server/iden
 import { analyzeTransactions } from '../packages/finance/cashflow.ts';
 
 /** A person handle whose store answers carry fields the tools must never pass on. */
-function person(userId: string, options: { synthetic: boolean; broken?: 'throws' | 'invalid' }): PersonWriter {
+function person(
+  userId: string,
+  /** `records`: whether the bank records are fabricated; the person's own flag when omitted. */
+  options: { synthetic: boolean; records?: boolean; feedOff?: boolean; broken?: 'throws' | 'invalid' },
+): PersonWriter {
   const calls: string[] = [];
+  const records = options.records ?? options.synthetic;
   const guard = () => {
     if (options.broken === 'throws') throw new Error('secret-token upstream stack at https://internal.example');
   };
@@ -26,7 +31,7 @@ function person(userId: string, options: { synthetic: boolean; broken?: 'throws'
       guard();
       if (options.broken === 'invalid') return { synthetic: false };
       return {
-        synthetic: options.synthetic,
+        synthetic: records,
         events: [
           {
             sequence: 3,
@@ -49,18 +54,18 @@ function person(userId: string, options: { synthetic: boolean; broken?: 'throws'
       return {
         synthetic: true,
         userId,
-        enabled: true,
+        enabled: !options.feedOff,
         intervalMs: 5000,
         lastTickAt: null,
-        lastError: 'secret-token upstream stack',
-        tickCount: 2,
+        lastError: options.feedOff ? null : 'secret-token upstream stack',
+        tickCount: options.feedOff ? 0 : 2,
       };
     },
     async bankSummary({ from, to }) {
       guard();
       return {
         ...analyzeTransactions([], from, to),
-        synthetic: options.synthetic,
+        synthetic: records,
         recurringExpenses: [
           {
             category: 'subscriptions',
@@ -165,6 +170,63 @@ test('bank tools read the caller’s own ledger, take no user id and never pass 
     assert(badRange.isError);
   } finally {
     await close();
+  }
+});
+
+test('a real person with a fictional bank is told exactly that: a real profile, synthetic movements', async () => {
+  const text = (result: unknown) => JSON.stringify((result as { content: unknown }).content);
+  const period = { from: '2026-10-01', to: '2026-10-31' };
+  // A person who belongs to an account, connected to the fictional demo bank.
+  const connected = await connect({
+    me: person('p-me', { synthetic: false, records: true }),
+    scopes: ['person:read'],
+    demo: { ids: ['user-001'], open: () => person('user-001', { synthetic: true }) },
+  });
+  try {
+    for (const request of [
+      { name: 'get_bank_summary', arguments: period },
+      { name: 'get_bank_updates', arguments: {} },
+    ]) {
+      const result = await connected.client.callTool(request);
+      assert(!result.isError);
+      assert.equal((result.structuredContent as Record<string, unknown>).synthetic, true, 'the records are fabricated');
+      assert.match(text(result), /come from a fictional bank feed \(synthetic: true\), not from a real bank/);
+      assert.match(text(result), /profile they are attached to is the person’s own and is not fictional/);
+      assert.doesNotMatch(text(result), /Fictional demo persona|all underlying records are synthetic demo data/i);
+    }
+    // The feed status describes the feed, never the person.
+    const runtime = await connected.client.callTool({ name: 'get_bank_runtime', arguments: {} });
+    assert.match(text(runtime), /synthetic: true describes the feed only/);
+    assert.doesNotMatch(text(runtime), /all underlying records are synthetic|Fictional demo persona/i);
+    // The same data read for a demo persona is fictional through and through.
+    const demo = await connected.client.callTool({
+      name: 'get_demo_bank_summary',
+      arguments: { demoId: 'user-001', ...period },
+    });
+    assert.match(text(demo), /Fictional demo persona: all underlying records are synthetic demo data/);
+    const demoRuntime = await connected.client.callTool({
+      name: 'get_demo_bank_runtime',
+      arguments: { demoId: 'user-001' },
+    });
+    assert.match(text(demoRuntime), /Fictional demo persona: the feed and everything it adds are synthetic/);
+  } finally {
+    await connected.close();
+  }
+  // A real person who never used the demo feed is not told anything about synthetic records of theirs.
+  const untouched = await connect({
+    me: person('p-me', { synthetic: false, feedOff: true }),
+    scopes: ['person:read'],
+    demo: null,
+  });
+  try {
+    const runtime = await untouched.client.callTool({ name: 'get_bank_runtime', arguments: {} });
+    assert.match(text(runtime), /The demo feed is off and has added nothing/);
+    assert.doesNotMatch(text(runtime), /records are synthetic/i);
+    const summary = await untouched.client.callTool({ name: 'get_bank_summary', arguments: period });
+    assert.equal((summary.structuredContent as Record<string, unknown>).synthetic, false);
+    assert.match(text(summary), /include real bank data \(synthetic: false\)/);
+  } finally {
+    await untouched.close();
   }
 });
 

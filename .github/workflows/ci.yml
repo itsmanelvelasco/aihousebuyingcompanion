@@ -22,8 +22,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t relocat .
+      - name: The image refuses to start until it is told where client addresses come from
+        run: |
+          if docker run --rm -e LIVE_DATA=off relocat > refusal.log 2>&1; then cat refusal.log; exit 1; fi
+          grep -q "CLIENT_IP_HEADER" refusal.log || { cat refusal.log; exit 1; }
       - name: The image starts and answers /health
         run: |
-          docker run -d --name relocat -p 8787:8787 -e LIVE_DATA=off relocat
-          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8787/health && exit 0; sleep 1; done
-          docker logs relocat; exit 1
+          docker run -d --name relocat -p 8787:8787 -e LIVE_DATA=off -e CLIENT_IP_HEADER=x-forwarded-for relocat
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8787/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8787/health > /dev/null || { docker logs relocat; exit 1; }
+      - name: The backup command runs inside the image
+        run: |
+          docker exec relocat npm run --silent db:backup -- data/db/backups/ci.db
+          test "$(docker exec relocat ls data/db/backups)" = "ci.db" || { docker exec relocat ls -la data/db/backups; exit 1; }

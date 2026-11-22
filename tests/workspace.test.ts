@@ -28,8 +28,9 @@ import {
   benefitSummary,
   benefitView,
   effectiveOverrides,
-  habitCounted,
   habitMonthlyEffectCents,
+  habitPlanView,
+  habitSwitchedOn,
   indicatorViews,
   lastCompleteMonths,
   longestTimeline,
@@ -410,11 +411,26 @@ test('a benefit that is not counted or not verified never reads as confirmed', (
   );
   assert.deepEqual(
     [unverified.tone, unverified.confirmed, unverified.countedLabel, unverified.amountLabel],
-    ['unverified', false, 'Not counted', '€1,200 per year'],
+    ['unverified', false, 'Not counted', '€1,200 per year, if confirmed'],
   );
   assert.equal(unverified.eligibilityLabel, 'Eligibility needs verification');
   assert.deepEqual([closed.callLabel, closed.amountLabel], ['Call closed', 'Amount not computed']);
   assert.deepEqual([ineligible.tone, ineligible.confirmed], ['ineligible', false]);
+  // An ineligible benefit never shows an amount as the person's: the planner sends none, and a
+  // nominal figure is worded as what the measure is worth to someone else.
+  const youthAid = {
+    ...fixturePlan.plans[0].benefits[3],
+    kind: 'one_off_cash' as const,
+    eligibilityStatus: 'ineligible' as const,
+    counted: false,
+  };
+  assert.equal(
+    benefitView({ ...youthAid, amountCents: null, nominalAmountCents: 1_500_000 }).amountLabel,
+    'Not eligible (worth up to €15,000 to those who qualify)',
+  );
+  assert.equal(benefitView({ ...youthAid, amountCents: null }).amountLabel, 'Not eligible: no amount');
+  // A result from before the planner cleared the amount is not shown as the person's either.
+  assert.doesNotMatch(benefitView({ ...youthAid, amountCents: 1_500_000 }).amountLabel, /^€/);
 
   // Counted only because unverified benefits were switched on: counted, still flagged.
   const forced = benefitView({ ...fixturePlan.plans[0].benefits[1], counted: true });
@@ -432,11 +448,11 @@ test('a benefit that is not counted or not verified never reads as confirmed', (
 test('habit switches produce the person sent to the planner', () => {
   const { person } = fixturePlan;
   const [cook, , rail, insurance] = person.habits;
-  assert.equal(habitCounted(cook, false), true);
-  assert.equal(habitCounted(rail, false), false);
-  assert.equal(habitCounted(rail, true), true);
-  assert.equal(habitCounted(insurance, true), false);
-  assert.equal(habitCounted(cook, false, { [cook.id]: false }), false);
+  assert.equal(habitSwitchedOn(cook, false), true);
+  assert.equal(habitSwitchedOn(rail, false), false);
+  assert.equal(habitSwitchedOn(rail, true), true);
+  assert.equal(habitSwitchedOn(insurance, true), false);
+  assert.equal(habitSwitchedOn(cook, false, { [cook.id]: false }), false);
 
   const edited = applyHabitOverrides(person, { [cook.id]: false, [rail.id]: true });
   assert.deepEqual(
@@ -459,6 +475,48 @@ test('habit switches produce the person sent to the planner', () => {
   assert.deepEqual(effectiveOverrides(person, { [rail.id]: true }, false), { [rail.id]: true });
   assert.equal(habitMonthlyEffectCents(fixturePlan), 15_500);
   assert.equal(habitMonthlyEffectCents({ ...fixturePlan, plans: [fixturePlan.plans[2]] }), null);
+});
+
+test('a habit reads as counted only when the plan says it counted it', () => {
+  const { person } = fixturePlan;
+  const [cook, , rail, insurance] = person.habits;
+  // The fixture's plan counted the two active habits.
+  assert.deepEqual(
+    person.habits.map(habit => habitPlanView(habit, fixturePlan, habitSwitchedOn(habit, false)).state),
+    ['counted', 'counted', 'off', 'off'],
+  );
+  assert.deepEqual(
+    [habitPlanView(cook, fixturePlan, true).label, habitPlanView(cook, fixturePlan, true).countedMonthlyCents],
+    ['Counted in plan', 12_000],
+  );
+  assert.deepEqual(
+    [habitPlanView(rail, fixturePlan, false).label, habitPlanView(insurance, fixturePlan, false).label],
+    [null, null],
+  );
+
+  // The same stored, active habit when the planner withheld it: figures observed in the bank, start unknown.
+  const withheld = {
+    habits: [
+      {
+        habitId: cook.id,
+        counted: false,
+        countedMonthlyCents: 0,
+        reason: 'start_unknown' as const,
+        explanation: 'Shown, not counted: your monthly spending comes from bank movements up to 2026-10-31.',
+      },
+    ],
+  };
+  const view = habitPlanView(cook, withheld, habitSwitchedOn(cook, false));
+  assert.equal(habitSwitchedOn(cook, false), true, 'it is still switched on');
+  assert.deepEqual([view.state, view.label, view.countedMonthlyCents], ['withheld', 'Shown, not counted', 0]);
+  assert.match(view.explanation ?? '', /bank movements up to 2026-10-31/);
+
+  // A plan that does not say what it did claims nothing: neither counted nor left out.
+  for (const silent of [null, undefined, { habits: undefined }, { habits: [] }])
+    assert.deepEqual(
+      [habitPlanView(cook, silent, true).state, habitPlanView(cook, silent, true).label],
+      ['unknown', null],
+    );
 });
 
 test('indicators, notes and bank periods keep unknowns and sources', () => {

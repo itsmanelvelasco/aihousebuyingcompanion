@@ -1,4 +1,12 @@
-import type { Habit, Person, Place, PlaceBenefit, PlacePlan, PlanResult } from '../../packages/contracts/planner.ts';
+import type {
+  Habit,
+  HabitEffect,
+  Person,
+  Place,
+  PlaceBenefit,
+  PlacePlan,
+  PlanResult,
+} from '../../packages/contracts/planner.ts';
 import {
   formatCount,
   formatDecimal,
@@ -205,10 +213,18 @@ export function benefitView(benefit: PlaceBenefit): BenefitView {
       : benefit.eligibilityStatus === 'ineligible'
         ? 'ineligible'
         : 'not_counted';
+  const each = benefit.kind === 'annual_cash' ? ' per year' : '';
+  const nominal = benefit.nominalAmountCents ?? null;
+  // The amount follows what the planner did: nothing of the person's own next to "ineligible", and an
+  // unverified amount is conditional. The nominal figure is shown only as what the measure is worth.
   const amount =
-    benefit.amountCents === null
-      ? 'Amount not computed'
-      : `${formatEuros(benefit.amountCents)}${benefit.kind === 'annual_cash' ? ' per year' : ''}`;
+    tone === 'ineligible'
+      ? nominal === null || nominal === 0
+        ? 'Not eligible: no amount'
+        : `Not eligible (worth up to ${formatEuros(nominal)}${each} to those who qualify)`
+      : benefit.amountCents === null
+        ? 'Amount not computed'
+        : `${formatEuros(benefit.amountCents)}${each}${tone === 'unverified' ? ', if confirmed' : ''}`;
   return {
     tone,
     counted: benefit.counted,
@@ -315,11 +331,56 @@ export const habitStatusLabel = (status: Habit['status']) => habitStatusLabels[s
 /** Habit id → switched on or off in this what-if. Habits without an entry keep their stored status. */
 export type HabitOverrides = Record<string, boolean>;
 
-/** Whether the plan counts a habit's saving, given the stored status and the what-if switches. */
-export function habitCounted(habit: Habit, includeProposed: boolean, overrides: HabitOverrides = {}) {
+/**
+ * Whether a habit is switched on: the stored status, or the what-if switch when there is one. This
+ * is what the person asked for, not what the plan did with it; `habitPlanView` says the latter.
+ */
+export function habitSwitchedOn(habit: Habit, includeProposed: boolean, overrides: HabitOverrides = {}) {
   const override = overrides[habit.id];
   if (override !== undefined) return override;
   return habit.status === 'active' || (habit.status === 'proposed' && includeProposed);
+}
+
+export type HabitPlanView = {
+  /**
+   * `counted`: the planner added it to the monthly savings. `withheld`: switched on, and the planner
+   * left it out. `off`: not switched on, so there is nothing to say. `unknown`: the plan does not
+   * state what it did (a result from before `habits` existed, or a plan still loading), and nothing
+   * is claimed either way.
+   */
+  state: 'counted' | 'withheld' | 'off' | 'unknown';
+  label: string | null;
+  /** The planner's own sentence, shown next to a habit that was withheld. */
+  explanation: string | null;
+  countedMonthlyCents: number | null;
+};
+
+/**
+ * What the plan did with one habit, read from the plan itself (`PlanResult.habits`). The workspace
+ * never works this out from the habit's status: an active habit can be left out, for example when
+ * its effect is already inside spending observed in the bank.
+ */
+export function habitPlanView(
+  habit: Habit,
+  result: Pick<PlanResult, 'habits'> | null | undefined,
+  on: boolean,
+): HabitPlanView {
+  const effect: HabitEffect | undefined = result?.habits?.find(entry => entry.habitId === habit.id);
+  if (!effect) return { state: on ? 'unknown' : 'off', label: null, explanation: null, countedMonthlyCents: null };
+  if (effect.counted)
+    return {
+      state: 'counted',
+      label: 'Counted in plan',
+      explanation: effect.explanation,
+      countedMonthlyCents: effect.countedMonthlyCents,
+    };
+  const withheld = effect.reason === 'inside_bank_figures' || effect.reason === 'start_unknown';
+  return {
+    state: withheld ? 'withheld' : 'off',
+    label: withheld ? 'Shown, not counted' : effect.reason === 'no_amount' && on ? 'No saving to count' : null,
+    explanation: withheld || effect.reason === 'no_amount' ? effect.explanation : null,
+    countedMonthlyCents: 0,
+  };
 }
 
 /**
@@ -349,7 +410,7 @@ export function effectiveOverrides(person: Person, overrides: HabitOverrides, in
   const kept: HabitOverrides = {};
   for (const habit of person.habits) {
     const override = overrides[habit.id];
-    if (override !== undefined && override !== habitCounted(habit, includeProposed)) kept[habit.id] = override;
+    if (override !== undefined && override !== habitSwitchedOn(habit, includeProposed)) kept[habit.id] = override;
   }
   return kept;
 }

@@ -224,6 +224,10 @@ export const fixturePlan: PlanResult = {
       emergencyReserveCents: 600_000,
       basis: 'mixed',
       asOf: '2026-11-01',
+      // Income was observed in the bank and spending was declared, so active habits count on top of it.
+      incomeBasis: 'bank_observed',
+      expensesBasis: 'declared',
+      bankSynthetic: true,
     },
     home: { floorAreaM2: 90, budgetCents: null, depositRate: 0.2 },
     habits: [
@@ -262,6 +266,37 @@ export const fixturePlan: PlanResult = {
     ],
   },
   asOf: '2026-11-22',
+  // What the plan did with each habit, in the order of `person.habits`.
+  habits: [
+    {
+      habitId: 'cook-at-home',
+      counted: true,
+      countedMonthlyCents: 12_000,
+      reason: 'counted',
+      explanation: 'Counted: €120 a month on top of your stated spending.',
+    },
+    {
+      habitId: 'drop-unused-subscriptions',
+      counted: true,
+      countedMonthlyCents: 3_500,
+      reason: 'counted',
+      explanation: 'Counted: €35 a month on top of your stated spending.',
+    },
+    {
+      habitId: 'monthly-rail-pass',
+      counted: false,
+      countedMonthlyCents: 0,
+      reason: 'not_adopted',
+      explanation: 'Not counted: the habit is only proposed. Switch it on to see its effect.',
+    },
+    {
+      habitId: 'review-insurance',
+      counted: false,
+      countedMonthlyCents: 0,
+      reason: 'paused',
+      explanation: 'Not counted: the habit is paused.',
+    },
+  ],
   plans: [ager, balaguer, camarasa],
   limitations: [
     'This is an estimate of upfront cash, not a mortgage assessment or an offer of finance.',

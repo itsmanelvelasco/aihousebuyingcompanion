@@ -15,7 +15,8 @@ export const category = z.enum([
 const money = z.number().int().safe().nonnegative().max(100_000_000_000);
 export const summarySchema = z
   .object({
-    synthetic: z.literal(true),
+    /** True only when every movement behind the totals is fabricated; false for real bank data. */
+    synthetic: z.boolean(),
     currency: z.literal('EUR'),
     from: z.iso.date(),
     to: z.iso.date(),
@@ -43,6 +44,13 @@ export const goalSchema = suggestionSchema
     targetDaysPerWeek: z.number().int().min(1).max(7),
     plannedMonthlySavingCents: money.nullable().default(null),
     active: z.boolean().default(true),
+    /**
+     * The day the person started the habit, or null when it is not known. The store sets it to the
+     * current day when a goal is created active or switched back on, unless the request states a
+     * day. The planner adds a habit on top of bank-observed spending only when it started after the
+     * observed period; with null it cannot tell and leaves the habit out.
+     */
+    startedOn: z.iso.date().nullable().default(null),
   })
   .strict();
 export const checkinSchema = z
@@ -56,7 +64,8 @@ export const checkinSchema = z
 export const stateSchema = z
   .object({
     schemaVersion: z.literal(1),
-    synthetic: z.literal(true),
+    /** True for a fictional persona, false for a person who belongs to an account. */
+    synthetic: z.boolean(),
     userId: safeId,
     goals: z.array(goalSchema).max(20),
     checkins: z.array(checkinSchema.extend({ goalId: safeId })).max(1000),

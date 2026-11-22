@@ -53,6 +53,28 @@ export const transactionSchema = z
   });
 export type Transaction = z.infer<typeof transactionSchema>;
 
+const balance = z.number().int().min(-100_000_000_000).max(100_000_000_000);
+/** A bank account of the ledger: an opening balance on a day, and movements from that day on. */
+export const accountSchema = z
+  .object({
+    id: safeId,
+    name: z.string().trim().min(1).max(100),
+    currency: z.literal('EUR'),
+    openingBalanceCents: balance,
+    openingDate: dateSchema,
+    /** True for fabricated accounts, false for accounts of a real bank. */
+    synthetic: z.boolean(),
+  })
+  .strict();
+export type Account = z.infer<typeof accountSchema>;
+/** Most accounts kept per user. */
+export const maxAccounts = 20;
+/**
+ * Most movements kept per user. It stops a runaway feed from growing the database without end
+ * (Banc Demo at its default pace takes about three weeks to produce that for one customer).
+ */
+export const defaultMaxTransactions = 100_000;
+
 export const periodSchema = z
   .object({ from: dateSchema, to: dateSchema })
   .strict()
@@ -79,70 +101,158 @@ export function allSynthetic(records: readonly { synthetic: boolean }[]) {
   return records.every(record => record.synthetic);
 }
 
-export function analyzeTransactions(transactions: Transaction[], from: string, to: string) {
+/** Months before the period in which an earlier occurrence still makes an expense recurring. */
+export const recurringLookbackMonths = 12;
+
+function monthName(index: number) {
+  return `${String(Math.floor(index / 12)).padStart(4, '0')}-${String((index % 12) + 1).padStart(2, '0')}`;
+}
+
+/** First day of the window in which recurring expenses are looked for: the lookback before `from`. */
+export function recurringSince(from: string) {
+  return `${monthName(Math.max(0, monthIndex(from) - recurringLookbackMonths))}-01`;
+}
+
+/**
+ * What a period analysis is computed from. The database produces it with two grouped queries
+ * (`cashflowCells` and `expenseGroups` in `packages/db/ledger.ts`); `aggregateTransactions` produces
+ * the same thing from movements in memory. Either way the analysis never needs the rows themselves.
+ */
+export type CashflowAggregates = {
+  /** Movements dated inside the period, counted and summed per month, category and status. */
+  cells: {
+    month: string;
+    category: string;
+    status: string;
+    count: number;
+    incomeCents: number;
+    expenseCents: number;
+  }[];
+  /**
+   * Booked expenses, transfers between own accounts left out, dated from `recurringSince(from)` to
+   * the end of the period, grouped by account, category and exact description, in the order each
+   * group first appeared.
+   */
+  expenseGroups: {
+    accountId: string;
+    category: string;
+    description: string;
+    occurrenceCount: number;
+    totalCents: number;
+    months: string[];
+  }[];
+};
+
+/** The aggregates of `from`–`to`, computed in memory from movements in the order they were imported. */
+export function aggregateTransactions(transactions: Transaction[], from: string, to: string): CashflowAggregates {
+  const cells = new Map<string, CashflowAggregates['cells'][number]>();
+  const groups = new Map<string, CashflowAggregates['expenseGroups'][number]>();
+  const since = recurringSince(from);
+  for (const transaction of transactions) {
+    const { date, category, status, amountCents } = transaction;
+    if (date > to) continue;
+    const month = date.slice(0, 7);
+    if (date >= from) {
+      const key = `${month}|${category}|${status}`;
+      const cell = cells.get(key) ?? { month, category, status, count: 0, incomeCents: 0, expenseCents: 0 };
+      cell.count++;
+      if (amountCents > 0) cell.incomeCents = sum([cell.incomeCents, amountCents]);
+      else cell.expenseCents = sum([cell.expenseCents, -amountCents]);
+      cells.set(key, cell);
+    }
+    if (date >= since && status === 'booked' && category !== 'internal_transfer' && amountCents < 0) {
+      const key = JSON.stringify([transaction.accountId, category, transaction.description]);
+      const group = groups.get(key) ?? {
+        accountId: transaction.accountId,
+        category,
+        description: transaction.description,
+        occurrenceCount: 0,
+        totalCents: 0,
+        months: [],
+      };
+      group.occurrenceCount++;
+      group.totalCents = sum([group.totalCents, -amountCents]);
+      if (!group.months.includes(month)) group.months.push(month);
+      groups.set(key, group);
+    }
+  }
+  return { cells: [...cells.values()], expenseGroups: [...groups.values()] };
+}
+
+/**
+ * Cash flow of complete calendar months, from aggregates. `synthetic` is stated by the caller: true
+ * only when every movement the result could draw on is fabricated.
+ */
+export function summarizeCashflow(aggregates: CashflowAggregates, from: string, to: string, synthetic: boolean) {
   periodSchema.parse({ from, to });
-  const history = transactions.filter(t => t.date <= to && t.status === 'booked' && t.category !== 'internal_transfer');
-  const selected = history.filter(t => t.date >= from);
-  const incomeCents = sum(selected.filter(t => t.amountCents > 0).map(t => t.amountCents));
-  const expenseCents = sum(selected.filter(t => t.amountCents < 0).map(t => -t.amountCents));
+  const inPeriod = aggregates.cells.filter(cell => cell.month >= from.slice(0, 7) && cell.month <= to.slice(0, 7));
+  const selected = inPeriod.filter(cell => cell.status === 'booked' && cell.category !== 'internal_transfer');
+  const incomeCents = sum(selected.map(cell => cell.incomeCents));
+  const expenseCents = sum(selected.map(cell => cell.expenseCents));
   const netCashflowCents = sum([incomeCents, -expenseCents]);
   const months = monthIndex(to) - monthIndex(from) + 1;
   const spendingByCategory: Record<string, number> = {};
-  for (const transaction of selected.filter(t => t.amountCents < 0)) {
-    spendingByCategory[transaction.category] = sum([
-      spendingByCategory[transaction.category] ?? 0,
-      -transaction.amountCents,
-    ]);
+  for (const cell of selected) {
+    if (cell.expenseCents > 0)
+      spendingByCategory[cell.category] = sum([spendingByCategory[cell.category] ?? 0, cell.expenseCents]);
   }
   const monthlyTotals = Array.from({ length: months }, (_, offset) => {
-    const index = monthIndex(from) + offset;
-    const month = `${String(Math.floor(index / 12)).padStart(4, '0')}-${String((index % 12) + 1).padStart(2, '0')}`;
-    const movements = selected.filter(t => t.date.startsWith(month));
-    const income = sum(movements.filter(t => t.amountCents > 0).map(t => t.amountCents));
-    const expenses = sum(movements.filter(t => t.amountCents < 0).map(t => -t.amountCents));
+    const month = monthName(monthIndex(from) + offset);
+    const movements = selected.filter(cell => cell.month === month);
+    const income = sum(movements.map(cell => cell.incomeCents));
+    const expenses = sum(movements.map(cell => cell.expenseCents));
+    const transactionCount = sum(movements.map(cell => cell.count));
     return {
       month,
       incomeCents: income,
       expenseCents: expenses,
       netCashflowCents: sum([income, -expenses]),
-      transactionCount: movements.length,
-      dataStatus: movements.length ? 'observed' : 'unknown',
+      transactionCount,
+      dataStatus: transactionCount ? 'observed' : 'unknown',
     };
   });
-  const groups = new Map<string, Transaction[]>();
-  for (const transaction of history.filter(t => t.amountCents < 0)) {
+  // The same payee written with different capitals or spacing is one recurring expense.
+  const merged = new Map<string, CashflowAggregates['expenseGroups'][number]>();
+  for (const group of aggregates.expenseGroups) {
     const key = JSON.stringify([
-      transaction.accountId,
-      transaction.category,
-      transaction.description.toLocaleLowerCase('en').replace(/\s+/g, ' ').trim(),
+      group.accountId,
+      group.category,
+      group.description.toLocaleLowerCase('en').replace(/\s+/g, ' ').trim(),
     ]);
-    groups.set(key, [...(groups.get(key) ?? []), transaction]);
+    const known = merged.get(key);
+    if (!known) merged.set(key, { ...group, months: [...group.months] });
+    else {
+      known.occurrenceCount += group.occurrenceCount;
+      known.totalCents = sum([known.totalCents, group.totalCents]);
+      known.months = [...new Set([...known.months, ...group.months])];
+    }
   }
-  const recurringExpenses = [...groups.values()]
-    .filter(group => new Set(group.map(t => t.date.slice(0, 7))).size >= 2)
+  const recurringExpenses = [...merged.values()]
+    .filter(group => group.months.length >= 2)
     .map(group => ({
-      description: group[0].description,
-      accountId: group[0].accountId,
-      category: group[0].category,
-      observedMonths: [...new Set(group.map(t => t.date.slice(0, 7)))].sort(),
-      occurrenceCount: group.length,
-      averagePaymentCents: Math.round(sum(group.map(t => -t.amountCents)) / group.length),
+      description: group.description,
+      accountId: group.accountId,
+      category: group.category,
+      observedMonths: [...group.months].sort(),
+      occurrenceCount: group.occurrenceCount,
+      averagePaymentCents: Math.round(group.totalCents / group.occurrenceCount),
       status: 'candidate_needs_confirmation' as const,
     }));
+  const transactionCount = sum(selected.map(cell => cell.count));
   const dataStatus =
-    selected.length === 0
+    transactionCount === 0
       ? 'unknown'
       : monthlyTotals.some(month => month.transactionCount === 0)
         ? 'partial'
         : 'observed';
   return {
-    synthetic: allSynthetic(transactions),
+    synthetic,
     currency: 'EUR' as const,
     from,
     to,
     monthCount: months,
     dataStatus,
-    transactionCount: selected.length,
+    transactionCount,
     incomeCents,
     expenseCents,
     netCashflowCents,
@@ -150,18 +260,26 @@ export function analyzeTransactions(transactions: Transaction[], from: string, t
     monthlyTotals,
     recurringExpenses,
     averageMonthlySavingsCents: dataStatus === 'observed' ? Math.floor(netCashflowCents / months) : null,
-    excludedPendingCount: transactions.filter(t => t.date >= from && t.date <= to && t.status === 'pending').length,
-    excludedInternalTransferCount: transactions.filter(
-      t => t.date >= from && t.date <= to && t.status === 'booked' && t.category === 'internal_transfer',
-    ).length,
+    excludedPendingCount: sum(inPeriod.filter(cell => cell.status === 'pending').map(cell => cell.count)),
+    excludedInternalTransferCount: sum(
+      inPeriod
+        .filter(cell => cell.status === 'booked' && cell.category === 'internal_transfer')
+        .map(cell => cell.count),
+    ),
     assumptions: [
       'Amounts are integer EUR cents; expense totals are positive and net cash flow is income minus expenses.',
       'Only booked external movements are counted; transfers between owned accounts are excluded.',
       'Each requested calendar month must contain external booked movements for a savings estimate; completeness of imported transactions is not guaranteed.',
       'Savings capacity is a historical arithmetic average, not a promise of sustainable future savings.',
-      'Recurring expenses are candidates based on matching account, category and normalized description in at least two distinct historical months.',
+      `Recurring expenses are candidates based on matching account, category and normalized description in at least two distinct months of the period and the ${recurringLookbackMonths} months before it.`,
     ],
   };
+}
+
+/** Cash flow of complete calendar months, from movements held in memory. */
+export function analyzeTransactions(transactions: Transaction[], from: string, to: string) {
+  periodSchema.parse({ from, to });
+  return summarizeCashflow(aggregateTransactions(transactions, from, to), from, to, allSynthetic(transactions));
 }
 
 const money = z.number().int().safe().nonnegative().max(100_000_000_000);

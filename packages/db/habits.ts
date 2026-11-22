@@ -13,6 +13,8 @@ export type HabitGoal = {
   targetDaysPerWeek: number;
   plannedMonthlySavingCents: number | null;
   active: boolean;
+  /** The day the habit started (`YYYY-MM-DD`), or null when it is not known. */
+  startedOn: string | null;
 };
 
 export type HabitCheckin = { id: string; date: string; completed: boolean; note?: string; goalId: string };
@@ -22,7 +24,7 @@ type CheckinRow = { id: string; date: string; completed: number; note: string | 
 
 const goalColumns = `
   title, action, category, id, target_days_per_week AS targetDaysPerWeek,
-  planned_monthly_saving_cents AS plannedMonthlySavingCents, active
+  planned_monthly_saving_cents AS plannedMonthlySavingCents, active, started_on AS startedOn
 `;
 const checkinColumns = 'id, date, completed, note, goal_id AS goalId';
 
@@ -53,8 +55,9 @@ export function insertGoal(db: Database, userId: string, goal: HabitGoal) {
   db.run(
     `
       INSERT INTO habit_goals
-        (user_id, id, title, action, category, target_days_per_week, planned_monthly_saving_cents, active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (user_id, id, title, action, category, target_days_per_week, planned_monthly_saving_cents, active,
+         started_on)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     userId,
     goal.id,
@@ -64,6 +67,7 @@ export function insertGoal(db: Database, userId: string, goal: HabitGoal) {
     goal.targetDaysPerWeek,
     goal.plannedMonthlySavingCents,
     goal.active ? 1 : 0,
+    goal.startedOn,
   );
 }
 
@@ -73,7 +77,7 @@ export function updateGoal(db: Database, userId: string, goal: HabitGoal) {
     `
       UPDATE habit_goals
       SET title = ?, action = ?, category = ?, target_days_per_week = ?, planned_monthly_saving_cents = ?,
-          active = ?
+          active = ?, started_on = ?
       WHERE user_id = ? AND id = ?
     `,
     goal.title,
@@ -82,6 +86,7 @@ export function updateGoal(db: Database, userId: string, goal: HabitGoal) {
     goal.targetDaysPerWeek,
     goal.plannedMonthlySavingCents,
     goal.active ? 1 : 0,
+    goal.startedOn,
     userId,
     goal.id,
   );

@@ -19,6 +19,11 @@ export const bankSummaryInput = z.object({
   dataStatus: z.enum(['unknown', 'partial', 'observed']),
   incomeCents: z.number().int().safe().nonnegative(),
   expenseCents: z.number().int().safe().nonnegative(),
+  /**
+   * True when every movement behind the totals is fabricated, false when real bank data is included.
+   * Absent in summaries produced before the flag was carried; the person then states it as unknown.
+   */
+  synthetic: z.boolean().optional(),
 });
 export type BankSummaryInput = z.infer<typeof bankSummaryInput>;
 export type HabitState = z.input<typeof stateSchema>;
@@ -63,15 +68,6 @@ function adherence(goalId: string, checkins: HabitState['checkins']): number | n
 }
 
 /**
- * The day a stored goal started. The goal contract has no such date yet; this reads `startedOn` as
- * soon as the store carries it, and until then every stored habit has an unknown start.
- */
-function startedOn(goal: object): { startedOn?: string } {
-  const date = z.iso.date().safeParse((goal as { startedOn?: unknown }).startedOn);
-  return date.success ? { startedOn: date.data } : {};
-}
-
-/**
  * The household facts used to screen incentives, from the `eligibility` group of the resolved inputs.
  * A fact is taken only when a confirmed input states it; an unconfirmed, conflicting (null) or
  * malformed value is left out, so the screening keeps it at needs_verification. Nothing is inferred:
@@ -93,12 +89,15 @@ function householdFrom(
   return Object.keys(known).length ? householdFacts.parse(known) : undefined;
 }
 
-/** Stored goals are habits the person adopted: `active` or `paused`, never merely `proposed`. */
+/**
+ * Stored goals are habits the person adopted: `active` or `paused`, never merely `proposed`.
+ * The start day travels with the habit; a goal stored before the day was recorded has none.
+ */
 export function habitsFromState(state: HabitState | undefined): Habit[] {
   if (!state) return [];
   const { goals, checkins } = stateSchema.parse(state);
   return goals.map(goal => ({
-    ...startedOn(goal),
+    ...(goal.startedOn === null ? {} : { startedOn: goal.startedOn }),
     id: goal.id,
     title: goal.title,
     category: goal.category,
@@ -117,7 +116,9 @@ export function habitsFromState(state: HabitState | undefined): Habit[] {
  *   3. otherwise an unconfirmed declaration (for example the saved profile snapshot);
  *   4. otherwise unknown (`null`).
  * A bank summary is evidence: it replaces a guess, never a confirmed statement. `basis` reports
- * which rule supplied the two figures: `declared`, `bank_observed`, `mixed` or `unknown`.
+ * which rule supplied the two figures: `declared`, `bank_observed`, `mixed` or `unknown`;
+ * `incomeBasis` and `expensesBasis` say it for each figure, and `bankSynthetic` says whether the
+ * movements behind a bank-observed figure are fabricated (a real person can use a fictional bank).
  *
  * Debt is counted once. Declared expenses are `monthlyExpensesCents + debtPaymentsCents` (the
  * interview already folds debt into spending and sends debt as zero). Bank expenses already contain
@@ -179,6 +180,9 @@ export function buildPerson(input: BuildPersonInput): Person {
       emergencyReserveCents: centsOrNull(finance.emergencyReserveCents) ?? 0,
       basis,
       asOf,
+      incomeBasis: income.basis,
+      expensesBasis: expenses.basis,
+      bankSynthetic: usesBank ? (observed?.synthetic ?? null) : null,
     },
     home: {
       floorAreaM2: positiveOrNull(data.housing?.homeSizeM2),

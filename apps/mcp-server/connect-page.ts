@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { publicOriginConfig } from '../../packages/config/env.ts';
 import { product } from '../../packages/config/product.ts';
+import { escapeHtml } from '../../packages/http/server.ts';
 import { markSvg } from '../../packages/ui/icons.ts';
 import { images } from '../../packages/ui/images.manifest.ts';
 import { imageFile, inlineUi } from '../../packages/ui/inline.ts';
@@ -31,8 +33,23 @@ const page = inlineUi(readFileSync(new URL('connect.html', directory), 'utf8'))
 
 const ogImage = imageFile('og-card');
 
-/** The homepage at /connect, plus the two files a crawler or a browser tab asks for by URL. */
-export function handleConnectPage(req: IncomingMessage, res: ServerResponse): boolean {
+/**
+ * The MCP endpoint the page offers: the one this server answers on and issues OAuth tokens for.
+ * That is `PUBLIC_ORIGIN` when it is set (another host name of the same site, such as the apex
+ * domain, is refused with 421 and would not match the token audience). Without it, a request to
+ * localhost gets its own address, and anything else the product's site.
+ */
+export function mcpEndpoint(host: string | undefined, publicOrigin: string | null = publicOriginConfig()) {
+  if (publicOrigin) return `${publicOrigin}/mcp`;
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/.exec((host ?? '').toLowerCase());
+  return `${local ? `http://${local[0]}` : product.site}/mcp`;
+}
+
+/**
+ * The homepage at /connect, plus the two files a crawler or a browser tab asks for by URL.
+ * `publicOrigin` defaults to `PUBLIC_ORIGIN` from the environment.
+ */
+export function handleConnectPage(req: IncomingMessage, res: ServerResponse, publicOrigin?: string | null): boolean {
   if (req.method !== 'GET' && req.method !== 'HEAD') return false;
   const path = req.url?.split('?')[0];
   if (path === '/og.jpg' || path === '/favicon.svg' || path === '/favicon.ico') {
@@ -54,6 +71,7 @@ export function handleConnectPage(req: IncomingMessage, res: ServerResponse): bo
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
   });
-  res.end(page);
+  // A function as the replacement, so a `$` in the value is never read as a pattern.
+  res.end(page.replace('{{mcp-endpoint}}', () => escapeHtml(mcpEndpoint(req.headers.host, publicOrigin))));
   return true;
 }

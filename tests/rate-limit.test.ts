@@ -23,11 +23,73 @@ test('rate limiter counts per client and resets after the window', () => {
   assert.equal(limiter.check(request('1.1.1.1')).allowed, true);
 });
 
-test('loopback calls are exempt, and a local tunnel is counted by the address it forwards', () => {
-  const limiter = createRateLimiter({ limit: 1, windowMs: 1000, now: () => 0 });
-  for (let i = 0; i < 5; i++) assert.equal(limiter.check(request('127.0.0.1')).allowed, true);
+test('requests from this machine are counted too, and a local tunnel is counted by the address it forwards', () => {
+  // A proxy on this machine that adds no forwarding header (nginx's default proxy_pass) looks
+  // exactly like the server calling itself, so nothing is exempt for coming from loopback.
+  const limiter = createRateLimiter({ limit: 2, windowMs: 1000, now: () => 0 });
+  for (const peer of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) {
+    const local = createRateLimiter({ limit: 2, windowMs: 1000, now: () => 0 });
+    assert.deepEqual(
+      [1, 2, 3].map(() => local.check(request(peer)).allowed),
+      [true, true, false],
+      peer,
+    );
+  }
+  assert.equal(limiter.check(request('127.0.0.1', '3.3.3.3')).allowed, true);
   assert.equal(limiter.check(request('127.0.0.1', '3.3.3.3')).allowed, true);
   assert.equal(limiter.check(request('127.0.0.1', '3.3.3.3')).allowed, false);
+  assert.equal(limiter.check(request('127.0.0.1', '4.4.4.4')).allowed, true, 'another forwarded visitor');
+  // Only what the caller declares exempt is not counted: the operator's own calls, for example.
+  const withAdmin = createRateLimiter({
+    limit: 1,
+    windowMs: 1000,
+    now: () => 0,
+    exempt: incoming => incoming.headers.authorization === 'Bearer admin',
+  });
+  const admin = { headers: { authorization: 'Bearer admin' }, socket: { remoteAddress: '127.0.0.1' } };
+  for (let n = 0; n < 5; n++) assert.equal(withAdmin.check(admin as unknown as IncomingMessage).allowed, true);
+  assert.equal(withAdmin.check(request('127.0.0.1')).allowed, true);
+  assert.equal(withAdmin.check(request('127.0.0.1')).allowed, false);
+  assert.deepEqual(withAdmin.counted(), { total: 2, shared: 2 }, 'exempt requests are not counted at all');
+});
+
+test('a key that may be every visitor at once is marked shared', () => {
+  const auto = createRateLimiter({ limit: 1, windowMs: 1000, clientAddress: { kind: 'auto' } });
+  const forwarded = createRateLimiter({
+    limit: 1,
+    windowMs: 1000,
+    clientAddress: { kind: 'x-forwarded-for', trustedHops: 1 },
+  });
+  const none = createRateLimiter({ limit: 1, windowMs: 1000, clientAddress: { kind: 'none' } });
+  // A public socket address is one visitor.
+  assert.deepEqual(auto.clientIdentity(request('8.8.8.8')), { key: '8.8.8.8', shared: false });
+  assert.deepEqual(none.clientIdentity(request('8.8.8.8')), { key: '8.8.8.8', shared: false });
+  // This machine, the Docker bridge and other private networks may be a proxy in front of everybody.
+  for (const peer of ['127.0.0.1', '::1', '172.17.0.1', '10.0.0.5', '192.168.1.1', '100.64.0.9', 'fd00::1', 'fe80::1'])
+    for (const limiter of [auto, none]) assert.equal(limiter.clientIdentity(request(peer)).shared, true, peer);
+  assert.equal(auto.clientIdentity(request('172.32.0.1')).shared, false, 'just outside 172.16/12');
+  // A believed header is one visitor, whatever the peer.
+  assert.deepEqual(auto.clientIdentity(request('127.0.0.1', '9.9.9.9')), { key: '9.9.9.9', shared: false });
+  assert.deepEqual(forwarded.clientIdentity(request('172.17.0.1', '9.9.9.9')), { key: '9.9.9.9', shared: false });
+  // The configured header is missing: the key is the proxy, even when its address is public.
+  assert.deepEqual(forwarded.clientIdentity(request('172.17.0.1')), { key: '172.17.0.1', shared: true });
+  assert.deepEqual(forwarded.clientIdentity(request('8.8.8.8')), { key: '8.8.8.8', shared: true });
+  assert.deepEqual(forwarded.clientIdentity(request('8.8.8.8', 'garbage')), { key: '8.8.8.8', shared: true });
+});
+
+test('an IPv6 visitor is counted by /64 network, not by single address', () => {
+  const limiter = createRateLimiter({ limit: 2, windowMs: 1000, now: () => 0 });
+  assert.equal(limiter.clientKey(request('2001:db8:1:2:aaaa::1')), '2001:db8:1:2::/64');
+  assert.equal(limiter.clientKey(request('2001:0db8:0001:0002:ffff:ffff:ffff:ffff')), '2001:db8:1:2::/64');
+  assert.equal(limiter.clientKey(request('2001:db8::1')), '2001:db8:0:0::/64');
+  assert.equal(
+    limiter.clientKey(request('2001:db8:1:3::1')),
+    '2001:db8:1:3::/64',
+    'the next network is another client',
+  );
+  // Rotating through one's own /64 buys no extra allowance.
+  const allowed = [1, 2, 3, 4].map(n => limiter.check(request(`2001:db8:9:9::${n}`)).allowed);
+  assert.deepEqual(allowed, [true, true, false, false]);
 });
 
 test('forwarded addresses are used only when the proxy is trusted', () => {
@@ -84,7 +146,7 @@ test('behind a remote proxy visitors are told apart once the trusted hops are co
   assert.equal(two.clientKey(request('10.0.0.5')), '10.0.0.5');
   // Ports and IPv4-mapped forms are one client.
   assert.equal(one.clientKey(request('10.0.0.5', '1.1.1.1:5123')), '1.1.1.1');
-  assert.equal(one.clientKey(request('10.0.0.5', '[2001:db8::1]:443')), '2001:db8::1');
+  assert.equal(one.clientKey(request('10.0.0.5', '[2001:db8::1]:443')), '2001:db8:0:0::/64');
   assert.equal(one.clientKey(request('::ffff:10.0.0.5')), '10.0.0.5');
 });
 
@@ -115,7 +177,7 @@ test('all clients together meet a ceiling, which a refused client does not use u
   assert.equal(limiter.check(request('4.4.4.4')).allowed, true);
   const refused = limiter.check(request('5.5.5.5'));
   assert.deepEqual(refused, { allowed: false, retryAfterSeconds: 1 }, 'a new address meets the shared ceiling');
-  assert.equal(limiter.check(request('127.0.0.1')).allowed, true, 'the server calling itself is never counted');
+  assert.equal(limiter.check(request('127.0.0.1')).allowed, false, 'this machine meets the ceiling like anybody');
   time = 1000;
   assert.equal(limiter.check(request('5.5.5.5')).allowed, true);
   // By default the ceiling is twenty times one client's limit; null removes it.

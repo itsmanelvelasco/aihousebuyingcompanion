@@ -56,6 +56,9 @@ export function updatePasswordHash(db: Database, accountId: string, passwordHash
  * grants, codes and tokens with it; the `users` row takes the profile, inputs, ledger, bank
  * connections, events and habits. Queued bank webhooks carry no user id, so they go by reference.
  * Returns the number of rows removed per table that held any.
+ *
+ * The caller disconnects the person's bank connections from the running sync engine first
+ * (`forgetUser` in `packages/banks/sync.ts`); this function removes whatever rows are left.
  */
 export function deleteAccountAndPerson(db: Database, accountId: string) {
   return db.transaction(() => {
@@ -89,7 +92,6 @@ export function deleteAccountAndPerson(db: Database, accountId: string) {
       `,
       userId,
     );
-    db.run('DELETE FROM auth_throttle WHERE key = ?', `account:${account.email}`);
     db.run('DELETE FROM accounts WHERE id = ?', accountId);
     // Rows that reference the user only through a composite key are removed explicitly first.
     db.run('DELETE FROM habit_checkins WHERE user_id = ?', userId);
@@ -200,12 +202,22 @@ export function clearThrottle(db: Database, key: string) {
   db.run('DELETE FROM auth_throttle WHERE key = ?', key);
 }
 
-export function deleteStaleThrottles(db: Database, before: string) {
+/** Remove counters last written before `before` whose wait, if any, is over at `now`. */
+export function deleteStaleThrottles(db: Database, before: string, now = before) {
   db.run(
     'DELETE FROM auth_throttle WHERE window_start <= ? AND (locked_until IS NULL OR locked_until <= ?)',
     before,
-    before,
+    now,
   );
+}
+
+export function countThrottles(db: Database) {
+  return db.get<{ total: number }>('SELECT COUNT(*) AS total FROM auth_throttle')!.total;
+}
+
+/** Remove the `count` counters written longest ago, to keep the table bounded. */
+export function deleteOldestThrottles(db: Database, count: number) {
+  db.run('DELETE FROM auth_throttle WHERE key IN (SELECT key FROM auth_throttle ORDER BY window_start LIMIT ?)', count);
 }
 
 // -------------------------------------------------------------------- oauth
@@ -247,14 +259,49 @@ export function countClients(db: Database) {
   return db.get<{ total: number }>('SELECT COUNT(*) AS total FROM oauth_clients')!.total;
 }
 
-/** Clients nobody ever authorized, registered before `before`: abandoned registrations. */
+/**
+ * Clients without any grant, registered and last used before `before`: abandoned registrations,
+ * and clients whose grants were all revoked or ran out (`deleteDeadGrants` removes those first).
+ */
 export function deleteUnusedClients(db: Database, before: string) {
-  db.run(
+  return db.run(
     `
       DELETE FROM oauth_clients
-      WHERE created_at <= ? AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.id)
+      WHERE created_at <= ? AND (last_used_at IS NULL OR last_used_at <= ?)
+        AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.id)
     `,
     before,
+    before,
+  );
+}
+
+/** Remove the `count` clients without any grant that were registered longest ago. */
+export function deleteOldestUnusedClients(db: Database, count: number) {
+  db.run(
+    `
+      DELETE FROM oauth_clients WHERE id IN (
+        SELECT c.id FROM oauth_clients c
+        WHERE NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = c.id)
+        ORDER BY c.created_at, c.rowid LIMIT ?
+      )
+    `,
+    count,
+  );
+}
+
+/**
+ * Remove grants nothing can use any more: revoked ones, and ones whose codes and tokens have all
+ * expired and been purged (`deleteExpiredOauth` runs first). A grant approved a moment ago still
+ * has its code, so it stays.
+ */
+export function deleteDeadGrants(db: Database) {
+  db.run(
+    `
+      DELETE FROM oauth_grants
+      WHERE revoked_at IS NOT NULL
+        OR (NOT EXISTS (SELECT 1 FROM oauth_tokens t WHERE t.grant_id = oauth_grants.id)
+          AND NOT EXISTS (SELECT 1 FROM oauth_codes c WHERE c.grant_id = oauth_grants.id))
+    `,
   );
 }
 

@@ -369,6 +369,13 @@ h4 {
   font-weight: 750;
   font-variant-numeric: tabular-nums;
 }
+.habit-note {
+  display: block;
+  margin-top: 5px;
+  color: var(--rc-muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
 .adherence {
   display: flex;
   align-items: center;

@@ -1,24 +1,27 @@
 import { z } from 'zod';
 import type { AppInput } from '../../packages/contracts/inputs.ts';
-import { buildRecommendationInput, inputSchema, resolveInputs } from '../../packages/contracts/inputs.ts';
+import { buildRecommendationInput, inputSchema, maxInputs, resolveInputs } from '../../packages/contracts/inputs.ts';
 import type { Database } from '../../packages/db/database.ts';
 import { countInputs, deleteInput, getInput, insertInput, listInputs, updateInput } from '../../packages/db/inputs.ts';
+import { personIsSynthetic } from '../../packages/db/profiles.ts';
 import { ApiError } from '../../packages/http/server.ts';
 import { createStore, requireUser } from '../../packages/profiles/store.ts';
 
 /**
- * Most input records kept per user. Reaching it never locks the profile: see `supersededInputs`
- * and the retention rule in `INPUTS.md`.
+ * Most input records kept per user (`maxInputs`, 500). Reaching it never locks the profile: see
+ * `supersededInputs` and the retention rule in `INPUTS.md`.
  */
-export const maxInputs = 500;
-const submittedInput = inputSchema.refine(
+export { maxInputs } from '../../packages/contracts/inputs.ts';
+export const submittedInput = inputSchema.refine(
   input => input.source !== 'profile' && input.id !== 'profile-snapshot',
   'profile source and profile-snapshot ID are reserved',
 );
 const batchSchema = z.object({ inputs: z.array(submittedInput).min(1).max(50) }).strict();
 const inputFile = z
-  .object({ schemaVersion: z.literal(1), synthetic: z.literal(true), inputs: z.array(submittedInput).max(maxInputs) })
+  .object({ schemaVersion: z.literal(1), synthetic: z.boolean(), inputs: z.array(submittedInput).max(maxInputs) })
   .strict();
+/** Sources whose records can be fabricated even for a real person: a bank can be a fictional one. */
+const sourcesThatCanBeSynthetic = new Set<AppInput['source']>(['bank']);
 
 /**
  * The records that no longer take part in resolution, oldest first: every field they carry has a
@@ -48,9 +51,27 @@ export function createInputStore(db: Database) {
   function stored(id: string) {
     return listInputs(db, id) as AppInput[];
   }
+  /**
+   * The file-level flag is an aggregate: true only for a fictional person whose every record is
+   * fabricated. A real person with no records yet is not labelled synthetic.
+   */
+  function fileOf(id: string) {
+    const inputs = stored(id);
+    const synthetic = personIsSynthetic(db, id) && inputs.every(input => input.synthetic);
+    return inputFile.parse({ schemaVersion: 1, synthetic, inputs });
+  }
   async function read(id: string) {
     requireUser(db, id);
-    return inputFile.parse({ schemaVersion: 1, synthetic: true, inputs: stored(id) });
+    return db.read(() => fileOf(id));
+  }
+  /**
+   * The record as it is stored. What is stated by or for a real person is real, whatever flag the
+   * client sent (older clients always sent `true`); only a source that can itself be fabricated
+   * keeps the flag it arrived with. A fictional person's records are stored as they arrive.
+   */
+  function truthful(id: string, input: AppInput): AppInput {
+    if (!input.synthetic || sourcesThatCanBeSynthetic.has(input.source) || personIsSynthetic(db, id)) return input;
+    return { ...input, synthetic: false };
   }
   /** Run one change for an existing user in a transaction: all of it is stored, or none of it. */
   function mutate<T>(id: string, change: () => T) {
@@ -90,7 +111,8 @@ export function createInputStore(db: Database) {
       return mutate(id, () => {
         let inserted = 0;
         let replaced = 0;
-        for (const input of inputs) {
+        const records = inputs.map(input => truthful(id, input));
+        for (const input of records) {
           const existing = getInput(db, id, input.id);
           if (!existing) {
             insertInput(db, id, input);
@@ -101,14 +123,15 @@ export function createInputStore(db: Database) {
             replaced++;
           }
         }
-        const pruned = prune(id, inputs);
+        const pruned = prune(id, records);
         return { inserted, replaced, duplicates: inputs.length - inserted - replaced, pruned };
       });
     },
     async replace(id: string, inputId: string, value: unknown) {
-      const input = submittedInput.parse(value);
-      if (input.id !== inputId) throw new ApiError(400, 'Input ID must match route');
+      const submitted = submittedInput.parse(value);
+      if (submitted.id !== inputId) throw new ApiError(400, 'Input ID must match route');
       return mutate(id, () => {
+        const input = truthful(id, submitted);
         if (!updateInput(db, id, input)) throw new ApiError(404, 'Input not found');
         return input;
       });
@@ -130,12 +153,14 @@ export function createInputStore(db: Database) {
         'Saved profile values are unconfirmed; bank snapshot values are not a live ledger summary.',
       ];
       const date = z.iso.date().safeParse(bank.snapshotDate ?? details.snapshotDate);
+      // The snapshot is as fictional as the documents it is read from: all of them, or it is not.
+      const snapshotSynthetic = details.synthetic && preferences.synthetic && bank.synthetic;
       const baseline = {
         id: 'profile-snapshot',
         source: 'profile' as const,
         observedAt: date.success ? `${date.data}T00:00:00Z` : '1970-01-01T00:00:00Z',
         confirmed: false,
-        synthetic: true as const,
+        synthetic: snapshotSynthetic,
       };
       if (!date.success) warnings.push('Profile observation date unknown; 1970-01-01 is an ordering sentinel only.');
       const schoolAliases: Record<string, string> = {
@@ -165,7 +190,8 @@ export function createInputStore(db: Database) {
         },
         transport: { maxCommuteMinutes: preferences.maxCommuteMinutes },
         finance: {
-          currentSavingsCents: bank.balanceCents,
+          // Savings for the purchase are what the profile declares, never the balance of an account.
+          currentSavingsCents: preferences.purchaseSavingsCents,
           monthlyIncomeCents: bank.monthlyIncomeCents,
           monthlyExpensesCents: bank.monthlyExpensesCents,
           debtPaymentsCents: bank.debtPaymentsCents,
@@ -184,11 +210,28 @@ export function createInputStore(db: Database) {
       const inputs = [...file.inputs];
       if (Object.keys(data).length) inputs.unshift(inputSchema.parse({ ...baseline, data }));
       const resolved = resolveInputs(inputs);
+      // The balance of the bank snapshot is a fact of its own. It is not proposed as savings for the
+      // purchase: an account balance also holds rent, bills and the emergency reserve.
+      const balance = z.number().int().safe().nonnegative().safeParse(bank.balanceCents);
+      const bankSnapshot = balance.success
+        ? {
+            balanceCents: balance.data,
+            observedAt: date.success ? date.data : null,
+            confirmed: false,
+            synthetic: bank.synthetic,
+          }
+        : null;
+      if (bankSnapshot && resolved.data.finance?.currentSavingsCents == null)
+        warnings.push(
+          'The bank snapshot balance is not counted as savings for the purchase; declare or confirm finance.currentSavingsCents.',
+        );
       return {
         schemaVersion: 1,
-        synthetic: true,
+        // An aggregate: true only for a fictional person whose every contributing record is fabricated.
+        synthetic: file.synthetic && (!Object.keys(data).length || snapshotSynthetic),
         userId: id,
         inputCount: file.inputs.length,
+        bankSnapshot,
         resolved,
         recommendation: buildRecommendationInput(resolved),
         warnings,

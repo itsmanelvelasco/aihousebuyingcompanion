@@ -1,6 +1,6 @@
 # Shared app input contract
 
-The interviewer, frontend, bank-analysis client and property-selection flow can submit partial structured facts without replacing whole profile files. The shared Zod contract lives in `packages/contracts/inputs.ts`. This is a synthetic-data demo interface using the same authentication and local server as the [profile API](README.md).
+The interviewer, frontend, bank-analysis client and property-selection flow can submit partial structured facts without replacing whole profile files. The shared Zod contract lives in `packages/contracts/inputs.ts`. It uses the same authentication and local server as the [profile API](README.md), and serves both the fictional demo personas and people who belong to an account.
 
 ## Endpoints
 
@@ -10,9 +10,17 @@ The interviewer, frontend, bank-analysis client and property-selection flow can 
 | GET | `/users/:id/inputs` | Read stored source records. |
 | PUT | `/users/:id/inputs/:inputId` | Replace a complete source record to correct it; ID must match. |
 | DELETE | `/users/:id/inputs/:inputId` | Remove a source record; older values may become visible again. |
-| GET | `/users/:id/context` | Read normalized data, field provenance, conflicts, warnings and a prepared municipality-tool input. No recommendation call is executed. |
+| GET | `/users/:id/context` | Read normalized data, field provenance, conflicts, warnings, the bank snapshot balance as its own fact and a prepared municipality-tool input. No recommendation call is executed. |
 
 Source records are rows of the `input_records` table of the runtime SQLite database (`DATABASE_FILE`), at most 500 per user. Each request is one transaction: all of its records are stored, or none. Existing body limits and shared-token demo limitations apply. Committed profile fixtures and aggregate exports are unchanged by input events. Replacements use last-write-wins.
+
+## The `synthetic` flag
+
+`synthetic` is a required boolean on every record: `true` for a fabricated record, `false` for something a real person stated or a real source reported. It has no default, and it is stored and returned per record.
+
+- A fixture or demo persona and everything written for it is `true`.
+- What is written by or for a person who belongs to an account is stored as `false`, whatever the client sent: clients built when the flag was the literal `true` keep working, and a real person's answers are never labelled synthetic. The one exception is `source: "bank"`, which keeps the flag it arrives with, because a real person can be connected to a fictional bank.
+- Aggregates say "all synthetic" only when everything behind them is. The `synthetic` of `GET /inputs` and of `GET /context` is `true` only for a fictional person whose every contributing record is fabricated; a real person with no records yet is `false`. Each provenance entry of the context carries the flag of its own record.
 
 ## Retention: what happens at 500 records
 
@@ -88,6 +96,16 @@ For each field, use the latest observation **within each source type**. If those
 A newer unconfirmed observation replaces an older confirmed observation within the same source type before cross-source comparison. Use confirmation carefully and correct erroneous source records with PUT/DELETE, or by posting the record again under the same ID. `observedAt` is supplied by the client, so submitting a future timestamp can dominate that source; this demo does not independently attest timestamps. There is no automatic expiration.
 
 The context also reads current saved details/preferences/bank snapshot as an unconfirmed baseline. Known stage aliases such as `ESO` and `primaria` are normalized. Invalid saved fields are omitted with a warning; they are not treated as verified. A missing profile date uses a documented 1970 ordering sentinel. Profile bank values are snapshot totals, not live ledger results: submit reviewed bank-analysis aggregates explicitly. Confirmed input values can supersede the baseline. Remaining disagreements are exposed.
+
+### Savings for the purchase are never taken from a balance
+
+The balance of the bank snapshot (`bank-account.balanceCents`) is **not** proposed as `finance.currentSavingsCents`. An account balance also holds rent, bills and the emergency reserve, so treating it as money available for the purchase would overstate it. The context returns it separately:
+
+```json
+"bankSnapshot": { "balanceCents": 4498200, "observedAt": "2026-11-21", "confirmed": false, "synthetic": true }
+```
+
+`finance.currentSavingsCents` comes only from a declaration: an input record (the interview, the workspace form, `save_my_inputs`), or the optional `preferences.purchaseSavingsCents` of the profile, which is proposed unconfirmed like the rest of the baseline. While neither exists the context carries a warning, the person has `currentSavingsCents: null` and the plan reports `person.finances.currentSavingsCents` in `dataMissing` instead of inventing a timeline. The committed fixtures in `data/users/` do not declare `purchaseSavingsCents`, so a demo persona has no timeline until savings are declared for it.
 
 ## Preparing tool calls
 

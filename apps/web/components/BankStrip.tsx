@@ -2,12 +2,18 @@ import { formatClock, formatDate, formatEuros, formatMonthly } from '../format.t
 import type { BankFeedState } from '../hooks.ts';
 import { Ago, Badge, ErrorNote, Icon } from './bits.tsx';
 
-type Props = { userId: string | null; feed: BankFeedState; onRetry: () => void };
+type Props = {
+  userId: string | null;
+  feed: BankFeedState;
+  onRetry: () => void;
+  /** Whether the person is fictional; unknown until the plan has loaded. The bank data is labelled separately. */
+  personSynthetic?: boolean | null;
+};
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 /** Recent bank activity for the person, labelled synthetic or real from the records themselves. */
-export function BankStrip({ userId, feed, onRetry }: Props) {
+export function BankStrip({ userId, feed, onRetry, personSynthetic }: Props) {
   // The runtime describes only the built-in simulator. Movements also arrive from connected banks,
   // so being "live" means this view is following the ledger, whichever source feeds it.
   const simulatorOn = feed.runtime?.enabled === true;
@@ -27,7 +33,15 @@ export function BankStrip({ userId, feed, onRetry }: Props) {
           <Icon name="bank" />
           Bank activity
         </h2>
-        {synthetic === true ? (
+        {synthetic === true && personSynthetic === false ? (
+          // A real person connected to a fictional bank: the movements are synthetic, the profile is not.
+          <Badge
+            tone="violet"
+            title="These movements come from a fictional bank feed, not from a real bank. Your profile is your own."
+          >
+            Synthetic bank data
+          </Badge>
+        ) : synthetic === true ? (
           <Badge tone="violet" title="Fictional transactions generated for the demo. No real bank is connected.">
             Synthetic data
           </Badge>

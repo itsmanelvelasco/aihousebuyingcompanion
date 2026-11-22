@@ -130,7 +130,9 @@ export function Workspace({ client, launch, mode }: Props) {
 
       <SubjectBanner subject={subject} launch={launch} mode={mode} onSubject={setSubject} />
 
-      {stored ? <BankStrip userId={label} feed={feed} onRetry={retryFeed} /> : null}
+      {stored ? (
+        <BankStrip userId={label} feed={feed} onRetry={retryFeed} personSynthetic={person?.synthetic ?? null} />
+      ) : null}
 
       <div className="layout">
         <PersonPanel

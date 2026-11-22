@@ -11,10 +11,19 @@ import { monthsToTarget } from './savings.ts';
  * complete months divided by their number, each rounded once to the cent. The first and last months
  * are usually partial and are left out, and reported in `partialMonths`.
  *
- * When no month is complete the figures cannot be a monthly average. They are then the totals of
- * every row divided by the days covered, expressed in months of 365.25 / 12 days and never less than
- * one month, and `averageBasis` says `partial_months_only`: read them as a rough indication.
+ * When no month is complete the figures cannot be a monthly average. With at least
+ * `minimumDaysForMonthlyFigure` days covered they are the totals of every row divided by the days
+ * covered, expressed in months of 365.25 / 12 days and never less than one month, and
+ * `averageBasis` says `partial_months_only`: read them as a rough indication.
+ *
+ * With fewer days than that (a single day, a week) the statement is too short for any monthly
+ * figure: `averageBasis` says `period_too_short`, every monthly figure is `null` and the per-category
+ * figures are empty, so nothing can be repeated as "a month". `periodTotals` still says what came in
+ * and went out in the days covered, and `averagingNote` asks for a longer statement.
  */
+/** Days a statement must cover before its totals may be scaled to a rough monthly figure. */
+export const minimumDaysForMonthlyFigure = 28;
+
 const categories: Record<string, RegExp> = {
   Rent: /\brent\b|alquiler|arrendamiento/,
   Groceries: /grocer|supermarket|mercadona|lidl|aldi|carrefour/,
@@ -150,12 +159,17 @@ export function summarizeTransactions(
     }
   }
   const partialMonths = observedMonths.filter(month => !completeMonths.includes(month));
-  const averageBasis = completeMonths.length ? ('complete_months' as const) : ('partial_months_only' as const);
   const coveredDays =
     coveredFrom && coveredTo ? Math.round((Date.parse(coveredTo) - Date.parse(coveredFrom)) / 86_400_000) + 1 : 0;
+  const averageBasis: 'complete_months' | 'partial_months_only' | 'period_too_short' = completeMonths.length
+    ? 'complete_months'
+    : coveredDays >= minimumDaysForMonthlyFigure
+      ? 'partial_months_only'
+      : 'period_too_short';
+  const tooShort = averageBasis === 'period_too_short';
   // Months the totals are divided by: the complete months, else the days covered (at least one month).
   const divisor = completeMonths.length || Math.max(1, coveredDays / (365.25 / 12));
-  const averaged = (month: string) => averageBasis === 'partial_months_only' || completeMonths.includes(month);
+  const averaged = (month: string) => averageBasis !== 'complete_months' || completeMonths.includes(month);
 
   const payMonths = new Set<string>();
   const expenses: Record<string, number> = {};
@@ -163,10 +177,17 @@ export function summarizeTransactions(
   let outflows = 0;
   let payroll = 0;
   let transfers = 0;
+  // What came in and went out over every day covered, partial months included.
+  let periodInflows = 0;
+  let periodOutflows = 0;
   for (const transaction of transactions) {
     const { month, label, cents } = transaction;
     const candidate = classifications.size ? merchantCandidate(transaction) : null;
     const predicted = candidate && classifications.get(merchantKey(candidate));
+    if (!internalTransfer.test(label)) {
+      if (cents > 0) periodInflows += cents;
+      else periodOutflows -= cents;
+    }
     if (internalTransfer.test(label)) {
       transfers++;
     } else if (!averaged(month)) {
@@ -185,6 +206,8 @@ export function summarizeTransactions(
     }
   }
   const average = (cents: number) => Math.round(cents / divisor) / 100;
+  /** A monthly figure, or null when the statement is too short to give one. */
+  const monthly = (cents: number) => (tooShort ? null : average(cents));
   const list = (months: string[]) => months.join(', ');
   const averagingNote =
     averageBasis === 'complete_months'
@@ -193,7 +216,9 @@ export function summarizeTransactions(
             ? ` Left out as partial: ${list(partialMonths)} (the statement runs from ${coveredFrom} to ${coveredTo}).`
             : ''
         }`
-      : `The statement runs from ${coveredFrom} to ${coveredTo} and covers no complete calendar month (${list(partialMonths)} are partial). The monthly figures are the totals of those ${coveredDays} day(s) spread over ${Math.round(divisor * 100) / 100} month(s): a rough indication, not a monthly average.`;
+      : tooShort
+        ? `The statement runs from ${coveredFrom} to ${coveredTo}: ${coveredDays} day(s). That is too short for a monthly figure, so none is given. In those ${coveredDays} day(s) ${periodInflows / 100} came in and ${periodOutflows / 100} went out. Ask for a statement that covers at least one complete calendar month, or for the person's own estimate of a typical month.`
+        : `The statement runs from ${coveredFrom} to ${coveredTo} and covers no complete calendar month (${list(partialMonths)} are partial). The monthly figures are the totals of those ${coveredDays} day(s) spread over ${Math.round(divisor * 100) / 100} month(s): a rough indication, not a monthly average.`;
   return {
     /** Every month with at least one row, complete or not. */
     observedMonths,
@@ -205,25 +230,91 @@ export function summarizeTransactions(
     averagingNote,
     coveredFrom,
     coveredTo,
+    /** Days from the earliest to the latest row, both included. */
+    coveredDays,
+    /** What came in and went out over the days covered, transfers between own accounts left out. Not monthly. */
+    periodTotals: {
+      inflows: periodInflows / 100,
+      outflows: periodOutflows / 100,
+      net: (periodInflows - periodOutflows) / 100,
+    },
     transactionCount: transactions.length,
     excludedTransfers: transfers,
-    estimatedMonthlySalary: payroll ? average(payroll) : null,
-    monthlyOtherIncome: average(inflows - payroll),
+    // Every monthly figure below is null when `averageBasis` is `period_too_short`.
+    estimatedMonthlySalary: payroll && !tooShort ? average(payroll) : null,
+    monthlyOtherIncome: monthly(inflows - payroll),
     /** Averaged months in which pay was identified. */
     salaryMonths: payMonths.size,
-    monthlyInflows: average(inflows),
-    monthlyCostOfLiving: average(outflows),
-    monthlyNetCashFlow: average(inflows - outflows),
-    monthlyExpenses: Object.fromEntries(
-      Object.entries(expenses)
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, value]) => [name, average(value)]),
-    ),
+    monthlyInflows: monthly(inflows),
+    monthlyCostOfLiving: monthly(outflows),
+    monthlyNetCashFlow: monthly(inflows - outflows),
+    monthlyExpenses: tooShort
+      ? {}
+      : Object.fromEntries(
+          Object.entries(expenses)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, value]) => [name, average(value)]),
+        ),
   };
 }
 
 export function summarizeCsv(csv: string) {
   return summarizeTransactions(parseTransactions(csv));
+}
+
+/**
+ * What may be said about a statement summary, in one place so the interview page, the voice model
+ * and the MCP tools agree. The wording follows `averageBasis`: a monthly average only for complete
+ * months, a rough indication for partial months, and no monthly figure at all, with a request for
+ * a longer statement, when the period is too short.
+ *
+ * A summary saved before `averageBasis` existed has none; its figures are read as a rough indication.
+ */
+export function cashFlowStatements(
+  summary: Pick<CashFlowSummary, 'estimatedMonthlySalary' | 'monthlyCostOfLiving'> &
+    Partial<Pick<CashFlowSummary, 'averageBasis' | 'coveredDays' | 'coveredFrom' | 'coveredTo'>>,
+  money: (amount: number) => string,
+) {
+  const salary = summary.estimatedMonthlySalary;
+  const spending = summary.monthlyCostOfLiving;
+  const askPay = 'What is your typical monthly take-home pay?';
+  const askSpending = 'What are your main monthly expenses, such as rent, food and transport?';
+  if (summary.averageBasis === 'period_too_short') {
+    const period =
+      summary.coveredFrom && summary.coveredFrom !== summary.coveredTo
+        ? `${summary.coveredDays} days (${summary.coveredFrom} to ${summary.coveredTo})`
+        : `a single day${summary.coveredFrom ? ` (${summary.coveredFrom})` : ''}`;
+    return {
+      /** False when no monthly figure may be quoted. */
+      monthlyFigures: false,
+      salaryQuestion: `Your statement covers only ${period}, which is too short to work out a monthly figure. ${askPay}`,
+      spendingQuestion: `Your statement covers only ${period}, which is too short for a monthly spending figure. Can you add a statement that covers at least one full calendar month? If not, ${askSpending.charAt(0).toLowerCase()}${askSpending.slice(1)}`,
+      guidance: `The statement covers only ${period}, which is too short for a monthly figure. Do not present any amount as monthly income, spending or an average. Say that the period is too short and ask for a statement covering at least one complete calendar month, or for the person's own estimate of a typical month.`,
+    };
+  }
+  if (summary.averageBasis !== 'complete_months') {
+    const caveat =
+      'Your statement does not cover a complete calendar month, so this is a rough indication, not a monthly average';
+    return {
+      monthlyFigures: true,
+      salaryQuestion: salary == null ? askPay : `${caveat}: about ${money(salary)} in monthly pay. ${askPay}`,
+      spendingQuestion:
+        spending == null
+          ? askSpending
+          : `${caveat}: about ${money(spending)} of spending a month. Can you add a longer statement, or tell me what a typical month looks like?`,
+      guidance:
+        'No calendar month is fully covered: the monthly figures are a rough indication, not a monthly average. Say so and ask for a statement covering at least one complete calendar month.',
+    };
+  }
+  return {
+    monthlyFigures: true,
+    salaryQuestion: salary == null ? askPay : `The CSV suggests ${money(salary)} in monthly pay. ${askPay}`,
+    spendingQuestion:
+      spending == null
+        ? askSpending
+        : `Average spending was ${money(spending)} a month. Was anything unusual or missing?`,
+    guidance: null,
+  };
 }
 
 /** Baseline and habit-adjusted months to a cash target, using the shared timeline rule. */

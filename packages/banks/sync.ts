@@ -320,6 +320,33 @@ export function createBankSync(options: BankSyncOptions) {
     return state;
   }
 
+  /**
+   * Drop everything this process remembers about a connection: its timer, its retry state, the
+   * bank reference it holds and the notifications queued for that reference. Used when the stored
+   * connection is gone (its person was deleted, or another process removed it), so the reference
+   * is free again and nothing is written for it later.
+   */
+  function forget(userId: string, connectionId: string) {
+    const state = activities.get(key(userId, connectionId));
+    if (state?.timer) clearInterval(state.timer);
+    if (state) {
+      state.timer = undefined;
+      state.queued = false;
+      state.nextRetryAt = undefined;
+    }
+    activities.delete(key(userId, connectionId));
+    for (const [index, target] of refs) {
+      if (target.userId !== userId || target.connectionId !== connectionId) continue;
+      refs.delete(index);
+      const [providerId, ref] = index.split('\n');
+      try {
+        clearWebhooks(db, providerId, ref, queue.lastSeq());
+      } catch {
+        // The queue row is harmless without its connection: the next start does not index it.
+      }
+    }
+  }
+
   /** Delay before the retry that follows the given number of consecutive failures. */
   function retryDelay(failures: number) {
     return Math.min(retryMaxMs, retryBaseMs * 2 ** Math.min(failures - 1, 30));
@@ -463,7 +490,12 @@ export function createBankSync(options: BankSyncOptions) {
     if (state.running) return state.running;
     if (automatic && state.blocked) throw new ApiError(409, 'Bank sync is waiting for a manual sync');
     const operation = (async () => {
-      const stored = await find(userId, connectionId);
+      const stored = store.find(userId, connectionId);
+      if (!stored) {
+        // The record is gone (its person was deleted): stop feeding it instead of failing forever.
+        forget(userId, connectionId);
+        throw new ApiError(404, 'Bank connection not found');
+      }
       // Notifications accepted up to here are covered by this pull; later ones need another.
       const coveredSeq = queue.lastSeq();
       state.lastActivityAt = clock().getTime();
@@ -477,6 +509,11 @@ export function createBankSync(options: BankSyncOptions) {
         return result;
       } catch (error) {
         state.failures++;
+        // The person, or the connection, was deleted while the provider was answering: nothing to retry.
+        if (!store.find(userId, connectionId)) {
+          forget(userId, connectionId);
+          throw error;
+        }
         const attemptedAt = clock();
         // A failure that retrying cannot fix: no backoff and no further automatic syncs. The message
         // stays on the connection as `lastError`, and the notifications stay queued for the sync
@@ -504,7 +541,7 @@ export function createBankSync(options: BankSyncOptions) {
       return await operation;
     } finally {
       state.running = undefined;
-      if (state.queued && !closed) {
+      if (state.queued && !closed && activities.get(key(userId, connectionId)) === state) {
         state.queued = false;
         void syncConnection(userId, connectionId, true).catch(() => {});
       }
@@ -600,6 +637,11 @@ export function createBankSync(options: BankSyncOptions) {
     if (closed) throw new ApiError(503, 'Bank sync is shutting down');
     const target = refs.get(refKey(providerId, signal.connectionRef));
     if (!target) return { known: false, duplicate: false };
+    // A reference whose connection no longer exists is unknown, and nothing is queued for it.
+    if (!store.find(target.userId, target.connectionId)) {
+      forget(target.userId, target.connectionId);
+      return { known: false, duplicate: false };
+    }
     const eventId = eventIdSchema.optional().parse(signal.eventId);
     const fresh = await queue.add(providerId, signal.connectionRef, eventId, clock().toISOString());
     if (!fresh) {
@@ -641,6 +683,9 @@ export function createBankSync(options: BankSyncOptions) {
             ? null
             : (bank.pollIntervalMs ?? defaultPollIntervalMs);
       const index = refKey(request.providerId, request.ref);
+      // A reference still held in memory for a connection that no longer exists is free.
+      const holder = refs.get(index);
+      if (holder && !store.find(holder.userId, holder.connectionId)) forget(holder.userId, holder.connectionId);
       if (refs.has(index)) throw new ApiError(409, 'This bank connection reference is already linked');
       const connection: StoredConnection = {
         id,
@@ -690,6 +735,28 @@ export function createBankSync(options: BankSyncOptions) {
       refs.delete(refKey(removed.providerId, removed.ref));
       activities.delete(key(userId, connectionId));
       return { deleted: connectionId };
+    },
+
+    /**
+     * Remove every connection of a user, for an account deletion: timers stop, a sync in flight is
+     * waited for, the records and their queued notifications go, and the bank references are free
+     * again. Works whether or not the user's rows still exist. Returns how many were removed.
+     */
+    async forgetUser(userId: string) {
+      await ready;
+      const mine = () => [...refs.values()].filter(target => target.userId === userId);
+      // Stop the timers first so nothing new starts, then wait for what is running.
+      for (const target of mine()) stopTimer(userId, target.connectionId);
+      await Promise.allSettled(mine().map(target => activities.get(key(userId, target.connectionId))?.running));
+      let removed = 0;
+      for (const connection of store.read(userId)) {
+        store.remove(userId, connection.id);
+        refs.set(refKey(connection.providerId, connection.ref), { userId, connectionId: connection.id });
+        removed++;
+      }
+      for (const target of mine()) forget(userId, target.connectionId);
+      for (const id of [...activities.keys()]) if (id.startsWith(`${userId}/`)) activities.delete(id);
+      return removed;
     },
 
     /** Change the polling cadence of a connection; null stops polling and persists that choice. */

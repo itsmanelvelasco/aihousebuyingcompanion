@@ -200,3 +200,79 @@ test('bank API persists movements, validates atomic imports and calculates isola
     db.close();
   }
 });
+
+test('bank aggregates say all synthetic only when every record is, and never for a real person without records', async () => {
+  const db = open(':memory:');
+  const profiles = createStore(db);
+  const fictional = { schemaVersion: 1 as const, synthetic: true };
+  const real = { schemaVersion: 1 as const, synthetic: false };
+  await profiles.create('user-001', {
+    details: { ...fictional, id: 'user-001' },
+    preferences: fictional,
+    'bank-account': fictional,
+  });
+  await profiles.create('p-real', { details: { ...real, id: 'p-real' }, preferences: real, 'bank-account': real });
+  const bank = createBankStore(db);
+  const period = { from: '2026-10-01', to: '2026-10-31' };
+  const account = (id: string, synthetic: boolean) => ({
+    id,
+    name: synthetic ? 'Banc Demo current' : 'Current account',
+    currency: 'EUR',
+    openingBalanceCents: 0,
+    openingDate: '2026-10-01',
+    synthetic,
+  });
+  const movement = (id: string, accountId: string, synthetic: boolean) => ({
+    id,
+    accountId,
+    date: '2026-10-10',
+    description: `Movement ${id}`,
+    amountCents: -1000,
+    currency: 'EUR',
+    category: 'other',
+    status: 'booked',
+    synthetic,
+  });
+  const flags = async (id: string) => [
+    (await bank.head(id)).synthetic,
+    (await bank.summary(id, period)).synthetic,
+    (await bank.events(id, 0, 10)).synthetic,
+    (await bank.balances(id, '2026-10-31')).synthetic,
+    (await bank.transactions(id, {}, { limit: 10, offset: 0 })).synthetic,
+  ];
+  try {
+    // No bank records at all: a fixture persona is fictional, a real person is not called synthetic.
+    assert.deepEqual(await flags('user-001'), [true, true, true, true, true]);
+    assert.deepEqual(await flags('p-real'), [false, false, false, false, false]);
+
+    // The real person connects the fictional demo bank: the movements are synthetic and say so.
+    await bank.createAccount('p-real', account('demo', true));
+    await bank.importTransactions('p-real', { transactions: [movement('d-1', 'demo', true)] });
+    assert.deepEqual(await flags('p-real'), [true, true, true, true, true]);
+    const summary = await bank.summary('p-real', period);
+    assert.deepEqual([summary.synthetic, summary.transactionCount, summary.expenseCents], [true, 1, 1000]);
+    // ...while the person stays real: the two flags are separate facts.
+    assert.equal(profiles.isSynthetic('p-real'), false);
+    assert.equal((await bank.events('p-real', 0, 10)).events.at(-1)?.synthetic, true);
+
+    // One real movement, even outside the period asked for, and nothing is "all synthetic" any more.
+    await bank.createAccount('p-real', account('own', false));
+    assert.deepEqual(await flags('p-real'), [false, true, false, false, false]);
+    await bank.importTransactions('p-real', {
+      transactions: [{ ...movement('r-1', 'own', false), date: '2026-11-02' }],
+    });
+    assert.deepEqual(await flags('p-real'), [false, false, false, false, false]);
+    assert.equal((await bank.summary('p-real', period)).transactionCount, 1);
+    // Each record still carries its own flag.
+    const page = await bank.transactions('p-real', {}, { limit: 10, offset: 0 });
+    assert.deepEqual(
+      page.transactions.map(tx => [tx.id, tx.synthetic]),
+      [
+        ['d-1', true],
+        ['r-1', false],
+      ],
+    );
+  } finally {
+    db.close();
+  }
+});

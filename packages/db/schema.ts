@@ -262,7 +262,52 @@ const accounts = `
   CREATE INDEX oauth_tokens_expiry ON oauth_tokens (expires_at);
 `;
 
+/**
+ * Truthful provenance, habit start dates, per-file legacy import and index-only balances.
+ *
+ * - A person who belongs to an account is real. Their profile documents were created with
+ *   `synthetic: true` because the stores once required that literal; they are corrected here, and
+ *   the trigger keeps the rule for every account created later, whatever the caller wrote. Inputs
+ *   such a person stated (`interview`, `manual`, `listing`) are corrected too; `bank` inputs keep
+ *   their flag, because a real person can be connected to a fictional bank.
+ * - `habit_goals.started_on` is the day a habit started. It was never recorded, and neither was the
+ *   creation time, so existing goals get NULL: unknown, which the planner treats cautiously.
+ * - `legacy_import_files` records each old JSON file that was imported, by its logical name, so a
+ *   file repaired later can be imported once and nothing is imported twice.
+ * - The per-account index now also carries status and amount, so a balance is summed from the index
+ *   alone. Its first three columns are those of the index it replaces.
+ */
+const truthfulProvenance = `
+  UPDATE profile_sections
+  SET synthetic = 0, document = json_set(document, '$.synthetic', json('false'))
+  WHERE user_id IN (SELECT user_id FROM accounts);
+
+  UPDATE input_records
+  SET synthetic = 0
+  WHERE source IN ('interview', 'manual', 'listing') AND user_id IN (SELECT user_id FROM accounts);
+
+  CREATE TRIGGER accounts_own_real_people AFTER INSERT ON accounts
+  BEGIN
+    UPDATE profile_sections
+    SET synthetic = 0, document = json_set(document, '$.synthetic', json('false'))
+    WHERE user_id = NEW.user_id;
+  END;
+
+  ALTER TABLE habit_goals ADD COLUMN started_on TEXT;
+
+  CREATE TABLE legacy_import_files (
+    file TEXT PRIMARY KEY,
+    imported_at TEXT NOT NULL,
+    row_count INTEGER NOT NULL CHECK (row_count >= 0)
+  ) STRICT, WITHOUT ROWID;
+
+  DROP INDEX bank_transactions_by_account;
+  CREATE INDEX bank_transactions_by_account
+    ON bank_transactions (user_id, account_id, date, status, amount_cents);
+`;
+
 export const migrations: readonly Migration[] = [
   { version: 1, name: 'initial runtime schema', sql: initial },
   { version: 2, name: 'accounts, sessions and oauth', sql: accounts },
+  { version: 3, name: 'truthful provenance, habit start dates, per-file legacy import', sql: truthfulProvenance },
 ];

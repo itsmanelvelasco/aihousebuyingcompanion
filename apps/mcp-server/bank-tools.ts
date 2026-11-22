@@ -10,11 +10,27 @@ const count = z.number().int().safe().nonnegative();
 const cents = z.number().int().safe();
 const timestamp = z.string().nullable();
 const output = z.object({}).catchall(z.json());
-/** The provenance label for a result, taken from its own `synthetic` flag rather than assumed. */
-const provenance = (data: Record<string, unknown>) =>
-  data.synthetic === true
-    ? 'All underlying records are synthetic demo data.'
-    : 'The underlying records include real bank data (synthetic: false).';
+/**
+ * The provenance sentence of a result. The records are labelled by the result's own `synthetic`
+ * flag and the person by the handle that read them, and the two are never merged: a real person
+ * connected to a fictional bank has a real profile and synthetic movements, and is told exactly that.
+ */
+export function provenance(data: Record<string, unknown>, person: Pick<PersonReader, 'synthetic'>) {
+  if (data.synthetic !== true) return 'The underlying bank records include real bank data (synthetic: false).';
+  return person.synthetic
+    ? 'Fictional demo persona: all underlying records are synthetic demo data.'
+    : 'These bank records come from a fictional bank feed (synthetic: true), not from a real bank. The profile they are attached to is the person’s own and is not fictional.';
+}
+/**
+ * The same for the status of the demo feed, whose `synthetic: true` describes the feed alone: it
+ * says nothing about the person or about any other record in their ledger.
+ */
+function feedProvenance(data: Record<string, unknown>, person: Pick<PersonReader, 'synthetic'>) {
+  if (person.synthetic) return 'Fictional demo persona: the feed and everything it adds are synthetic demo data.';
+  return data.enabled === true || (typeof data.tickCount === 'number' && data.tickCount > 0)
+    ? 'This feed fabricates movements (synthetic: true describes the feed only). The profile is the person’s own, and get_bank_summary says whether the ledger also holds real bank data.'
+    : 'The demo feed is off and has added nothing. Its synthetic: true describes the feed only, not the person, whose profile is their own.';
+}
 const eventsResult = z.object({
   synthetic: z.boolean(),
   events: z.array(
@@ -91,13 +107,18 @@ export function registerBankTools(server: McpServer, caller: Caller) {
   };
 
   /** Read one aggregate through a person handle and check its shape; any failure is one plain tool error. */
-  async function answer<T extends z.ZodType>(read: () => Promise<unknown>, schema: T, message: string) {
+  async function answer<T extends z.ZodType>(
+    read: () => Promise<unknown>,
+    schema: T,
+    message: string,
+    label: (data: Record<string, unknown>) => string,
+  ) {
     try {
       const data = schema.parse(await read()) as Record<string, unknown>;
       // The feed's last error may quote a provider; the model only needs to know it needs attention.
       if ('lastError' in data && data.lastError) data.lastError = 'Background bank feed needs attention.';
       return {
-        content: [{ type: 'text' as const, text: `${message} ${provenance(data)}` }],
+        content: [{ type: 'text' as const, text: `${message} ${label(data)}` }],
         structuredContent: data,
       } satisfies CallToolResult;
     } catch {
@@ -119,21 +140,33 @@ export function registerBankTools(server: McpServer, caller: Caller) {
 
   const updatesInput = { after: count.default(0), limit: z.number().int().min(1).max(100).default(50) };
   const updates = (person: PersonReader, after: number, limit: number) =>
-    answer(() => person.bankUpdates(after, limit), eventsResult, 'Bank changes since the supplied cursor.');
-  const runtime = (person: PersonReader) => answer(() => person.bankRuntime(), runtimeResult, 'Bank demo feed status.');
+    answer(
+      () => person.bankUpdates(after, limit),
+      eventsResult,
+      'Bank changes since the supplied cursor.',
+      data => provenance(data, person),
+    );
+  const runtime = (person: PersonReader) =>
+    answer(
+      () => person.bankRuntime(),
+      runtimeResult,
+      'Bank demo feed status.',
+      data => feedProvenance(data, person),
+    );
   const summary = (person: PersonReader, period: { from: string; to: string }) =>
     answer(
       () => person.bankSummary(period),
       summaryResult,
       'Historical bank cash-flow aggregates; review data status and assumptions.',
+      data => provenance(data, person),
     );
   const descriptions = {
     updates:
-      'Poll persisted bank change events after a cursor; save nextCursor for the next call. The synthetic flag in the result says whether every underlying record is fabricated demo data (true) or real bank data is included (false). Events carry counts and timestamps only, never movements; transactionCount is the size of the ledger after the change, not the number added. requiresRefresh means earlier events expired or the cursor reset: refresh the bank summary. This read-only tool does not start a feed, subscribe to notifications, wake ChatGPT or send proactive messages.',
+      'Poll persisted bank change events after a cursor; save nextCursor for the next call. The synthetic flag in the result says whether every underlying bank record is fabricated demo data (true) or real bank data is included (false); it describes the records, not the person, whose profile can be real with a fictional bank attached. Events carry counts and timestamps only, never movements; transactionCount is the size of the ledger after the change, not the number added. requiresRefresh means earlier events expired or the cursor reset: refresh the bank summary. This read-only tool does not start a feed, subscribe to notifications, wake ChatGPT or send proactive messages.',
     runtime:
-      'Read the status of the background demo feed. This feed only ever produces synthetic movements; it is not a real bank connection. Polling this tool cannot wake ChatGPT or deliver proactive messages.',
+      'Read the status of the background demo feed. This feed only ever produces synthetic movements; it is not a real bank connection, and its synthetic flag describes the feed alone, never the person or their other records. Polling this tool cannot wake ChatGPT or deliver proactive messages.',
     summary:
-      'Read aggregate bank cash flow for 1–24 complete calendar months. The synthetic flag in the result is true only when every movement in the ledger is fabricated demo data, and false when real bank data is included; report it as labelled. Pending movements and owned-account transfers are excluded; empty months may mean missing data. This does not assess creditworthiness or mortgage approval. Raw movements and recurring merchant/account identifiers are not returned.',
+      'Read aggregate bank cash flow for 1–24 complete calendar months. The synthetic flag in the result is true only when every movement in the ledger is fabricated demo data, and false when real bank data is included; report it as labelled, and do not extend it to the person: a real person connected to a fictional bank has a real profile and synthetic movements. Pending movements and owned-account transfers are excluded; empty months may mean missing data. This does not assess creditworthiness or mortgage approval. Raw movements and recurring merchant/account identifiers are not returned.',
   };
   const own = ' Reads the signed-in person’s own ledger; takes no user id and needs sign-in.';
 

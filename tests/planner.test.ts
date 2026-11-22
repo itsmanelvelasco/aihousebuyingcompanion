@@ -12,6 +12,7 @@ import { person as personSchema, place as placeSchema, planResult } from '../pac
 import { buildPerson } from '../packages/model/person.ts';
 import { buildPlace } from '../packages/model/place.ts';
 import { loadData } from '../packages/places/data.ts';
+import { evaluateIncentives } from '../packages/places/eligibility.ts';
 import { planForPlaces } from '../packages/planner/plan.ts';
 
 const asOf = '2026-11-22';
@@ -746,7 +747,11 @@ test('a young buyer who is past 35 on the day of the purchase starts from the ge
   assert.equal(item.baseline?.months, 236);
   assert.equal(item.withPlaceBenefits?.months, 236);
   const rate = benefitOf(item, 'itp_young_buyer');
-  assert.deepEqual([rate.eligibilityStatus, rate.amountCents], ['ineligible', 2_000_000]);
+  // Lost on the day of the purchase: no amount of the buyer's own, only the nominal figure.
+  assert.deepEqual(
+    [rate.eligibilityStatus, rate.amountCents, rate.nominalAmountCents],
+    ['ineligible', null, 2_000_000],
+  );
   assert.match(
     rate.explanation,
     /Not applied: it applies if you buy on the plan date, but not on 2046-07-22, the day you could buy \(236 months after the plan date\)\. By then you would be 49 or 50 and your child would be 24 or 25\. Criteria not met by then: The buyer is 35 or younger/,
@@ -880,7 +885,7 @@ test('a habit is added on top of bank-observed figures only when it started afte
     assert.equal(undated.monthsSavedByHabits, 0);
     assert(
       undated.assumptions.some(entry =>
-        /1 active habit\(s\) are shown but not counted \(Cook at home\): your monthly savings come from bank movements up to 2026-10-31/.test(
+        /1 active habit\(s\) are shown but not counted \(Cook at home\): your monthly spending comes from bank movements up to 2026-10-31/.test(
           entry,
         ),
       ),
@@ -898,6 +903,345 @@ test('a habit is added on top of bank-observed figures only when it started afte
   assert.equal(observed([habit('active')], { basis: 'declared' }).withHabits?.months, 37);
   // A proposed habit has not started, so it cannot be inside the observed figures.
   assert.equal(observed([habit('proposed')], {}, { includeProposedHabits: true }).withHabits?.months, 37);
+});
+
+test('income observed in the bank does not hide a habit: only observed spending does', () => {
+  const withBases = (incomeBasis: 'declared' | 'bank_observed', expensesBasis: 'declared' | 'bank_observed') =>
+    plan(
+      personFixture({ habits: [habit('active')] }, { basis: 'mixed', asOf: '2026-10-31', incomeBasis, expensesBasis }),
+      [cityPlace],
+      [reducedTax],
+    );
+  // Income from the bank, spending declared: the habit lowers the spending the person stated.
+  const incomeOnly = withBases('bank_observed', 'declared');
+  assert.deepEqual(
+    [only(incomeOnly).withHabits?.monthlySavingsCents, only(incomeOnly).withHabits?.months],
+    [60_000, 37],
+  );
+  assert.deepEqual(
+    incomeOnly.habits?.map(effect => [effect.habitId, effect.counted, effect.countedMonthlyCents, effect.reason]),
+    [['habit-active', true, 10_000, 'counted']],
+  );
+  // Spending from the bank and no start date: it may already be inside that spending.
+  const spendingObserved = withBases('declared', 'bank_observed');
+  assert.equal(only(spendingObserved).withHabits?.months, 44);
+  assert.deepEqual(
+    spendingObserved.habits?.map(effect => [effect.counted, effect.countedMonthlyCents, effect.reason]),
+    [[false, 0, 'start_unknown']],
+  );
+  assert.match(spendingObserved.habits?.[0].explanation ?? '', /the day this habit started is not known/);
+});
+
+test('the plan states for every habit whether it was counted and why', () => {
+  const habits: Person['habits'] = [
+    { ...habit('active', 0.5, '2026-11-01'), id: 'after' },
+    { ...habit('active', null, '2026-10-01'), id: 'during' },
+    { ...habit('active'), id: 'undated' },
+    { ...habit('paused'), id: 'paused' },
+    { ...habit('proposed'), id: 'proposed' },
+    { ...habit('active', null, '2026-11-01'), id: 'free', monthlySavingCents: null },
+  ];
+  const person = personFixture({ habits }, { basis: 'bank_observed', asOf: '2026-10-31' });
+  const reasons = (assumptions = {}) =>
+    plan(person, [cityPlace], [reducedTax], assumptions).habits?.map(effect => [
+      effect.habitId,
+      effect.counted,
+      effect.countedMonthlyCents,
+      effect.reason,
+    ]);
+  assert.deepEqual(reasons(), [
+    ['after', true, 5_000, 'counted'],
+    ['during', false, 0, 'inside_bank_figures'],
+    ['undated', false, 0, 'start_unknown'],
+    ['paused', false, 0, 'paused'],
+    ['proposed', false, 0, 'not_adopted'],
+    ['free', false, 0, 'no_amount'],
+  ]);
+  assert.deepEqual(reasons({ includeProposedHabits: true })?.[4], ['proposed', true, 10_000, 'counted_as_proposed']);
+  const result = plan(person, [cityPlace], [reducedTax]);
+  // What is counted habit by habit is exactly what the with-habits timeline adds.
+  const counted = result.habits?.reduce((total, effect) => total + effect.countedMonthlyCents, 0) ?? 0;
+  assert.equal(only(result).withHabits?.monthlySavingsCents, 50_000 + counted);
+  assert.match(result.habits?.[1].explanation ?? '', /started on 2026-10-01.*bank movements up to 2026-10-31/);
+});
+
+// ------------------------------------------------- timelines stay consistent
+
+/** A Catalonia-wide 5% rate for buyers aged 35 or younger, in force between two days. */
+const youngRateBetween = (effectiveFrom: string, effectiveThrough = '2099-12-31') => ({
+  ...youngRate,
+  effectiveFrom,
+  effectiveThrough,
+});
+
+test('saving more never gives a later day of purchase', () => {
+  // The 5% rate starts on 2029-07-22, 32 months after the plan date. Aged 30, €100,000 home, €10,000
+  // available. At €500 a month the baseline settles on month 34, with the rate in force. With a €100
+  // habit the cash for the 10% tax is there in month 37 and the cash for the 5% tax in month 29, before
+  // the rate starts: the search does not settle and used to answer 37, three months later than the baseline.
+  const saver = buyerAged(30);
+  const item = only(plan({ ...saver, habits: [habit('active')] }, [cityPlace], [youngRateBetween('2029-07-22')]));
+  assert.deepEqual([item.baseline?.months, item.withHabits?.months, item.withPlaceBenefits?.months], [34, 34, 34]);
+  assert.deepEqual([item.monthsSavedByHabits, item.monthsSavedByPlace, item.monthsSaved], [0, 0, 0]);
+  assert.deepEqual(
+    [item.baseline?.upfrontCashCents, item.withHabits?.upfrontCashCents, item.withHabits?.monthlySavingsCents],
+    [2_700_000, 2_700_000, 60_000],
+  );
+  assert.equal(item.estimatedPurchaseDate, '2029-09-22');
+  assert(item.assumptions.some(entry => /saving more never makes the purchase later/.test(entry)));
+  assert(!item.assumptions.some(entry => /did not settle/.test(entry)));
+});
+
+test('a plan without a day of purchase lists its benefits as screened on the plan date', () => {
+  // Aged 30 and saving €30 a month: at the 5% rate €17,000 is 567 months away, when the buyer is 77 and
+  // the rate is gone; at 10% €22,000 is 734 months away, beyond the horizon. There is no day of purchase.
+  const slow = personFixture(
+    { household: { ...verifiedHousehold, age: 30, itpBuyerNetTaxBaseEur: 20_000 } },
+    { monthlyExpensesCents: 247_000 },
+  );
+  const item = only(plan(slow, [cityPlace], [youngRate]));
+  assert.deepEqual([item.status, item.estimatedPurchaseDate], ['beyond_horizon', null]);
+  assert.deepEqual(
+    [item.baseline?.months, item.withHabits?.months, item.withPlaceBenefits?.months],
+    [null, null, null],
+  );
+  // The cautious figure: the general 10%, not the rate that would be gone.
+  assert.equal(item.baseline?.upfrontCashCents, 3_200_000);
+  assert.equal(item.transferTax?.baselinePolicyId, null);
+  const rate = benefitOf(item, 'itp_young_buyer');
+  // The screening shown is the plan date's: eligible today, and it says that this is what it is.
+  assert.deepEqual([rate.eligibilityStatus, rate.counted, rate.amountCents], ['eligible', false, 500_000]);
+  assert.match(
+    rate.explanation,
+    /Not applied: no day of purchase can be estimated.*screening on the plan date \(2026-11-22\)/,
+  );
+  const everything = [...item.benefits.map(benefit => benefit.explanation), ...item.assumptions].join(' ');
+  assert.doesNotMatch(everything, /the day you could buy \(/, 'no benefit is described on a day that does not exist');
+  assert.doesNotMatch(everything, /20[3-9]\d-\d\d-\d\d/, 'no future date is named');
+  assert(
+    item.assumptions.some(entry => /no day of purchase exists.*screened on the plan date, 2026-11-22/.test(entry)),
+  );
+  assert(item.assumptions.some(entry => /more than 600 months/.test(entry)));
+});
+
+test('an ineligible benefit shows no amount of its own, only the nominal figure', () => {
+  const youthAid = policyFixture({
+    id: 'youth_purchase_small_town',
+    intent: 'buy',
+    mechanism: 'grant',
+    effectiveThrough: '2030-12-31',
+    municipalityCodes: [ruralPlace.municipalityCode],
+    callWindow: null,
+    effect: { kind: 'one_off_rate_of_price', rate: 0.2, maxAmountEur: 15_000 },
+  });
+  const buyer = (age: number) =>
+    personFixture({
+      household: { ...verifiedHousehold, age, ownsHomeInSpain: false, incomeWithinFiveIprem: true },
+      home: { floorAreaM2: null, budgetCents: 10_000_000, depositRate: 0.2 },
+    });
+  const tooOld = benefitOf(only(plan(buyer(50), [ruralPlace], [reducedTax, youthAid])), 'youth_purchase_small_town');
+  assert.deepEqual(
+    [tooOld.eligibilityStatus, tooOld.amountCents, tooOld.nominalAmountCents, tooOld.counted],
+    ['ineligible', null, 1_500_000, false],
+  );
+  // Outside the town the aid covers: the same.
+  const elsewhere = benefitOf(only(plan(buyer(30), [cityPlace], [reducedTax, youthAid])), 'youth_purchase_small_town');
+  assert.deepEqual([elsewhere.eligibilityStatus, elsewhere.amountCents], ['ineligible', null]);
+  // Not ruled out: the amount is what the person would receive if confirmed.
+  const young = benefitOf(only(plan(buyer(30), [ruralPlace], [reducedTax, youthAid])), 'youth_purchase_small_town');
+  assert.deepEqual(
+    [young.eligibilityStatus, young.amountCents, young.nominalAmountCents],
+    ['needs_verification', 1_500_000, 1_500_000],
+  );
+});
+
+/** A small deterministic generator, so a failing case can be found again from its number. */
+function generator(seed: number) {
+  let state = seed >>> 0;
+  const next = () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let value = Math.imul(state ^ (state >>> 15), 1 | state);
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+    return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296;
+  };
+  const between = (low: number, high: number) => low + Math.floor(next() * (high - low + 1));
+  const pick = <Item>(items: readonly Item[]) => items[between(0, items.length - 1)];
+  return { next, between, pick };
+}
+
+test('for generated persons and policies, more savings and place benefits never lengthen the wait, and nothing counted breaks its own rule on the day of the purchase', () => {
+  const monthsLater = (date: string, months: number) => {
+    const [year, month, day] = date.split('-').map(Number);
+    const target = new Date(Date.UTC(year, month - 1 + months, 1));
+    const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+    target.setUTCDate(Math.min(day, last));
+    return target.toISOString().slice(0, 10);
+  };
+  const town = (place: Place) => ({
+    code: place.municipalityCode,
+    name: place.name,
+    comarca: place.comarca,
+    recommendable: true,
+    identity: source,
+    centre: { ...place.centre, ...source, name: place.name },
+    rural: { ...source, category: place.rural, effectiveFrom: place.ruralEffectiveFrom ?? null },
+  });
+  /** Screen one policy for a purchase `months` after the plan date, for both ages a birthday allows. */
+  const screenedOn = (policy: Policy, place: Place, person: Person, priceCents: number, months: number) =>
+    [Math.floor(months / 12), Math.ceil(months / 12)].map(years => {
+      const facts = person.household && {
+        ...person.household,
+        purchasePriceEur: priceCents / 100,
+        ...(person.household.age === undefined ? {} : { age: person.household.age + years }),
+        ...(person.household.children
+          ? { children: person.household.children.map(child => ({ ...child, age: child.age + years })) }
+          : {}),
+      };
+      const input = {
+        municipalityCode: place.municipalityCode,
+        eventDate: monthsLater(asOf, months),
+        household: facts,
+      };
+      return evaluateIncentives([policy], town(place) as Parameters<typeof evaluateIncentives>[1], input, asOf)[0];
+    });
+  let finite = 0;
+  let held = 0;
+  let counted = 0;
+  for (let seed = 1; seed <= 1500; seed++) {
+    const random = generator(seed);
+    const date = () => monthsLater('2026-01-01', random.between(0, 180));
+    const window = () => {
+      const from = random.next() < 0.5 ? '2026-01-01' : date();
+      return {
+        effectiveFrom: from,
+        effectiveThrough: random.next() < 0.4 ? '2099-12-31' : monthsLater(from, random.between(1, 120)),
+      };
+    };
+    // Every third case is the narrow one: a young buyer and a rate that only starts some years ahead,
+    // which a faster saver reaches too early.
+    const focused = seed % 3 === 0;
+    const startingLater = () => ({
+      effectiveFrom: monthsLater(asOf, random.between(6, 60)),
+      effectiveThrough: '2099-12-31',
+    });
+    const policies: Policy[] = [
+      { ...ruralRate, ...window() },
+      ...(focused
+        ? [{ ...youngRate, ...startingLater() }]
+        : random.next() < 0.7
+          ? [{ ...youngRate, ...window() }]
+          : []),
+      ...(random.next() < 0.5 ? [{ ...moveDeduction, ...window() }] : []),
+      ...(random.next() < 0.4 ? [{ ...purchaseGrant('2099-12-31'), ...window() }] : []),
+    ];
+    const place: Place = {
+      ...placeFixture(
+        '250001',
+        random.pick(['rural', 'special_attention', 'not_listed', 'partial'] as const),
+        focused ? random.between(900, 1500) : random.between(600, 4000),
+      ),
+      ruralEffectiveFrom: random.pick([null, '2026-02-24', date()]),
+    };
+    const person = personFixture(
+      {
+        household: {
+          ...verifiedHousehold,
+          age: focused ? random.between(18, 30) : random.pick([undefined, random.between(18, 70)]),
+          itpBuyerNetTaxBaseEur: focused ? 20_000 : random.pick([undefined, 20_000, 50_000]),
+          children: random.pick([
+            undefined,
+            [],
+            [{ age: random.between(0, 17), inDesignatedSchool: true, meetsItpSchooling: true }],
+          ]),
+          ownerOfVacantHome: random.pick([undefined, true]),
+        },
+        home: { floorAreaM2: random.between(40, 160), budgetCents: null, depositRate: random.pick([0.1, 0.2, 0.3]) },
+        habits: random.next() < 0.8 ? [{ ...habit('active'), monthlySavingCents: random.between(1, 60_000) }] : [],
+      },
+      {
+        monthlyIncomeCents: 250_000,
+        monthlyExpensesCents:
+          250_000 -
+          (focused
+            ? random.between(30_000, 80_000)
+            : random.pick([0, random.between(1, 5_000), random.between(5_000, 150_000)])),
+        currentSavingsCents: random.between(0, 6_000_000),
+        emergencyReserveCents: random.pick([0, 200_000]),
+      },
+    );
+    const includeUnverifiedBenefits = random.next() < 0.3;
+    const item = only(plan(person, [place], policies, { includeUnverifiedBenefits }));
+    const label = `seed ${seed}`;
+    const [baseline, withHabits, withPlace] = [item.baseline, item.withHabits, item.withPlaceBenefits].map(
+      timeline => timeline?.months ?? null,
+    );
+    // More savings, then the benefits of the place: each step is at most as long as the one before.
+    if (baseline !== null)
+      assert(
+        withHabits !== null && withHabits <= baseline,
+        `${label}: with habits ${withHabits} > baseline ${baseline}`,
+      );
+    if (withHabits !== null)
+      assert(
+        withPlace !== null && withPlace <= withHabits,
+        `${label}: with place ${withPlace} > with habits ${withHabits}`,
+      );
+    for (const saved of [item.monthsSavedByHabits, item.monthsSavedByPlace, item.monthsSaved])
+      assert(saved === null || saved >= 0, `${label}: months saved ${saved}`);
+    // The day of the purchase is the plan date plus the months of the final timeline, or there is none.
+    assert.equal(item.estimatedPurchaseDate, withPlace === null ? null : monthsLater(asOf, withPlace), label);
+    if (
+      withHabits !== null &&
+      baseline !== null &&
+      item.assumptions.some(entry => /saving more never makes/.test(entry))
+    )
+      held++;
+    if (withPlace === null) {
+      assert(
+        !item.benefits.some(benefit => /the day you could buy \(/.test(benefit.explanation)),
+        `${label}: a day that does not exist`,
+      );
+      continue;
+    }
+    finite++;
+    const price = item.purchasePriceCents ?? 0;
+    for (const benefit of item.benefits.filter(entry => entry.counted)) {
+      counted++;
+      const policy = policies.find(entry => entry.id === benefit.policyId);
+      assert(policy, label);
+      // A benefit tied to living in the place is screened on the plan date, the assumed day of the move.
+      const months = policy.intent === 'buy' ? withPlace : 0;
+      const screenings = screenedOn(policy, place, person, price, months);
+      for (const screened of screenings) {
+        assert.equal(
+          screened.measureStatus,
+          'active',
+          `${label}: ${policy.id} is not in force on the day it is counted`,
+        );
+        assert.equal(screened.geographicStatus, 'applies', `${label}: ${policy.id} does not apply in the place`);
+      }
+      // The birthday is unknown: the same answer for both ages is the answer, different answers are unverified.
+      const statuses = new Set(screenings.map(screened => screened.eligibilityStatus));
+      const status = statuses.size === 1 ? [...statuses][0] : 'needs_verification';
+      assert(
+        status === 'eligible' || (includeUnverifiedBenefits && status === 'needs_verification'),
+        `${label}: ${policy.id} is ${status} on the day it is counted`,
+      );
+    }
+    // The Catalonia-wide rate inside the baseline holds on the baseline's own day.
+    const applied = policies.find(entry => entry.id === item.transferTax?.baselinePolicyId);
+    if (applied && baseline !== null)
+      for (const screened of screenedOn(applied, place, person, price, baseline))
+        assert.deepEqual(
+          [screened.measureStatus, screened.eligibilityStatus],
+          ['active', 'eligible'],
+          `${label}: baseline rate`,
+        );
+  }
+  // The generated cases do reach the situations the rules are for.
+  assert(finite > 100 && counted > 50, `finite ${finite}, counted ${counted}`);
+  assert(held > 0, 'at least one generated case is held at the baseline day');
+  if (process.env.DEBUG_COUNTS) console.log({ finite, counted, held });
 });
 
 test('limitations say this is not mortgage approval or guaranteed aid', () => {
@@ -937,6 +1281,23 @@ test('buildPerson keeps unknowns null, counts debt once and treats bank data as 
     [260_000, 210_000, 'bank_observed'],
   );
   assert.equal(observed.finances.asOf, '2026-10-31');
+  // Each figure says where it came from, and the bank data says whether it is fabricated.
+  assert.deepEqual(
+    [observed.finances.incomeBasis, observed.finances.expensesBasis, observed.finances.bankSynthetic],
+    ['bank_observed', 'bank_observed', null],
+  );
+  assert.deepEqual(
+    [declared.finances.incomeBasis, declared.finances.expensesBasis, declared.finances.bankSynthetic],
+    ['declared', 'declared', null],
+  );
+  // A real person connected to a fictional bank: a real person, synthetic bank movements.
+  const realWithDemoBank = buildPerson({
+    userId: 'p-real',
+    synthetic: false,
+    context: unconfirmed,
+    bankSummary: { ...bankSummary, synthetic: true },
+  });
+  assert.deepEqual([realWithDemoBank.synthetic, realWithDemoBank.finances.bankSynthetic], [false, true]);
   const confirmed = {
     resolved: { data, provenance: { 'finance.monthlyIncomeCents': [{ confirmed: true, ...stamp }] } },
   };
@@ -945,6 +1306,7 @@ test('buildPerson keeps unknowns null, counts debt once and treats bank data as 
     [mixed.finances.monthlyIncomeCents, mixed.finances.monthlyExpensesCents, mixed.finances.basis],
     [250_000, 210_000, 'mixed'],
   );
+  assert.deepEqual([mixed.finances.incomeBasis, mixed.finances.expensesBasis], ['declared', 'bank_observed']);
   const partial = buildPerson({
     userId: 'user-001',
     synthetic: true,
@@ -1065,7 +1427,7 @@ test('buildPerson maps habit goals and check-ins', () => {
       synthetic: true,
       userId: 'user-001',
       goals: [
-        { ...goal, id: 'cook', plannedMonthlySavingCents: 12_000 },
+        { ...goal, id: 'cook', plannedMonthlySavingCents: 12_000, startedOn: '2026-11-03' },
         { ...goal, id: 'old', active: false },
       ],
       checkins: [
@@ -1075,10 +1437,11 @@ test('buildPerson maps habit goals and check-ins', () => {
     } as Parameters<typeof buildPerson>[0]['habitState'],
   });
   assert.deepEqual(
-    person.habits.map(item => [item.id, item.status, item.monthlySavingCents, item.adherence]),
+    person.habits.map(item => [item.id, item.status, item.monthlySavingCents, item.adherence, item.startedOn]),
     [
-      ['cook', 'active', 12_000, 0.5],
-      ['old', 'paused', null, null],
+      ['cook', 'active', 12_000, 0.5, '2026-11-03'],
+      // A goal stored before start days were recorded has none: unknown, not a guessed date.
+      ['old', 'paused', null, null, undefined],
     ],
   );
 });
@@ -1320,5 +1683,151 @@ test('MCP planner tools load the caller’s own person and tolerate absent habit
     await close();
     await missing.close();
     await invalid.close();
+  }
+});
+
+test('the planner tools label the person and their bank data separately, and what a person saves is real', async () => {
+  const habitGoal = {
+    id: 'cook',
+    title: 'Cook at home',
+    action: 'Cook four dinners a week',
+    category: 'food',
+    targetDaysPerWeek: 4,
+    plannedMonthlySavingCents: 10_000,
+    active: true,
+  };
+  const saved: unknown[][] = [];
+  /** A person handle as the server makes it: `synthetic` is the person, `records` their bank movements. */
+  const handle = (userId: string, synthetic: boolean, records: boolean, startedOn: string | null) => ({
+    userId,
+    synthetic,
+    context: async () => ({
+      resolved: {
+        data: { finance: { currentSavingsCents: 1_200_000 }, housing: { budgetCents: 10_000_000 } },
+        provenance: { 'finance.currentSavingsCents': [{ confirmed: true, observedAt: '2026-11-01T00:00:00Z' }] },
+      },
+      warnings: ['A warning from the store.'],
+      bankSnapshot: { balanceCents: 4_498_200, observedAt: '2026-11-21', confirmed: false, synthetic },
+    }),
+    inputs: async () => ({
+      inputs: [
+        { id: 'said', source: 'interview', confirmed: true, synthetic: false, data: {} },
+        { id: 'feed', source: 'bank', confirmed: false, synthetic: true, data: {} },
+      ],
+    }),
+    saveInputs: async (inputs: unknown[]) => {
+      saved.push(inputs);
+      return { inserted: inputs.length, duplicates: 0 };
+    },
+    bankSummary: async (period: { from: string; to: string }) => ({
+      ...period,
+      monthCount: 3,
+      dataStatus: 'observed',
+      incomeCents: 750_000,
+      expenseCents: 600_000,
+      synthetic: records,
+    }),
+    bankUpdates: async () => ({}),
+    bankRuntime: async () => ({}),
+    bankBalanceCents: async () => 4_498_200,
+    habits: async () => ({
+      schemaVersion: 1,
+      synthetic,
+      userId,
+      goals: [{ ...habitGoal, startedOn }],
+      checkins: [],
+    }),
+  });
+  const { snapshot } = loadData();
+  const code = snapshot.municipalities[0].code;
+  const text = (result: unknown) => JSON.stringify((result as { content: unknown }).content);
+  // A person who belongs to an account, connected to the fictional demo bank, with a habit of unknown start.
+  const { client, close } = await connect({
+    snapshot,
+    policies: [reducedTax],
+    today: () => asOf,
+    caller: {
+      me: handle('p-real', false, true, null),
+      scopes: ['person:read', 'person:write'],
+      demo: { ids: ['user-001'], open: () => handle('user-001', true, true, '2026-11-05') },
+    },
+  });
+  try {
+    const own = await client.callTool({ name: 'get_person', arguments: {} });
+    const person = personSchema.parse(own.structuredContent);
+    assert.deepEqual(
+      [person.synthetic, person.finances.basis, person.finances.bankSynthetic, person.finances.expensesBasis],
+      [false, 'bank_observed', true, 'bank_observed'],
+    );
+    assert.match(text(own), /profile is the person’s own \(synthetic: false\)/);
+    assert.match(text(own), /come from a fictional bank feed \(bankSynthetic: true\), not from a real bank/);
+    assert.doesNotMatch(text(own), /fictional persona|every figure is synthetic/i);
+    // The balance of the account is never the savings for the purchase.
+    assert.equal(person.finances.currentSavingsCents, 1_200_000);
+
+    const planned = await client.callTool({
+      name: 'plan_home_savings',
+      arguments: { me: true, municipalityCodes: [code] },
+    });
+    const result = planResult.parse(planned.structuredContent);
+    // The stored habit has no start day and spending was observed in the bank: shown, not counted, and said so.
+    assert.deepEqual(
+      result.habits?.map(effect => [effect.habitId, effect.counted, effect.reason]),
+      [['cook', false, 'start_unknown']],
+    );
+    assert.equal(result.plans[0].monthsSavedByHabits, 0);
+    assert.match(text(planned), /1 active habit\(s\) are shown but not counted/);
+    assert.match(text(planned), /fictional bank feed \(bankSynthetic: true\)/);
+
+    // The demo persona is fictional through and through, and its dated habit does count.
+    const demo = await client.callTool({
+      name: 'plan_home_savings',
+      arguments: { demoId: 'user-001', municipalityCodes: [code] },
+    });
+    const demoResult = planResult.parse(demo.structuredContent);
+    assert.match(text(demo), /fictional persona: every figure is synthetic demo data/);
+    assert.deepEqual(
+      demoResult.habits?.map(effect => [effect.counted, effect.reason]),
+      [[true, 'counted']],
+    );
+    assert.ok(
+      (demoResult.plans[0].monthsSavedByHabits ?? 0) > 0,
+      'a stored habit shortens the bank-fed persona’s wait',
+    );
+    assert.match(
+      text(await client.callTool({ name: 'get_demo_person', arguments: { demoId: 'user-001' } })),
+      /fictional persona/,
+    );
+
+    // What a signed-in person states is stored as real, never with the old literal.
+    const write = await client.callTool({
+      name: 'save_my_inputs',
+      arguments: { data: { household: { size: 3 } }, confirmed: true },
+    });
+    assert(!write.isError, text(write));
+    assert.equal(saved.length, 1);
+    assert.deepEqual(
+      (saved[0] as { synthetic: boolean; source: string; confirmed: boolean }[]).map(input => [
+        input.synthetic,
+        input.source,
+        input.confirmed,
+      ]),
+      [[false, 'interview', true]],
+    );
+    // Reading them back keeps each record's own flag, and the balance as a fact of its own.
+    const mine = (await client.callTool({ name: 'get_my_inputs', arguments: {} })).structuredContent as {
+      inputs: { id: string; synthetic: boolean }[];
+      bankSnapshot: { balanceCents: number; confirmed: boolean };
+    };
+    assert.deepEqual(
+      mine.inputs.map(input => [input.id, input.synthetic]),
+      [
+        ['said', false],
+        ['feed', true],
+      ],
+    );
+    assert.deepEqual([mine.bankSnapshot.balanceCents, mine.bankSnapshot.confirmed], [4_498_200, false]);
+  } finally {
+    await close();
   }
 });

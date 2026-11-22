@@ -91,6 +91,40 @@ test('API authorizes requests, persists sections and rejects unsafe or malformed
       413,
     );
     assert.deepEqual(await (await fetch(`${base}/users/demo-1/preferences`, { headers })).json(), replacement);
+
+    // A real person is stored and returned as real; the flag is a boolean, required, and one per person.
+    const real = {
+      details: { schemaVersion: 1, synthetic: false, id: 'p-real', name: 'A real household' },
+      preferences: { schemaVersion: 1, synthetic: false },
+      'bank-account': { schemaVersion: 1, synthetic: false },
+    };
+    const create = (value: unknown) => fetch(`${base}/users`, { method: 'POST', headers, body: JSON.stringify(value) });
+    assert.equal((await create(real)).status, 201);
+    assert.deepEqual(await (await fetch(`${base}/users/p-real`, { headers })).json(), real);
+    const store = createStore(db);
+    assert.deepEqual([store.isSynthetic('p-real'), store.isSynthetic('demo-1')], [false, true]);
+    const { synthetic: _flag, ...unflagged } = real.preferences;
+    for (const invalid of [
+      { ...real, details: { ...real.details, id: 'p-mixed' }, preferences: { ...real.preferences, synthetic: true } },
+      { ...real, details: { ...real.details, id: 'p-missing' }, preferences: unflagged },
+      { ...real, details: { ...real.details, id: 'p-text', synthetic: 'no' } },
+    ])
+      assert.equal((await create(invalid)).status, 400);
+    // Replacing a document never relabels it: real stays real.
+    const relabel = await fetch(`${base}/users/p-real/preferences`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ schemaVersion: 1, synthetic: true, goal: 'buy_primary_home' }),
+    });
+    assert.equal(relabel.status, 400);
+    assert.match((await relabel.json()).error, /synthetic flag of a stored document cannot be changed/);
+    const kept = await fetch(`${base}/users/p-real/preferences`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ schemaVersion: 1, synthetic: false, goal: 'buy_primary_home' }),
+    });
+    assert.equal(kept.status, 200);
+    assert.equal((await store.read('p-real', 'preferences')).synthetic, false);
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
     db.close();

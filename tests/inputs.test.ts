@@ -21,6 +21,17 @@ test('input resolution preserves unknown, zero and false, handles source recency
   assert.equal(resolved.data.finance?.currentSavingsCents, 0);
   assert.equal(resolved.data.location?.selectedMunicipalityCode, null);
   assert.equal(resolved.provenance['finance.currentSavingsCents'][0].inputId, 'new');
+  // Each winning value says whether its record is fabricated; real and synthetic records resolve together.
+  assert.equal(resolved.provenance['finance.currentSavingsCents'][0].synthetic, true);
+  const stated = inputSchema.parse({ ...input('real', 'manual', { household: { size: 4 } }), synthetic: false });
+  const mixed = resolveInputs([input('persona', 'interview', { rural: { required: true } }), stated]);
+  assert.deepEqual(
+    [mixed.provenance['household.size'][0].synthetic, mixed.provenance['rural.required'][0].synthetic],
+    [false, true],
+  );
+  // The flag is a real boolean and is never defaulted.
+  const { synthetic: _flag, ...unflagged } = stated;
+  assert.equal(inputSchema.safeParse(unflagged).success, false);
   assert.equal(
     resolveInputs([input('a', 'manual', { household: { size: 2 } }), input('b', 'manual', { household: { size: 3 } })])
       .conflicts.length,
