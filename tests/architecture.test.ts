@@ -32,11 +32,13 @@ test('packages never depend on apps', () => {
   }
 });
 
-test('apps share code through packages; only the board composes the MCP server', () => {
+test('apps share code through packages; only the server and the board compose other apps', () => {
   for (const file of sources('apps')) {
     for (const target of imports(file)) {
       if (!target.startsWith('apps/') || area(target) === area(file)) continue;
-      const composition = area(file) === 'apps/board' && area(target) === 'apps/mcp-server';
+      // apps/server mounts every service on one origin; apps/board reuses the shared MCP server.
+      const composition =
+        area(file) === 'apps/server' || (area(file) === 'apps/board' && area(target) === 'apps/mcp-server');
       assert.ok(composition, `${file} imports ${target}; move shared code to packages/`);
     }
   }

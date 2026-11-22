@@ -70,7 +70,7 @@ export function profileConnection(): Connection | null {
     )
   )
     throw new Error('Profile API needs HTTPS or loopback HTTP without embedded credentials');
-  return { baseUrl: url.origin, token };
+  return { baseUrl: url.origin + url.pathname.replace(/\/$/, ''), token };
 }
 const ids = { onboarding: 'user-001', progress: 'user-002', shortcuts: 'user-003', payoff: 'user-004' };
 const observationClocks = new Map<string, number>();

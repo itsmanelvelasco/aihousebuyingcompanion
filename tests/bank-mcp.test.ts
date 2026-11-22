@@ -134,12 +134,7 @@ test('MCP bank bridge polls authenticated aggregates and sanitizes upstream fail
 
 test('bank bridge rejects credentials in URLs and insecure non-loopback origins', () => {
   const server = new McpServer({ name: 'bank-config-test', version: '1' });
-  for (const baseUrl of [
-    'http://example.com',
-    'https://name:secret@example.com',
-    'https://example.com/path',
-    'https://example.com?token=x',
-  ]) {
+  for (const baseUrl of ['http://example.com', 'https://name:secret@example.com', 'https://example.com?token=x']) {
     assert.throws(() => registerBankTools(server, { baseUrl, token: 'test' }));
   }
 });

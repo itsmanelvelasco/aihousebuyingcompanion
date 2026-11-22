@@ -1,26 +1,25 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createServer } from 'node:http';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
-import { defaultPorts, envInteger, envList, envPort } from '../../packages/config/env.ts';
 import { safeId } from '../../packages/contracts/ids.ts';
 import { analyzeTransactions, periodSchema, scenarioSchema, simulateSavings } from '../../packages/finance/cashflow.ts';
 import { ApiError, pathParts, readJson, sendJson as reply, requireBearer } from '../../packages/http/server.ts';
 import type { Section } from '../../packages/profiles/store.ts';
-import { createStore, profileSchema, sections, seedRuntime } from '../../packages/profiles/store.ts';
+import { createStore, profileSchema, sections } from '../../packages/profiles/store.ts';
 import { accountBalances, createBankStore, dateSchema } from './bank.ts';
 import { createInputStore } from './inputs.ts';
 import { createBankRuntime } from './runtime.ts';
 
 const body = (req: Parameters<typeof readJson>[0]) => readJson(req, 262_144, 'Body exceeds 256 KiB');
 
-export function createProfileApi(root: string, token: string) {
+/** The profile, inputs and bank routes as a request handler, so one server can mount them under a prefix. */
+export function createProfileApiHandler(root: string, token: string) {
   if (!token) throw new Error('PROFILE_API_TOKEN is required');
   const store = createStore(root);
   const bank = createBankStore(root);
   const inputs = createInputStore(root);
   const runtime = createBankRuntime(bank);
-  const server = createServer(async (req, res) => {
+  const handle = async (req: IncomingMessage, res: ServerResponse) => {
     try {
       requireBearer(req, token);
       const parts = pathParts(req);
@@ -173,24 +172,16 @@ export function createProfileApi(root: string, token: string) {
       if (error instanceof z.ZodError) return reply(res, 400, { error: 'Invalid request data', issues: error.issues });
       reply(res, 500, { error: 'Profile storage failure' });
     }
-  });
-  server.on('close', () => {
-    void runtime.close();
-  });
-  return Object.assign(server, { bankRuntime: runtime });
+  };
+  return { handle, bankRuntime: runtime, bank };
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const root = resolve(process.env.PROFILE_DATA_DIR ?? 'data/runtime-users');
-  const server = createProfileApi(root, process.env.PROFILE_API_TOKEN ?? '');
-  await seedRuntime(resolve('data/users'), root);
-  for (const id of envList('DEMO_BANK_USERS')) {
-    await server.bankRuntime.configure(id, { enabled: true, intervalMs: envInteger('DEMO_BANK_INTERVAL_MS', 5000) });
-    await server.bankRuntime.tick(id);
-  }
-  const port = envPort('PORT', defaultPorts.profileApi);
-  server.listen(port, '127.0.0.1', () => console.log(`Profile API: http://127.0.0.1:${port}`));
-  for (const signal of ['SIGINT', 'SIGTERM'])
-    process.once(signal, () => {
-      void server.bankRuntime.close().then(() => server.close());
-    });
+
+/** The same API as a standalone HTTP server; used by tests and tools that want an isolated instance. */
+export function createProfileApi(root: string, token: string) {
+  const api = createProfileApiHandler(root, token);
+  const server = createServer(api.handle);
+  server.on('close', () => {
+    void api.bankRuntime.close();
+  });
+  return Object.assign(server, { bankRuntime: api.bankRuntime });
 }

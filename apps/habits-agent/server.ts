@@ -1,8 +1,6 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createServer } from 'node:http';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
-import { defaultPorts, envInteger, envPort, openaiModels } from '../../packages/config/env.ts';
 import { goalSchema, summarySchema } from '../../packages/contracts/habits.ts';
 import { safeId } from '../../packages/contracts/ids.ts';
 import { suggestHabits } from '../../packages/finance/habits.ts';
@@ -12,13 +10,16 @@ import { createHabitStore } from './store.ts';
 
 const body = (req: Parameters<typeof readJson>[0]) => readJson(req, 65_536, 'Body exceeds 64 KiB');
 
-export function createHabitsApi(options: {
+export type HabitsOptions = {
   token: string;
   dataRoot: string;
   profileRoot: string;
   openai?: Parameters<typeof createOpenAIHabits>[0];
   dailyCalls?: number;
-}) {
+};
+
+/** Habit goals, check-ins and suggestions as a request handler, so one server can mount them. */
+export function createHabitsHandler(options: HabitsOptions) {
   if (!options.token) throw new Error('HABITS_API_TOKEN is required');
   const store = createHabitStore(options.dataRoot, options.profileRoot);
   const ai = createOpenAIHabits(options.openai);
@@ -28,7 +29,7 @@ export function createHabitsApi(options: {
     .min(1)
     .max(100)
     .parse(options.dailyCalls ?? 20);
-  return createServer(async (req, res) => {
+  return async (req: IncomingMessage, res: ServerResponse) => {
     const reply = (status: number, value: unknown) => sendJson(res, status, value);
     try {
       requireBearer(req, options.token);
@@ -79,22 +80,10 @@ export function createHabitsApi(options: {
       if (error instanceof z.ZodError) return reply(400, { error: 'Invalid request', issues: error.issues });
       reply(500, { error: 'Habit storage unavailable' });
     }
-  });
+  };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const server = createHabitsApi({
-    token: process.env.HABITS_API_TOKEN ?? '',
-    dataRoot: resolve(process.env.HABITS_DATA_DIR ?? 'data/runtime-habits'),
-    profileRoot: resolve(process.env.PROFILE_DATA_DIR ?? 'data/users'),
-    dailyCalls: envInteger('HABITS_DAILY_AI_CALLS', 20),
-    openai: {
-      apiKey: process.env.OPENAI_API_KEY,
-      model: openaiModels().habits,
-      maxOutputTokens: envInteger('HABITS_MAX_OUTPUT_TOKENS', 1024),
-    },
-  });
-  const port = envPort('HABITS_PORT', defaultPorts.habits);
-  server.listen(port, '127.0.0.1', () => console.log(`Habits API: http://127.0.0.1:${port}`));
-  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => server.close());
+/** The same API as a standalone HTTP server, for tests and isolated use. */
+export function createHabitsApi(options: HabitsOptions) {
+  return createServer(createHabitsHandler(options));
 }

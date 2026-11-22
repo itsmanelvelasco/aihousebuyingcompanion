@@ -74,7 +74,7 @@ const summaryResult = z.object({
 
 export function registerBankTools(server: McpServer, config: BankToolConfig) {
   const base = new URL(config.baseUrl);
-  if (base.username || base.password || base.search || base.hash || base.pathname !== '/' || !config.token.trim())
+  if (base.username || base.password || base.search || base.hash || !config.token.trim())
     throw new Error('Invalid bank bridge configuration');
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(base.hostname);
   if (base.protocol !== 'https:' && !(base.protocol === 'http:' && loopback))
@@ -82,7 +82,7 @@ export function registerBankTools(server: McpServer, config: BankToolConfig) {
   const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
   async function call<T extends z.ZodType>(path: string, schema: T, message: string): Promise<CallToolResult> {
     try {
-      const response = await fetch(new URL(path, base), {
+      const response = await fetch(base.href.replace(/\/$/, '') + path, {
         headers: { Authorization: `Bearer ${config.token}`, Accept: 'application/json' },
         signal: AbortSignal.timeout(5000),
         redirect: 'error',
