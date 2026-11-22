@@ -58,7 +58,12 @@ export function createLiveData(options: LiveDataOptions) {
   const base = (options.baseline ?? loadData)();
   const byId = new Map(sources.map(source => [source.id, source]));
   const context = createSourceContext({
-    municipalities: base.snapshot.municipalities.map(({ code, name, comarca }) => ({ code, name, comarca })),
+    municipalities: base.snapshot.municipalities.map(({ code, name, comarca, centre }) => ({
+      code,
+      name,
+      comarca,
+      centre: { latitude: centre.latitude, longitude: centre.longitude },
+    })),
     fetch: options.fetch,
     now,
     env,
@@ -71,6 +76,8 @@ export function createLiveData(options: LiveDataOptions) {
     now,
     timeoutMs: options.refreshTimeoutMs,
     retryAfterMs: options.retryAfterMs,
+    // Recompute the overlay as soon as a refresh lands, so no request pays for validating it.
+    onSettled: () => void overlay(),
     load: async ({ id }) => {
       const source = byId.get(id);
       if (!source) throw new Error(`Unknown source ${id}`);
@@ -161,6 +168,9 @@ export function createLiveData(options: LiveDataOptions) {
      * or not. Call it once at server start. `force` refetches fresh sources too.
      */
     async warm({ force = false } = {}): Promise<SourceStatus[]> {
+      // Read and apply what is already on disk before any download starts.
+      overlay();
+      // Each source refreshes on its own: a slow or failing one never holds back or undoes another.
       await Promise.all(
         sources.filter(source => force || cache.peek(source).status !== 'fresh').map(source => cache.refresh(source)),
       );

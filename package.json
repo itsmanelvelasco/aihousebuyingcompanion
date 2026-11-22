@@ -13,6 +13,8 @@
     "start": "npm run build && node --env-file-if-exists=.env apps/server/index.ts",
     "start:board": "npm run build && node apps/board/server.ts",
     "start:interviewer": "npm run build && node --env-file-if-exists=.env apps/interviewer/server.ts",
+    "start:demo-bank": "node --env-file-if-exists=.env apps/demo-bank/server.ts",
+    "demo-bank:connect": "node --env-file-if-exists=.env scripts/connect-demo-bank.ts",
     "pretest": "npm run build",
     "test": "node --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
@@ -22,13 +24,17 @@
     "data:validate": "node scripts/validate-data.ts",
     "data:refresh": "node scripts/refresh-data.ts",
     "generate:users": "node scripts/generate-users.ts",
-    "package:team-plugin": "node scripts/package-team-plugin.ts"
+    "package:team-plugin": "node scripts/package-team-plugin.ts",
+    "images:generate": "node --env-file-if-exists=.env scripts/generate-images.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.5",
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "csv-parse": "^7.0.3",
+    "fflate": "^0.8.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "read-excel-file": "^9.3.20",
     "zod": "^4.0.0"
   },
   "devDependencies": {
@@ -36,10 +42,7 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "csv-parse": "^7.0.3",
     "esbuild": "0.28.2",
-    "fflate": "^0.8.3",
-    "read-excel-file": "^9.3.20",
     "typescript": "^5.9.0"
   }
 }

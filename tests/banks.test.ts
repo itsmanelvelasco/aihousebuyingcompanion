@@ -109,6 +109,12 @@ test('registry discovers provider files, skips templates and reports missing var
   const shipped = await loadBankRegistry({ env: {} });
   assert.deepEqual(shipped.loadErrors, []);
   assert.equal(shipped.get('synthetic')?.status, 'configured');
+  assert.equal(shipped.get('demo-bank')?.status, 'unconfigured', 'the demo bank needs its three variables');
+  assert.deepEqual(shipped.get('demo-bank')?.missingEnv, [
+    'BANK_DEMO_BANK_BASE_URL',
+    'BANK_DEMO_BANK_API_KEY',
+    'BANK_DEMO_BANK_WEBHOOK_SECRET',
+  ]);
   assert.equal(shipped.get('my-bank'), undefined, 'files starting with _ are templates, not providers');
   assert.ok(shipped.list().every(provider => provider.id !== 'my-bank'));
 

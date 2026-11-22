@@ -38,6 +38,8 @@ export type CacheOptions = {
   timeoutMs?: number;
   /** Minimum wait before retrying after a failed refresh. Capped by the source's `ttlMs`. */
   retryAfterMs?: number;
+  /** Called after every refresh attempt has been recorded, successful or not. Must not throw. */
+  onSettled?: (id: string) => void;
 };
 
 const empty: Stored = { fetchedAt: null, lastAttemptAt: null, error: null };
@@ -129,6 +131,7 @@ export function createSourceCache(options: CacheOptions) {
     }
     entries.set(source.id, next);
     await persist(source.id, next);
+    options.onSettled?.(source.id);
   }
 
   /** Refreshes now and resolves when done. Concurrent calls share one download. Never rejects. */

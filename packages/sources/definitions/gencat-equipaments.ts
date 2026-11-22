@@ -11,7 +11,7 @@ type Kind = z.infer<typeof serviceCount>['kind'];
 /**
  * Category labels of the Generalitat facilities directory, checked against the live dataset on
  * 2026-11-22. A facility counts once per kind even when it lists several spaces or sub-categories.
- * The directory has no pharmacy category and no social-services register, so those kinds are absent.
+ * The directory has no pharmacy category, so that kind is absent; social services have their own source.
  */
 const categories: { kind: Kind; label: string }[] = [
   { kind: 'primary_care', label: "Salut|Centres sanitaris|1. Centres d'atenció primària (CAP)" },

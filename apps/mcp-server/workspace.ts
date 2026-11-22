@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { widgetUri } from '../../packages/config/product.ts';
 import { safeId } from '../../packages/contracts/ids.ts';
 import { municipalityCode } from '../../packages/contracts/places.ts';
+import { inlineUi } from '../../packages/ui/inline.ts';
 
 /** MCP App resource of the React workspace, `ui://relocat/workspace-v1.html`. */
 export const workspaceUri = widgetUri('workspace-v1.html');
@@ -26,7 +27,7 @@ export type WorkspaceResult = z.infer<typeof workspaceResult>;
 const web = (file: string) => new URL(`../web/${file}`, import.meta.url);
 
 /**
- * The workspace page with its React bundle and stylesheet inlined, or `undefined` when
+ * The workspace page with the shared theme, its own stylesheet and its React bundle inlined, or `undefined` when
  * `npm run build` has not produced `apps/web/dist/workspace.js`. The same string is the MCP App
  * resource and the standalone `/workspace` preview.
  */
@@ -39,7 +40,7 @@ export function loadWorkspacePage() {
     throw error;
   }
   const styles = readFileSync(web('workspace.css'), 'utf8');
-  return readFileSync(web('workspace.html'), 'utf8')
+  return inlineUi(readFileSync(web('workspace.html'), 'utf8'), { art: ['workspace-empty'] })
     .replace('/* STYLES */', () => styles.replace(/<\/style/gi, '<\\/style'))
     .replace('<!-- WIDGET -->', () => `<script>${bundle.replace(/<\/script/gi, '<\\/script')}</script>`);
 }

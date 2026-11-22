@@ -103,6 +103,12 @@ export type FetchResult = {
   transactions: ProviderTransaction[];
   /** Saved on the connection and passed back as `connection.cursor`. Omit to keep the previous cursor. */
   nextCursor?: string | null;
+  /**
+   * Optional. Ledger IDs (built with `stableId`) of movements the bank says never happened: a card
+   * payment that was declined, or a pending one that was reverted. The engine deletes the ones that
+   * are in the ledger and ignores the rest, so listing an ID again is safe.
+   */
+  removedIds?: string[];
 };
 
 /** The raw HTTP call a bank made to `POST /webhooks/bank/:providerId`. */
@@ -119,6 +125,17 @@ export type WebhookSignal = {
   connectionRef: string;
   /** Optional short label for logs, such as `transactions.created`. It is not trusted as data. */
   hint?: string;
+  /**
+   * Optional. The bank's unique ID of this notification (1-200 characters). Banks retry deliveries,
+   * so the same notification can arrive twice: the engine remembers recent IDs and ignores repeats.
+   */
+  eventId?: string;
+};
+
+/** What the webhook functions receive besides the request. */
+export type WebhookContext = Pick<ProviderContext, 'env'> & {
+  /** The engine's clock, for signature schemes that reject old timestamps (replay protection). */
+  now: Date;
 };
 
 export interface BankProvider {
@@ -154,16 +171,16 @@ export interface BankProvider {
    * Optional, together with `parseWebhook`. Authenticate a webhook call, typically by checking a
    * signature header against `rawBody` with a secret from `context.env` (see `hmacSha256Matches`).
    * The webhook route has no bearer token: this function is its only protection. Return false when
-   * in doubt.
+   * in doubt. When the bank signs a timestamp, compare it with `context.now` and reject stale calls.
    */
-  verifyWebhook?(request: WebhookRequest, context: Pick<ProviderContext, 'env'>): boolean | Promise<boolean>;
+  verifyWebhook?(request: WebhookRequest, context: WebhookContext): boolean | Promise<boolean>;
 
   /**
    * Optional, together with `verifyWebhook`. Extract which connection a verified webhook refers to.
    * A webhook is only a signal to sync: the engine then calls `fetchTransactions` and stores what
    * the bank's API returns, never what the webhook body claims. Return null to ignore the call.
    */
-  parseWebhook?(rawBody: string, context: Pick<ProviderContext, 'env'>): WebhookSignal | null;
+  parseWebhook?(rawBody: string, context: WebhookContext): WebhookSignal | null;
 }
 
 /** Prefix every variable of a provider must carry: `my-bank` reads `BANK_MY_BANK_*`. */

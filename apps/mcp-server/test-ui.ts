@@ -5,9 +5,10 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { listingSearchConfig } from '../../packages/config/env.ts';
 import type { Policy, Snapshot, TravelEstimateData } from '../../packages/contracts/places.ts';
 import type { ListingSearchConfig } from '../../packages/listings/search.ts';
+import { inlineUi } from '../../packages/ui/inline.ts';
 import { createMcpServer } from './tools.ts';
 
-const html = readFileSync(new URL('./test-ui.html', import.meta.url), 'utf8');
+const html = inlineUi(readFileSync(new URL('./test-ui.html', import.meta.url), 'utf8'));
 const allowedTools = new Set(['get_town_profile', 'recommend_towns', 'search_homes']);
 export async function handleTestUi(
   req: IncomingMessage,
@@ -26,7 +27,7 @@ export async function handleTestUi(
         'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff',
         'Content-Security-Policy':
-          "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+          "default-src 'self'; img-src 'self' data:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
       })
       .end(isHtml ? (body as string) : JSON.stringify(body));
   };

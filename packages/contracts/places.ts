@@ -190,6 +190,10 @@ export const policyId = z.enum([
   'irpf_renovate',
   'itp_buy',
   'itp_rehab_buy',
+  'itp_young_buyer',
+  'itp_large_family',
+  'itp_single_parent',
+  'itp_disability',
   'renovation_grant_2026',
   'youth_purchase_small_town',
 ]);
@@ -207,16 +211,39 @@ export const byRuralCategory = z
  * The planner turns this into fewer months of saving. `benefit` stays as the human summary.
  */
 export const policyEffect = z.discriminatedUnion('kind', [
-  /** A lower transfer-tax rate on the purchase, replacing `standardRate`. Rates are 0–1. */
+  /**
+   * A lower transfer-tax rate on the purchase, replacing the general rate. Rates are 0–1.
+   * `standardRate` is the general rate of the first bracket. `standardTariff`, when the source states
+   * one, is the general tariff by total value of the property: each bracket's rate applies to the part
+   * of the value from `fromEur` up to the next bracket, and the tax is the sum (an averaged rate).
+   * A reduced rate is flat: it applies to the whole value.
+   */
   z
     .object({
       kind: z.literal('transfer_tax_rate'),
       standardRate: z.number().min(0).max(1),
+      standardTariff: z
+        .array(z.object({ fromEur: z.number().nonnegative(), rate: z.number().min(0).max(1) }).strict())
+        .min(1)
+        .refine(
+          brackets =>
+            brackets[0]?.fromEur === 0 && brackets.every((b, i) => i === 0 || b.fromEur > brackets[i - 1].fromEur),
+          'Brackets start at 0 and ascend',
+        )
+        .optional(),
       reducedRate: byRuralCategory,
     })
     .strict(),
   /** A single payment or deduction in euros. */
   z.object({ kind: z.literal('one_off_eur'), amount: byRuralCategory }).strict(),
+  /** A single payment of at most the lower of `maxAmountEur` and `rate` (0–1) of the purchase price. */
+  z
+    .object({
+      kind: z.literal('one_off_rate_of_price'),
+      rate: z.number().positive().max(1),
+      maxAmountEur: z.number().positive(),
+    })
+    .strict(),
   /** A fixed amount in euros every year, for at most `maxYears` (null: while conditions hold). */
   z
     .object({
@@ -225,13 +252,17 @@ export const policyEffect = z.discriminatedUnion('kind', [
       maxYears: z.number().int().positive().nullable(),
     })
     .strict(),
-  /** A yearly percentage of a qualifying cost, on a capped base. Rates are 0–1. */
+  /**
+   * A yearly percentage of a qualifying cost. Rates are 0–1. The source caps either the cost the
+   * rate applies to (`maxBaseEur`) or the resulting amount (`maxAmountEur`, by type of tax return).
+   */
   z
     .object({
       kind: z.literal('annual_rate_of_cost'),
       cost: z.enum(['purchase_payments', 'rent', 'renovation']),
       rate: byRuralCategory,
-      maxBaseEur: z.number().positive(),
+      maxBaseEur: z.number().positive().optional(),
+      maxAmountEur: z.object({ individual: z.number().positive(), joint: z.number().positive() }).strict().optional(),
     })
     .strict(),
   /** A real measure whose amount depends on facts ReloCat does not model. */
@@ -254,6 +285,11 @@ export const policy = z.object({
   benefit: z.string(),
   effect: policyEffect.optional(),
   notes: z.array(z.string()),
+  /**
+   * `catalonia`: the measure applies in every municipality, so it is not something a place offers.
+   * Absent: the measure is scoped by the rural classification or by `municipalityCodes`.
+   */
+  territory: z.enum(['catalonia']).optional(),
   municipalityCodes: z.array(municipalityCode).optional(),
   /**
    * Application window, for a measure that is claimed through a call and whose own dates are not that window.
@@ -296,6 +332,10 @@ export const household = z
       .describe('Dependent children for the applicable tax rule. An empty array explicitly means none.'),
     firstRuralMove: optionalFact('First move to a rural or special-attention rural municipality'),
     singleParent: optionalFact('Official single-parent family status'),
+    largeFamily: optionalFact('Official large-family status (família nombrosa) under Llei 40/2003'),
+    disability65: optionalFact(
+      "The buyer or a member of the buyer's family unit has a recognised disability of 65% or more",
+    ),
     filing: z.enum(['individual', 'joint']).optional(),
     irpfNetTaxBaseEur: taxBase(
       'Applicable IRPF return: general plus savings tax bases less personal and family minimums; use the joint amount for joint filing. This is not salary.',

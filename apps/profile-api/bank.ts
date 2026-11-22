@@ -230,6 +230,18 @@ export function createBankStore(root: string) {
         return counts;
       });
     },
+    /**
+     * Provider sync: delete the listed movements that exist (a pending payment the bank reverted or
+     * declined). Unknown IDs are ignored, so repeating the call changes nothing and writes no revision.
+     */
+    async removeTransactions(id: string, transactionIds: string[]) {
+      const ids = new Set(z.array(safeId).max(500).parse(transactionIds));
+      return mutate(id, ledger => {
+        const before = ledger.transactions.length;
+        ledger.transactions = ledger.transactions.filter(tx => !ids.has(tx.id));
+        return { removed: before - ledger.transactions.length };
+      });
+    },
     async updateTransaction(id: string, transactionId: string, input: unknown) {
       const tx = transactionSchema.parse(input);
       if (tx.id !== transactionId) throw new ApiError(400, 'Movement ID must match route');

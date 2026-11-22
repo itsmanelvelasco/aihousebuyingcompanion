@@ -316,6 +316,270 @@ test('an explicit budget is the price; a comarca price is flagged', () => {
   assert(flagged.assumptions.some(entry => entry.includes('comarca average')));
 });
 
+// ------------------------------------------------- baseline transfer tax
+
+/** The real shape of the rural rate: 4% rural, 3% special attention, with the general tariff by value. */
+const generalTariff = [
+  { fromEur: 0, rate: 0.1 },
+  { fromEur: 600_000, rate: 0.11 },
+  { fromEur: 900_000, rate: 0.12 },
+  { fromEur: 1_500_000, rate: 0.13 },
+];
+const ruralRate = policyFixture({
+  id: 'itp_buy',
+  intent: 'buy',
+  mechanism: 'reduced_tax_rate',
+  effect: {
+    kind: 'transfer_tax_rate',
+    standardRate: 0.1,
+    standardTariff: generalTariff,
+    reducedRate: { rural: 0.04, special_attention: 0.03, other: 0.1 },
+  },
+});
+/** 5% for buyers aged 35 or younger, in every municipality of Catalonia. */
+const youngRate = policyFixture({
+  id: 'itp_young_buyer',
+  intent: 'buy',
+  mechanism: 'reduced_tax_rate',
+  territory: 'catalonia',
+  effect: {
+    kind: 'transfer_tax_rate',
+    standardRate: 0.1,
+    standardTariff: generalTariff,
+    reducedRate: { rural: 0.05, special_attention: 0.05, other: 0.05 },
+  },
+});
+const buyerAged = (age: number | undefined, itpBuyerNetTaxBaseEur: number | undefined = 20_000) =>
+  personFixture({ household: { ...verifiedHousehold, age, itpBuyerNetTaxBaseEur } });
+const benefitOf = (item: ReturnType<typeof only>, id: string) => {
+  const benefit = item.benefits.find(entry => entry.policyId === id);
+  assert(benefit, `${id} is listed`);
+  return benefit;
+};
+
+test('a verified young buyer starts from the 5% rate, so a rural place saves less than for an older buyer', () => {
+  const policies = [ruralRate, youngRate];
+  const older = only(plan(buyerAged(45), [ruralPlace], policies));
+  // €100,000 home, aged 45: 20% + 10% + 2% = €32,000 → 44 months; rural 4% saves €6,000 → 32 months.
+  assert.deepEqual(older.transferTax, {
+    standardCents: 1_000_000,
+    baselineCents: 1_000_000,
+    baselinePolicyId: null,
+    couldBeLower: false,
+  });
+  assert.equal(older.baseline?.upfrontCashCents, 3_200_000);
+  assert.equal(older.baseline?.months, 44);
+  assert.deepEqual([benefitOf(older, 'itp_buy').amountCents, benefitOf(older, 'itp_buy').counted], [600_000, true]);
+  assert.equal(older.withPlaceBenefits?.months, 32);
+  assert.equal(older.monthsSavedByPlace, 12);
+  const olderYoungRate = benefitOf(older, 'itp_young_buyer');
+  assert.deepEqual(
+    [olderYoungRate.eligibilityStatus, olderYoungRate.counted, olderYoungRate.scope],
+    ['ineligible', false, 'anywhere'],
+  );
+  assert.match(olderYoungRate.explanation, /Not applied, criteria not met/);
+
+  const young = only(plan(buyerAged(30), [ruralPlace], policies));
+  // Aged 30 with a €20,000 tax base: 5% anywhere → €27,000 → 34 months; rural 4% saves only €1,000 → 32 months.
+  assert.deepEqual(young.transferTax, {
+    standardCents: 1_000_000,
+    baselineCents: 500_000,
+    baselinePolicyId: 'itp_young_buyer',
+    couldBeLower: false,
+  });
+  assert.equal(young.baseline?.upfrontCashCents, 2_700_000);
+  assert.equal(young.baseline?.months, 34);
+  const ruralSaving = benefitOf(young, 'itp_buy');
+  assert.deepEqual([ruralSaving.amountCents, ruralSaving.counted, ruralSaving.scope], [100_000, true, 'place']);
+  assert.match(ruralSaving.explanation, /4% instead of the 5% you already qualify for anywhere in Catalonia/);
+  assert.equal(young.withPlaceBenefits?.upfrontCashCents, 2_600_000);
+  assert.equal(young.withPlaceBenefits?.months, 32);
+  assert.equal(young.monthsSavedByPlace, 2);
+  assert(young.monthsSavedByPlace < older.monthsSavedByPlace);
+  // The young rate is listed with its worth against the general rate, and is never a saving of the place.
+  const applied = benefitOf(young, 'itp_young_buyer');
+  assert.deepEqual(
+    [applied.kind, applied.amountCents, applied.counted, applied.scope, applied.eligibilityStatus],
+    ['upfront_cost_reduction', 500_000, false, 'anywhere', 'eligible'],
+  );
+  assert.match(applied.explanation, /5% instead of the general 10%.*Applied to your baseline/);
+  assert(young.assumptions.some(entry => /baseline transfer tax is 5%, not the general 10%/.test(entry)));
+  assert.deepEqual(young.dataMissing, []);
+
+  // Outside a rural municipality the young buyer still pays 5%, and the place adds nothing.
+  const city = only(plan(buyerAged(30), [cityPlace], policies));
+  assert.equal(city.baseline?.months, 34);
+  assert.equal(city.monthsSavedByPlace, 0);
+  assert.equal(benefitOf(city, 'itp_buy').counted, false);
+});
+
+test('an unknown age or tax base keeps the 10% baseline and says it could be lower', () => {
+  const policies = [ruralRate, youngRate];
+  for (const person of [buyerAged(undefined), personFixture({ household: { ...verifiedHousehold, age: 30 } })]) {
+    const item = only(plan(person, [ruralPlace], policies));
+    assert.deepEqual(item.transferTax, {
+      standardCents: 1_000_000,
+      baselineCents: 1_000_000,
+      baselinePolicyId: null,
+      couldBeLower: true,
+    });
+    assert.equal(item.baseline?.upfrontCashCents, 3_200_000);
+    assert.equal(item.baseline?.months, 44);
+    assert.equal(benefitOf(item, 'itp_buy').amountCents, 600_000);
+    const unverified = benefitOf(item, 'itp_young_buyer');
+    assert.deepEqual([unverified.eligibilityStatus, unverified.counted], ['needs_verification', false]);
+    assert.match(unverified.explanation, /Not applied to your baseline until verified/);
+    assert.match(unverified.explanation, /saving of this place is smaller than shown/);
+    const caveat = item.dataMissing.find(entry => entry.includes('itp_young_buyer'));
+    assert.match(caveat ?? '', /baseline uses the general 10% and could be as low as 5%/);
+    assert(
+      item.assumptions.some(entry => /A lower rate that applies anywhere in Catalonia is not assumed/.test(entry)),
+    );
+
+    // Counting unverified benefits of the place never lowers the person's own baseline.
+    const optimistic = only(plan(person, [ruralPlace], policies, { includeUnverifiedBenefits: true }));
+    assert.equal(optimistic.baseline?.upfrontCashCents, 3_200_000);
+    assert.equal(optimistic.transferTax?.baselinePolicyId, null);
+    assert.equal(benefitOf(optimistic, 'itp_young_buyer').counted, false);
+  }
+  // No household facts at all: same caveat, and nothing is counted.
+  const blank = only(plan(personFixture({ household: undefined }), [ruralPlace], policies));
+  assert.equal(blank.transferTax?.couldBeLower, true);
+  assert.equal(blank.baseline?.months, 44);
+  assert.equal(blank.monthsSavedByPlace, 0);
+});
+
+test('a price above the first bracket uses the general tariff by value and is flagged', () => {
+  const priced = (budgetCents: number, person = buyerAged(45)) =>
+    only(
+      plan(
+        { ...person, home: { floorAreaM2: null, budgetCents, depositRate: 0.2 } },
+        [cityPlace],
+        [ruralRate, youngRate],
+      ),
+    );
+  const flagged = (item: ReturnType<typeof only>) =>
+    item.assumptions.some(entry => /price is above €600,000/.test(entry));
+
+  // The tax agency's own example: €700,000 → €60,000 + 11% of €100,000 = €71,000.
+  const above = priced(70_000_000);
+  assert.equal(above.transferTax?.standardCents, 7_100_000);
+  assert.equal(above.baseline?.upfrontCashCents, 14_000_000 + 7_100_000 + 1_400_000);
+  assert(flagged(above));
+  assert(
+    above.assumptions.some(entry =>
+      /10% from €0, 11% from €600,000, 12% from €900,000, 13% from €1,500,000/.test(entry),
+    ),
+  );
+  // €1,600,000 → €165,000 + 13% of €100,000 = €178,000.
+  assert.equal(priced(160_000_000).transferTax?.standardCents, 17_800_000);
+  // Up to €600,000 the general rate is a plain 10% and nothing is flagged.
+  const atLimit = priced(60_000_000);
+  assert.equal(atLimit.transferTax?.standardCents, 6_000_000);
+  assert(!flagged(atLimit));
+
+  // A reduced rate is flat on the whole price: 5% of €700,000, worth €36,000 against the tariff.
+  const young = priced(70_000_000, buyerAged(30));
+  assert.equal(young.transferTax?.baselineCents, 3_500_000);
+  assert.equal(benefitOf(young, 'itp_young_buyer').amountCents, 3_600_000);
+  assert.match(benefitOf(young, 'itp_young_buyer').explanation, /instead of the general tariff \(€71,000/);
+});
+
+test('the youth purchase aid is the lower of its ceiling and its share of the price, and is never counted without a call', () => {
+  const youthAid = policyFixture({
+    id: 'youth_purchase_small_town',
+    intent: 'buy',
+    mechanism: 'grant',
+    effectiveThrough: '2030-12-31',
+    municipalityCodes: [ruralPlace.municipalityCode],
+    callWindow: null,
+    effect: { kind: 'one_off_rate_of_price', rate: 0.2, maxAmountEur: 15_000 },
+  });
+  const buyer = (budgetCents: number) =>
+    personFixture({
+      household: {
+        ...verifiedHousehold,
+        purchasePriceEur: budgetCents / 100,
+        ownsHomeInSpain: false,
+        incomeWithinFiveIprem: true,
+      },
+      home: { floorAreaM2: null, budgetCents, depositRate: 0.2 },
+    });
+  for (const [budgetCents, expected] of [
+    [10_000_000, 1_500_000], // 20% of €100,000 is €20,000: the €15,000 ceiling is lower.
+    [7_500_000, 1_500_000], // Both are €15,000.
+    [5_000_000, 1_000_000], // 20% of €50,000 is €10,000, below the ceiling.
+  ]) {
+    for (const includeUnverifiedBenefits of [false, true]) {
+      const item = only(plan(buyer(budgetCents), [ruralPlace], [reducedTax, youthAid], { includeUnverifiedBenefits }));
+      const aid = benefitOf(item, 'youth_purchase_small_town');
+      assert.deepEqual(
+        [aid.kind, aid.amountCents, aid.callStatus, aid.eligibilityStatus, aid.counted],
+        ['one_off_cash', expected, 'unknown', 'needs_verification', false],
+      );
+      assert.match(aid.explanation, /lower of €15,000 and 20% of the price/);
+      assert.match(aid.explanation, /Not counted/);
+      // Only the reduced transfer tax (5% of the price) lowers the upfront cash.
+      assert.equal(item.withPlaceBenefits?.upfrontCashCents, Math.round(budgetCents * 0.27));
+    }
+  }
+  // An unknown price gives an unknown amount, never zero.
+  const unpriced = only(plan(personFixture(), [placeFixture('250001', 'rural', null)], [reducedTax, youthAid]));
+  assert.equal(benefitOf(unpriced, 'youth_purchase_small_town').amountCents, null);
+});
+
+test('a rent deduction capped by amount stays uncounted while the rent paid is unknown', () => {
+  const rentDeduction = policyFixture({
+    id: 'irpf_rent',
+    intent: 'rent',
+    mechanism: 'tax_deduction',
+    effect: {
+      kind: 'annual_rate_of_cost',
+      cost: 'rent',
+      rate: { rural: 0.15, special_attention: 0.2, other: 0 },
+      maxAmountEur: { individual: 600, joint: 1200 },
+    },
+  });
+  const renter = personFixture({
+    household: { ...verifiedHousehold, paysQualifyingRent: true, satisfiesRentCompatibility: true },
+  });
+  const item = only(plan(renter, [ruralPlace], [reducedTax, rentDeduction], { includeUnverifiedBenefits: true }));
+  const rent = benefitOf(item, 'irpf_rent');
+  assert.deepEqual([rent.kind, rent.amountCents, rent.counted], ['annual_cash', null, false]);
+  assert.match(rent.explanation, /15% a year of rent paid, capped at €600 a year \(€1,200 on a joint return\)/);
+  assert.equal(item.withPlaceBenefits?.months, 34);
+});
+
+test('the real policy data credits a rural place only with the difference from the young-buyer rate', () => {
+  const { snapshot, policies } = loadData();
+  const termens = buildPlace(snapshot, '252206'); // special attention: 3% transfer tax
+  assert.equal(termens.rural, 'special_attention');
+  const home = { floorAreaM2: null, budgetCents: 15_000_000, depositRate: 0.2 };
+  const older = only(plan({ ...buyerAged(45), home }, [termens], policies));
+  const young = only(plan({ ...buyerAged(30), home }, [termens], policies));
+  // €150,000: 10% − 3% = €10,500 for the older buyer; 5% − 3% = €3,000 for the young one.
+  assert.deepEqual([older.transferTax?.baselineCents, older.transferTax?.baselinePolicyId], [1_500_000, null]);
+  assert.deepEqual([benefitOf(older, 'itp_buy').amountCents, benefitOf(older, 'itp_buy').counted], [1_050_000, true]);
+  assert.deepEqual(
+    [young.transferTax?.baselineCents, young.transferTax?.baselinePolicyId],
+    [750_000, 'itp_young_buyer'],
+  );
+  assert.deepEqual([benefitOf(young, 'itp_buy').amountCents, benefitOf(young, 'itp_buy').counted], [300_000, true]);
+  // Every rate considered is listed, each with its explanation; the Catalonia-wide ones are never place savings.
+  const general = young.benefits.filter(benefit => benefit.scope === 'anywhere');
+  assert.deepEqual(
+    general.map(benefit => benefit.policyId),
+    ['itp_young_buyer', 'itp_large_family', 'itp_single_parent', 'itp_disability'],
+  );
+  assert(general.every(benefit => !benefit.counted && benefit.explanation.length > 0));
+  // Large-family, single-parent and disability status are unknown here: reported, not assumed either way.
+  assert.equal(older.transferTax?.couldBeLower, true);
+  assert.match(older.dataMissing.join(' '), /itp_large_family, itp_single_parent, itp_disability/);
+  // The state youth aid has no Catalan call, so it is never counted whatever is switched on.
+  const optimistic = only(plan({ ...buyerAged(30), home }, [termens], policies, { includeUnverifiedBenefits: true }));
+  assert.equal(benefitOf(optimistic, 'youth_purchase_small_town').counted, false);
+});
+
 test('limitations say this is not mortgage approval or guaranteed aid', () => {
   const text = plan(personFixture(), [cityPlace], [reducedTax]).limitations.join(' ');
   assert.match(text, /not a mortgage offer/);

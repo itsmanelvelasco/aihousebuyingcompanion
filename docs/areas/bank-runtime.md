@@ -7,8 +7,9 @@
 - `apps/profile-api/bank.ts`: accounts, ledger persistence and movement CRUD/import.
 - `packages/finance/cashflow.ts`: deterministic cash flow, recurring candidates and savings scenarios.
 - `packages/banks/provider.ts`: the `BankProvider` contract a bank implements, plus helpers for IDs, cents and signatures.
-- `packages/banks/providers/`: one file per bank, discovered by `packages/banks/registry.ts`. `synthetic.ts` is the demo feed; `_template.ts` is the skeleton to copy.
-- `packages/banks/sync.ts`: connections per user, pull-and-import, polling, webhook-triggered syncs and the in-process event emitter.
+- `packages/banks/providers/`: one file per bank, discovered by `packages/banks/registry.ts`. `synthetic.ts` is the in-process demo feed, `demo-bank.ts` connects to the Banc Demo service and is the worked example, `_template.ts` is the skeleton to copy.
+- `apps/demo-bank/`: Banc Demo, a fictional bank that runs as its own process (pull API, signed webhooks with retries, a scripted simulation). See its [README](../../apps/demo-bank/README.md).
+- `packages/banks/sync.ts`: connections per user, pull-and-import, polling, the persistent webhook queue, retries with backoff, the fallback pull and the in-process event emitter.
 - `apps/profile-api/runtime.ts`: the `/runtime` routes, expressed as a synthetic-provider connection polled by the sync engine.
 - `apps/profile-api/server.ts`: authenticated bank routes, the bank webhook route, the event stream and runtime wiring.
 - `apps/mcp-server/bank-tools.ts`: HTTP-backed read-only MCP access.
@@ -32,7 +33,11 @@ The background synthetic producer is the `synthetic` provider, polled by the syn
 
 Two routes sit outside the user prefix: `GET /bank/providers` lists providers as `configured` or `unconfigured` (bearer token), and `POST /webhooks/bank/:providerId` is called by a bank, carries no bearer token and is accepted only when the provider's `verifyWebhook` passes. A webhook only schedules a sync; its body is never stored.
 
+The engine assumes an unreliable peer. A verified webhook is written to `bank-webhook-queue.json` before it is acknowledged and processed afterwards, so one that arrives during a sync or just before a restart is not lost; repeated event IDs are ignored. A failed sync records `lastError`, `lastAttemptAt` and `consecutiveFailures` on the connection and is retried with exponential backoff without crashing the process. A provider with webhooks is still pulled after five silent minutes. Details are in [BANK_API.md](../../apps/profile-api/BANK_API.md#bank-providers-connections-and-live-events).
+
 ## Add a bank
+
+`packages/banks/providers/demo-bank.ts` is the worked example of "add a bank = one file": it reaches the separate Banc Demo service over HTTP only and shows cursor pagination, decimal amounts, pending-to-completed updates, declined movements, own-account transfers, a signed webhook with a timestamp window and event IDs. Run it with `npm run start:demo-bank`, `npm run dev` and `npm run demo-bank:connect` (variables `BANK_DEMO_BANK_BASE_URL`, `BANK_DEMO_BANK_API_KEY`, `BANK_DEMO_BANK_WEBHOOK_SECRET`).
 
 Copy `packages/banks/providers/_template.ts` to a new file in the same folder; no registration is needed. Implement `listAccounts` and `fetchTransactions` (and `verifyWebhook` plus `parseWebhook` when the bank can call us, otherwise set `pollIntervalMs`). Declare variables as `BANK_<PROVIDER_ID>_<NAME>` in the provider's `env` list and in `.env.example`; a provider with a missing required variable is listed as `unconfigured`. Return integer EUR cents, ledger categories and stable IDs. Details and response shapes are in [BANK_API.md](../../apps/profile-api/BANK_API.md#add-a-bank).
 
@@ -42,6 +47,6 @@ Keep one API process as the runtime-directory writer. The producer shares that p
 
 ## Run, verify and hand off
 
-Start the profile API with `PROFILE_API_TOKEN` and `npm start`. Set `DEMO_BANK_USERS=user-001` (comma-separated IDs for several users) to opt into startup feeds; `DEMO_BANK_INTERVAL_MS` defaults to 5000. The combined `npm run dev` launcher defaults its demo feed to `user-001`. Follow [BANK_API.md](../../apps/profile-api/BANK_API.md) for detailed semantics. Run `npm run typecheck` and `npm test`; cover import idempotency, concurrent writes, event cursors, restart persistence, shutdown and background errors. `tests/banks.test.ts` covers the registry, a fake provider end to end, webhook verification and the event stream.
+Start the profile API with `PROFILE_API_TOKEN` and `npm start`. Set `DEMO_BANK_USERS=user-001` (comma-separated IDs for several users) to opt into startup feeds; `DEMO_BANK_INTERVAL_MS` defaults to 5000. The combined `npm run dev` launcher defaults its demo feed to `user-001`. Follow [BANK_API.md](../../apps/profile-api/BANK_API.md) for detailed semantics. Run `npm run typecheck` and `npm test`; cover import idempotency, concurrent writes, event cursors, restart persistence, shutdown and background errors. `tests/banks.test.ts` covers the registry, a fake provider end to end, webhook verification and the event stream. `tests/demo-bank.test.ts` runs Banc Demo and the profile API together with stepped clocks: webhook delivery, state changes, own transfers, rejected signatures, retries and dead letters, duplicates, restarts and pull-only convergence.
 
 Give the board freshness, aggregate figures and event revision rather than credentials/raw transactions. Missing months produce unknown estimates. Financial scenarios are user-reviewed assumptions, not credit scores, mortgage approval or guaranteed affordability.

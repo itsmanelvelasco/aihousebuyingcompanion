@@ -407,13 +407,19 @@ test('keeps call availability, exact geographic scope and household eligibility 
       }),
     );
     // The state youth purchase aid is scoped by resident population, so Tremp qualifies as a whole.
-    const ruralScoped = area.incentives.filter(entry => entry.id !== 'youth_purchase_small_town');
+    // The 5% rates for young buyers, large and single-parent families and disability apply in every municipality.
+    const everywhere = area.incentives.filter(entry => entry.territory === 'catalonia');
+    assert.equal(everywhere.length, 4);
+    assert(everywhere.every(entry => entry.geographicStatus === 'applies'));
+    const ruralScoped = area.incentives.filter(
+      entry => entry.id !== 'youth_purchase_small_town' && entry.territory !== 'catalonia',
+    );
     assert.deepEqual(
       ruralScoped.map(entry => entry.id),
       ['irpf_buy', 'itp_buy', 'itp_rehab_buy'],
     );
     assert(ruralScoped.every(entry => entry.geographicStatus === status));
-    assert.equal(area.incentives.length, ruralScoped.length + 1);
+    assert.equal(area.incentives.length, ruralScoped.length + everywhere.length + 1);
     assert(area.incentives.every(entry => entry.eligibilityStatus !== 'eligible'));
   }
 });

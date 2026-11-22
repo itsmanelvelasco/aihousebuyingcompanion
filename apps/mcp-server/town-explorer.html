@@ -5,48 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ReloCat Town Explorer</title>
   <style>
-    :root {
-      color-scheme: light dark;
-      --paper: light-dark(#fbf6eb, #202720);
-      --card: light-dark(#fffcf5, #2b342c);
-      --ink: light-dark(#24362b, #f7f3e6);
-      --muted: light-dark(#566257, #c1cabd);
-      --line: light-dark(#dedbce, #566155);
-      --forest: light-dark(#185e41, #9de2ba);
-      --violet: light-dark(#623c91, #dfc6ff);
-      --lilac: light-dark(#eee3f7, #3d304e);
-      --sand: light-dark(#fff0b9, #51431e);
-      font: 15px/1.48 ui-sans-serif, system-ui, sans-serif;
-    }
-    :root[data-theme="dark"] { color-scheme: dark; }
-    :root[data-theme="light"] { color-scheme: light; }
-    * { box-sizing: border-box; }
-    [hidden] { display: none !important; }
-    body { margin: 0; color: var(--ink); background: var(--paper); }
+/* THEME */
+    /* ART */
+    /* Town Explorer layout. Colours, type and components come from packages/ui/theme.css. */
+    :root { --rc-body-size: 0.9375rem; }
     main { max-width: 1120px; padding: 16px; margin: auto; }
-    h1, h2, h3, p, figure { margin: 0; }
-    h2 { font-size: 1.45rem; line-height: 1.15; letter-spacing: -.035em; }
-    h3 { font-size: 1.04rem; }
-    a { color: var(--forest); text-underline-offset: 3px; overflow-wrap: anywhere; }
-    button, select { font: inherit; color: inherit; }
-    button { cursor: pointer; }
-    button:disabled { cursor: default; opacity: .45; }
-    :focus-visible { outline: 3px solid var(--violet); outline-offset: 3px; }
-    ::selection { background: var(--lilac); color: var(--ink); }
-    .muted, small { color: var(--muted); }
-    small { font-size: .83rem; }
+    h2 { font-size: var(--rc-text-2xl); }
+    a { overflow-wrap: anywhere; }
+    .muted { color: var(--rc-muted); }
     .hero {
       position: relative;
       isolation: isolate;
       display: grid;
       align-items: center;
-      min-height: 210px;
-      padding: 26px 28px;
-      border: 1px solid #ecddbc;
-      border-radius: 16px;
+      min-height: 212px;
+      padding: 24px 28px;
+      border: 1px solid var(--rc-line);
+      border-radius: var(--rc-radius-lg);
       overflow: hidden;
-      background: #fbefdc;
-      color: #203d2c;
+      background: var(--rc-day);
+      color: var(--rc-on-day);
+      --rc-accent: #17593d;
+      --rc-violet: #663e91;
     }
     .hero-art {
       position: absolute;
@@ -54,78 +34,82 @@
       inset: 0 0 0 auto;
       width: 65%;
       height: 100%;
-      background-size: cover;
-      background-position: 58% 66%;
+      background: var(--rc-art-hero-valley) 58% 66% / cover no-repeat;
       mask-image: linear-gradient(to right, transparent, #000 24%);
     }
-    .brand { width: max-content; color: #125d3d; font-size: 1.06rem; font-weight: 850; letter-spacing: -.04em; }
-    .brand span { color: #714499; }
-    .hero h1 {
-      max-width: 10ch;
-      margin: 6px 0;
-      font: 700 3.4rem/.96 ui-serif, Georgia, serif;
-      letter-spacing: -.038em;
-      text-wrap: balance;
+    .hero h1 { max-width: 10ch; margin: 8px 0; font-size: 3.25rem; line-height: 0.98; letter-spacing: -0.035em; color: #163d2b; }
+    .hero .intro { max-width: 25ch; color: var(--rc-on-day-muted); }
+    .explorer { margin-top: 24px; }
+    .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; margin-bottom: 12px; }
+    .section-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+    #count { color: var(--rc-muted); font-size: var(--rc-text-sm); white-space: nowrap; }
+    /* Segmented control: which towns the map and the list show. */
+    .views { display: flex; gap: 4px; padding: 4px; background: var(--rc-violet-soft); border-radius: var(--rc-radius-md); }
+    .views button {
+      min-height: 36px;
+      padding: 4px 12px;
+      border: 1px solid transparent;
+      border-radius: var(--rc-radius-sm);
+      background: transparent;
+      color: var(--rc-violet);
+      font-size: var(--rc-text-sm);
+      font-weight: 700;
+      transition: background-color var(--rc-dur-fast) var(--rc-ease);
     }
-    .hero .intro { max-width: 25ch; color: #3a5545; font-size: .94rem; }
-    .explorer { margin-top: 22px; }
-    .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; justify-content: space-between; margin-bottom: 11px; }
-    .section-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 9px; }
-    #count { color: var(--muted); font-size: .87rem; white-space: nowrap; }
-    .views { display: flex; gap: 4px; padding: 3px; background: var(--lilac); border-radius: 10px; }
-    .views button, .retry { min-height: 34px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--violet); padding: 4px 9px; font-size: .84rem; font-weight: 730; }
-    .views button[aria-pressed="true"], .views button:hover, .retry:hover { background: var(--card); border-color: var(--line); }
-    .retry { border-color: var(--line); background: var(--lilac); }
+    .views button[aria-pressed="true"] { background: var(--rc-surface); border-color: var(--rc-line); box-shadow: var(--rc-shadow-sm); }
+    @media (hover: hover) { .views button:hover { background: var(--rc-surface); } }
     .workspace { display: grid; grid-template-columns: minmax(0, 1.48fr) minmax(0, 1fr); align-items: start; gap: 12px; }
-    .map-shell { min-width: 0; border: 1px solid #bfc8b0; background: #ece8f3; border-radius: 14px; overflow: hidden; }
-    .map {
-      height: 342px;
-      position: relative;
-      color-scheme: light;
-      color: #302c42;
-      touch-action: manipulation;
-    }
+    .map-shell { min-width: 0; border: 1px solid var(--rc-line); background: #ece8f3; border-radius: var(--rc-radius-lg); overflow: hidden; }
+    /* The map is drawn on a fixed light canvas, so its controls keep light colours in both themes. */
+    .map { height: 342px; position: relative; color-scheme: light; color: #22352a; touch-action: manipulation; }
     .map canvas, #map-pins { position: absolute; inset: 0; width: 100%; height: 100%; }
     #map-pins { pointer-events: none; }
-    .map-controls { position: absolute; z-index: 4; top: 9px; right: 9px; display: grid; justify-items: end; gap: 5px; }
+    .map-controls { position: absolute; z-index: 4; top: 8px; right: 8px; display: grid; justify-items: end; gap: 4px; }
     .map-controls button {
-      min-width: 34px;
-      min-height: 34px;
-      padding: 0 6px;
-      border: 1px solid #c7c0cd;
-      border-radius: 8px;
-      background: #fffcf6;
-      font-weight: 750;
+      position: relative;
+      display: inline-grid;
+      place-items: center;
+      min-width: 36px;
+      min-height: 36px;
+      padding: 0 8px;
+      border: 1px solid #7f8676;
+      border-radius: var(--rc-radius-sm);
+      background: #fffcf5;
+      color: #17593d;
+      font-size: var(--rc-text-sm);
+      font-weight: 700;
     }
-    .map-controls button:hover:enabled { background: #eee3f7; }
-    .map-controls .zoom { display: flex; gap: 3px; }
-    #fit-map { font-size: .8rem; }
+    .map-controls button::after { content: ""; position: absolute; inset: -4px; }
+    .map-controls button:disabled { opacity: 0.45; }
+    .map-controls button:active:not(:disabled) { transform: scale(0.96); }
+    @media (hover: hover) { .map-controls button:hover:enabled { background: #e3f1e5; } }
+    .map-controls .zoom { display: flex; gap: 4px; }
     .map-key {
       position: absolute;
       z-index: 1;
       top: 12px;
-      left: 11px;
-      color: #405548;
-      font-size: .8rem;
-      font-weight: 800;
+      left: 12px;
       display: flex;
       align-items: center;
       gap: 6px;
-      border-radius: 6px;
-      background: #fffcf6ea;
-      padding: 3px 7px;
+      padding: 4px 8px;
+      border-radius: var(--rc-radius-sm);
+      background: #fffcf5ea;
+      color: #3a5545;
+      font-size: var(--rc-text-xs);
+      font-weight: 800;
       pointer-events: none;
     }
-    .north { display: inline-block; width: 0; height: 0; border-inline: 4px solid transparent; border-bottom: 8px solid #405548; }
-    figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; padding: 5px 10px; background: var(--card); color: var(--muted); font-size: .8rem; border-top: 1px solid var(--line); }
-    #map-selection { color: var(--violet); font-weight: 750; }
+    .north { display: inline-block; width: 0; height: 0; border-inline: 4px solid transparent; border-bottom: 8px solid #3a5545; }
+    figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; padding: 6px 12px; background: var(--rc-surface); color: var(--rc-muted); font-size: var(--rc-text-xs); border-top: 1px solid var(--rc-line); }
+    #map-selection { color: var(--rc-violet); font-weight: 700; }
     .map-pin {
       position: absolute;
       z-index: 2;
       display: grid;
       place-items: center;
-      width: 33px;
-      height: 33px;
+      width: 44px;
+      height: 44px;
       padding: 0;
       border: 0;
       border-radius: 50%;
@@ -134,6 +118,7 @@
       transform: translate(-50%, -50%);
       pointer-events: auto;
     }
+    /* The rank marker: a pin-shaped badge shared by the map, the town list and the workspace. */
     .pin-marker, .rank {
       display: grid;
       place-items: center;
@@ -143,105 +128,103 @@
       border-radius: 50% 50% 50% 9px;
       background: #e9d6fb;
       color: #502e79;
-      font-size: .89rem;
-      font-weight: 850;
+      font-size: var(--rc-text-sm);
+      font-weight: 800;
       line-height: 1;
     }
-    .pin-marker { border: 2px solid #fffcf6; box-shadow: 0 2px 4px #41295c38; }
+    .pin-marker { border: 2px solid #fffcf5; box-shadow: 0 2px 4px #41295c38; }
     .pin-marker:empty { width: 15px; height: 15px; background: #7950a7; }
     .map-pin:hover, .map-pin:focus-visible, .map-pin[aria-pressed="true"] { z-index: 3; }
-    .map-pin[aria-pressed="true"] .pin-marker, .town-card[aria-pressed="true"] .rank { background: #ffda65; color: #47391c; }
+    .map-pin[aria-pressed="true"] .pin-marker, .town-card[aria-pressed="true"] .rank { background: var(--rc-gold); color: var(--rc-gold-ink); }
     .results { min-width: 0; }
-    .town-list { list-style: none; padding: 0 4px 3px; margin: 0 -4px; display: grid; gap: 7px; max-height: 367px; overflow: auto; scrollbar-color: var(--line) transparent; }
+    .town-list { list-style: none; padding: 0 4px 4px; margin: 0 -4px; display: grid; gap: 8px; max-height: 367px; overflow: auto; scrollbar-color: var(--rc-line-strong) transparent; }
     .town-card {
       display: grid;
       grid-template-columns: auto minmax(0, 1fr) auto;
-      gap: 10px;
+      gap: 12px;
       align-items: center;
       text-align: start;
       width: 100%;
-      min-height: 78px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 10px 12px;
-      background: var(--card);
-      transition: background-color 160ms ease, border-color 160ms ease;
+      min-height: 76px;
+      border: 1px solid var(--rc-line);
+      border-radius: var(--rc-radius-md);
+      padding: 12px;
+      background: var(--rc-surface);
+      transition: background-color var(--rc-dur-fast) var(--rc-ease), border-color var(--rc-dur-fast) var(--rc-ease);
     }
-    .town-card:hover, .town-card[aria-pressed="true"] { border-color: var(--violet); background: var(--lilac); }
+    .town-card[aria-pressed="true"] { border-color: var(--rc-violet); background: var(--rc-violet-soft); }
+    @media (hover: hover) { .town-card:hover { border-color: var(--rc-violet); background: var(--rc-violet-soft); } }
+    .town-card:active { transform: scale(0.99); }
     .town-card strong, .town-card small { display: block; overflow-wrap: anywhere; }
-    .town-card strong { font-size: 1.04rem; line-height: 1.15; }
-    .town-card .region { margin-top: 3px; }
-    .town-card .highlight { margin-top: 5px; color: var(--forest); font-size: .84rem; font-weight: 680; line-height: 1.35; }
-    .town-card .access { margin-top: 3px; line-height: 1.35; }
-    .card-arrow { width: 7px; height: 7px; border: solid var(--violet); border-width: 1.5px 1.5px 0 0; transform: rotate(45deg); margin-right: 2px; }
-    .chooser { margin: 0 0 8px; display: grid; gap: 4px; font-size: .82rem; color: var(--muted); font-weight: 700; }
-    select { width: 100%; min-height: 36px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
-    .panel-message { padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
-    .panel-message:empty { display: none; }
-    .panel-message.hint { padding: 0 0 8px; border: 0; background: transparent; color: var(--muted); font-size: .85rem; }
-    .panel-message + .retry { margin-top: 8px; }
-    .snapshot { margin-top: 8px; color: var(--muted); font-size: .8rem; }
-    #status { color: var(--muted); margin-top: 10px; }
+    .town-card strong { font: 700 var(--rc-text-lg) / 1.15 var(--rc-font-display); letter-spacing: -0.01em; }
+    .town-card .region { margin-top: 2px; }
+    .town-card .highlight { margin-top: 4px; color: var(--rc-accent); font-weight: 700; line-height: 1.35; }
+    .town-card .access { margin-top: 2px; line-height: 1.35; }
+    .card-arrow { width: 7px; height: 7px; border: solid var(--rc-violet); border-width: 2px 2px 0 0; transform: rotate(45deg); margin-right: 4px; }
+    .chooser { margin: 0 0 8px; color: var(--rc-muted); }
+    .panel-message.hint { padding: 0 0 8px; border: 0; background: transparent; color: var(--rc-muted); font-size: var(--rc-text-sm); }
+    .panel-message + .rc-btn { margin-top: 8px; }
+    .snapshot { margin-top: 8px; color: var(--rc-muted); font-size: var(--rc-text-xs); }
+    #status { color: var(--rc-muted); margin-top: 12px; }
     #status:empty { display: none; }
     #profile { margin-top: 24px; scroll-margin-top: 8px; }
     #profile:empty { display: none; }
     .overview {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, .65fr);
-      gap: 14px;
-      padding: 17px;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: var(--card);
+      gap: 16px;
+      padding: 16px;
+      border: 1px solid var(--rc-line);
+      border-radius: var(--rc-radius-lg);
+      background: var(--rc-surface);
       align-items: center;
     }
-    .overview h2 { font: 700 2rem/1.06 ui-serif, Georgia, serif; letter-spacing: -.03em; overflow-wrap: anywhere; }
-    .overview p { margin-top: 5px; }
-    .metric { border-radius: 9px; padding: 9px 11px; background: var(--sand); }
-    .metric strong { display: block; margin: 2px 0; font-size: 1.24rem; font-variant-numeric: tabular-nums; }
-    .evidence { margin-top: 17px; }
-    .evidence p { margin-top: 5px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 6px; }
-    th, td { padding: 7px 5px; text-align: start; border-bottom: 1px solid var(--line); vertical-align: top; }
-    thead th { font-size: .82rem; color: var(--muted); }
-    tbody th { width: 46%; font-weight: 620; }
+    .overview h2 { font-size: var(--rc-text-3xl); line-height: 1.06; overflow-wrap: anywhere; }
+    .overview p { margin-top: 4px; }
+    .metric { border-radius: var(--rc-radius-sm); padding: 12px; background: var(--rc-gold-soft); color: var(--rc-warn); }
+    .metric small { color: inherit; }
+    .metric strong { display: block; margin: 2px 0; font-size: var(--rc-text-xl); font-variant-numeric: tabular-nums; color: var(--rc-ink); }
+    .evidence { margin-top: 24px; }
+    .evidence h3 { display: flex; align-items: center; gap: 8px; font-size: var(--rc-text-lg); }
+    .evidence h3 .rc-icon { color: var(--rc-violet); }
+    .evidence p { margin-top: 4px; max-width: var(--rc-measure); }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { padding: 8px 6px; text-align: start; border-bottom: 1px solid var(--rc-line); vertical-align: top; }
+    thead th { font-size: var(--rc-text-sm); color: var(--rc-muted); }
+    tbody th { width: 46%; font-weight: 600; }
     td { font-variant-numeric: tabular-nums; }
     td small, .items small { display: block; }
-    .panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-    .items { list-style: none; margin: 5px 0 0; padding: 0; }
-    .items li { padding: 8px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
-    .match-list { margin: 4px 0 0; padding-left: 21px; }
+    .panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; }
+    .items { list-style: none; margin: 4px 0 0; padding: 0; }
+    .items li { padding: 8px 0; border-bottom: 1px solid var(--rc-line); overflow-wrap: anywhere; }
+    .match-list { margin: 4px 0 0; padding-left: 20px; }
     details { margin-top: 8px; }
-    summary { cursor: pointer; color: var(--forest); font-weight: 650; padding: 5px 0; }
     @media (min-width: 900px) {
-      main { padding: 22px; }
-      .hero { padding-inline: 34px; min-height: 232px; }
+      main { padding: 24px; }
+      .hero { padding-inline: 36px; min-height: 232px; }
     }
     @media (max-width: 630px) {
       .workspace, .panels { grid-template-columns: minmax(0, 1fr); }
-      .panels { gap: 0; }
       .map { height: 276px; }
       .town-list { max-height: 290px; }
     }
     @media (max-width: 420px) {
-      main { padding: 11px; }
-      .hero { min-height: 170px; padding: 15px 14px; }
-      .hero h1 { font-size: 2.45rem; }
-      .hero .intro { font-size: .88rem; max-width: 17ch; }
+      main { padding: 12px; }
+      .hero { min-height: 172px; padding: 16px; }
+      .hero h1 { font-size: 2.4rem; }
+      .hero .intro { font-size: var(--rc-text-sm); max-width: 17ch; }
       .hero-art { width: 62%; background-position: 54% 65%; }
       .map { height: 242px; }
-      .explorer { margin-top: 17px; }
-      .overview { grid-template-columns: minmax(0, 1fr); gap: 9px; }
+      .overview { grid-template-columns: minmax(0, 1fr); gap: 12px; }
     }
-    @media (prefers-reduced-motion: reduce) { .town-card { transition: none; } }
-  </style>
+</style>
 </head>
 <body>
   <main>
     <header class="hero">
       <div class="hero-art" aria-hidden="true"></div>
       <div>
-        <p class="brand">relo<span>.cat</span></p>
+        <p class="rc-wordmark"><!-- MARK --><span>Relo<b>Cat</b></span></p>
         <h1>Find your town</h1>
         <p class="intro">Compare places to live in Catalonia.</p>
       </div>
@@ -262,8 +245,8 @@
             <div id="map-pins" role="group" aria-label="Town map pins"></div>
             <div class="map-controls" role="group" aria-label="Map controls">
               <div class="zoom">
-                <button id="zoom-out" type="button" aria-label="Zoom out" disabled>−</button>
-                <button id="zoom-in" type="button" aria-label="Zoom in" disabled>+</button>
+                <button id="zoom-out" type="button" aria-label="Zoom out" disabled><!-- ICON:remove --></button>
+                <button id="zoom-in" type="button" aria-label="Zoom in" disabled><!-- ICON:add --></button>
               </div>
               <button id="fit-map" type="button" disabled>Fit towns</button>
             </div>
@@ -271,11 +254,11 @@
           <figcaption><span>Boundaries adapted from <a id="map-source" target="_blank" rel="noopener noreferrer">ICGC</a> · <a id="map-license" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></span><span id="map-selection"></span></figcaption>
         </figure>
         <div class="results">
-          <label class="chooser" for="town" hidden>Jump to a municipality
+          <label class="chooser rc-field" for="town" hidden>Jump to a municipality
             <select id="town" disabled><option value="">Choose a town</option></select>
           </label>
-          <p id="results-status" class="panel-message" role="status">Loading towns…</p>
-          <button id="retry-results" class="retry" type="button" hidden>Retry</button>
+          <p id="results-status" class="panel-message rc-note" role="status">Loading towns…</p>
+          <button id="retry-results" class="rc-btn rc-btn--sm" type="button" hidden><!-- ICON:refresh -->Retry</button>
           <ol id="town-list" class="town-list" aria-label="Town cards"></ol>
           <p id="snapshot" class="snapshot"></p>
         </div>

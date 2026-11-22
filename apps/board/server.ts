@@ -5,8 +5,9 @@ import { RESOURCE_MIME_TYPE, registerAppResource, registerAppTool } from '@model
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { defaultPorts, envPort } from '../../packages/config/env.ts';
 import { product, widgetUri as productWidgetUri } from '../../packages/config/product.ts';
-import { readJson, sendText as send } from '../../packages/http/server.ts';
+import { readJson, sendText as send, sendJson } from '../../packages/http/server.ts';
 import { loadData } from '../../packages/places/data.ts';
+import { inlineUi } from '../../packages/ui/inline.ts';
 import { handleConnectPage } from '../mcp-server/connect-page.ts';
 import { handleTestUi } from '../mcp-server/test-ui.ts';
 import { createMcpServer as createRelocatMcpServer } from '../mcp-server/tools.ts';
@@ -29,6 +30,8 @@ export type BoardOptions = {
   connection: Connection | null;
   /** Public HTTPS origin used to build shareable board links. */
   publicOrigin: string | null;
+  /** Extra browser origins allowed to call /mcp. Same-origin pages and non-browser agents always may. */
+  allowedOrigins?: Set<string>;
   /** Current place data. Defaults to the committed snapshot; the server passes the live overlay. */
   data?: () => ReturnType<typeof loadData>;
   /** Freshness of the live sources, exposed as a tool when present. */
@@ -36,14 +39,20 @@ export type BoardOptions = {
 };
 
 /** The journey board and its MCP endpoint as a request handler. */
-export function createBoardApp({ connection, publicOrigin, data = () => baseline, dataStatus }: BoardOptions) {
+export function createBoardApp({
+  connection,
+  publicOrigin,
+  allowedOrigins,
+  data = () => baseline,
+  dataStatus,
+}: BoardOptions) {
   const bridge = connection ? new ProfileBridge(connection) : null;
 
   function withBoardLink(view: ReturnType<typeof getView>) {
     const path = view.sharedBoard ? '/preview' : `/preview?run=${view.runId}`;
     return { ...view, boardUrl: publicOrigin ? publicOrigin + path : null };
   }
-  const template = readFileSync(new URL('./widget.html', import.meta.url), 'utf8');
+  const template = inlineUi(readFileSync(new URL('./widget.html', import.meta.url), 'utf8'));
   const bundle = readFileSync(new URL('./dist/widget.js', import.meta.url), 'utf8');
   const page = template.replace(
     '<!-- WIDGET -->',
@@ -215,6 +224,13 @@ export function createBoardApp({ connection, publicOrigin, data = () => baseline
         if (await handleTestUi(req, res, data().snapshot, data().policies, undefined, data().travelEstimates)) return;
       }
       if (path === '/mcp') {
+        // Browsers send Origin; agents such as ChatGPT do not. Only this site's own pages may call from a browser.
+        const origin = req.headers.origin;
+        const sameOrigin = origin === `http://${req.headers.host}` || origin === `https://${req.headers.host}`;
+        if (origin !== undefined && !sameOrigin && origin !== publicOrigin && !allowedOrigins?.has(origin)) {
+          sendJson(res, 403, { jsonrpc: '2.0', error: { code: -32000, message: 'Origin is not allowed' }, id: null });
+          return;
+        }
         const mcp = createMcpServer();
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,

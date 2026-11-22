@@ -68,7 +68,7 @@
     "title": "Catalan IRPF deduction for renting a rural primary home",
     "intent": "rent",
     "legalUrl": "https://www.boe.es/eli/es-ct/l/2025/07/30/8/con#a6-3",
-    "benefit": "15% rural or 20% special attention, generally capped at €600 individual or €1,200 joint; shared-dwelling allocation rules apply.",
+    "benefit": "15% rural or 20% special attention of the rent paid in the year, at most €600 a year, or €1,200 on a joint return; shared-dwelling allocation rules apply.",
     "effect": {
       "kind": "annual_rate_of_cost",
       "cost": "rent",
@@ -77,11 +77,14 @@
         "special_attention": 0.2,
         "other": 0
       },
-      "maxBaseEur": 3000
+      "maxAmountEur": {
+        "individual": 600,
+        "joint": 1200
+      }
     },
     "notes": [
       "Landlord identification is required on the tax return. This tool accepts only confirmation of the criterion.",
-      "Effect figures: the law caps the deduction at €600 a year (€1,200 on a joint return), not the rent base. The effect uses a €3,000 base so that it never exceeds the €600 individual cap: exact at the 20% special-attention rate, and up to €150 a year below the true cap at the 15% rural rate. The joint-return cap is not modelled."
+      "Effect figures: article 61 of Llei 8/2025 and the ATC page apply the rate to the rent paid in the tax year, with no cap on that base, and cap the deduction itself at €600 a year, or €1,200 on a joint return when one of the filers meets the age or child condition. When several taxpayers can deduct for the same dwelling, the rate result or the €1,200 cap is divided between them; that split is not modelled. It is incompatible with the general rent deduction of article 612-3 of the Codi tributari de Catalunya."
     ]
   },
   {
@@ -130,6 +133,24 @@
     "effect": {
       "kind": "transfer_tax_rate",
       "standardRate": 0.1,
+      "standardTariff": [
+        {
+          "fromEur": 0,
+          "rate": 0.1
+        },
+        {
+          "fromEur": 600000,
+          "rate": 0.11
+        },
+        {
+          "fromEur": 900000,
+          "rate": 0.12
+        },
+        {
+          "fromEur": 1500000,
+          "rate": 0.13
+        }
+      ],
       "reducedRate": {
         "rural": 0.04,
         "special_attention": 0.03,
@@ -138,7 +159,7 @@
     },
     "notes": [
       "Confirm the prior household tax base, acquisition right, and schooling and occupancy rules with ATC.",
-      "Effect figures: the general ITP/TPO rate read on the ATC rates page on 2026-11-22 is 10% when the property’s total value does not exceed €600,000 (above that an averaged tariff with 11%, 12% and 13% brackets applies), so the standard rate is modelled as 10%. Buyers who would otherwise qualify for another reduced rate, such as the 5% rate for buyers aged 35 or younger (TUJ), save less than the difference from 10%."
+      "Effect figures: the general ITP/TPO tariff read on the ATC rates page on 2026-11-22 (article 641-1 of the Codi tributari de Catalunya, https://www.boe.es/eli/es-ct/dlg/2024/03/12/1/con#a6-85) is 10% when the property’s total value does not exceed €600,000; above that the tax is the averaged tariff of 10% up to €600,000, 11% on the next €300,000, 12% on the next €600,000 and 13% above €1,500,000. This tariff has applied since 2025-06-27. The reduced rate is flat on the whole value. A buyer who qualifies for one of the 5% rates that apply anywhere in Catalonia (itp_young_buyer, itp_large_family, itp_single_parent, itp_disability) saves only the difference between 5% and this rate by choosing a rural municipality."
     ]
   },
   {
@@ -158,6 +179,24 @@
     "effect": {
       "kind": "transfer_tax_rate",
       "standardRate": 0.1,
+      "standardTariff": [
+        {
+          "fromEur": 0,
+          "rate": 0.1
+        },
+        {
+          "fromEur": 600000,
+          "rate": 0.11
+        },
+        {
+          "fromEur": 900000,
+          "rate": 0.12
+        },
+        {
+          "fromEur": 1500000,
+          "rate": 0.13
+        }
+      ],
       "reducedRate": {
         "rural": 0.04,
         "special_attention": 0.03,
@@ -168,8 +207,203 @@
       "Unlike the TMR / TEA rate there is no school-age child requirement. The buyer’s own tax base (general plus savings, less the personal and family minimum) on the last IRPF return before the purchase must not exceed €36,000.",
       "The works must be structural rehabilitation costing more than 25% of the purchase price or market value excluding land, and must end within two years of the purchase. The rate is provisional: if a condition fails, a complementary self-assessment at the general rate plus late-payment interest is due within one month. It does not apply to bare ownership.",
       "In Artesa de Segre and Tremp only the attached nuclei qualify, not the municipal capital. Since 2026-09-29 the municipalities in Resolució PRE/3375/2026 (special regime) also count as rural for this rate.",
-      "Effect figures: the general ITP/TPO rate read on the ATC rates page on 2026-11-22 is 10% when the property’s total value does not exceed €600,000 (above that an averaged tariff with 11%, 12% and 13% brackets applies), so the standard rate is modelled as 10%. Buyers who would otherwise qualify for another reduced rate, such as the 5% rate for buyers aged 35 or younger (TUJ), save less than the difference from 10%."
+      "Effect figures: the general ITP/TPO tariff read on the ATC rates page on 2026-11-22 (article 641-1 of the Codi tributari de Catalunya, https://www.boe.es/eli/es-ct/dlg/2024/03/12/1/con#a6-85) is 10% when the property’s total value does not exceed €600,000; above that the tax is the averaged tariff of 10% up to €600,000, 11% on the next €300,000, 12% on the next €600,000 and 13% above €1,500,000. This tariff has applied since 2025-06-27. The reduced rate is flat on the whole value. A buyer who qualifies for one of the 5% rates that apply anywhere in Catalonia (itp_young_buyer, itp_large_family, itp_single_parent, itp_disability) saves only the difference between 5% and this rate by choosing a rural municipality."
     ]
+  },
+  {
+    "version": "2026-11-22",
+    "beneficiary": "household",
+    "authority": "Agència Tributària de Catalunya",
+    "effectiveFrom": "2025-06-27",
+    "effectiveThrough": "2099-12-31",
+    "mechanism": "reduced_tax_rate",
+    "sourceUrl": "https://atc.gencat.cat/ca/tributs/itpajd/tpo/tarifes-tipus/",
+    "lastVerified": "2026-11-22",
+    "id": "itp_young_buyer",
+    "title": "Reduced ITP on a primary-home purchase by a buyer aged 35 or younger (TUJ)",
+    "intent": "buy",
+    "legalUrl": "https://www.boe.es/eli/es-ct/dlg/2024/03/12/1/con#a6-89",
+    "benefit": "5% ITP/TPO rate, instead of the general tariff, on the purchase of a habitual residence anywhere in Catalonia by a buyer aged 35 or younger whose tax base is at most €36,000.",
+    "effect": {
+      "kind": "transfer_tax_rate",
+      "standardRate": 0.1,
+      "standardTariff": [
+        {
+          "fromEur": 0,
+          "rate": 0.1
+        },
+        {
+          "fromEur": 600000,
+          "rate": 0.11
+        },
+        {
+          "fromEur": 900000,
+          "rate": 0.12
+        },
+        {
+          "fromEur": 1500000,
+          "rate": 0.13
+        }
+      ],
+      "reducedRate": {
+        "rural": 0.05,
+        "special_attention": 0.05,
+        "other": 0.05
+      }
+    },
+    "notes": [
+      "Article 641-5 of the Codi tributari de Catalunya and the ATC rates page: the buyer is 35 or younger on the date the tax accrues, and the buyer’s own general plus savings tax base, less the personal and family minimum, on the last IRPF return before the purchase is at most €36,000. The 35-year limit applies to purchases from 2025-06-27 (it was 32 before); the €36,000 limit dates from 2023-03-18.",
+      "The last IRPF return is the last one filed, or that could have been filed, before the purchase (DGTJ resolutions 1/2025 and 2/2025).",
+      "The home must be the buyer’s habitual residence: lived in within twelve months of the purchase and for three continuous years, with the exceptions in the law. The rate is provisional; if a deadline is missed, a complementary self-assessment at the general rate plus late-payment interest is due within one month. It applies to full or shared ownership and to surface, usufruct and use rights, not to bare ownership.",
+      "It applies in every municipality of Catalonia, so it is not a saving of any particular place: the savings planner uses it as the buyer’s baseline rate. The law states no end date; 2099-12-31 stands for an open-ended measure. Effect figures: the general ITP/TPO tariff read on the ATC rates page on 2026-11-22 (article 641-1 of the Codi tributari de Catalunya, https://www.boe.es/eli/es-ct/dlg/2024/03/12/1/con#a6-85) is 10% when the property’s total value does not exceed €600,000; above that the tax is the averaged tariff of 10% up to €600,000, 11% on the next €300,000, 12% on the next €600,000 and 13% above €1,500,000. This tariff has applied since 2025-06-27. The reduced rate is flat on the whole value."
+    ],
+    "territory": "catalonia"
+  },
+  {
+    "version": "2026-11-22",
+    "beneficiary": "household",
+    "authority": "Agència Tributària de Catalunya",
+    "effectiveFrom": "2023-03-18",
+    "effectiveThrough": "2099-12-31",
+    "mechanism": "reduced_tax_rate",
+    "sourceUrl": "https://atc.gencat.cat/ca/tributs/itpajd/tpo/tarifes-tipus/",
+    "lastVerified": "2026-11-22",
+    "id": "itp_large_family",
+    "title": "Reduced ITP on a primary-home purchase by a large family (TUF)",
+    "intent": "buy",
+    "legalUrl": "https://www.boe.es/eli/es-ct/dlg/2024/03/12/1/con#a6-86",
+    "benefit": "5% ITP/TPO rate, instead of the general tariff, on the purchase of the habitual residence of a large family anywhere in Catalonia, when the family’s tax bases total at most €36,000 plus €14,000 per child above the legal minimum.",
+    "effect": {
+      "kind": "transfer_tax_rate",
+      "standardRate": 0.1,
+      "standardTariff": [
+        {
+          "fromEur": 0,
+          "rate": 0.1
+        },
+        {
+          "fromEur": 600000,
+          "rate": 0.11
+        },
+        {
+          "fromEur": 900000,
+          "rate": 0.12
+        },
+        {
+          "fromEur": 1500000,
+          "rate": 0.13
+        }
+      ],
+      "reducedRate": {
+        "rural": 0.05,
+        "special_attention": 0.05,
+        "other": 0.05
+      }
+    },
+    "notes": [
+      "Article 641-2 of the Codi tributari de Catalunya and the ATC rates page: the buyer is a member of a large family as defined by Llei 40/2003, and the general plus savings tax bases, less personal and family minimums, of the family members on the last IRPF return total at most €36,000, increased by €14,000 for each child above the minimum number that makes a family legally large. Thresholds in force for purchases from 2023-03-18.",
+      "Only the €36,000 limit is screened. A family above it may still qualify through the €14,000 increases, so that case is reported as needing verification, not as ineligible.",
+      "The home must be the buyer’s habitual residence: lived in within twelve months of the purchase and for three continuous years, with the exceptions in the law. The rate is provisional; if a deadline is missed, a complementary self-assessment at the general rate plus late-payment interest is due within one month. It applies to full or shared ownership and to surface, usufruct and use rights, not to bare ownership.",
+      "It applies in every municipality of Catalonia, so it is not a saving of any particular place: the savings planner uses it as the buyer’s baseline rate. The law states no end date; 2099-12-31 stands for an open-ended measure. Effect figures: the general ITP/TPO tariff read on the ATC rates page on 2026-11-22 (article 641-1 of the Codi tributari de Catalunya, https://www.boe.es/eli/es-ct/dlg/2024/03/12/1/con#a6-85) is 10% when the property’s total value does not exceed €600,000; above that the tax is the averaged tariff of 10% up to €600,000, 11% on the next €300,000, 12% on the next €600,000 and 13% above €1,500,000. This tariff has applied since 2025-06-27. The reduced rate is flat on the whole value."
+    ],
+    "territory": "catalonia"
+  },
+  {
+    "version": "2026-11-22",
+    "beneficiary": "household",
+    "authority": "Agència Tributària de Catalunya",
+    "effectiveFrom": "2023-03-18",
+    "effectiveThrough": "2099-12-31",
+    "mechanism": "reduced_tax_rate",
+    "sourceUrl": "https://atc.gencat.cat/ca/tributs/itpajd/tpo/tarifes-tipus/",
+    "lastVerified": "2026-11-22",
+    "id": "itp_single_parent",
+    "title": "Reduced ITP on a primary-home purchase by a single-parent family (TMP)",
+    "intent": "buy",
+    "legalUrl": "https://www.boe.es/eli/es-ct/dlg/2024/03/12/1/con#a6-87",
+    "benefit": "5% ITP/TPO rate, instead of the general tariff, on the purchase of the habitual residence of a single-parent family anywhere in Catalonia, when the family’s tax bases total at most €36,000 plus €14,000 per child above the special-category minimum.",
+    "effect": {
+      "kind": "transfer_tax_rate",
+      "standardRate": 0.1,
+      "standardTariff": [
+        {
+          "fromEur": 0,
+          "rate": 0.1
+        },
+        {
+          "fromEur": 600000,
+          "rate": 0.11
+        },
+        {
+          "fromEur": 900000,
+          "rate": 0.12
+        },
+        {
+          "fromEur": 1500000,
+          "rate": 0.13
+        }
+      ],
+      "reducedRate": {
+        "rural": 0.05,
+        "special_attention": 0.05,
+        "other": 0.05
+      }
+    },
+    "notes": [
+      "Article 641-3 of the Codi tributari de Catalunya and the ATC rates page: the buyer is a member of a single-parent family under the rules developing Llei 18/2003, and the general plus savings tax bases, less personal and family minimums, of the family members on the last IRPF return total at most €36,000, increased by €14,000 for each child above the minimum number required for the special category. Thresholds in force for purchases from 2023-03-18.",
+      "Only the €36,000 limit is screened. A family above it may still qualify through the €14,000 increases, so that case is reported as needing verification, not as ineligible.",
+      "The home must be the buyer’s habitual residence: lived in within twelve months of the purchase and for three continuous years, with the exceptions in the law. The rate is provisional; if a deadline is missed, a complementary self-assessment at the general rate plus late-payment interest is due within one month. It applies to full or shared ownership and to surface, usufruct and use rights, not to bare ownership.",
+      "It applies in every municipality of Catalonia, so it is not a saving of any particular place: the savings planner uses it as the buyer’s baseline rate. The law states no end date; 2099-12-31 stands for an open-ended measure. Effect figures: the general ITP/TPO tariff read on the ATC rates page on 2026-11-22 (article 641-1 of the Codi tributari de Catalunya, https://www.boe.es/eli/es-ct/dlg/2024/03/12/1/con#a6-85) is 10% when the property’s total value does not exceed €600,000; above that the tax is the averaged tariff of 10% up to €600,000, 11% on the next €300,000, 12% on the next €600,000 and 13% above €1,500,000. This tariff has applied since 2025-06-27. The reduced rate is flat on the whole value."
+    ],
+    "territory": "catalonia"
+  },
+  {
+    "version": "2026-11-22",
+    "beneficiary": "household",
+    "authority": "Agència Tributària de Catalunya",
+    "effectiveFrom": "2023-03-18",
+    "effectiveThrough": "2099-12-31",
+    "mechanism": "reduced_tax_rate",
+    "sourceUrl": "https://atc.gencat.cat/ca/tributs/itpajd/tpo/tarifes-tipus/",
+    "lastVerified": "2026-11-22",
+    "id": "itp_disability",
+    "title": "Reduced ITP on a primary-home purchase for a person with a disability of 65% or more (TUM)",
+    "intent": "buy",
+    "legalUrl": "https://www.boe.es/eli/es-ct/dlg/2024/03/12/1/con#a6-88",
+    "benefit": "5% ITP/TPO rate, instead of the general tariff, on the purchase anywhere in Catalonia of the habitual residence of a buyer who has, or whose family unit includes a person with, a recognised disability of 65% or more, when the family unit’s tax bases total at most €36,000.",
+    "effect": {
+      "kind": "transfer_tax_rate",
+      "standardRate": 0.1,
+      "standardTariff": [
+        {
+          "fromEur": 0,
+          "rate": 0.1
+        },
+        {
+          "fromEur": 600000,
+          "rate": 0.11
+        },
+        {
+          "fromEur": 900000,
+          "rate": 0.12
+        },
+        {
+          "fromEur": 1500000,
+          "rate": 0.13
+        }
+      ],
+      "reducedRate": {
+        "rural": 0.05,
+        "special_attention": 0.05,
+        "other": 0.05
+      }
+    },
+    "notes": [
+      "Article 641-4 of the Codi tributari de Catalunya and the ATC rates page: a physical, psychic or sensory disability recognised at 65% or more in the buyer or a member of the buyer’s family unit (as defined for IRPF joint filing), and general plus savings tax bases, less personal and family minimums, of the family-unit members on the last IRPF return of at most €36,000 (in force for purchases from 2023-03-18). Proof of the disability grade is filed with the self-assessment.",
+      "The home must be the buyer’s habitual residence: lived in within twelve months of the purchase and for three continuous years, with the exceptions in the law. The rate is provisional; if a deadline is missed, a complementary self-assessment at the general rate plus late-payment interest is due within one month. It applies to full or shared ownership and to surface, usufruct and use rights, not to bare ownership.",
+      "It applies in every municipality of Catalonia, so it is not a saving of any particular place: the savings planner uses it as the buyer’s baseline rate. The law states no end date; 2099-12-31 stands for an open-ended measure. Effect figures: the general ITP/TPO tariff read on the ATC rates page on 2026-11-22 (article 641-1 of the Codi tributari de Catalunya, https://www.boe.es/eli/es-ct/dlg/2024/03/12/1/con#a6-85) is 10% when the property’s total value does not exceed €600,000; above that the tax is the averaged tariff of 10% up to €600,000, 11% on the next €300,000, 12% on the next €600,000 and 13% above €1,500,000. This tariff has applied since 2025-06-27. The reduced rate is flat on the whole value."
+    ],
+    "territory": "catalonia"
   },
   {
     "version": "2026-11-22",
@@ -221,16 +455,18 @@
     "title": "State youth aid to buy or self-build a home in a municipality of 10,000 residents or fewer",
     "intent": "buy",
     "legalUrl": "https://www.boe.es/eli/es/rd/2026/04/22/326/con",
-    "benefit": "Up to €15,000 per home and at most 20% of the purchase or building cost, for buyers aged 35 or younger, on a home priced at €300,000 or less in Catalonia.",
+    "benefit": "At most €15,000 per home and at most 20% of the purchase or building cost, for buyers aged 35 or younger, on a home priced at €300,000 or less in Catalonia.",
     "effect": {
-      "kind": "unquantified",
-      "reason": "The grant is the lower of €15,000 and 20% of the price, shared between at most two buyers, and it can only be claimed through a Catalan call; no such call could be found on the Generalitat housing pages on 2026-11-22."
+      "kind": "one_off_rate_of_price",
+      "rate": 0.2,
+      "maxAmountEur": 15000
     },
     "notes": [
       "Articles 140 to 145 and annex IV of Real Decreto 326/2026 (Plan Estatal de Vivienda 2026-2030), in force since 2026-04-24. Purchase contracts signed on or after 2026-01-01 can qualify. The decree gives no end date for this line; 2030-12-31 is the end of the plan period.",
       "Conditions in the decree: aged 35 or younger; annual income at most 5 times IPREM (5.5 or 6 times with a recognised disability); not owning or holding a usufruct over another home in Spain, with exceptions; habitual and permanent residence for at least five years, occupied within three months of handover.",
       "No Catalan call was found on 2026-11-22: the Generalitat page for purchase aid lists only the Fons Públic d’Emancipació loans. The call status is therefore unknown, and Catalan bases may add conditions to the decree’s.",
-      "The decree covers municipalities or population nuclei of 10,000 residents or fewer when it entered into force or when the call is published; a bilateral agreement may extend it to 20,000. The listed municipalities are the pilot towns at or below 10,000 residents in the snapshot’s 2025 population figures. Nuclei inside larger municipalities are not assessed."
+      "The decree covers municipalities or population nuclei of 10,000 residents or fewer when it entered into force or when the call is published; a bilateral agreement may extend it to 20,000. The listed municipalities are the pilot towns at or below 10,000 residents in the snapshot’s 2025 population figures. Nuclei inside larger municipalities are not assessed.",
+      "Effect figures: article 143 of Real Decreto 326/2026 sets the aid at €15,000 per home or less, limited to 20% of the purchase or building cost, so the effect is a ceiling: the lower of €15,000 and 20% of the price. A home can be bought by at most two people, who share the aid. The aid can only be claimed through a Catalan call, and none could be found on the Generalitat housing pages on 2026-11-22, so the amount is never counted."
     ],
     "municipalityCodes": [
       "080312",

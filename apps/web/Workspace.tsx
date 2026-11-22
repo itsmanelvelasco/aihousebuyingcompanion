@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import type { Habit } from '../../packages/contracts/planner.ts';
 import type { ToolClient } from './client.ts';
 import { BankStrip } from './components/BankStrip.tsx';
+import { Wordmark } from './components/bits.tsx';
 import { Notes } from './components/Notes.tsx';
 import { PersonPanel } from './components/PersonPanel.tsx';
 import { PlacesPanel } from './components/PlacesPanel.tsx';
@@ -44,9 +45,7 @@ export function Workspace({ client, launch, mode }: Props) {
   return (
     <main>
       <header className="masthead">
-        <p className="brand">
-          relo<span>.cat</span>
-        </p>
+        <Wordmark />
         <h1>How soon could you buy?</h1>
         <p className="lede">
           {name && plan.result
@@ -56,7 +55,7 @@ export function Workspace({ client, launch, mode }: Props) {
       </header>
 
       {mode === 'fixture' ? (
-        <p className="note note-warn fixture-banner">
+        <p className="rc-note rc-note--warn fixture-banner">
           <strong>Fixture preview.</strong> Sample figures written by hand, not planner output. Toggles call the fixture
           and the timelines do not recalculate.
         </p>

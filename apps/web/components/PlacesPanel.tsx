@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import type { PlaceBenefit, PlacePlan } from '../../../packages/contracts/planner.ts';
+import type { IconName } from '../../../packages/ui/icons.ts';
 import type { Municipality, ToolClient } from '../client.ts';
 import { ToolError } from '../client.ts';
 import { formatEuros, formatMonthly } from '../format.ts';
@@ -15,9 +16,21 @@ import {
   serviceLabel,
   timelineSteps,
 } from '../view-model.ts';
-import { Badge, ErrorNote, Skeleton, Source, Switch } from './bits.tsx';
+import { Badge, ErrorNote, Icon, Skeleton, Source, Switch } from './bits.tsx';
 
 const MAX_PLACES = 8;
+
+const serviceIcons: Record<PlacePlan['place']['services'][number]['kind'], IconName> = {
+  primary_care: 'health',
+  hospital: 'hospital',
+  pharmacy: 'pharmacy',
+  school: 'school',
+  library: 'library',
+  rail_station: 'train',
+  retail: 'shop',
+  sports: 'sports',
+  social_services: 'household',
+};
 
 type Props = {
   client: ToolClient;
@@ -42,7 +55,10 @@ export function PlacesPanel(props: Props) {
   return (
     <section className="panel places" aria-labelledby="places-title" aria-busy={plan.refreshing}>
       <header className="panel-head">
-        <h2 id="places-title">Places compared</h2>
+        <h2 id="places-title">
+          <Icon name="compare" />
+          Places compared
+        </h2>
         <span className="muted" role="status">
           {plan.refreshing && plan.result
             ? 'Updating the plan…'
@@ -65,17 +81,20 @@ export function PlacesPanel(props: Props) {
       ) : null}
 
       {!props.userId ? (
-        <p className="note">Choose who is planning to compare places.</p>
+        <p className="rc-note">Choose who is planning to compare places.</p>
       ) : codes.length === 0 ? (
-        <p className="note">
-          <strong>No places to compare yet.</strong> Add a municipality below, or ask ReloCat in the chat for towns that
-          fit and open them here.
-        </p>
+        <div className="rc-empty">
+          <div className="rc-art empty-art" aria-hidden="true" />
+          <p>
+            <strong>No places to compare yet.</strong> Add a municipality below, or ask ReloCat in the chat for towns
+            that fit and open them here.
+          </p>
+        </div>
       ) : plan.phase === 'error' && plan.error ? (
         <ErrorNote title="Could not load the plan" error={plan.error} onRetry={props.onRetry} />
       ) : plan.phase === 'loading' ? (
         <>
-          <p className="visually-hidden" role="status">
+          <p className="rc-sr-only" role="status">
             Loading the plan…
           </p>
           <ol className="place-list">
@@ -87,7 +106,7 @@ export function PlacesPanel(props: Props) {
           </ol>
         </>
       ) : plans.length === 0 && pending.length === 0 ? (
-        <p className="note">
+        <p className="rc-note">
           <strong>The plan returned no places.</strong> The codes sent ({codes.join(', ')}) may be outside the pilot
           data. Remove them or add another municipality.
         </p>
@@ -111,10 +130,15 @@ export function PlacesPanel(props: Props) {
       )}
 
       {missing.length > 0 && plans.length > 0 ? (
-        <p className="note note-warn">
+        <p className="rc-note rc-note--warn">
           No plan came back for {missing.join(', ')}.{' '}
           {missing.map(code => (
-            <button key={code} type="button" className="link-button" onClick={() => props.onRemove(code)}>
+            <button
+              key={code}
+              type="button"
+              className="rc-btn rc-btn--quiet rc-btn--sm"
+              onClick={() => props.onRemove(code)}
+            >
               Remove {code}
             </button>
           ))}
@@ -186,7 +210,7 @@ function PlaceCard(props: { plan: PlacePlan; rank: number; scale: number; onRemo
           </div>
         </dl>
       ) : (
-        <p className="note note-warn">
+        <p className="rc-note rc-note--warn">
           {headline.tone === 'none'
             ? 'At the current rate nothing is saved each month, so the upfront cash is never reached. This is not zero months: there is no end date to show.'
             : 'The planner could not estimate this place. See the missing data below.'}
@@ -224,6 +248,7 @@ function PlaceCard(props: { plan: PlacePlan; rank: number; scale: number; onRemo
           <ul className="services">
             {place.services.map(item => (
               <li key={item.kind}>
+                <Icon name={serviceIcons[item.kind]} />
                 <span className="service-count">{item.count}</span>
                 <span>
                   {serviceLabel(item.kind)}
@@ -261,13 +286,17 @@ function PlaceCard(props: { plan: PlacePlan; rank: number; scale: number; onRemo
             <h4>Missing data</h4>
             <ul className="plain-list gaps">
               {[...gaps].map(text => (
-                <li key={text}>{text}</li>
+                <li key={text}>
+                  <Icon name="help" />
+                  <span>{text}</span>
+                </li>
               ))}
             </ul>
           </>
         ) : null}
 
-        <button type="button" className="link-button remove" onClick={props.onRemove}>
+        <button type="button" className="rc-btn rc-btn--quiet rc-btn--sm remove" onClick={props.onRemove}>
+          <Icon name="close" />
           Remove {place.name} from the comparison
         </button>
       </details>
@@ -320,18 +349,16 @@ function BenefitRow({ benefit }: { benefit: PlaceBenefit }) {
         <span className="benefit-amount">{view.amountLabel}</span>
       </div>
       <p className="benefit-tags">
-        <Badge tone={benefitBadge[view.tone]}>
-          <span className="mark" aria-hidden="true">
-            {view.tone === 'counted' ? '✓' : view.counted ? '!' : '–'}
-          </span>
+        <Badge
+          tone={benefitBadge[view.tone]}
+          icon={view.tone === 'counted' ? 'tick' : view.counted ? 'warning' : 'remove'}
+        >
           {view.countedLabel}
         </Badge>
-        <Badge tone={view.confirmed ? 'ok' : benefit.eligibilityStatus === 'ineligible' ? 'off' : 'warn'}>
-          {view.confirmed ? null : benefit.eligibilityStatus === 'needs_verification' ? (
-            <span className="mark" aria-hidden="true">
-              ?
-            </span>
-          ) : null}
+        <Badge
+          tone={view.confirmed ? 'ok' : benefit.eligibilityStatus === 'ineligible' ? 'off' : 'warn'}
+          icon={!view.confirmed && benefit.eligibilityStatus === 'needs_verification' ? 'help' : undefined}
+        >
           {view.eligibilityLabel}
         </Badge>
         <Badge tone={benefit.callStatus === 'open' ? 'ok' : benefit.callStatus === 'closed' ? 'off' : 'muted'}>
@@ -379,7 +406,8 @@ function AddPlace(props: { client: ToolClient; codes: string[]; onAdd: (code: st
   if (full) return <p className="hint">Eight places is the most the plan compares at once.</p>;
   if (towns.phase === 'closed')
     return (
-      <button type="button" className="button" onClick={open}>
+      <button type="button" className="rc-btn" onClick={open}>
+        <Icon name="add" />
         Add a place
       </button>
     );
@@ -394,7 +422,7 @@ function AddPlace(props: { client: ToolClient; codes: string[]; onAdd: (code: st
   if (options.length === 0) return <p className="hint">Every municipality in the pilot is already compared.</p>;
   return (
     <form
-      className="add-place"
+      className="add-place rc-field"
       onSubmit={event => {
         event.preventDefault();
         if (!choice) return;
@@ -411,7 +439,7 @@ function AddPlace(props: { client: ToolClient; codes: string[]; onAdd: (code: st
           </option>
         ))}
       </select>
-      <button type="submit" className="button" disabled={!choice}>
+      <button type="submit" className="rc-btn rc-btn--primary" disabled={!choice}>
         Add
       </button>
     </form>

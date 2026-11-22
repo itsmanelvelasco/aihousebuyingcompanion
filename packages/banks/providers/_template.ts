@@ -13,6 +13,10 @@
  *   5. Check it: `GET /bank/providers` lists the provider (as `unconfigured` until its variables are
  *      set), `POST /users/:id/bank/connections` links a user and `POST /users/:id/bank/sync` pulls.
  *
+ * A complete, working example is `demo-bank.ts` next to this file: cursor pagination, pending
+ * movements that complete, declined ones (`removedIds`), a signature with a timestamp window and
+ * event IDs (`eventId`) so a redelivered webhook is ignored.
+ *
  * Nothing in this file describes a real bank. `BankApiAccount`, `BankApiMovement` and `callBank` are
  * placeholders for whatever the bank's API returns: replace them, do not ship them.
  *
@@ -135,7 +139,8 @@ export default defineBankProvider({
   /**
    * Optional (delete together with `parseWebhook` for a polling-only bank). The webhook route has
    * no bearer token, so this check is its only authentication: follow the bank's documented
-   * signature scheme exactly and return false when anything is missing.
+   * signature scheme exactly and return false when anything is missing. The context also carries
+   * `now`, the engine's clock, for schemes that sign a timestamp and reject old calls.
    */
   verifyWebhook({ headers, rawBody }, { env }) {
     const signature = headers['x-my-bank-signature'];
@@ -146,7 +151,8 @@ export default defineBankProvider({
 
   /**
    * Optional. Which connection the verified webhook is about. Only the reference is used; the
-   * engine then calls `fetchTransactions`. Return null for notifications that need no sync.
+   * engine then calls `fetchTransactions`. Return null for notifications that need no sync. Add
+   * `eventId` when the bank numbers its notifications: banks retry, and repeats are then ignored.
    */
   parseWebhook(rawBody) {
     try {

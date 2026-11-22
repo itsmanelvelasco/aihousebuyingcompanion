@@ -50,7 +50,7 @@ test('the workspace page inlines its bundle and styles and loads nothing from th
   assert.match(page, /<div id="root"><\/div>/);
   assert.doesNotMatch(page, /<!-- WIDGET -->|\/\* STYLES \*\//);
   assert.match(page, /<script>[\s\S]{50000,}<\/script>/);
-  assert.match(page, /--paper: light-dark\(/);
+  assert.match(page, /--rc-paper: light-dark\(/);
   assert.match(page, /prefers-reduced-motion/);
   assert.doesNotMatch(page, /<script[^>]+src=|<link\b|@import|url\(\s*["']?https?:/i);
   // Exactly one script and one style element survive inlining.

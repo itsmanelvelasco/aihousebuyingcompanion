@@ -1,5 +1,7 @@
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { iconAttributes, iconPaths } from '../../packages/ui/icons.ts';
+import { themeCss } from '../../packages/ui/inline.ts';
 
 const launchScript = `
   if (window.parent !== window) {
@@ -44,7 +46,7 @@ export function renderVoiceCard(launchUrl: string | null) {
         null,
         h(
           'a',
-          { className: 'action launch', href: launchUrl, target: '_blank', rel: 'noopener noreferrer' },
+          { className: 'rc-btn rc-btn--gold launch', href: launchUrl, target: '_blank', rel: 'noopener noreferrer' },
           'Start talking',
         ),
         h('p', { className: 'help' }, 'Opens the ReloCat voice interviewer.'),
@@ -53,13 +55,17 @@ export function renderVoiceCard(launchUrl: string | null) {
     : h(
         'details',
         null,
-        h('summary', { className: 'action' }, 'Start talking'),
+        h('summary', { className: 'rc-btn rc-btn--gold' }, 'Start talking'),
         h('p', { className: 'help' }, instructions),
       );
   const card = h(
     'main',
     { 'aria-labelledby': 'title' },
-    h('div', { className: 'orb', 'aria-hidden': 'true' }, h('span', { className: 'wave' }, '▂ ▅ █ ▅ ▂')),
+    h(
+      'div',
+      { className: 'orb', 'aria-hidden': 'true' },
+      h('svg', { className: 'rc-icon', ...iconAttributes, dangerouslySetInnerHTML: { __html: iconPaths.mic } }),
+    ),
     h('h1', { id: 'title' }, 'Your homebuying interview'),
     h('p', null, 'Start with your bank transactions and talk through your home goals.'),
     control,
@@ -68,22 +74,20 @@ export function renderVoiceCard(launchUrl: string | null) {
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ReloCat homebuying interview</title>
 <style>
-  :root { color-scheme: light dark; font: 15px/1.5 system-ui,sans-serif; }
-  body { margin:0; color:#f3f8ed; background:#10251b; text-align:center; }
-  main { padding:24px 18px; max-width:38rem; margin:auto; }
-  .orb { display:grid; place-items:center; width:84px; height:84px; border-radius:50%; margin:2px auto 16px;
-    background:radial-gradient(circle at 35% 22%,#e8f4a8,#6aa669 48%,#214b36 82%);
-    box-shadow:0 0 26px #7ca85d66; }
-  .wave { color:#ffffe4; font-size:13px; }
-  h1 { margin:0 0 4px; font:500 1.6rem Georgia,serif; }
-  p { margin:0 auto 16px; color:#c9dccb; }
-  .action { display:inline-block; background:#e1efbf; color:#18291e; border-radius:100px;
-    padding:8px 17px; font-weight:650; cursor:pointer; text-decoration:none; }
-  .action:focus-visible { outline:2px solid #f5f9eb; outline-offset:3px; }
-  summary { list-style:none; }
-  summary::-webkit-details-marker { display:none; }
-  .help { margin:10px auto 0; max-width:25rem; font-size:.87rem; }
-  [hidden] { display:none !important; }
+${themeCss()}
+  /* Voice card: a "night" panel of the shared theme. Layout only below. */
+  :root { --rc-body-size: 0.9375rem; --rc-focus: var(--rc-gold); }
+  body { min-height: 100dvh; color: var(--rc-on-night); background: linear-gradient(135deg, var(--rc-night), var(--rc-night-2)); text-align: center; }
+  main { padding: 24px 20px; max-width: 38rem; margin: auto; }
+  .orb { display: grid; place-items: center; width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 16px;
+    background: radial-gradient(circle at 35% 25%, #fff6c4, var(--rc-gold) 55%, #d9a93c);
+    box-shadow: 0 0 28px rgb(246 201 92 / 0.45); color: var(--rc-gold-ink); }
+  .orb .rc-icon { width: 36px; height: 36px; }
+  h1 { font-size: var(--rc-text-2xl); }
+  p { margin: 8px auto 20px; max-width: 30rem; color: var(--rc-on-night-muted); }
+  details > summary { display: inline-flex; color: var(--rc-gold-ink); }
+  details > summary::before { display: none; }
+  .help { margin: 12px auto 0; max-width: 25rem; font-size: var(--rc-text-sm); }
 </style>
 ${renderToStaticMarkup(card)}
 <script>${launchScript}</script>

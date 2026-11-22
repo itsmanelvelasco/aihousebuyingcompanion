@@ -354,8 +354,9 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
   const top = 39;
   const horizon = Math.max(300, ...lanes.map(lane => pastMonths + (lane.debtFreeMonths ?? 0))) + 4;
   const y = (months: number) => bottom - (months / horizon) * (bottom - top);
-  const selectedColor = '#653ec8';
-  const doneColor = '#137865';
+  // The palette of packages/ui/theme.css; a canvas cannot read CSS variables cheaply, so they are repeated here.
+  const selectedColor = '#7950a7';
+  const doneColor = '#1f7a55';
 
   function line(color: string, weight: number, points: [number, number][], dash: number[] = []) {
     if (!ctx) return;
@@ -389,23 +390,23 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
     ctx.stroke();
   }
 
-  ctx.fillStyle = '#f9f7fc';
+  ctx.fillStyle = '#fffcf5';
   ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = '#eaf6f0';
+  ctx.fillStyle = '#e3f1e5';
   ctx.fillRect(left, 25, today - left, bottom - 25);
-  ctx.fillStyle = '#f1edfb';
+  ctx.fillStyle = '#f4ecda';
   ctx.fillRect(mortgage, 25, width - mortgage, bottom - 25);
-  label('Years on the journey', 14, 17, '#574872', true);
+  label('Years on the journey', 14, 17, '#55625a', true);
   for (let years = 0; years * 12 <= horizon; years += 5) {
     const level = y(years * 12);
-    label(`${years}y`, 9, level, '#685f77');
+    label(`${years}y`, 9, level, '#55625a');
     if (years === 0)
-      line('#e7deef', 1, [
+      line('#e6dfcd', 1, [
         [left, level],
         [width - 14, level],
       ]);
     else
-      line('#d2c6df', 1, [
+      line('#cfc8b4', 1, [
         [left, level],
         [left + 8, level],
       ]);
@@ -427,7 +428,7 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
     const startMortgage = y(pastMonths + lane.upfrontMonths!);
     const finishMortgage = y(pastMonths + lane.debtFreeMonths!);
     const waypointY = y(pastMonths + (lane.waypoint?.offset ?? 0));
-    const color = isSelected ? selectedColor : '#a7a2b0';
+    const color = isSelected ? selectedColor : '#a3a797';
     const path: [number, number][] = [[today, y(pastMonths)]];
     if (lane.waypoint) path.push([detour, waypointY]);
     path.push([mortgage, startMortgage], [finish, finishMortgage]);
@@ -463,7 +464,7 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
     true,
     'center',
   );
-  label('Start saving', start - 10, height - 20, '#302447', true);
-  label(width < 430 ? 'Mortgage' : 'Start mortgage', mortgage, height - 20, '#302447', true, 'center');
-  label(width < 430 ? 'Paid off' : 'Mortgage paid off', width - 11, height - 20, '#302447', true, 'right');
+  label('Start saving', start - 10, height - 20, '#22352a', true);
+  label(width < 430 ? 'Mortgage' : 'Start mortgage', mortgage, height - 20, '#22352a', true, 'center');
+  label(width < 430 ? 'Paid off' : 'Mortgage paid off', width - 11, height - 20, '#22352a', true, 'right');
 }

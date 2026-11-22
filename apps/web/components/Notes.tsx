@@ -1,6 +1,7 @@
 import type { PlanResult } from '../../../packages/contracts/planner.ts';
 import { formatDate } from '../format.ts';
 import { planNotes } from '../view-model.ts';
+import { Icon } from './bits.tsx';
 
 /** Limits, assumptions and gaps of the plan. Part of the answer, so it is always open. */
 export function Notes({ result }: { result: PlanResult }) {
@@ -42,7 +43,10 @@ export function Notes({ result }: { result: PlanResult }) {
             <ul className="plain-list gaps">
               {notes.dataMissing.map(group => (
                 <li key={group.place}>
-                  <strong>{group.place}.</strong> {group.items.join(' ')}
+                  <Icon name="help" />
+                  <span>
+                    <strong>{group.place}.</strong> {group.items.join(' ')}
+                  </span>
                 </li>
               ))}
             </ul>

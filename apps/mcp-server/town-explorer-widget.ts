@@ -9,7 +9,7 @@ import {
   profileResult,
   recommendationResult,
 } from '../../packages/contracts/places.ts';
-import landscapeUrl from './assets/town-explorer.jpg';
+import { icon } from '../../packages/ui/icons.ts';
 import type { ExplorerResult } from './town-explorer-contract.ts';
 import { explorerResult } from './town-explorer-contract.ts';
 import { mountTownMap } from './town-map.ts';
@@ -34,7 +34,6 @@ const retry = document.querySelector<HTMLButtonElement>('#retry-results')!;
 const snapshotInfo = document.querySelector<HTMLParagraphElement>('#snapshot')!;
 const allButton = document.querySelector<HTMLButtonElement>('#show-all')!;
 const resultsButton = document.querySelector<HTMLButtonElement>('#show-results')!;
-document.querySelector<HTMLElement>('.hero-art')!.style.backgroundImage = `url("${landscapeUrl}")`;
 const euros = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 const sampleDay = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' });
 const schoolStages = {
@@ -171,18 +170,18 @@ function renderProfile(profile: Profile, match?: Match) {
     </div>
     ${match ? renderMatch(match) : ''}
     <section class="evidence">
-      <h3 id="travel-heading">Travel times</h3>
+      <h3 id="travel-heading">${icon('train')}Travel times</h3>
       <p class="muted">Approximate times from the town centre. Driving uses a road model. Public transport uses dated timetable samples.</p>
       ${travelTable(travelEstimates)}
     </section>
     <div class="panels">
       <section class="evidence">
-        <h3>Nearby schools</h3>
+        <h3>${icon('school')}Nearby schools</h3>
         <p class="muted">${sourceLink(nearbySchools.directory.sourceUrl, 'Official directory')} · Check admissions with each school.</p>
         ${schools ? `<ul class="items">${schools}</ul>` : "<p class='muted'>No schools listed in this profile.</p>"}
       </section>
       <section class="evidence">
-        <h3>Housing measures</h3>
+        <h3>${icon('aid')}Housing measures</h3>
         ${measures ? `<ul class="items">${measures}</ul>` : "<p class='muted'>No measures listed in this snapshot.</p>"}
       </section>
     </div>`;

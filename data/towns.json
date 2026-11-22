@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "catalonia-pilot-2026-11-22-87d12711",
+  "version": "catalonia-pilot-2026-11-22-d844251c",
   "generatedOn": "2026-11-22",
   "municipalities": [
     {
@@ -11773,6 +11773,12 @@
         "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
         "kind": "sports",
         "count": 1
+      },
+      {
+        "observedAt": "2026-11-19",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/ivft-vegh",
+        "kind": "social_services",
+        "count": 2
       }
     ],
     "250122": [
@@ -11811,6 +11817,12 @@
         "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
         "kind": "sports",
         "count": 3
+      },
+      {
+        "observedAt": "2026-11-19",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/ivft-vegh",
+        "kind": "social_services",
+        "count": 1
       }
     ],
     "250371": [
@@ -11881,6 +11893,12 @@
         "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
         "kind": "sports",
         "count": 8
+      },
+      {
+        "observedAt": "2026-11-19",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/ivft-vegh",
+        "kind": "social_services",
+        "count": 20
       }
     ],
     "250621": [
@@ -11989,6 +12007,12 @@
         "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
         "kind": "sports",
         "count": 75
+      },
+      {
+        "observedAt": "2026-11-19",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/ivft-vegh",
+        "kind": "social_services",
+        "count": 251
       }
     ],
     "251569": [
@@ -12021,6 +12045,12 @@
         "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
         "kind": "sports",
         "count": 5
+      },
+      {
+        "observedAt": "2026-11-19",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/ivft-vegh",
+        "kind": "social_services",
+        "count": 2
       }
     ],
     "251713": [
@@ -12059,6 +12089,12 @@
         "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
         "kind": "sports",
         "count": 7
+      },
+      {
+        "observedAt": "2026-11-19",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/ivft-vegh",
+        "kind": "social_services",
+        "count": 8
       }
     ],
     "251902": [
@@ -12091,6 +12127,12 @@
         "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
         "kind": "sports",
         "count": 2
+      },
+      {
+        "observedAt": "2026-11-19",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/ivft-vegh",
+        "kind": "social_services",
+        "count": 1
       }
     ],
     "252154": [
@@ -12149,6 +12191,12 @@
         "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
         "kind": "sports",
         "count": 5
+      },
+      {
+        "observedAt": "2026-11-19",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/ivft-vegh",
+        "kind": "social_services",
+        "count": 1
       }
     ],
     "252347": [
@@ -12193,6 +12241,12 @@
         "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
         "kind": "sports",
         "count": 10
+      },
+      {
+        "observedAt": "2026-11-19",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/ivft-vegh",
+        "kind": "social_services",
+        "count": 21
       }
     ],
     "252402": [
@@ -12263,6 +12317,12 @@
         "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
         "kind": "sports",
         "count": 6
+      },
+      {
+        "observedAt": "2026-11-19",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/ivft-vegh",
+        "kind": "social_services",
+        "count": 3
       }
     ],
     "259046": [
@@ -12347,6 +12407,12 @@
         "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/8gmd-gz7i",
         "kind": "sports",
         "count": 6
+      },
+      {
+        "observedAt": "2026-11-19",
+        "sourceUrl": "https://analisi.transparenciacatalunya.cat/d/ivft-vegh",
+        "kind": "social_services",
+        "count": 4
       }
     ]
   }

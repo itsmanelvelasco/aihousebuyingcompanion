@@ -4,6 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { widgetUri as productWidgetUri } from '../../packages/config/product.ts';
 import type { Snapshot } from '../../packages/contracts/places.ts';
 import { getTown } from '../../packages/places/data.ts';
+import { inlineUi } from '../../packages/ui/inline.ts';
 import { explorerInput, explorerResult } from './town-explorer-contract.ts';
 
 const widgetUri = productWidgetUri('town-explorer-v1.html');
@@ -16,7 +17,10 @@ export function loadTownExplorerPage() {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   }
-  const template = readFileSync(new URL('./town-explorer.html', import.meta.url), 'utf8');
+  // The theme, the icons and the header illustration are inlined from packages/ui.
+  const template = inlineUi(readFileSync(new URL('./town-explorer.html', import.meta.url), 'utf8'), {
+    art: ['hero-valley'],
+  });
   return template.replace('<!-- WIDGET -->', () => `<script>${bundle.replace(/<\/script/gi, '<\\/script')}</script>`);
 }
 

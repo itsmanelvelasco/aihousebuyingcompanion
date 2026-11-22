@@ -5,13 +5,19 @@ import { z } from 'zod';
 import { safeId } from '../contracts/ids.ts';
 import { transactionSchema } from '../finance/cashflow.ts';
 import { ApiError } from '../http/server.ts';
-import type { BankConnection, BankProvider, ProviderContext } from './provider.ts';
+import type { BankConnection, BankProvider, ProviderContext, WebhookSignal } from './provider.ts';
 import { pollIntervalSchema, supportsWebhooks } from './provider.ts';
 import type { BankRegistry, RegisteredProvider } from './registry.ts';
 
 /**
  * The bank sync engine: which user is connected to which provider, pulling movements from providers
  * into the ledger, polling providers that cannot call us, and telling listeners about new revisions.
+ *
+ * It is built to survive a real peer. A verified webhook is written to a small persistent queue
+ * before it is acknowledged, so a notification that arrives during a sync or just before a restart
+ * is still processed; repeated notification IDs are ignored. A sync that fails is retried with
+ * exponential backoff and its state is kept on the connection. A provider with webhooks is still
+ * pulled when it has been silent for a while, so a lost notification only delays a movement.
  *
  * The engine never writes ledger files itself. It goes through the `SyncLedger` it is given, so the
  * profile API's ledger store stays the single writer and imports stay idempotent.
@@ -44,6 +50,8 @@ export type SyncLedger = {
     userId: string,
     input: { transactions: unknown[] },
   ): Promise<Revision & { result: { inserted: number; updated: number; duplicates: number } }>;
+  /** Delete the listed movements that exist and ignore the others. Needed only for `removedIds`. */
+  removeTransactions?(userId: string, transactionIds: string[]): Promise<Revision & { result: { removed: number } }>;
   /** Subscribe to persisted revisions; returns the function that unsubscribes. */
   onEvent(listener: BankEventListener): () => void;
 };
@@ -59,12 +67,39 @@ const connectionSchema = z
     pollIntervalMs: pollIntervalSchema.nullable(),
     lastSyncAt: z.string().nullable(),
     lastError: z.string().nullable(),
+    /** When the last sync was attempted, whether or not it succeeded. Absent in older files. */
+    lastAttemptAt: z.string().nullable().default(null),
+    /** Failed syncs since the last successful one. Absent in older files. */
+    consecutiveFailures: z.number().int().nonnegative().default(0),
   })
   .strict();
 const connectionFileSchema = z
   .object({ schemaVersion: z.literal(1), connections: z.array(connectionSchema).max(10) })
   .strict();
 type StoredConnection = z.infer<typeof connectionSchema>;
+
+/** One verified webhook waiting for its sync. There is at most one per connection reference. */
+const queueItemSchema = z
+  .object({
+    /** Position in the order of arrival; a sync clears the notifications that arrived before it started. */
+    seq: z.number().int().positive(),
+    providerId: safeId,
+    ref: refSchema,
+    receivedAt: z.string(),
+  })
+  .strict();
+const queueFileSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    lastSeq: z.number().int().nonnegative(),
+    pending: z.array(queueItemSchema).max(5000),
+    /** `<providerId>:<eventId>` of recently accepted notifications, oldest first. */
+    seen: z.array(z.string().max(300)).max(2000),
+  })
+  .strict();
+type WebhookQueueFile = z.infer<typeof queueFileSchema>;
+const eventIdSchema = z.string().min(1).max(200);
+const maxSeenEvents = 2000;
 
 /** Body of `POST /users/:id/bank/connections`. */
 export const connectInputSchema = z
@@ -84,6 +119,8 @@ export type SyncResult = {
   inserted: number;
   updated: number;
   duplicates: number;
+  /** Movements deleted because the bank reported them declined or reverted. */
+  removed: number;
   /** Ledger revision after the sync. Unchanged when nothing new arrived. */
   revision: number;
   syncedAt: string;
@@ -104,6 +141,20 @@ export type BankSyncOptions = {
   overlapDays?: number;
   /** Upper bound of polling timers in this process. */
   maxPolling?: number;
+  /** Delay before the first retry of a failed sync; it doubles with every further failure. Default 2 s. */
+  retryBaseMs?: number;
+  /** Upper bound of the retry delay. Default 5 minutes. */
+  retryMaxMs?: number;
+  /**
+   * A connection of a provider with webhooks is pulled anyway when nothing was attempted for this
+   * long, so a lost notification only delays a movement. Default 5 minutes; null disables it.
+   */
+  fallbackPollMs?: number | null;
+  /**
+   * How often the engine looks for due retries and fallback pulls. Default 1 s. Null starts no timer:
+   * the caller drives the engine with `runDue()`, which is how tests step an injected clock.
+   */
+  housekeepingMs?: number | null;
 };
 
 type Activity = {
@@ -114,9 +165,16 @@ type Activity = {
   failures: number;
   stopAfterFailures: number;
   syncCount: number;
+  /** Clock time (ms) of the next automatic retry after a failure, when one is scheduled. */
+  nextRetryAt?: number;
+  /** Clock time (ms) of the last attempt, or of the connection's creation. Drives the fallback pull. */
+  lastActivityAt: number;
+  /** The provider has webhooks: failed syncs are retried and silence triggers a fallback pull. */
+  fallback: boolean;
 };
 
 const connectionFile = 'bank-connections.json';
+const queueFile = 'bank-webhook-queue.json';
 const key = (userId: string, connectionId: string) => `${userId}/${connectionId}`;
 const refKey = (providerId: string, ref: string) => `${providerId}\n${ref}`;
 
@@ -160,6 +218,90 @@ function createConnectionStore(root?: string) {
   return { read, write, scan };
 }
 
+/**
+ * The persistent webhook queue: one small JSON file under `root` (memory without a root), replaced
+ * atomically on every change. Changes are serialized, so a write never overlaps another.
+ */
+function createWebhookQueue(root?: string) {
+  let state: WebhookQueueFile = { schemaVersion: 1, lastSeq: 0, pending: [], seen: [] };
+  let seen = new Set<string>();
+  let lock: Promise<unknown> = Promise.resolve();
+
+  async function persist() {
+    if (!root) return;
+    const target = join(root, queueFile);
+    const temporary = `${target}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, `${JSON.stringify(state)}\n`, { mode: 0o600 });
+      await rename(temporary, target);
+    } finally {
+      await rm(temporary, { force: true });
+    }
+  }
+  /** Run one change after the previous one has been written. */
+  function serialized<T>(change: () => Promise<T>): Promise<T> {
+    const operation = lock.catch(() => {}).then(change);
+    lock = operation;
+    return operation;
+  }
+
+  return {
+    /** Read the file left by a previous process. A missing or unreadable file starts an empty queue. */
+    async load() {
+      if (!root) return;
+      try {
+        state = queueFileSchema.parse(JSON.parse(await readFile(join(root, queueFile), 'utf8')));
+        seen = new Set(state.seen);
+      } catch {
+        // Losing the queue only delays movements until the next pull; it must not stop the engine.
+      }
+    },
+    pending: () => state.pending,
+    lastSeq: () => state.lastSeq,
+    /**
+     * Record a notification durably. Returns false, and stores nothing, when its event ID was
+     * already accepted. Notifications for one connection collapse into a single pending item.
+     */
+    add(providerId: string, ref: string, eventId: string | undefined, receivedAt: string) {
+      return serialized(async () => {
+        const dedupeKey = eventId === undefined ? undefined : `${providerId}:${eventId}`;
+        if (dedupeKey !== undefined && seen.has(dedupeKey)) return false;
+        const previous = structuredClone(state);
+        if (dedupeKey !== undefined) {
+          state.seen.push(dedupeKey);
+          seen.add(dedupeKey);
+          for (const dropped of state.seen.splice(0, Math.max(0, state.seen.length - maxSeenEvents)))
+            seen.delete(dropped);
+        }
+        state.pending = state.pending.filter(item => item.providerId !== providerId || item.ref !== ref);
+        state.pending.push({ seq: ++state.lastSeq, providerId, ref, receivedAt });
+        try {
+          await persist();
+        } catch (error) {
+          // Not durable means not accepted: the bank gets an error and delivers again.
+          state = previous;
+          seen = new Set(state.seen);
+          throw error;
+        }
+        return true;
+      });
+    },
+    /** Drop the notifications of a connection that a sync started after `throughSeq` has covered. */
+    clear(providerId: string, ref: string, throughSeq: number) {
+      return serialized(async () => {
+        const kept = state.pending.filter(
+          item => item.providerId !== providerId || item.ref !== ref || item.seq > throughSeq,
+        );
+        if (kept.length === state.pending.length) return;
+        state.pending = kept;
+        await persist();
+      });
+    },
+    /** Wait for writes in flight. */
+    idle: () => lock.catch(() => {}),
+  };
+}
+
 /** A message that is safe to store and show: provider errors may contain URLs, tokens or bank text. */
 function sanitizedError(error: unknown) {
   if (error instanceof ApiError) return error.message;
@@ -173,7 +315,13 @@ export function createBankSync(options: BankSyncOptions) {
   const defaultPollIntervalMs = pollIntervalSchema.parse(options.defaultPollIntervalMs ?? 300_000);
   const overlapDays = options.overlapDays ?? 7;
   const maxPolling = options.maxPolling ?? 50;
+  const retryBaseMs = options.retryBaseMs ?? 2000;
+  const retryMaxMs = options.retryMaxMs ?? 300_000;
+  const fallbackPollMs = options.fallbackPollMs === undefined ? 300_000 : options.fallbackPollMs;
+  const housekeepingMs = options.housekeepingMs === undefined ? 1000 : options.housekeepingMs;
   const store = createConnectionStore(options.root);
+  const queue = createWebhookQueue(options.root);
+  const webhookCounts = { accepted: 0, duplicates: 0 };
   const activities = new Map<string, Activity>();
   const refs = new Map<string, { userId: string; connectionId: string }>();
   const locks = new Map<string, Promise<unknown>>();
@@ -193,8 +341,23 @@ export function createBankSync(options: BankSyncOptions) {
   function activity(userId: string, connectionId: string) {
     const id = key(userId, connectionId);
     let state = activities.get(id);
-    if (!state) activities.set(id, (state = { queued: false, failures: 0, stopAfterFailures: 5, syncCount: 0 }));
+    if (!state) {
+      state = {
+        queued: false,
+        failures: 0,
+        stopAfterFailures: 5,
+        syncCount: 0,
+        lastActivityAt: clock().getTime(),
+        fallback: false,
+      };
+      activities.set(id, state);
+    }
     return state;
+  }
+
+  /** Delay before the retry that follows the given number of consecutive failures. */
+  function retryDelay(failures: number) {
+    return Math.min(retryMaxMs, retryBaseMs * 2 ** Math.min(failures - 1, 30));
   }
 
   /** Serialize changes to one user's connection file. */
@@ -238,6 +401,12 @@ export function createBankSync(options: BankSyncOptions) {
       createdAt: connection.createdAt,
       lastSyncAt: connection.lastSyncAt,
       lastError: connection.lastError,
+      /** When a sync was last attempted, successful or not. */
+      lastAttemptAt: connection.lastAttemptAt,
+      /** Failed syncs since the last successful one; zero when the connection is healthy. */
+      consecutiveFailures: connection.consecutiveFailures,
+      /** When the engine will retry on its own after a failure, or null when no retry is scheduled. */
+      nextRetryAt: state?.nextRetryAt === undefined ? null : new Date(state.nextRetryAt).toISOString(),
       pollIntervalMs: connection.pollIntervalMs,
       /** Whether a polling timer is active in this process. */
       polling: Boolean(state?.timer),
@@ -304,7 +473,16 @@ export function createBankSync(options: BankSyncOptions) {
         synthetic: bank.synthetic,
       })),
     );
-    const counts = { inserted: 0, updated: 0, duplicates: 0 };
+    const removedIds = z
+      .array(safeId)
+      .max(10_000)
+      .parse(fetched.removedIds ?? []);
+    const counts = { inserted: 0, updated: 0, duplicates: 0, removed: 0 };
+    for (let start = 0; start < removedIds.length && ledger.removeTransactions; start += 500) {
+      const outcome = await ledger.removeTransactions(userId, removedIds.slice(start, start + 500));
+      counts.removed += outcome.result.removed;
+      revision = outcome.ledger.revision;
+    }
     for (let start = 0; start < transactions.length; start += 500) {
       const outcome = await ledger.upsertTransactions(userId, { transactions: transactions.slice(start, start + 500) });
       counts.inserted += outcome.result.inserted;
@@ -319,7 +497,9 @@ export function createBankSync(options: BankSyncOptions) {
       if (!target) return;
       if (fetched.nextCursor !== undefined) target.cursor = fetched.nextCursor;
       target.lastSyncAt = syncedAt;
+      target.lastAttemptAt = syncedAt;
       target.lastError = null;
+      target.consecutiveFailures = 0;
     });
     return { connectionId: stored.id, providerId: stored.providerId, accountsCreated, ...counts, revision, syncedAt };
   }
@@ -332,17 +512,30 @@ export function createBankSync(options: BankSyncOptions) {
     if (state.running) return state.running;
     const operation = (async () => {
       const stored = await find(userId, connectionId);
+      // Notifications accepted up to here are covered by this pull; later ones need another.
+      const coveredSeq = queue.lastSeq();
+      state.lastActivityAt = clock().getTime();
+      state.nextRetryAt = undefined;
       try {
         const result = await pull(userId, stored);
         state.failures = 0;
         state.syncCount++;
+        await queue.clear(stored.providerId, stored.ref, coveredSeq).catch(() => {});
         return result;
       } catch (error) {
         state.failures++;
+        const attemptedAt = clock();
+        // Connections that are fed automatically retry with backoff; manual ones wait for the caller.
+        const automatic = state.fallback || Boolean(state.timer);
+        if (automatic && state.failures < state.stopAfterFailures && !closed)
+          state.nextRetryAt = attemptedAt.getTime() + retryDelay(state.failures);
         const message = sanitizedError(error);
         await mutate(userId, connections => {
           const target = connections.find(item => item.id === connectionId);
-          if (target) target.lastError = message;
+          if (!target) return;
+          target.lastError = message;
+          target.lastAttemptAt = attemptedAt.toISOString();
+          target.consecutiveFailures = state.failures;
         }).catch(() => {});
         throw error;
       }
@@ -382,13 +575,50 @@ export function createBankSync(options: BankSyncOptions) {
     state.timer.unref();
   }
 
+  /**
+   * Run what is due on the engine's clock: retries of failed syncs, notifications left in the queue
+   * and fallback pulls of silent webhook connections. Resolves when those syncs have finished and
+   * never rejects; each outcome is on its connection. The housekeeping timer calls this.
+   */
+  async function runDue() {
+    if (closed) return;
+    const now = clock().getTime();
+    const waiting = new Set(queue.pending().map(item => refKey(item.providerId, item.ref)));
+    const started: Promise<unknown>[] = [];
+    for (const [index, target] of refs) {
+      const state = activities.get(key(target.userId, target.connectionId));
+      if (!state || state.running) continue;
+      const retryDue = state.nextRetryAt !== undefined && state.nextRetryAt <= now;
+      const idle = state.nextRetryAt === undefined;
+      // A queued notification whose sync is neither running nor waiting for a retry (after a restart).
+      const queuedDue = idle && state.failures === 0 && waiting.has(index);
+      const silentDue =
+        idle &&
+        state.fallback &&
+        !state.timer &&
+        fallbackPollMs !== null &&
+        now - state.lastActivityAt >= fallbackPollMs;
+      if (retryDue || queuedDue || silentDue)
+        started.push(syncConnection(target.userId, target.connectionId).catch(() => {}));
+    }
+    await Promise.all(started);
+  }
+
   /** Rebuild the webhook index and resume polling of real providers after a restart. */
   async function resume() {
     const registry = await options.registry;
+    await queue.load();
     for (const [userId, connections] of await store.scan()) {
       for (const connection of connections) {
         refs.set(refKey(connection.providerId, connection.ref), { userId, connectionId: connection.id });
         const entry = registry.get(connection.providerId);
+        const state = activity(userId, connection.id);
+        state.fallback = Boolean(entry?.status === 'configured' && supportsWebhooks(entry.provider));
+        state.lastActivityAt = new Date(connection.lastAttemptAt ?? connection.createdAt).getTime();
+        state.failures = connection.consecutiveFailures;
+        // A connection that was failing when the process stopped picks its retries up where it left them.
+        if (state.fallback && state.failures > 0 && state.failures < state.stopAfterFailures)
+          state.nextRetryAt = clock().getTime() + retryDelay(state.failures);
         // Real connections keep polling across restarts. Synthetic feeds are opt-in per process.
         const resumable = entry?.status === 'configured' && !entry.provider.synthetic && connection.pollIntervalMs;
         if (resumable && !closed) startTimer(userId, connection.id, connection.pollIntervalMs!);
@@ -396,6 +626,33 @@ export function createBankSync(options: BankSyncOptions) {
     }
   }
   const ready = resume().catch(() => {});
+  let housekeeping: ReturnType<typeof setInterval> | undefined;
+  if (housekeepingMs !== null) {
+    housekeeping = setInterval(() => void ready.then(runDue).catch(() => {}), housekeepingMs);
+    housekeeping.unref();
+  }
+
+  /**
+   * Accept a verified webhook: store it durably, then start the sync in the background. Resolves as
+   * soon as the notification is on disk, so the route can acknowledge it without waiting for the bank.
+   */
+  async function acceptWebhook(providerId: string, signal: Pick<WebhookSignal, 'connectionRef' | 'eventId'>) {
+    await ready;
+    if (closed) throw new ApiError(503, 'Bank sync is shutting down');
+    const target = refs.get(refKey(providerId, signal.connectionRef));
+    if (!target) return { known: false, duplicate: false };
+    const eventId = eventIdSchema.optional().parse(signal.eventId);
+    const fresh = await queue.add(providerId, signal.connectionRef, eventId, clock().toISOString());
+    if (!fresh) {
+      webhookCounts.duplicates++;
+      return { known: true, duplicate: true };
+    }
+    webhookCounts.accepted++;
+    const state = activity(target.userId, target.connectionId);
+    if (state.running) state.queued = true;
+    else void syncConnection(target.userId, target.connectionId).catch(() => {});
+    return { known: true, duplicate: false };
+  }
 
   return {
     /** Resolves when persisted connections have been indexed. Every method waits for it. */
@@ -435,6 +692,8 @@ export function createBankSync(options: BankSyncOptions) {
         pollIntervalMs,
         lastSyncAt: null,
         lastError: null,
+        lastAttemptAt: null,
+        consecutiveFailures: 0,
       };
       // Reserve the reference before the write so two concurrent requests cannot both link it.
       refs.set(index, { userId, connectionId: id });
@@ -446,6 +705,9 @@ export function createBankSync(options: BankSyncOptions) {
           connections.push(connection);
         });
         written = true;
+        const state = activity(userId, id);
+        state.fallback = supportsWebhooks(bank);
+        state.lastActivityAt = clock().getTime();
         if (pollIntervalMs) startTimer(userId, id, pollIntervalMs, polling.stopAfterFailures);
       } catch (error) {
         refs.delete(index);
@@ -542,18 +804,36 @@ export function createBankSync(options: BankSyncOptions) {
       return { userId, results };
     },
 
+    acceptWebhook,
+
     /**
      * A verified webhook said something changed for a connection reference: sync it in the
-     * background. Returns false when no connection uses that reference.
+     * background. Returns false when no connection uses that reference. Prefer `acceptWebhook`,
+     * which also ignores repeated notification IDs.
      */
     async notify(providerId: string, connectionRef: string) {
+      if (closed) return false;
+      return (await acceptWebhook(providerId, { connectionRef })).known;
+    },
+
+    runDue: async () => {
       await ready;
-      const target = refs.get(refKey(providerId, connectionRef));
-      if (!target || closed) return false;
-      const state = activity(target.userId, target.connectionId);
-      if (state.running) state.queued = true;
-      else void syncConnection(target.userId, target.connectionId).catch(() => {});
-      return true;
+      return runDue();
+    },
+
+    /** Resolves when no sync is running or queued behind one. Used by tests and orderly shutdowns. */
+    async idle() {
+      await ready;
+      for (;;) {
+        const running = [...activities.values()].map(state => state.running).filter(Boolean);
+        if (!running.length) return;
+        await Promise.allSettled(running);
+      }
+    },
+
+    /** Counters of this process and the notifications still waiting for a successful sync. */
+    webhookStatus() {
+      return { ...webhookCounts, pending: queue.pending().length };
     },
 
     /** Listen for every persisted ledger revision of every user. Returns the function that unsubscribes. */
@@ -567,12 +847,16 @@ export function createBankSync(options: BankSyncOptions) {
     /** Stop all timers, wait for syncs in flight and drop listeners. */
     async close() {
       closed = true;
+      clearInterval(housekeeping);
       for (const state of activities.values()) {
         if (state.timer) clearInterval(state.timer);
         state.timer = undefined;
         state.queued = false;
+        state.nextRetryAt = undefined;
       }
       await Promise.allSettled([...activities.values()].map(state => state.running));
+      // Notifications that were not processed stay in the queue file for the next start.
+      await queue.idle();
       unsubscribe();
       listeners.clear();
     },

@@ -163,7 +163,8 @@ test('service counts are sourced, dated and never state a zero the directories d
     assert.equal(count('rail_station'), stops || undefined);
     assert.equal(count('retail'), retail?.value);
   }
-  // No official open dataset with municipality codes covers pharmacies or social services yet.
+  // No official open dataset covers pharmacies yet. Social services come from a register without
+  // municipality codes: a town it could not be matched to by name and comarca stays unknown.
   assert.deepEqual([...covered].sort(), [
     'hospital',
     'library',
@@ -171,8 +172,18 @@ test('service counts are sourced, dated and never state a zero the directories d
     'rail_station',
     'retail',
     'school',
+    'social_services',
     'sports',
   ]);
+  const social = snapshot.municipalities.flatMap(town =>
+    (snapshot.services?.[town.code] ?? []).filter(service => service.kind === 'social_services'),
+  );
+  assert.ok(social.length > 0 && social.length < snapshot.municipalities.length);
+  assert.ok(
+    social.every(
+      service => service.sourceUrl.endsWith('/d/ivft-vegh') && /^\d{4}-\d{2}-\d{2}$/.test(service.observedAt),
+    ),
+  );
   const lleida = snapshot.services?.['251207'] ?? [];
   assert.ok((lleida.find(service => service.kind === 'hospital')?.count ?? 0) >= 1);
 });

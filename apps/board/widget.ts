@@ -1,4 +1,5 @@
 import { App } from '@modelcontextprotocol/ext-apps';
+import { type IconName, icon } from '../../packages/ui/icons.ts';
 import type { DemoView } from './demo.ts';
 import { drawRouteTimeline, drawWorld, nextSegment, stopNames, stops } from './map.ts';
 
@@ -45,8 +46,19 @@ let busy = false;
 let fullscreen = false;
 let refreshing = false;
 
+/** Button looks of the shared theme, by the short names the views use. */
+const buttonClass: Record<string, string> = {
+  primary: 'rc-btn rc-btn--primary',
+  gold: 'rc-btn rc-btn--gold',
+  link: 'rc-btn rc-btn--quiet',
+  '': 'rc-btn',
+};
+const questIcons: Record<string, IconName> = { coffee: 'coffee', takeout: 'pot', picnic: 'basket' };
+const badge = (text: string, name: IconName = 'star', tone = 'gold') =>
+  `<span class="rc-pill rc-pill--${tone}">${icon(name)}${text}</span>`;
+
 function button(label: string, action: string, key = '', style = 'primary') {
-  return `<button type="button" class="${style}" data-action="${action}" data-key="${key}">${label}</button>`;
+  return `<button type="button" class="${buttonClass[style] ?? buttonClass['']}" data-action="${action}" data-key="${key}">${label}</button>`;
 }
 
 function hero(label: string, heading: string, text: string) {
@@ -79,7 +91,7 @@ function onboarding(view: Extract<DemoView, { answers: unknown }>) {
     income: 'Monthly income',
     spending: 'Monthly spending (including debt)',
     savings: 'Saved',
-    floorArea: 'Floor area m?',
+    floorArea: 'Floor area (m²)',
     destinationCode: 'Commute municipality code',
     maxCommuteMinutes: 'Maximum commute minutes',
     schoolMode: 'School travel mode',
@@ -104,7 +116,7 @@ function onboarding(view: Extract<DemoView, { answers: unknown }>) {
     fields
       .map(
         field =>
-          `<label>${field.label}<input name="${field.id}" type="${field.kind}"
+          `<label class="rc-field">${field.label}<input name="${field.id}" type="${field.kind}"
       ${field.kind === 'number' ? `min="${field.min}" max="${field.max}" step="1"` : 'maxlength="80"'}
       placeholder="${field.example}" value="${prefill ? safe(answers[field.id] ?? '') : ''}"></label>`,
       )
@@ -119,7 +131,7 @@ function onboarding(view: Extract<DemoView, { answers: unknown }>) {
       ${
         group
           ? `<h2>${group.title}</h2>
-        <form class="intake"><div class="fields">${inputs(group.questions, false)}</div><div class="actions"><button class="primary">Save answers</button>
+        <form class="intake"><div class="fields">${inputs(group.questions, false)}</div><div class="actions"><button class="rc-btn rc-btn--primary">Save answers</button>
         ${button('Use example answers', 'example', '', 'link')}</div></form>`
           : '<h2>Basics complete</h2><p>Refine the route below with your housing, school and travel preferences.</p>'
       }
@@ -132,7 +144,7 @@ function onboarding(view: Extract<DemoView, { answers: unknown }>) {
             `<fieldset><legend>${section.title}</legend><div class="fields">${inputs(section.questions, true)}</div></fieldset>`,
         )
         .join('')}
-        <div class="actions"><button class="primary">Save preferences</button></div>
+        <div class="actions"><button class="rc-btn rc-btn--primary">Save preferences</button></div>
       </form>
     </details>
     <section class="panel"><h2>Sample bank connection</h2>
@@ -160,7 +172,7 @@ function world(checkpoint: number) {
   return `<div class="world" role="img" aria-label="Dot at ${stopNames[checkpoint]}">
     <canvas id="map" width="480" height="260" aria-hidden="true"></canvas>
     ${stops.map(([x, y], i) => `<span class="stop" aria-hidden="true" style="left:${x / 4.8}%;top:${(y + 9) / 2.6}%">${stopNames[i]}</span>`).join('')}
-    <div class="dot" id="dot" aria-hidden="true" style="left:${stops[checkpoint][0] / 4.8}%;top:${stops[checkpoint][1] / 2.6}%">••</div>
+    <div class="dot" id="dot" aria-hidden="true" style="left:${stops[checkpoint][0] / 4.8}%;top:${stops[checkpoint][1] / 2.6}%"></div>
   </div>`;
 }
 
@@ -175,21 +187,21 @@ function progress(view: Extract<DemoView, { progress: unknown }>) {
       <div><strong>#${p.rank}</strong><span>Trail leaderboard</span></div></div>
     <section class="panel habits" aria-label="Habit quests">
       <div class="habits-header"><div><span class="label">Build your savings habits</span><h2>Your weekly quests</h2></div>
-        <span class="habit-total">${p.estimate ? `+${euro.format(p.estimate)}/mo if kept up` : 'Choose a swap to try'}</span></div>
+        <span class="rc-pill rc-pill--violet">${p.estimate ? `+${euro.format(p.estimate)}/mo if kept up` : 'Choose a swap to try'}</span></div>
       ${p.quests
         .map(
           quest => `<article class="habit ${quest.status === 'complete' ? 'habit-done' : ''}">
-        <div class="habit-icon" aria-hidden="true">${quest.icon}</div>
+        <div class="habit-icon">${icon(quest.status === 'complete' ? 'tick' : (questIcons[quest.id] ?? 'check'))}</div>
         <div><span class="label">${quest.status === 'complete' ? 'Completed' : quest.status === 'adopted' ? 'In progress' : `+${quest.xp} XP`}</span>
           <h3>${quest.title}</h3><p>${quest.action}</p>
-          <div class="habit-spend"><span>${euro.format(quest.before)} now</span><span>${euro.format(quest.after)} with the swap</span>
-            <strong>Save ${euro.format(quest.saving)}/mo</strong></div>
+          <div class="habit-spend"><span class="rc-pill">${euro.format(quest.before)} now</span><span class="rc-pill">${euro.format(quest.after)} with the swap</span>
+            <strong class="rc-pill rc-pill--ok">Save ${euro.format(quest.saving)}/mo</strong></div>
           <div class="actions">${
             quest.status === 'complete'
-              ? `<span class="badge">✓ ${quest.badge} · +${quest.xp} XP</span>`
+              ? badge(`${quest.badge} · +${quest.xp} XP`, 'tick')
               : quest.status === 'adopted'
                 ? button('I tried it', 'complete_habit', quest.id, 'gold')
-                : button('Try this habit', 'adopt_habit', quest.id)
+                : button('Try this habit', 'adopt_habit', quest.id, '')
           }</div>
           ${quest.id === 'picnic' ? '<details><summary>Show an invite to share</summary><p>“Want to join me at the free park picnic and swap ideas for saving?”</p></details>' : ''}
         </div></article>`,
@@ -202,7 +214,7 @@ function progress(view: Extract<DemoView, { progress: unknown }>) {
     ${meter('Quest XP', Math.floor((p.xp * 100) / p.xpGoal), `${p.xp} / ${p.xpGoal} XP`)}</div>
     ${timeline(p)}
     <div class="split"><section class="panel"><h2>Achievements</h2>
-      ${p.badges.map(badge => `<span class="badge">★ ${badge}</span>`).join('')}
+      <div class="badges">${p.badges.map(name => badge(name)).join('')}</div>
       <p class="small">Current savings pace is ${euro.format(p.monthly)} per month.</p></section>
     <section class="panel"><h2>Sample leaderboard</h2><ol class="ranks">
       ${p.leaderboard.map(person => `<li class="${person.name.includes('You') ? 'current' : ''}"><div class="rank"><span>${person.name}</span><strong>${person.xp} XP</strong></div></li>`).join('')}
@@ -242,7 +254,7 @@ function shortcuts(view: Extract<DemoView, { inbox: unknown }>) {
 <section class="panel journey-chart" aria-label="Homeownership route timeline">
       <div class="journey-head">
         <div><span class="label">Núria’s journey</span><h2>From first savings to the last payment</h2></div>
-        <strong class="journey-gain">${highlighted ? `Route ${highlighted.letter} · ${highlighted.fasterBy} months sooner` : 'Original route'}</strong>
+        <strong class="rc-pill rc-pill--violet">${highlighted ? `Route ${highlighted.letter} · ${highlighted.fasterBy} months sooner` : 'Original route'}</strong>
       </div>
       <canvas id="route-map" role="img" aria-label="Time by stage. ${view.pastMonths / 12} years have passed. ${
         highlighted
@@ -266,7 +278,7 @@ function shortcuts(view: Extract<DemoView, { inbox: unknown }>) {
         ${button(`Switch to Route ${preview.letter}`, 'choose_shortcut', preview.id, 'gold')}
         ${button('Keep current route', 'keep_route', '', '')}</div>`
           : current
-            ? `<span class="badge">✓ Route ${current.letter} active · ${current.fasterBy} months sooner</span>`
+            ? badge(`Route ${current.letter} active · ${current.fasterBy} months sooner`, 'tick', 'ok')
             : ''
       }
     </section>
@@ -278,7 +290,7 @@ function shortcuts(view: Extract<DemoView, { inbox: unknown }>) {
 }
 
 function celebrate() {
-  const icons = ['🔑', '🏡', '🎉', '✨', '⭐', '🏆', '💛'];
+  const icons = (['key', 'home', 'sparkle', 'star', 'trophy', 'sparkle', 'star'] as const).map(name => icon(name));
   return `<div class="celebration" aria-hidden="true">${Array.from({ length: 18 }, (_, index) => {
     const angle = (index / 18) * Math.PI * 2;
     return `<span style="--dx:${Math.round(Math.cos(angle) * 340)}px;--dy:${Math.round(Math.sin(angle) * 205)}px;--delay:${(index % 6) * 32}ms">${icons[index % icons.length]}</span>`;
@@ -292,23 +304,23 @@ function payoff(view: Extract<DemoView, { payoff: unknown }>) {
     return `<section class="credits panel" aria-label="Journey credits">
       <div class="victory">
         ${celebrate()}
-        <div class="victory-medal" aria-hidden="true">🔑</div>
+        <div class="victory-medal">${icon('key')}</div>
         <span class="label">Final achievement unlocked</span>
         <h1>${credits.title}</h1><p>Jordi owns his home outright.</p>
-        <strong class="victory-banner">Mortgage-free</strong>
+        <strong class="rc-pill rc-pill--gold victory-banner">Mortgage-free</strong>
       </div>
       <div class="credit-stats">${credits.stats.map(stat => `<div><strong>${stat.value}</strong><span>${stat.label}</span></div>`).join('')}</div>
       <ol class="credit-milestones">${credits.milestones
         .map(milestone => `<li><h2>${milestone.title}</h2><p>${milestone.detail}</p></li>`)
         .join('')}</ol>
       <h2>Achievements unlocked</h2>
-      <p>${credits.achievements.map(badge => `<span class="badge">★ ${badge}</span>`).join('')}</p>
+      <div class="badges">${credits.achievements.map(name => badge(name)).join('')}</div>
       <div class="actions">${button('Back to the finish', 'hide_credits', '', 'gold')}</div>
     </section>`;
   }
   return `<div class="payoff">${hero(
     '04 · Journey complete',
-    p.paid ? '★ Jordi owns his home outright!' : 'Replay Jordi’s final installment.',
+    p.paid ? 'Jordi owns his home outright!' : 'Replay Jordi’s final installment.',
     p.paid ? 'Dot reached the finish line. Want to see the credits?' : 'One €620 installment to go on the replay.',
   )}</div>
     ${world(p.paid ? 5 : 4)}
@@ -362,7 +374,7 @@ function render(view: BoardView) {
     const screen = view.townScreening;
     byId('view').insertAdjacentHTML(
       'afterbegin',
-      `<section class="panel"><span class="label">Connected fictional profile · ${safe(connection.userId)}</span><h2>Runtime bank feed</h2><p>Ledger revision ${safe(connection.ledgerRevision ?? 0)} · ${connection.runtime?.enabled ? 'Background simulation running' : 'Background simulation stopped'}</p><div class="actions">${button(connection.runtime?.enabled ? 'Stop simulated feed' : 'Start simulated feed', connection.runtime?.enabled ? 'stop_bank_runtime' : 'start_bank_runtime')}${button('Refresh bank data', 'refresh_data', '', 'link')}</div>${connection.summary ? `<p class="small">Observed net cash flow: ${euro.format(connection.summary.netCashflowCents / 100)} (${safe(connection.summary.from)} to ${safe(connection.summary.to)}). Historical totals are not a current-month forecast.</p>` : ''}</section>`,
+      `<section class="panel"><span class="label">Connected fictional profile · ${safe(connection.userId)}</span><h2>Runtime bank feed</h2><p>Ledger revision ${safe(connection.ledgerRevision ?? 0)} · ${connection.runtime?.enabled ? 'Background simulation running' : 'Background simulation stopped'}</p><div class="actions">${button(connection.runtime?.enabled ? 'Stop simulated feed' : 'Start simulated feed', connection.runtime?.enabled ? 'stop_bank_runtime' : 'start_bank_runtime', '', '')}${button('Refresh bank data', 'refresh_data', '', 'link')}</div>${connection.summary ? `<p class="small">Observed net cash flow: ${euro.format(connection.summary.netCashflowCents / 100)} (${safe(connection.summary.from)} to ${safe(connection.summary.to)}). Historical totals are not a current-month forecast.</p>` : ''}</section>`,
     );
     if (screen)
       byId('view').insertAdjacentHTML(

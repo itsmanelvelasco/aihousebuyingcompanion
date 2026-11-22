@@ -4,19 +4,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sample cash flow</title>
 <style>
-  :root { color-scheme: light dark; font: 15px/1.45 system-ui, sans-serif; }
-  body { margin: 0; padding: 16px; color: light-dark(#172e26, #e3ebe3); background: light-dark(#f6f7ee, #18251e); }
-  h2 { font-size: 1.25rem; margin: 0; }
-  p { margin: 0 0 12px; }
-  dl { margin: 12px 0 8px; }
-  dl div { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
-  dd { margin: 0; font-variant-numeric: tabular-nums; }
-  #totals { font-weight: 650; }
-  details { padding-top: 6px; border-top: 1px solid light-dark(#d6dfd2, #425747); }
-  summary { cursor: pointer; }
+/* THEME */
+  /* Cash-flow card layout. Everything else comes from packages/ui/theme.css. */
+  :root { --rc-body-size: 0.9375rem; }
+  main { padding: 16px; max-width: 34rem; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h2 { display: flex; align-items: center; gap: 8px; font-size: var(--rc-text-xl); }
+  h2 .rc-icon { color: var(--rc-violet); }
+  #coverage { margin-top: 4px; color: var(--rc-muted); font-size: var(--rc-text-sm); }
+  dl { margin: 12px 0 0; }
+  dl div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--rc-line); }
+  dl div:last-child { border-bottom: 0; }
+  dd { font-variant-numeric: tabular-nums; }
+  #totals { font-weight: 700; }
+  #totals div:last-child dd { color: var(--rc-accent); }
+  #expenses { color: var(--rc-muted); margin-top: 0; }
+  details { margin-top: 4px; border-top: 1px solid var(--rc-line); }
 </style>
 <main>
-  <h2>Sample monthly cash flow</h2>
+  <div class="card-head">
+    <h2><!-- ICON:wallet -->Sample monthly cash flow</h2>
+    <span class="rc-pill rc-pill--violet">Fictional data</span>
+  </div>
   <p id="coverage" role="status">Loading fictional transaction summary…</p>
   <dl id="totals"></dl>
   <details id="breakdown" hidden>

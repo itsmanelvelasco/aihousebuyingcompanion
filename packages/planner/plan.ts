@@ -12,6 +12,11 @@ import { evaluateIncentives } from '../places/eligibility.ts';
  * Money is integer EUR cents. Each product of a rate and an amount is rounded once, to the nearest
  * cent, where it is computed. Unknown inputs produce `null` timelines, never a guessed number.
  *
+ * The baseline transfer tax is what this person would pay anywhere in Catalonia: the general tariff,
+ * or the lowest reduced rate of a Catalonia-wide policy (`territory: 'catalonia'`) whose every
+ * condition is verified. A place only gets credit for the difference between that baseline and its
+ * own reduced rate. An unverified Catalonia-wide rate never lowers the baseline; it is reported.
+ *
  * How a place benefit enters the timeline depends on WHEN its cash exists (see `translate`):
  *   - at the purchase: it lowers the upfront cash needed (reduced transfer tax, purchase grants);
  *   - while living in the place before buying: it adds to savings, one tax year late;
@@ -22,6 +27,18 @@ type Timeline = NonNullable<PlacePlan['baseline']>;
 type Assumptions = z.infer<typeof planAssumptions>;
 /** When the money of a benefit exists relative to the purchase. */
 type Timing = 'at_purchase' | 'while_living_there' | 'after_purchase' | 'not_applicable';
+type TransferTaxEffect = Extract<NonNullable<Policy['effect']>, { kind: 'transfer_tax_rate' }>;
+/** The general transfer tax as the policy data states it: one rate, or a tariff by value. */
+type StandardTax = Pick<TransferTaxEffect, 'standardRate' | 'standardTariff'>;
+/** The transfer tax a reduced rate is compared with, for one person and price. */
+type TaxReference = {
+  /** The general tax on this price. Null when the price is unknown. */
+  standardCents: number | null;
+  /** What the person pays anywhere in Catalonia: the general tax or a verified lower rate. */
+  baselineCents: number | null;
+  standardLabel: string;
+  baselineLabel: string;
+};
 type Translated = Pick<PlaceBenefit, 'kind' | 'amountCents'> & {
   timing: Timing;
   maxYears: number | null;
@@ -54,11 +71,34 @@ function share(rate: number, amountCents: number): number {
   return Math.round(rate * amountCents);
 }
 
+/**
+ * The general transfer tax on a price. With a tariff, each bracket's rate applies to the part of the
+ * price inside the bracket and every product is rounded once; without one, the single rate applies.
+ * The price stands for the property's total value.
+ */
+function standardTaxCents(standard: StandardTax, priceCents: number): number {
+  const tariff = standard.standardTariff;
+  if (!tariff) return share(standard.standardRate, priceCents);
+  return tariff.reduce((total, bracket, index) => {
+    const from = bracket.fromEur * 100;
+    const to = index + 1 < tariff.length ? tariff[index + 1].fromEur * 100 : Number.POSITIVE_INFINITY;
+    return total + share(bracket.rate, Math.max(0, Math.min(priceCents, to) - from));
+  }, 0);
+}
+
+/** The price above which the general tariff stops being a single rate; null without a tariff. */
+function firstBracketEndCents(standard: StandardTax): number | null {
+  const next = standard.standardTariff?.[1];
+  return next ? next.fromEur * 100 : null;
+}
+
 /** The value of a rural-category table for a place; null for partially covered municipalities. */
 function forCategory(
   table: { rural: number; special_attention: number; other: number },
   category: Place['rural'],
 ): number | null {
+  // The same value everywhere does not depend on the nucleus.
+  if (table.rural === table.special_attention && table.rural === table.other) return table.rural;
   if (category === 'rural') return table.rural;
   if (category === 'special_attention') return table.special_attention;
   // Which nucleus of a partially covered municipality the home is in is unknown here.
@@ -111,7 +151,7 @@ function habitSavings(person: Person, includeProposed: boolean) {
 }
 
 /** Turn a screened policy into the kind, amount and timing of a benefit for this price and place. */
-function translate(result: Eligibility, place: Place, priceCents: number | null): Translated {
+function translate(result: Eligibility, place: Place, priceCents: number | null, tax: TaxReference): Translated {
   const effect = result.effect;
   const livingThere = result.intent === 'move' || result.intent === 'rent';
   const none = { amountCents: null, maxYears: null };
@@ -122,15 +162,38 @@ function translate(result: Eligibility, place: Place, priceCents: number | null)
   switch (effect.kind) {
     case 'transfer_tax_rate': {
       const reduced = forCategory(effect.reducedRate, place.rural);
+      // A rate for the whole of Catalonia is measured against the general tax; a place's rate against
+      // what this person would pay anywhere, so the place is only credited with the difference.
+      const everywhere = isGeneralRate(result);
+      const againstCents = everywhere ? tax.standardCents : tax.baselineCents;
       const amountCents =
-        reduced === null || priceCents === null
+        reduced === null || priceCents === null || againstCents === null
           ? null
-          : Math.max(0, share(effect.standardRate, priceCents) - share(reduced, priceCents));
+          : Math.max(0, againstCents - share(reduced, priceCents));
       const what =
         reduced === null
           ? 'A reduced transfer-tax rate may apply, depending on the nucleus where the home is.'
-          : `Transfer tax at ${percent(reduced)} instead of the standard ${percent(effect.standardRate)}.`;
+          : everywhere
+            ? `Transfer tax at ${percent(reduced)} instead of ${tax.standardLabel}, in any municipality of Catalonia.`
+            : `Transfer tax at ${percent(reduced)} instead of ${tax.baselineLabel}.`;
       return { kind: 'upfront_cost_reduction', amountCents, maxYears: null, timing: 'at_purchase', what };
+    }
+    case 'one_off_rate_of_price': {
+      // The lower of a fixed ceiling and a share of the price; both are rounded to the cent once.
+      const capCents = Math.round(effect.maxAmountEur * 100);
+      const timing =
+        result.mechanism === 'grant' && result.intent === 'buy'
+          ? 'at_purchase'
+          : livingThere
+            ? 'while_living_there'
+            : 'after_purchase';
+      return {
+        kind: 'one_off_cash',
+        amountCents: priceCents === null ? null : Math.min(capCents, share(effect.rate, priceCents)),
+        maxYears: null,
+        timing,
+        what: `A single payment of at most the lower of ${euros(capCents)} and ${percent(effect.rate)} of the price.`,
+      };
     }
     case 'one_off_eur': {
       const eur = result.screenedAmountEur ?? forCategory(effect.amount, place.rural);
@@ -159,14 +222,19 @@ function translate(result: Eligibility, place: Place, priceCents: number | null)
       };
     }
     case 'annual_rate_of_cost': {
-      // The base is what the household actually pays each year, which the person entity does not hold.
+      // The base is what the household actually pays each year, which the person entity does not hold,
+      // so the amount stays unknown and is never counted.
       const rate = forCategory(effect.rate, place.rural);
       const cost = { purchase_payments: 'home-purchase payments', rent: 'rent paid', renovation: 'renovation costs' };
+      const base = effect.maxBaseEur === undefined ? '' : `, on at most ${euros(effect.maxBaseEur * 100)} a year`;
+      const cap = effect.maxAmountEur
+        ? `, capped at ${euros(effect.maxAmountEur.individual * 100)} a year (${euros(effect.maxAmountEur.joint * 100)} on a joint return)`
+        : '';
       return {
         ...none,
         kind: 'annual_cash',
         timing: livingThere ? 'while_living_there' : 'after_purchase',
-        what: `${rate === null ? 'A yearly share' : `${percent(rate)} a year`} of ${cost[effect.cost]}, on at most ${euros(effect.maxBaseEur * 100)} a year. The amount depends on what you actually pay, which this plan does not know.`,
+        what: `${rate === null ? 'A yearly share' : `${percent(rate)} a year`} of ${cost[effect.cost]}${base}${cap}. The amount depends on what you actually pay, which this plan does not know.`,
       };
     }
   }
@@ -189,6 +257,8 @@ function benefitFor(
     blocker = 'Not counted: the application call is closed.';
   } else if (result.callStatus === 'upcoming') {
     blocker = 'Not counted: the application call has not opened yet.';
+  } else if (result.callWindow === null) {
+    blocker = 'Not counted: no application call could be verified, so this aid cannot be claimed yet.';
   } else if (result.measureStatus !== 'active') {
     blocker = 'Not counted: the measure is not confirmed to be in force on the plan date.';
   } else if (result.geographicStatus !== 'applies') {
@@ -222,8 +292,62 @@ function benefitFor(
     eligibilityStatus: result.eligibilityStatus,
     callStatus: result.callStatus,
     counted,
+    scope: 'place',
     sourceUrl: result.sourceUrl,
     explanation: `${what} ${counted ? how + caveat : blocker}`.trim(),
+  };
+}
+
+/** A reduced transfer-tax rate that applies in every municipality: it can set the baseline, never a place saving. */
+function isGeneralRate(result: Pick<Policy, 'territory' | 'effect'>): boolean {
+  return result.territory === 'catalonia' && result.effect?.kind === 'transfer_tax_rate';
+}
+
+/** True when every condition of a Catalonia-wide rate is confirmed for the plan date. */
+function isVerified(result: Eligibility): boolean {
+  return (
+    result.eligibilityStatus === 'eligible' &&
+    result.measureStatus === 'active' &&
+    result.geographicStatus === 'applies'
+  );
+}
+
+/**
+ * List a Catalonia-wide reduced rate. It is never `counted`: when it applies it is already inside the
+ * baseline of every place, so it cannot be a saving of this one.
+ */
+function generalRateBenefit(
+  result: Eligibility,
+  translated: Translated,
+  appliedId: Policy['id'] | null,
+  isLower: boolean,
+): PlaceBenefit {
+  const { amountCents, what } = translated;
+  let outcome: string;
+  if (result.id === appliedId) {
+    outcome = `Applied to your baseline: it lowers the upfront cash by ${euros(amountCents ?? 0)} wherever you buy in Catalonia, so it is not counted as a saving of this place.`;
+  } else if (result.eligibilityStatus === 'ineligible') {
+    outcome = `Not applied, criteria not met: ${result.unmetCriteria.join(' ')}`;
+  } else if (result.measureStatus !== 'active') {
+    outcome = 'Not applied: the measure is not confirmed to be in force on the plan date.';
+  } else if (result.eligibilityStatus === 'needs_verification') {
+    outcome = `Not applied to your baseline until verified: ${result.missingCriteria.join(' ')}${isLower ? ' If you qualify, you pay less transfer tax everywhere, and the transfer-tax saving of this place is smaller than shown.' : ''}`;
+  } else if (appliedId !== null) {
+    outcome = 'Not applied: another reduced rate is already your baseline, and reduced rates do not add up.';
+  } else {
+    outcome = 'Not applied: it is not lower than the general transfer tax on this price.';
+  }
+  return {
+    policyId: result.id,
+    title: result.title,
+    kind: translated.kind,
+    amountCents,
+    eligibilityStatus: result.eligibilityStatus,
+    callStatus: result.callStatus,
+    counted: false,
+    scope: 'anywhere',
+    sourceUrl: result.sourceUrl,
+    explanation: `${what} ${outcome}`.trim(),
   };
 }
 
@@ -265,7 +389,7 @@ function planOne(
   policies: Policy[],
   options: Assumptions,
   asOf: string,
-  standardRate: number | null,
+  standard: StandardTax | null,
 ): PlacePlan {
   const { finances, home } = person;
   const assumptions: string[] = [];
@@ -286,25 +410,77 @@ function planOne(
     if (price.priceBasis === 'comarca_eur_per_m2')
       dataMissing.push(`municipal resale price per m² for ${place.name} (comarca average used)`);
   }
-  if (standardRate === null) dataMissing.push('standard transfer-tax rate (no policy in the snapshot states it)');
+  if (standard === null) dataMissing.push('standard transfer-tax rate (no policy in the snapshot states it)');
   if (finances.currentSavingsCents === null) dataMissing.push('person.finances.currentSavingsCents');
   if (finances.monthlyIncomeCents === null) dataMissing.push('person.finances.monthlyIncomeCents');
   if (finances.monthlyExpensesCents === null) dataMissing.push('person.finances.monthlyExpensesCents');
 
   // Screened as if the purchase happened under the rules in force on the plan date.
-  const benefits = evaluateIncentives(
+  const results = evaluateIncentives(
     policies.filter(policy => screenedIntents.has(policy.intent)),
     asMunicipality(place),
     { municipalityCode: place.municipalityCode, eventDate: asOf, household: person.household },
     asOf,
-  ).map(result => ({
-    translated: translate(result, place, priceCents),
-    result,
-  }));
-  const listed = benefits.map(({ result, translated }) => ({
-    translated,
-    benefit: benefitFor(result, translated, person, place, options),
-  }));
+  );
+
+  // The baseline transfer tax: the general tax, or the lowest Catalonia-wide rate verified for this person.
+  const standardCents = standard === null || priceCents === null ? null : standardTaxCents(standard, priceCents);
+  const generalRates = results.filter(isGeneralRate).flatMap(result => {
+    const rate =
+      result.effect?.kind === 'transfer_tax_rate' ? forCategory(result.effect.reducedRate, place.rural) : null;
+    return rate === null ? [] : [{ result, rate }];
+  });
+  /** True when a flat rate gives less tax than `cents` on this price (compared by rate when the price is unknown). */
+  const lowerThan = (rate: number, cents: number | null, fallbackRate: number | null) =>
+    priceCents !== null && cents !== null
+      ? share(rate, priceCents) < cents
+      : fallbackRate !== null && rate < fallbackRate;
+  const applied =
+    generalRates
+      .filter(({ result }) => isVerified(result))
+      .sort((a, b) => a.rate - b.rate)
+      .find(({ rate }) => lowerThan(rate, standardCents, standard?.standardRate ?? null)) ?? null;
+  const baselineCents = applied && priceCents !== null ? share(applied.rate, priceCents) : standardCents;
+  const baselineRate = applied?.rate ?? standard?.standardRate ?? null;
+  const possiblyLower = generalRates.filter(
+    ({ result, rate }) =>
+      result.eligibilityStatus === 'needs_verification' && lowerThan(rate, baselineCents, baselineRate),
+  );
+  const aboveFirstBracket =
+    standard !== null &&
+    priceCents !== null &&
+    priceCents > (firstBracketEndCents(standard) ?? Number.POSITIVE_INFINITY);
+  const standardLabel =
+    standard === null
+      ? 'the general rate'
+      : aboveFirstBracket && standardCents !== null && priceCents
+        ? `the general tariff (${euros(standardCents)}, an average of ${percent(standardCents / priceCents)} on this price)`
+        : `the general ${percent(standard.standardRate)}`;
+  const tax: TaxReference = {
+    standardCents,
+    baselineCents,
+    standardLabel,
+    baselineLabel: applied
+      ? `the ${percent(applied.rate)} you already qualify for anywhere in Catalonia (${applied.result.title})`
+      : standardLabel,
+  };
+  if (possiblyLower.length)
+    dataMissing.push(
+      `household facts for the reduced transfer-tax rates that apply anywhere in Catalonia (${possiblyLower.map(({ result }) => result.id).join(', ')}): the baseline uses ${tax.baselineLabel} and could be as low as ${percent(Math.min(...possiblyLower.map(({ rate }) => rate)))}, which would shorten the baseline and shrink the transfer-tax saving of this place`,
+    );
+
+  const listed = results.map(result => {
+    const translated = translate(result, place, priceCents, tax);
+    const benefit = isGeneralRate(result)
+      ? generalRateBenefit(
+          result,
+          translated,
+          applied?.result.id ?? null,
+          possiblyLower.some(item => item.result.id === result.id),
+        )
+      : benefitFor(result, translated, person, place, options);
+    return { translated, benefit };
+  });
   // Reduced transfer-tax rates are alternatives, not cumulative: only the largest reduction counts.
   const taxCuts = listed
     .filter(item => item.benefit.counted && item.benefit.kind === 'upfront_cost_reduction')
@@ -324,9 +500,25 @@ function planOne(
     finances.monthlyIncomeCents === null || finances.monthlyExpensesCents === null
       ? null
       : finances.monthlyIncomeCents - finances.monthlyExpensesCents;
-  if (priceCents === null || standardRate === null || finances.currentSavingsCents === null || monthly === null) {
+  const transferTax =
+    standardCents === null || baselineCents === null
+      ? null
+      : {
+          standardCents,
+          baselineCents,
+          baselinePolicyId: applied?.result.id ?? null,
+          couldBeLower: possiblyLower.length > 0,
+        };
+  if (
+    priceCents === null ||
+    standard === null ||
+    baselineCents === null ||
+    finances.currentSavingsCents === null ||
+    monthly === null
+  ) {
     return {
       ...base,
+      transferTax,
       status: 'insufficient_data',
       baseline: null,
       withHabits: null,
@@ -340,7 +532,7 @@ function planOne(
   }
 
   const depositCents = share(home.depositRate, priceCents);
-  const taxCents = share(standardRate, priceCents);
+  const taxCents = baselineCents;
   const feesCents = share(options.purchaseFeesRate, priceCents);
   const upfrontCents = depositCents + taxCents + feesCents;
   const availableCents = Math.max(0, finances.currentSavingsCents - finances.emergencyReserveCents);
@@ -381,12 +573,21 @@ function planOne(
   };
 
   assumptions.push(
-    `Upfront cash = ${percent(home.depositRate)} deposit (${euros(depositCents)}) + ${percent(standardRate)} standard transfer tax (${euros(taxCents)}) + ${percent(options.purchaseFeesRate)} notary, registry and similar fees (${euros(feesCents)}) = ${euros(upfrontCents)}. The rest of the price is assumed to be financed; no lender has assessed it.`,
+    `Upfront cash = ${percent(home.depositRate)} deposit (${euros(depositCents)}) + transfer tax at ${tax.baselineLabel} (${euros(taxCents)}) + ${percent(options.purchaseFeesRate)} notary, registry and similar fees (${euros(feesCents)}) = ${euros(upfrontCents)}. The rest of the price is assumed to be financed; no lender has assessed it.`,
+    applied
+      ? `The baseline transfer tax is ${percent(applied.rate)}, not ${standardLabel}, because every condition of "${applied.result.title}" is confirmed and that rate applies in any municipality of Catalonia. A place is credited only with the difference between that rate and its own.`
+      : possiblyLower.length
+        ? `The baseline transfer tax is ${standardLabel}. A lower rate that applies anywhere in Catalonia is not assumed, because its conditions are not all confirmed; if you qualify, the baseline is shorter and the transfer-tax saving of a rural place is smaller than shown.`
+        : `The baseline transfer tax is ${standardLabel}: no reduced rate that applies anywhere in Catalonia is verified for you.`,
     finances.emergencyReserveCents > 0
       ? `Available savings are ${euros(availableCents)}: current savings less the ${euros(finances.emergencyReserveCents)} emergency reserve.`
       : `Available savings are ${euros(availableCents)}. No emergency reserve was declared, so none is set aside.`,
     `Monthly savings are income less expenses (${euros(monthly)}), from ${finances.basis.replace('_', '-')} figures${finances.asOf ? ` as of ${finances.asOf}` : ''}.`,
   );
+  if (aboveFirstBracket && standard?.standardTariff)
+    assumptions.push(
+      `The price is above ${euros(firstBracketEndCents(standard) ?? 0)}, so the general transfer tax is not a single rate. It follows the tariff by total value (${standard.standardTariff.map(bracket => `${percent(bracket.rate)} from ${euros(bracket.fromEur * 100)}`).join(', ')}): ${euros(standardCents ?? 0)} on this price. The price is taken as the property's total value, and the tax agency rounds the averaged rate, so the bill can differ by a few euros.`,
+    );
   if (habits.counted.length)
     assumptions.push(
       `${habits.counted.length} habit(s) add ${euros(habits.monthlyCents)} a month: each planned saving is scaled by its check-in adherence, or counted in full when there are no check-ins yet. Habit savings are the person's own estimates.`,
@@ -403,6 +604,7 @@ function planOne(
   const months = withPlaceBenefits.months;
   return {
     ...base,
+    transferTax,
     status: months === 0 ? 'target_reached' : months === null ? 'no_positive_savings' : 'estimated',
     baseline,
     withHabits,
@@ -420,8 +622,9 @@ function planOne(
  *
  * `asOf` is the plan date (`assumptions.asOf` overrides it). Plans come back sorted by the shortest
  * finite timeline with place benefits; places without a finite timeline keep their input order last.
- * The standard transfer-tax rate is read from the policy whose effect is `transfer_tax_rate`; when
- * the policies do not state it, no rate is invented and every plan is `insufficient_data`.
+ * The general transfer tax (rate and, when stated, tariff by value) is read from the policies whose
+ * effect is `transfer_tax_rate`; when the policies do not state it, no rate is invented and every plan
+ * is `insufficient_data`.
  */
 export function planForPlaces(
   person: z.input<typeof personSchema>,
@@ -433,11 +636,15 @@ export function planForPlaces(
   const who = personSchema.parse(person);
   const options = planAssumptions.parse(assumptions ?? {});
   const date = options.asOf ?? asOf;
-  const taxEffect = policies.map(policy => policy.effect).find(effect => effect?.kind === 'transfer_tax_rate');
-  const standardRate = taxEffect?.kind === 'transfer_tax_rate' ? taxEffect.standardRate : null;
+  const taxEffects = policies.flatMap(policy => (policy.effect?.kind === 'transfer_tax_rate' ? [policy.effect] : []));
+  // The tariff by value, when a policy states it, is more complete than the single rate.
+  const taxEffect = taxEffects.find(effect => effect.standardTariff) ?? taxEffects[0];
+  const standard: StandardTax | null = taxEffect
+    ? { standardRate: taxEffect.standardRate, standardTariff: taxEffect.standardTariff }
+    : null;
   const order = (plan: PlacePlan) => plan.withPlaceBenefits?.months ?? Number.POSITIVE_INFINITY;
   const plans = places
-    .map(place => planOne(who, place, policies, options, date, standardRate))
+    .map(place => planOne(who, place, policies, options, date, standard))
     .map((plan, index) => ({ plan, index }))
     .sort((a, b) => {
       const [left, right] = [order(a.plan), order(b.plan)];

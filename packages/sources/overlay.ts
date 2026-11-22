@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type { Metric, serviceCount } from '../contracts/places.ts';
+import { derivedServices } from '../places/data.ts';
 import type { LiveData } from './source.ts';
 
 type ServiceCount = z.infer<typeof serviceCount>;
@@ -38,4 +39,33 @@ export function withServices(data: LiveData, fresh: Record<string, ServiceCount[
   const { snapshot } = data;
   const codes = snapshot.municipalities.map(town => town.code);
   return { ...data, snapshot: { ...snapshot, services: mergeRecord(codes, snapshot.services ?? {}, fresh) } };
+}
+
+/** Overlays comarca metrics by kind, only for comarques the snapshot already has. */
+export function withComarcaMetrics(data: LiveData, fresh: Record<string, Metric[]>): LiveData {
+  const { snapshot } = data;
+  const comarques = [...new Set(snapshot.municipalities.map(town => town.comarca))];
+  return { ...data, snapshot: { ...snapshot, comarcaMetrics: mergeRecord(comarques, snapshot.comarcaMetrics, fresh) } };
+}
+
+const derivedKinds = new Set<ServiceCount['kind']>(['school', 'rail_station', 'retail']);
+
+/**
+ * Recomputes the service counts that follow from other parts of the snapshot (schools, rail stops,
+ * retail census) after one of those parts changed. Unlike directory counts these are exact: a kind
+ * the snapshot no longer supports is removed instead of keeping its previous count.
+ */
+export function withDerivedServices(data: LiveData): LiveData {
+  const { snapshot } = data;
+  const derived = derivedServices(snapshot);
+  const services = Object.fromEntries(
+    snapshot.municipalities.map(({ code }) => {
+      const fresh = derived[code] ?? [];
+      const kept = (snapshot.services?.[code] ?? []).filter(
+        entry => !derivedKinds.has(entry.kind) || fresh.some(candidate => candidate.kind === entry.kind),
+      );
+      return [code, mergeByKind(kept, fresh)] as const;
+    }),
+  );
+  return { ...data, snapshot: { ...snapshot, services: { ...snapshot.services, ...services } } };
 }

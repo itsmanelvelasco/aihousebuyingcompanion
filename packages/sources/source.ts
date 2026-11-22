@@ -6,7 +6,10 @@ import type { loadData } from '../places/data.ts';
 export type LiveData = ReturnType<typeof loadData>;
 
 /** The municipalities a source is asked about. Sources never invent or change official codes. */
-export type SourceTown = Pick<Municipality, 'code' | 'name' | 'comarca'>;
+export type SourceTown = Pick<Municipality, 'code' | 'name' | 'comarca'> & {
+  /** The town centre, for sources that select facilities by distance. */
+  centre?: Pick<Municipality['centre'], 'latitude' | 'longitude'>;
+};
 
 /** Everything a source may use to reach the outside world. Injected, so tests need no network. */
 export type SourceContext = {

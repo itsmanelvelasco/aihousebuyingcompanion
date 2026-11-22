@@ -1,0 +1,574 @@
+/*
+ * ReloCat design system: the one stylesheet every surface inlines (see packages/ui/inline.ts).
+ * Tokens first, then a small set of shared components, all prefixed `rc-`.
+ * System fonts only and nothing fetched: widgets run under a CSP that allows no external request.
+ * Light and dark come from `color-scheme` + light-dark(); a host can force one with
+ * <html data-theme="light|dark">.
+ */
+:root {
+  color-scheme: light dark;
+
+  /* Colour: warm paper, forest green for actions, violet as the second voice, gold for rewards. */
+  --rc-paper: light-dark(#fbf6eb, #1b221c);
+  --rc-surface: light-dark(#fffcf5, #262f28);
+  --rc-sunken: light-dark(#f4ecda, #141a15);
+  --rc-ink: light-dark(#22352a, #f4f0e3);
+  --rc-muted: light-dark(#55625a, #b9c4b7);
+  --rc-line: light-dark(rgb(34 53 42 / 0.14), rgb(244 240 227 / 0.16));
+  --rc-line-strong: light-dark(#7f8676, #84907f);
+  --rc-accent: light-dark(#17593d, #9de2ba);
+  --rc-accent-hover: light-dark(#1f6d4c, #b9eccd);
+  --rc-accent-active: light-dark(#0f4530, #86d3a6);
+  --rc-on-accent: light-dark(#fffdf4, #10251b);
+  --rc-accent-soft: light-dark(#e3f1e5, #25402f);
+  --rc-violet: light-dark(#623c91, #dcc4ff);
+  --rc-violet-soft: light-dark(#eee3f7, #3a2f4b);
+  --rc-gold: #f6c95c;
+  --rc-gold-soft: light-dark(#fff0b9, #4a3d1c);
+  --rc-gold-ink: #47391c;
+  --rc-warn: light-dark(#5d4500, #f6dd8f);
+  --rc-warn-soft: var(--rc-gold-soft);
+  --rc-danger: light-dark(#8a2c2c, #ffb9ad);
+  --rc-danger-soft: light-dark(#fbe8e2, #4b2a26);
+  --rc-focus: var(--rc-violet);
+  /* Two fixed panels that keep their colours in both themes: night (hero of a card or story)
+     and day (the cream sky behind an illustration). */
+  --rc-night: #143326;
+  --rc-night-2: #1f4d37;
+  --rc-on-night: #f3f8ed;
+  --rc-on-night-muted: #c5d9c8;
+  --rc-day: #fbefdc;
+  --rc-on-day: #1c3b2b;
+  --rc-on-day-muted: #3a5545;
+  /* Data marks: baseline, with habits, with a place's benefits. */
+  --rc-bar-baseline: light-dark(#9a9f8e, #879283);
+  --rc-bar-habits: light-dark(#7950a7, #c9a6f2);
+  --rc-bar-place: light-dark(#1f7a55, #7fd3a4);
+  --rc-track: light-dark(#efe8d6, #364037);
+
+  /* Type: a serif for display, the system sans for everything else. */
+  --rc-font-display: ui-serif, Georgia, "Times New Roman", serif;
+  --rc-font-text: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --rc-font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --rc-text-xs: 0.75rem;
+  --rc-text-sm: 0.8125rem;
+  --rc-text-md: 0.9375rem;
+  --rc-text-base: 1rem;
+  --rc-text-lg: 1.125rem;
+  --rc-text-xl: 1.25rem;
+  --rc-text-2xl: 1.5rem;
+  --rc-text-3xl: 2rem;
+  --rc-text-4xl: 2.5rem;
+  --rc-text-hero: clamp(2.5rem, 1.2rem + 5.2vw, 5rem);
+  --rc-body-size: 1rem;
+  --rc-measure: 65ch;
+
+  /* Space (4 px steps), radii, shadows, motion. */
+  --rc-space-1: 4px;
+  --rc-space-2: 8px;
+  --rc-space-3: 12px;
+  --rc-space-4: 16px;
+  --rc-space-5: 20px;
+  --rc-space-6: 24px;
+  --rc-space-8: 32px;
+  --rc-space-10: 40px;
+  --rc-space-12: 48px;
+  --rc-space-16: 64px;
+  --rc-space-20: 80px;
+  --rc-radius-xs: 4px;
+  --rc-radius-sm: 8px;
+  --rc-radius-md: 12px;
+  --rc-radius-lg: 16px;
+  --rc-radius-xl: 20px;
+  --rc-radius-pill: 999px;
+  --rc-shadow-sm: 0 1px 2px rgb(48 40 20 / 0.08);
+  --rc-shadow-md: 0 4px 14px rgb(48 40 20 / 0.1);
+  --rc-shadow-press: 0 3px 0 rgb(20 51 38 / 0.22);
+  --rc-dur-fast: 150ms;
+  --rc-dur: 200ms;
+  --rc-dur-slow: 300ms;
+  --rc-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --rc-control: 44px;
+  --rc-control-sm: 36px;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* Base */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+[hidden] {
+  /* biome-ignore lint/complexity/noImportantStyles: the hidden attribute must win over any display rule. */
+  display: none !important;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  font: var(--rc-body-size) / 1.5 var(--rc-font-text);
+  color: var(--rc-ink);
+  background: var(--rc-paper);
+}
+h1,
+h2,
+h3,
+h4,
+p,
+figure,
+dl,
+dd {
+  margin: 0;
+}
+h1,
+h2 {
+  font-family: var(--rc-font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+h3 {
+  font-size: var(--rc-text-base);
+  line-height: 1.25;
+}
+a {
+  color: var(--rc-accent);
+  text-underline-offset: 0.19em;
+  text-decoration-thickness: 1px;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+button,
+summary,
+select {
+  cursor: pointer;
+}
+:disabled {
+  cursor: not-allowed;
+}
+:focus-visible {
+  outline: 3px solid var(--rc-focus);
+  outline-offset: 2px;
+}
+::selection {
+  background: var(--rc-violet-soft);
+  color: var(--rc-ink);
+}
+small {
+  font-size: var(--rc-text-sm);
+  color: var(--rc-muted);
+}
+code,
+pre {
+  font-family: var(--rc-font-mono);
+}
+@media (hover: hover) {
+  a:hover {
+    color: var(--rc-violet);
+  }
+}
+
+/* Wordmark: the product is written ReloCat, with "Cat" in violet, next to the house mark. */
+.rc-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.36em;
+  font: 800 1.25rem / 1 var(--rc-font-text);
+  letter-spacing: -0.035em;
+  color: var(--rc-accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.rc-wordmark b {
+  font-weight: inherit;
+  color: var(--rc-violet);
+}
+.rc-mark {
+  display: contents;
+}
+.rc-wordmark svg {
+  flex: none;
+  width: 1.3em;
+  height: 1.3em;
+}
+a.rc-wordmark:hover {
+  color: var(--rc-accent);
+}
+
+/* Icons: one 24 px grid, 1.75 stroke, round joins. Sized by the text around them. */
+.rc-icon {
+  flex: none;
+  width: 1.25em;
+  height: 1.25em;
+  vertical-align: -0.25em;
+}
+
+/* Eyebrow label: short, capitalised, never more than three or four words. */
+.rc-label {
+  font: 700 var(--rc-text-xs) / 1.35 var(--rc-font-text);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rc-muted);
+}
+.rc-muted {
+  color: var(--rc-muted);
+}
+
+/* Button. Default is the quiet outline; add --primary once per screen. */
+.rc-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--rc-space-2);
+  min-height: var(--rc-control);
+  padding: 8px 18px;
+  border: 1px solid var(--rc-line-strong);
+  border-radius: var(--rc-radius-md);
+  background: var(--rc-surface);
+  color: var(--rc-accent);
+  font-weight: 700;
+  font-size: var(--rc-text-md);
+  line-height: 1.25;
+  text-decoration: none;
+  transition:
+    background-color var(--rc-dur-fast) var(--rc-ease),
+    border-color var(--rc-dur-fast) var(--rc-ease),
+    transform var(--rc-dur-fast) var(--rc-ease);
+}
+.rc-btn--primary {
+  border-color: var(--rc-accent);
+  background: var(--rc-accent);
+  color: var(--rc-on-accent);
+}
+.rc-btn--gold {
+  border-color: #d9a93c;
+  background: var(--rc-gold);
+  color: var(--rc-gold-ink);
+  box-shadow: var(--rc-shadow-press);
+}
+.rc-btn--quiet {
+  border-color: transparent;
+  background: transparent;
+  text-decoration: underline;
+  text-underline-offset: 0.19em;
+  padding-inline: 10px;
+}
+.rc-btn--sm {
+  min-height: var(--rc-control-sm);
+  padding: 4px 14px;
+  border-radius: var(--rc-radius-sm);
+  font-size: var(--rc-text-sm);
+}
+/* Small buttons keep a 44 px touch target. */
+.rc-btn--sm::after {
+  content: "";
+  position: absolute;
+  inset: -4px 0;
+}
+.rc-btn--block {
+  width: 100%;
+}
+@media (hover: hover) {
+  .rc-btn:hover:not(:disabled) {
+    background: var(--rc-accent-soft);
+    border-color: var(--rc-accent);
+    color: var(--rc-accent);
+  }
+  .rc-btn--primary:hover:not(:disabled) {
+    background: var(--rc-accent-hover);
+    border-color: var(--rc-accent-hover);
+    color: var(--rc-on-accent);
+  }
+  .rc-btn--gold:hover:not(:disabled) {
+    background: #ffd978;
+    border-color: #d9a93c;
+    color: var(--rc-gold-ink);
+  }
+  .rc-btn--quiet:hover:not(:disabled) {
+    background: var(--rc-accent-soft);
+    border-color: transparent;
+  }
+}
+.rc-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.rc-btn:disabled,
+.rc-btn[aria-disabled="true"] {
+  opacity: 0.5;
+  box-shadow: none;
+}
+.rc-btn[aria-busy="true"]::before {
+  content: "";
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: rc-spin 0.7s linear infinite;
+}
+@keyframes rc-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* Pill / badge: status in words, colour only as reinforcement. */
+.rc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-radius-pill);
+  color: var(--rc-muted);
+  font-size: var(--rc-text-xs);
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.rc-pill .rc-icon {
+  width: 1.1em;
+  height: 1.1em;
+}
+.rc-pill--ok {
+  border-color: transparent;
+  background: var(--rc-accent-soft);
+  color: var(--rc-accent);
+}
+.rc-pill--warn {
+  border-color: transparent;
+  background: var(--rc-warn-soft);
+  color: var(--rc-warn);
+}
+.rc-pill--violet {
+  border-color: transparent;
+  background: var(--rc-violet-soft);
+  color: var(--rc-violet);
+}
+.rc-pill--danger {
+  border-color: transparent;
+  background: var(--rc-danger-soft);
+  color: var(--rc-danger);
+}
+.rc-pill--off {
+  border-style: dashed;
+  border-color: var(--rc-line-strong);
+}
+.rc-pill--gold {
+  border-color: transparent;
+  background: var(--rc-gold);
+  color: var(--rc-gold-ink);
+}
+
+/* Card: one elevated surface. Do not nest cards; use .rc-inset inside one. */
+.rc-card {
+  min-width: 0;
+  padding: var(--rc-space-4);
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-radius-lg);
+  background: var(--rc-surface);
+}
+.rc-inset {
+  padding: var(--rc-space-3);
+  border-radius: var(--rc-radius-sm);
+  background: var(--rc-paper);
+}
+.rc-card--night {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--rc-night), var(--rc-night-2));
+  color: var(--rc-on-night);
+}
+.rc-card--night p {
+  color: var(--rc-on-night-muted);
+}
+.rc-card--night .rc-label {
+  color: var(--rc-gold);
+}
+.rc-card--night :focus-visible {
+  outline-color: var(--rc-gold);
+}
+
+/* Field: label above, 16 px text so phones do not zoom, 3:1 border. */
+.rc-field {
+  display: grid;
+  gap: 6px;
+  font-size: var(--rc-text-sm);
+  font-weight: 700;
+}
+.rc-input,
+.rc-field input:not([type="checkbox"], [type="radio"]),
+.rc-field select,
+.rc-field textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--rc-control);
+  padding: 8px 12px;
+  border: 1px solid var(--rc-line-strong);
+  border-radius: var(--rc-radius-sm);
+  background: var(--rc-surface);
+  color: var(--rc-ink);
+  font-size: 1rem;
+  font-weight: 400;
+}
+.rc-input::placeholder,
+.rc-field input::placeholder {
+  color: var(--rc-muted);
+  opacity: 0.8;
+}
+.rc-input[aria-invalid="true"],
+.rc-field [aria-invalid="true"] {
+  border-color: var(--rc-danger);
+}
+.rc-input:disabled,
+.rc-field :disabled {
+  opacity: 0.55;
+}
+
+/* Rows: a list or table whose rows are divided by one hairline. */
+.rc-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rc-rows > * {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rc-line);
+}
+.rc-rows > :last-child {
+  border-bottom: 0;
+}
+.rc-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.rc-table th,
+.rc-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--rc-line);
+  text-align: start;
+  vertical-align: top;
+}
+.rc-table thead th {
+  color: var(--rc-muted);
+  font-size: var(--rc-text-sm);
+}
+.rc-table td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Notes: the same box for loading, empty, warning and error states. */
+.rc-note {
+  padding: 12px 14px;
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-radius-md);
+  background: var(--rc-paper);
+}
+.rc-note--warn {
+  border-color: transparent;
+  background: var(--rc-warn-soft);
+  color: var(--rc-warn);
+}
+.rc-note--error {
+  border-color: transparent;
+  background: var(--rc-danger-soft);
+  color: var(--rc-danger);
+}
+.rc-note:empty {
+  display: none;
+}
+.rc-empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--rc-space-3);
+  padding: var(--rc-space-6) var(--rc-space-4);
+  text-align: center;
+}
+.rc-empty p {
+  max-width: 44ch;
+}
+/* A cream "day" tile behind an illustration, so raster art reads the same in both themes. */
+.rc-art {
+  display: block;
+  border-radius: var(--rc-radius-lg);
+  background: var(--rc-day) center / cover no-repeat;
+}
+.rc-skeleton {
+  display: grid;
+  gap: 10px;
+  padding: 4px 0;
+}
+.rc-skeleton span {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--rc-track) 25%, var(--rc-line) 50%, var(--rc-track) 75%) 0 0 / 300% 100%;
+  animation: rc-shimmer 1.6s linear infinite;
+}
+@keyframes rc-shimmer {
+  to {
+    background-position: -150% 0;
+  }
+}
+details > summary {
+  min-height: var(--rc-control);
+  display: flex;
+  align-items: center;
+  gap: var(--rc-space-2);
+  color: var(--rc-accent);
+  font-weight: 700;
+  list-style: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
+details > summary::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 0 4px 0 2px;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  transform: rotate(-45deg);
+  transition: transform var(--rc-dur-fast) var(--rc-ease);
+}
+details[open] > summary::before {
+  transform: rotate(45deg);
+}
+.rc-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must override every component. */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must override every component. */
+    animation-iteration-count: 1 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must override every component. */
+    transition-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must override every component. */
+    scroll-behavior: auto !important;
+  }
+}

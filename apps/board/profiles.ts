@@ -244,6 +244,8 @@ export class ProfileBridge {
     const extra: Record<string, unknown> = {
       connection: {
         mode: 'connected_synthetic',
+        // The mode names the demo wiring; this flag is the truth about the records behind the figures.
+        synthetic: summary?.synthetic !== false,
         userId: id,
         ledgerRevision: events.latestRevision,
         liveBankBalanceCents: currentBalance,

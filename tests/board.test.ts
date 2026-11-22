@@ -188,3 +188,26 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   assert.equal(stage.runId, runId);
   assert.equal(stage.persona, 'progress');
 });
+
+test('the board MCP endpoint refuses browser calls from other sites', async t => {
+  const proc = spawn(process.execPath, ['apps/board/server.ts'], {
+    env: { ...process.env, HOST: '127.0.0.1', PORT: '0' },
+  });
+  t.after(() => proc.kill());
+  const [line] = await once(proc.stdout, 'data');
+  const port = /localhost:(\d+)\/preview/.exec(String(line))?.[1];
+  assert(port);
+  const call = (origin?: string) =>
+    fetch(`http://127.0.0.1:${port}/mcp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        ...(origin ? { Origin: origin } : {}),
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    });
+  assert.equal((await call('https://evil.example')).status, 403);
+  assert.equal((await call(`http://127.0.0.1:${port}`)).status, 200);
+  assert.equal((await call()).status, 200);
+});

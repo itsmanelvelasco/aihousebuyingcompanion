@@ -11,13 +11,14 @@
 | `/mcp` | `apps/mcp-server/tools.ts` via `apps/board/server.ts` | MCP endpoint for ChatGPT and other agents. |
 | `/workspace` | `apps/web` (React), served by the board handler | Person, places and savings plan. |
 | `/preview` | `apps/board` | Journey board. |
+| `/interview/` | `apps/interviewer` | Voice and guided interview. Its paid OpenAI routes are local-only unless `INTERVIEWER_PUBLIC_AI=on`. |
 | `/connect`, `/test` | `apps/mcp-server` | Homepage, agent setup guide and local tool tester. |
 | `/api/...` | `apps/profile-api`, `apps/habits-agent` | Profiles, inputs, bank ledger, connections, events, webhooks and habits. |
 | `/health` | `apps/server` | Readiness, snapshot version and data-source freshness. |
 
 `/api` requires a bearer token, except `/api/webhooks/bank/<provider>`, which a bank calls and which is authenticated by that provider's own signature check. The token is generated at start unless `PROFILE_API_TOKEN` is set, and never leaves the server: the board and MCP tools reach `/api` over loopback.
 
-`apps/board/server.ts` can still run alone (`npm run start:board`) for a scripted rehearsal without the API. The interviewer (`npm run start:interviewer`) is a separate local voice page.
+`apps/board/server.ts` can still run alone (`npm run start:board`) for a scripted rehearsal without the API. The interviewer can also run alone on port 3000 (`npm run start:interviewer`).
 
 ## Install and run
 

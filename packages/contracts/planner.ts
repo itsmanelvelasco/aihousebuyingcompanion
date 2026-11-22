@@ -101,6 +101,12 @@ export const placeBenefit = z
     callStatus: z.enum(['open', 'closed', 'upcoming', 'unknown']),
     /** True only when the amount was counted in the plan. Unverified benefits are shown, not counted. */
     counted: z.boolean(),
+    /**
+     * `place`: something this place offers. `anywhere`: a measure that applies in every municipality
+     * of Catalonia; it can lower the person's baseline and is never counted as a saving of the place.
+     * Absent in results produced before this field existed, where every benefit is of the place.
+     */
+    scope: z.enum(['place', 'anywhere']).optional(),
     sourceUrl: z.url(),
     explanation: z.string(),
   })
@@ -158,7 +164,24 @@ export const placePlan = z
     status: z.enum(['estimated', 'target_reached', 'no_positive_savings', 'insufficient_data']),
     purchasePriceCents: positiveCents.nullable(),
     priceBasis: z.enum(['budget', 'municipal_eur_per_m2', 'comarca_eur_per_m2', 'unknown']),
-    /** Standard transfer tax, no place benefits, no habits. */
+    /**
+     * The transfer tax behind the baseline. `standardCents` is the general tax on the price;
+     * `baselineCents` is what the person pays anywhere in Catalonia: the general tax, or the lower
+     * rate of `baselinePolicyId` when every condition of that Catalonia-wide policy is verified.
+     * `couldBeLower`: such a rate exists but is unverified, so the baseline may overstate the tax.
+     * Null when the price or the general rate is unknown.
+     */
+    transferTax: z
+      .object({
+        standardCents: positiveCents,
+        baselineCents: positiveCents,
+        baselinePolicyId: policyId.nullable(),
+        couldBeLower: z.boolean(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    /** The transfer tax the person would pay anywhere in Catalonia, no place benefits, no habits. */
     baseline: timeline.nullable(),
     /** The person's active habits, still without place benefits. */
     withHabits: timeline.nullable(),

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { supportsWebhooks } from '../../packages/banks/provider.ts';
 import type { BankRegistry } from '../../packages/banks/registry.ts';
 import { loadBankRegistry } from '../../packages/banks/registry.ts';
-import type { LedgerEvent } from '../../packages/banks/sync.ts';
+import type { BankSyncOptions, LedgerEvent } from '../../packages/banks/sync.ts';
 import { createBankSync } from '../../packages/banks/sync.ts';
 import { safeId } from '../../packages/contracts/ids.ts';
 import { analyzeTransactions, periodSchema, scenarioSchema, simulateSavings } from '../../packages/finance/cashflow.ts';
@@ -46,6 +46,8 @@ export type ProfileApiOptions = {
   /** Interval between heartbeat comments on event streams. */
   heartbeatMs?: number;
   clock?: () => Date;
+  /** Retry, fallback-pull and housekeeping settings of the sync engine; see `BankSyncOptions`. */
+  bankSync?: Pick<BankSyncOptions, 'retryBaseMs' | 'retryMaxMs' | 'fallbackPollMs' | 'housekeepingMs'>;
 };
 
 /** The profile, inputs and bank routes as a request handler, so one server can mount them under a prefix. */
@@ -62,7 +64,9 @@ export function createProfileApiHandler(root: string, token: string, options: Pr
     root,
     clock: options.clock,
     beforeSync: seedEmptyLedger(bank),
+    ...options.bankSync,
   });
+  const clock = options.clock ?? (() => new Date());
   const runtime = createBankRuntime(bank, options.clock, sync);
   const heartbeatMs = options.heartbeatMs ?? 15_000;
   /** One function per open event stream; calling it ends the stream and releases its listener. */
@@ -81,7 +85,10 @@ export function createProfileApiHandler(root: string, token: string, options: Pr
 
   /**
    * `POST /webhooks/bank/:providerId`, called by a bank. There is no bearer token: the provider's
-   * `verifyWebhook` authenticates the call, and a verified call only schedules a sync.
+   * `verifyWebhook` authenticates the call, and a verified call only schedules a sync. The
+   * notification is written to the engine's persistent queue before the 202, so the bank is answered
+   * quickly and a restart right after the reply does not lose it; a repeated event ID is acknowledged
+   * and ignored.
    */
   async function webhook(req: IncomingMessage, res: ServerResponse, parts: string[]) {
     if (parts[1] !== 'bank' || parts.length !== 3) throw new ApiError(404, 'Route not found');
@@ -92,7 +99,7 @@ export function createProfileApiHandler(root: string, token: string, options: Pr
       throw new ApiError(404, 'This bank provider does not accept webhooks');
     if (entry.status !== 'configured') throw new ApiError(503, 'This bank provider is not configured');
     const rawBody = await readText(req, 65_536, 'Webhook body exceeds 64 KiB');
-    const context = { env: entry.env };
+    const context = { env: entry.env, now: clock() };
     let verified = false;
     try {
       verified = (await entry.provider.verifyWebhook!({ headers: req.headers, rawBody }, context)) === true;
@@ -100,14 +107,17 @@ export function createProfileApiHandler(root: string, token: string, options: Pr
       // A verifier that throws has not verified anything.
     }
     if (!verified) throw new ApiError(401, 'Webhook verification failed');
-    let connectionRef: unknown;
+    let signal: ReturnType<NonNullable<typeof entry.provider.parseWebhook>> = null;
     try {
-      connectionRef = entry.provider.parseWebhook!(rawBody, context)?.connectionRef;
+      signal = entry.provider.parseWebhook!(rawBody, context);
     } catch {
       // An unreadable notification is acknowledged and ignored.
     }
     // The reply does not reveal whether the reference is known; the sync runs in the background.
-    if (typeof connectionRef === 'string') await sync.notify(providerId, connectionRef);
+    if (signal && typeof signal.connectionRef === 'string') {
+      const eventId = typeof signal.eventId === 'string' && signal.eventId.length <= 200 ? signal.eventId : undefined;
+      await sync.acceptWebhook(providerId, { connectionRef: signal.connectionRef, eventId });
+    }
     return reply(res, 202, { accepted: true });
   }
 

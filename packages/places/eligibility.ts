@@ -69,6 +69,20 @@ function householdChecks(id: Policy['id'], facts: Household): Check[] {
     filingLimit,
     'The applicable current-year IRPF tax base is at most €30,000 individually or €45,000 jointly.',
   ];
+  // Conditions shared by the 5% rates that apply anywhere in Catalonia (Codi tributari, arts. 641-2 to 641-5).
+  const generalItpChecks: Check[] = [
+    [facts.itpTransaction, 'A qualifying acquisition right is subject to ITP/TPO.'],
+    [
+      facts.satisfiesItpOccupancyRules,
+      'The home is occupied within twelve months and kept as the habitual residence for three years, or an official exception applies.',
+    ],
+  ];
+  // The €36,000 limit rises by €14,000 per child above the legal minimum, a count this screen does not hold:
+  // a family above €36,000 is unknown, never excluded.
+  const familyBaseWithIncreases: Check = [
+    atMost(facts.itpFamilyNetTaxBaseEur, 36_000) || undefined,
+    'The family’s combined net tax bases on the last IRPF return total at most €36,000, plus €14,000 for each child above the legal minimum for the family category.',
+  ];
   switch (id) {
     case 'irpf_move':
       return [
@@ -136,6 +150,43 @@ function householdChecks(id: Policy['id'], facts: Household): Check[] {
           'The works are structural rehabilitation above 25% of the price or market value, end within two years of the purchase, and the occupancy deadlines are met.',
         ],
       ];
+    case 'itp_young_buyer':
+      return [
+        residence,
+        [atMost(facts.age, 35), 'The buyer is 35 or younger on the date the transfer tax accrues.'],
+        [
+          atMost(facts.itpBuyerNetTaxBaseEur, 36_000),
+          'The buyer’s own net tax base on the last IRPF return before the purchase is at most €36,000.',
+        ],
+        ...generalItpChecks,
+      ];
+    case 'itp_large_family':
+      return [
+        residence,
+        [facts.largeFamily, 'The buyer is a member of an officially recognised large family.'],
+        familyBaseWithIncreases,
+        ...generalItpChecks,
+      ];
+    case 'itp_single_parent':
+      return [
+        residence,
+        [facts.singleParent, 'The buyer is a member of an officially recognised single-parent family.'],
+        familyBaseWithIncreases,
+        ...generalItpChecks,
+      ];
+    case 'itp_disability':
+      return [
+        residence,
+        [
+          facts.disability65,
+          'The buyer or a member of the buyer’s family unit has a recognised disability of 65% or more.',
+        ],
+        [
+          atMost(facts.itpFamilyNetTaxBaseEur, 36_000),
+          'The family unit’s combined net tax bases on the last IRPF return before the purchase total at most €36,000.',
+        ],
+        ...generalItpChecks,
+      ];
     case 'renovation_grant_2026':
       return [
         [facts.ownerOfVacantHome, 'The applicant is a private owner of a qualifying vacant dwelling.'],
@@ -187,6 +238,8 @@ function geographicCheck(policy: Policy, town: Municipality, date: string, nucle
       ? [undefined, 'Confirm that the population nucleus has 10,000 residents or fewer under the call.']
       : [false, 'The municipality or population nucleus must have 10,000 residents or fewer.'];
   }
+  // A measure for the whole of Catalonia does not depend on the municipality or its rural classification.
+  if (policy.territory === 'catalonia') return [true, 'The measure applies in every municipality of Catalonia.'];
   if (policy.mechanism === 'grant') {
     if (!policy.municipalityCodes?.includes(town.code))
       return [false, 'Municipality must be listed in the specific 2026 grant call.'];

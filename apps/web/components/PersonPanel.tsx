@@ -10,7 +10,7 @@ import {
   habitMonthlyEffectCents,
   habitStatusLabel,
 } from '../view-model.ts';
-import { Badge, ErrorNote, Skeleton, Switch } from './bits.tsx';
+import { Badge, ErrorNote, Icon, Skeleton, Switch } from './bits.tsx';
 
 const demoProfiles = ['user-001', 'user-002', 'user-003', 'user-004'];
 
@@ -34,7 +34,10 @@ export function PersonPanel(props: Props) {
   return (
     <section className="panel person" aria-labelledby="person-title" aria-busy={plan.refreshing}>
       <header className="panel-head">
-        <h2 id="person-title">Who is planning</h2>
+        <h2 id="person-title">
+          <Icon name="person" />
+          Who is planning
+        </h2>
         {person?.synthetic ? (
           <Badge tone="violet" title="A fictional profile created for the demo.">
             Synthetic profile
@@ -42,14 +45,14 @@ export function PersonPanel(props: Props) {
         ) : null}
       </header>
       {!props.userId ? (
-        <div className="note">
+        <div className="rc-note">
           <p>
             <strong>No person selected.</strong> Ask ReloCat in the chat to open the workspace for a profile, or pick
             one of the synthetic demo profiles.
           </p>
           <div className="choices">
             {demoProfiles.map(id => (
-              <button key={id} type="button" className="button" onClick={() => props.onChooseUser(id)}>
+              <button key={id} type="button" className="rc-btn rc-btn--sm" onClick={() => props.onChooseUser(id)}>
                 {id}
               </button>
             ))}
@@ -58,12 +61,12 @@ export function PersonPanel(props: Props) {
       ) : !person && plan.phase === 'error' && plan.error ? (
         <ErrorNote title="Could not load this person" error={plan.error} onRetry={props.onRetry} />
       ) : !person && !props.hasPlaces ? (
-        <p className="note">
+        <p className="rc-note">
           Profile <strong>{props.userId}</strong>. The figures load with the plan: add a place to compare first.
         </p>
       ) : !person ? (
         <>
-          <p className="visually-hidden" role="status">
+          <p className="rc-sr-only" role="status">
             Loading the person's figures…
           </p>
           <Skeleton lines={6} />
@@ -92,6 +95,7 @@ function PersonDetails(props: Props & { person: Person; result: PlanResult | nul
       <div className="person-facts">
         <p className="person-name">{person.displayName ?? person.id}</p>
         <p className="muted">
+          <Icon name="household" />{' '}
           {person.householdSize === null ? 'Household size unknown' : `Household of ${person.householdSize}`}
           {' · '}
           {currentTown ? `lives in ${currentTown}` : 'current town unknown'}
@@ -151,7 +155,7 @@ function PersonDetails(props: Props & { person: Person; result: PlanResult | nul
           </span>
         </div>
         {person.habits.length === 0 ? (
-          <p className="note">No habits recorded yet. Savings habits agreed in the chat appear here.</p>
+          <p className="rc-note">No habits recorded yet. Savings habits agreed in the chat appear here.</p>
         ) : (
           <ul className="habit-list">
             {person.habits.map(habit => {
@@ -197,7 +201,7 @@ function PersonDetails(props: Props & { person: Person; result: PlanResult | nul
             Include proposed habits
           </Switch>
           {edited ? (
-            <button type="button" className="link-button" onClick={props.onReset}>
+            <button type="button" className="rc-btn rc-btn--quiet rc-btn--sm" onClick={props.onReset}>
               Reset to stored habits
             </button>
           ) : null}

@@ -1,6 +1,6 @@
 import { formatClock, formatDate, formatEuros, formatMonthly } from '../format.ts';
 import type { BankFeedState } from '../hooks.ts';
-import { Ago, Badge, ErrorNote } from './bits.tsx';
+import { Ago, Badge, ErrorNote, Icon } from './bits.tsx';
 
 type Props = { userId: string | null; feed: BankFeedState; onRetry: () => void };
 
@@ -16,10 +16,13 @@ export function BankStrip({ userId, feed, onRetry }: Props) {
     <section className="panel bank" aria-labelledby="bank-title">
       <div className="bank-line">
         <span className={`live live-${state}`}>
-          <span className="dot" aria-hidden="true" />
+          <Icon name={state === 'error' ? 'warning' : 'pulse'} />
           {userId ? stateLabel : 'No feed'}
         </span>
-        <h2 id="bank-title">Bank activity</h2>
+        <h2 id="bank-title">
+          <Icon name="bank" />
+          Bank activity
+        </h2>
         <Badge tone="violet" title="Fictional transactions generated for the demo. No real bank is connected.">
           Synthetic data
         </Badge>

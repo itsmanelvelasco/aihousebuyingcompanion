@@ -22,6 +22,9 @@ COPY --chown=node:node packages ./packages
 COPY --chown=node:node data ./data
 RUN mkdir -p data/cache data/runtime-users data/runtime-habits && chown -R node:node data
 
+# Mount these to keep profiles, habits and the data cache across deployments.
+VOLUME ["/app/data/runtime-users", "/app/data/runtime-habits", "/app/data/cache"]
+
 USER node
 EXPOSE 8787
 CMD ["node", "apps/server/index.ts"]

@@ -4,70 +4,39 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Discover places to live in Catalonia. Compare towns, schools, transport and housing support with ReloCat.">
-  <meta name="theme-color" content="#fcf7ee">
+  <meta name="theme-color" content="#fbf6eb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1b221c" media="(prefers-color-scheme: dark)">
   <title>ReloCat · Find your place in Catalonia</title>
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="ReloCat">
+  <meta property="og:title" content="ReloCat · Find your place in Catalonia">
+  <meta property="og:description" content="Compare towns, school journeys and housing support before you decide where to move.">
+  <meta property="og:image" content="{{og-image}}">
+  <meta property="og:image:alt" content="{{og-alt}}">
+  <meta name="twitter:card" content="summary_large_image">
+  <!-- FAVICON -->
   <style>
-    :root {
-      --paper: #fcf7ee;
-      --cream: #faf0df;
-      --white: #fffcf7;
-      --leaf: #124c36;
-      --ink: #24372c;
-      --muted: #506054;
-      --violet: #663e91;
-      --lilac: #eee2f7;
-      --line: #dcd5c4;
-      --serif: Georgia, ui-serif, serif;
-      font: 1rem/1.6 "Avenir Next", "Segoe UI", system-ui, sans-serif;
-      color: var(--ink);
-      background: var(--paper);
-      color-scheme: light;
-    }
-    *, *::before, *::after { box-sizing: border-box; }
-    [hidden] { display: none !important; }
-    body { margin: 0; }
-    h1, h2, h3, p, figure, dl, dd { margin: 0; }
-    a { color: var(--leaf); text-underline-offset: .19em; }
-    a:hover { color: var(--violet); }
-    button, input, select { font: inherit; color: inherit; }
-    button { cursor: pointer; }
-    button:disabled { cursor: default; opacity: .52; }
-    :focus-visible { outline: 3px solid var(--violet); outline-offset: 4px; }
-    ::selection { color: var(--ink); background: #f9d979; }
-    .wrap { width: min(100% - 64px, 1272px); margin-inline: auto; }
+/* THEME */
+    /* Homepage layout. Colours, type and components come from packages/ui/theme.css. */
+    .wrap { width: min(100% - 48px, 1200px); margin-inline: auto; }
     .skip {
       position: absolute;
       z-index: 3;
       top: 12px;
       left: 12px;
       padding: 8px 12px;
-      background: var(--white);
-      transform: translateY(-150%);
+      border-radius: var(--rc-radius-sm);
+      background: var(--rc-surface);
+      transform: translateY(-200%);
     }
     .skip:focus { transform: none; }
-    .masthead { min-height: 75px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-    .wordmark { font-size: 1.7rem; font-weight: 850; letter-spacing: -.04em; text-decoration: none; white-space: nowrap; }
-    .wordmark span { color: var(--violet); }
-    .site-nav { display: flex; align-items: center; gap: 18px; }
-    .nav-link { font-size: .94rem; font-weight: 700; text-decoration: none; }
+    .masthead { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .masthead .rc-wordmark { font-size: 1.5rem; }
+    .site-nav { display: flex; align-items: center; gap: 8px; }
+    .nav-link { display: inline-flex; align-items: center; min-height: 44px; padding-inline: 10px; font-size: var(--rc-text-md); font-weight: 700; text-decoration: none; }
     .nav-link:hover { text-decoration: underline; }
-    .button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 48px;
-      padding: 9px 18px;
-      border: 1px solid var(--leaf);
-      border-radius: 10px;
-      background: var(--leaf);
-      color: #fffdf4;
-      text-decoration: none;
-      font-weight: 730;
-    }
-    .button:hover:enabled, a.button:hover { background: #1d6547; color: #fff; }
-    .button.secondary { background: var(--white); color: var(--leaf); }
-    .button.secondary:hover { background: #e7f0dc; color: var(--leaf); }
-    .button.compact { min-height: 41px; padding-inline: 14px; font-size: .91rem; }
+
+    /* The hero is a "day" panel: cream in both themes, because the illustration is painted on cream. */
     .hero {
       position: relative;
       display: flex;
@@ -75,9 +44,18 @@
       isolation: isolate;
       overflow: hidden;
       min-height: clamp(420px, 39vw, 540px);
-      border: 1px solid #e8d7b9;
-      border-radius: 20px;
-      background: #fbefdc;
+      border: 1px solid var(--rc-line);
+      border-radius: var(--rc-radius-xl);
+      background: var(--rc-day);
+      color: var(--rc-on-day);
+      /* Controls inside keep their light values in both themes. */
+      --rc-accent: #17593d;
+      --rc-accent-hover: #1f6d4c;
+      --rc-on-accent: #fffdf4;
+      --rc-surface: #fffcf5;
+      --rc-accent-soft: #e3f1e5;
+      --rc-line-strong: #17593d;
+      --rc-focus: #663e91;
     }
     .village {
       position: absolute;
@@ -89,200 +67,186 @@
       object-position: 60% 62%;
       mask-image: linear-gradient(90deg, transparent 2%, #000 39%);
     }
-    .hero-copy { padding: 44px clamp(28px, 4.6vw, 64px); }
-    h1, h2 { font-family: var(--serif); letter-spacing: -.035em; }
-    h1 { color: #163d2b; font-size: clamp(3.1rem, 6vw, 5.35rem); line-height: .98; }
-    h1 span { display: block; color: var(--violet); font-style: italic; }
-    .hero-copy p {
-      max-width: 33ch;
-      margin: 22px 0 24px;
-      color: #304e3d;
-      font-size: clamp(1rem, 1.5vw, 1.2rem);
-      line-height: 1.52;
-    }
-    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .hero-copy { padding: 48px clamp(24px, 4.6vw, 64px); }
+    h1 { color: #163d2b; font-size: var(--rc-text-hero); line-height: 1; letter-spacing: -0.035em; }
+    h1 span { display: block; color: #663e91; font-style: italic; }
+    .hero-copy p { max-width: 33ch; margin: 24px 0; color: var(--rc-on-day-muted); font-size: clamp(1rem, 1.5vw, 1.25rem); line-height: 1.5; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+
     .body-section { margin: clamp(48px, 6.2vw, 88px) auto; }
-    .body-section h2 { color: #173b2b; font-size: clamp(2.15rem, 4vw, 3.45rem); line-height: 1.05; }
-    .section-intro { margin-top: 11px; color: var(--muted); max-width: 60ch; }
+    .body-section h2 { font-size: clamp(2rem, 4vw, 3.25rem); line-height: 1.05; letter-spacing: -0.03em; }
+    .section-intro { margin-top: 12px; color: var(--rc-muted); max-width: 60ch; }
     .discover {
       display: grid;
       grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr);
-      column-gap: clamp(32px, 7vw, 106px);
+      column-gap: clamp(32px, 7vw, 104px);
       align-items: start;
-      padding-inline: clamp(0px, 3vw, 42px);
     }
     .discover h2 { max-width: 12ch; }
-    .mascot { display: block; width: 100%; height: auto; mix-blend-mode: darken; filter: brightness(1.05); user-select: none; }
-    .welcome { width: clamp(118px, 15vw, 195px); margin: 14px 0 0 1px; }
-    .storylines { margin-top: 2px; border-top: 1px solid var(--line); }
-    .storylines > div { padding: 15px 0; border-bottom: 1px solid var(--line); }
-    .storylines dt { color: var(--leaf); font-size: 1.05rem; font-weight: 800; }
-    .storylines dd { margin-top: 3px; color: var(--muted); }
-    .discovery-link { display: inline-block; margin-top: 14px; font-weight: 730; }
-    #setup { scroll-margin-top: 18px; }
-    .setup-heading { margin-bottom: 18px; }
+    .mascot { display: block; width: 100%; height: auto; border-radius: var(--rc-radius-lg); mix-blend-mode: darken; user-select: none; }
+    .welcome { width: clamp(118px, 15vw, 195px); margin-top: 16px; }
+    .storylines { border-top: 1px solid var(--rc-line); }
+    .storylines > div { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; padding: 16px 0; border-bottom: 1px solid var(--rc-line); }
+    .storylines .rc-icon { grid-row: span 2; width: 28px; height: 28px; margin-top: 2px; color: var(--rc-violet); }
+    .storylines dt { color: var(--rc-accent); font-size: var(--rc-text-lg); font-weight: 800; line-height: 1.3; }
+    .storylines dd { color: var(--rc-muted); max-width: var(--rc-measure); }
+    .discovery-link { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin-top: 8px; font-weight: 700; }
+
+    #setup { scroll-margin-top: 16px; }
+    .setup-heading { margin-bottom: 24px; }
     .setup-panel {
       display: grid;
       grid-template-columns: minmax(205px, .37fr) minmax(0, 1fr);
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      background: var(--white);
+      border: 1px solid var(--rc-line);
+      border-radius: var(--rc-radius-lg);
+      background: var(--rc-surface);
       overflow: clip;
     }
-    .agent-list { display: grid; align-content: start; padding: 14px; gap: 3px; border-right: 1px solid #e3d9ea; background: #f6edf9; }
+    .agent-list { display: grid; align-content: start; padding: 12px; gap: 4px; border-right: 1px solid var(--rc-line); background: var(--rc-violet-soft); }
     .agent {
       display: flex;
-      gap: 10px;
+      gap: 12px;
       align-items: center;
-      min-height: 43px;
+      min-height: 44px;
       padding: 6px 12px;
       border: 1px solid transparent;
-      border-radius: 8px;
+      border-radius: var(--rc-radius-sm);
       background: transparent;
       text-align: left;
-      font-weight: 650;
+      font-weight: 600;
+      transition: background-color var(--rc-dur-fast) var(--rc-ease);
     }
-    .agent:hover { background: var(--white); }
-    .agent[aria-pressed="true"] { border-color: #c9a8e3; background: var(--lilac); color: #45236a; font-weight: 790; }
+    @media (hover: hover) { .agent:hover { background: var(--rc-surface); } }
+    .agent:active { transform: scale(.98); }
+    .agent[aria-pressed="true"] { border-color: var(--rc-violet); background: var(--rc-surface); color: var(--rc-violet); font-weight: 800; }
     .agent-mark {
       display: inline-grid;
       flex: none;
       place-items: center;
-      width: 27px;
-      height: 27px;
-      border: 1px solid #e7dfe9;
-      border-radius: 7px;
+      width: 28px;
+      height: 28px;
+      border: 1px solid rgb(34 53 42 / .14);
+      border-radius: 8px;
       background: #fff;
+      color: #663e91;
     }
     .agent-mark img { width: 74%; height: 74%; object-fit: contain; }
-    .generic-mark::before, .generic-mark::after { content: ""; grid-area: 1 / 1; width: 10px; height: 2px; border-radius: 1px; background: var(--violet); }
-    .generic-mark::after { transform: rotate(90deg); }
-    .agent-detail { min-width: 0; padding: clamp(19px, 3vw, 36px); }
-    .agent-heading { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
-    .agent-heading .agent-mark { width: 39px; height: 39px; border-radius: 9px; }
-    .agent-heading h3 { font-size: 1.55rem; line-height: 1.15; }
-    #agent-kind, .meta { color: var(--muted); font-size: .9rem; }
-    #agent-intro { margin-top: 8px; }
-    .endpoint { margin-top: 18px; padding: 14px; border: 1px solid #e4dac7; border-radius: 12px; background: var(--cream); }
-    .endpoint label, .agent-picker label { display: block; margin-bottom: 5px; font-size: .92rem; font-weight: 750; }
+    .agent-mark .rc-icon { width: 16px; height: 16px; }
+    .agent-detail { min-width: 0; padding: clamp(20px, 3vw, 36px); }
+    .agent-heading { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+    .agent-heading .agent-mark { width: 40px; height: 40px; border-radius: 10px; }
+    .agent-heading .agent-mark .rc-icon { width: 22px; height: 22px; }
+    .agent-heading h3 { font-size: var(--rc-text-2xl); line-height: 1.15; }
+    #agent-kind, .meta { color: var(--rc-muted); font-size: var(--rc-text-sm); }
+    #agent-intro { margin-top: 8px; max-width: var(--rc-measure); }
+    .endpoint { margin-top: 20px; padding: 16px; border-radius: var(--rc-radius-md); background: var(--rc-paper); }
     .agent-picker { display: none; }
     .endpoint-row { display: flex; gap: 8px; align-items: stretch; }
-    .endpoint input, .agent-picker select {
-      display: block;
-      min-width: 0;
-      min-height: 43px;
-      padding: 7px 10px;
-      border: 1px solid #ada693;
-      border-radius: 8px;
-      background: var(--white);
-    }
-    .endpoint input { flex: 1 1 auto; width: 100%; }
-    .endpoint input[aria-invalid="true"] { border-color: #983723; }
-    .endpoint .button { flex: 0 0 auto; }
-    #endpoint-note { margin-top: 8px; }
-    .instructions ol { margin: 15px 0 0; padding-inline-start: 22px; }
-    .instructions li { margin-bottom: 5px; padding-inline-start: 4px; }
+    .endpoint-row input { flex: 1 1 auto; font-family: var(--rc-font-mono); }
+    .endpoint-row .rc-btn { flex: 0 0 auto; }
+    #endpoint-note { margin-top: 8px; font-weight: 400; }
+    .instructions ol { margin: 16px 0 0; padding-inline-start: 22px; max-width: var(--rc-measure); }
+    .instructions li { margin-bottom: 8px; padding-inline-start: 4px; }
+    .instructions li::marker { color: var(--rc-violet); font-weight: 800; }
+    #config { margin-top: 12px; display: grid; gap: 8px; justify-items: start; }
     pre {
-      max-width: 100%;
-      padding: 10px 12px;
-      background: #f4edf8;
-      color: #462f5d;
-      border-radius: 8px;
+      width: 100%;
+      margin: 0;
+      padding: 12px 14px;
+      border-radius: var(--rc-radius-sm);
+      background: var(--rc-violet-soft);
+      color: var(--rc-ink);
       overflow: auto;
-      font: .875rem/1.5 ui-monospace, monospace;
+      font-size: var(--rc-text-sm);
+      line-height: 1.5;
     }
-    code { font: .88em ui-monospace, monospace; overflow-wrap: anywhere; }
-    .copy-status { color: var(--leaf); font-size: .93rem; font-weight: 680; }
+    code { font-size: .88em; overflow-wrap: anywhere; }
+    .copy-status { color: var(--rc-accent); font-size: var(--rc-text-md); font-weight: 700; }
     .copy-status:not(:empty) { margin-top: 8px; }
-    .agent-footer { margin-top: 13px; }
-    .agent-footer a { font-weight: 700; }
-    .agent-footer p { margin-top: 5px; }
+    .agent-footer { margin-top: 16px; }
+    .agent-footer a { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-weight: 700; }
     .questions {
       display: grid;
       grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
       gap: clamp(20px, 5vw, 76px);
       align-items: center;
-      padding: clamp(22px, 4vw, 48px);
-      border-radius: 16px;
-      background: var(--cream);
+      padding: clamp(24px, 4vw, 48px);
+      border-radius: var(--rc-radius-xl);
+      background: var(--rc-sunken);
     }
-    .guide { width: clamp(126px, 18vw, 225px); margin-top: 10px; }
-    .prompt-list { border-top: 1px solid #e0d1b5; }
+    .guide { width: clamp(126px, 18vw, 225px); margin-top: 12px; }
+    .prompt-list { border-top: 1px solid var(--rc-line); }
     .prompt {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
-      gap: 12px;
+      gap: 16px;
       padding: 12px 0;
-      border-bottom: 1px solid #e0d1b5;
+      border-bottom: 1px solid var(--rc-line);
     }
-    .prompt button { min-width: 76px; }
-    .site-footer { background: #e8efdf; padding: 30px 0 22px; }
-    .footer-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px 44px; }
-    .footer-content h2 { font-family: inherit; font-size: 1.05rem; font-weight: 800; line-height: 1.26; letter-spacing: normal; }
-    .footer-content p { margin-top: 6px; }
-    .footer-content a { font-weight: 680; }
-    .footer-content summary { cursor: pointer; color: var(--leaf); font-weight: 750; margin-top: 8px; }
-    .footer-bottom { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-top: 24px; padding-top: 15px; border-top: 1px solid #c9d6c2; }
-    .footer-bottom .wordmark { font-size: 1.42rem; }
-    .footer-links { display: flex; flex-wrap: wrap; gap: 12px; font-size: .9rem; }
+    .site-footer { background: var(--rc-accent-soft); padding: 40px 0 24px; }
+    .footer-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 48px; }
+    .footer-content h2 { font-family: var(--rc-font-text); font-size: var(--rc-text-lg); font-weight: 800; line-height: 1.3; letter-spacing: 0; }
+    .footer-content p { margin-top: 8px; }
+    .footer-content a { font-weight: 700; }
+    .footer-content pre { margin-top: 4px; background: var(--rc-surface); }
+    .footer-bottom { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--rc-line); }
+    .footer-links { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: var(--rc-text-md); }
+    .footer-links a { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
+    @media (prefers-color-scheme: dark) {
+      /* Raster art is painted on cream: it keeps its cream tile instead of blending into a dark page. */
+      .mascot { mix-blend-mode: normal; }
+    }
     @media (max-width: 920px) {
-      .wrap { width: calc(100% - 38px); }
+      .wrap { width: calc(100% - 40px); }
       .village { width: 77%; mask-image: linear-gradient(90deg, transparent 3%, #000 49%); }
     }
     @media (max-width: 720px) {
       .hero { display: grid; min-height: 0; }
-      .hero-copy { padding: 26px 24px 9px; position: relative; z-index: 1; }
+      .hero-copy { padding: 28px 24px 8px; position: relative; z-index: 1; }
       .village { position: relative; grid-row: 2; width: 100%; height: clamp(195px, 48vw, 294px); mask-image: linear-gradient(180deg, transparent, #000 23%); }
-      h1 { font-size: clamp(2.8rem, 8.8vw, 4.05rem); }
-      .hero-copy p { margin: 13px 0 16px; }
-      .discover, .questions { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+      .hero-copy p { margin: 16px 0; }
+      .discover, .questions { grid-template-columns: minmax(0, 1fr); gap: 16px; }
       .discover h2 { max-width: none; }
-      .discovery-intro, .question-intro { display: grid; grid-template-columns: minmax(0, 1fr) 102px; column-gap: 8px; align-items: center; }
+      .discovery-intro, .question-intro { display: grid; grid-template-columns: minmax(0, 1fr) 104px; column-gap: 12px; align-items: center; }
       .welcome, .guide { width: 100%; margin: 0; }
       .setup-panel { display: block; }
       .agent-list { display: none; }
-      .agent-picker { display: block; margin-bottom: 16px; }
-      .agent-picker select { width: 100%; margin-top: 4px; }
+      .agent-picker { display: grid; margin-bottom: 20px; }
     }
-    @media (max-width: 420px) {
-      .wrap { width: calc(100% - 26px); }
-      .masthead { min-height: 61px; }
-      .site-nav { gap: 9px; }
-      .site-nav .nav-link, .site-nav .button { font-size: .82rem; }
-      .wordmark { font-size: 1.39rem; }
-      .hero-copy { padding-inline: 17px; }
-      h1 { font-size: clamp(2.3rem, 10vw, 2.64rem); }
-      .actions .button { min-height: 43px; padding-inline: 10px; font-size: .9rem; }
+    @media (max-width: 480px) {
+      .wrap { width: calc(100% - 32px); }
+      .masthead { min-height: 60px; }
+      .masthead .rc-wordmark { font-size: 1.25rem; }
+      .site-nav .nav-link { display: none; }
+      .hero-copy { padding-inline: 20px; }
+      .actions .rc-btn { flex: 1 1 100%; }
       .footer-content { grid-template-columns: minmax(0, 1fr); }
-    }
-    @media (max-width: 340px) {
-      .site-nav .button { padding-inline: 7px; }
-      .discovery-intro, .question-intro { grid-template-columns: minmax(0, 1fr) 78px; }
       .endpoint-row { flex-wrap: wrap; }
-      .endpoint-row .button { width: 100%; }
+      .endpoint-row .rc-btn { width: 100%; }
+      .prompt { grid-template-columns: minmax(0, 1fr); gap: 8px; justify-items: start; }
     }
-  </style>
+</style>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
   <header class="masthead wrap">
-    <a class="wordmark" href="/connect" aria-label="ReloCat home">relo<span>.cat</span></a>
+    <a class="rc-wordmark" href="/connect" aria-label="ReloCat home"><!-- MARK --><span>Relo<b>Cat</b></span></a>
     <nav class="site-nav" aria-label="Main navigation">
       <a class="nav-link" href="/preview">Town demo</a>
-      <a class="button compact secondary" href="#setup">Connect an agent</a>
+      <a class="rc-btn rc-btn--sm" href="#setup">Connect an agent</a>
     </nav>
   </header>
 
   <main class="wrap" id="main">
     <section class="hero" aria-labelledby="hero-title">
-      <img class="village" src="{{village}}" alt="" fetchpriority="high">
+      <img class="village" src="{{art:hero-valley}}" alt="" fetchpriority="high">
       <div class="hero-copy">
         <h1 id="hero-title">Find your place <span>in Catalonia.</span></h1>
         <p>Compare towns, school journeys and housing support before you decide where to move.</p>
         <div class="actions">
-          <a class="button" href="/preview">Explore towns</a>
-          <a class="button secondary" href="#setup">Connect your agent</a>
+          <a class="rc-btn rc-btn--primary" href="/preview">Explore towns</a>
+          <a class="rc-btn" href="#setup">Connect your agent</a>
         </div>
       </div>
     </section>
@@ -293,15 +257,15 @@
           <h2 id="discover-title">Get a feel for everyday life.</h2>
           <p class="section-intro">Start with 18 Catalan municipalities in the pilot.</p>
         </div>
-        <img class="mascot welcome" src="{{welcome}}" alt="" width="227" height="208" loading="lazy">
+        <img class="mascot welcome" src="{{art:mascot-welcome}}" alt="" width="227" height="208" loading="lazy">
       </div>
       <div>
         <dl class="storylines">
-          <div><dt>Find towns that fit</dt><dd>Compare towns against your budget, school needs and transport constraints. See which requirements each town meets and what still needs checking.</dd></div>
-          <div><dt>Compare the school run and commute</dt><dd>Check nearby schools and dated travel estimates. Sources and sample dates help you decide which journeys to verify.</dd></div>
-          <div><dt>Explore housing support and homes</dt><dd>Check published incentives and their application status. When live listing search is enabled, follow example links to confirm the price, bedrooms and availability.</dd></div>
+          <div><!-- ICON:pin --><dt>Find towns that fit</dt><dd>Compare towns against your budget, school needs and transport constraints. See which requirements each town meets and what still needs checking.</dd></div>
+          <div><!-- ICON:school --><dt>Compare the school run and commute</dt><dd>Check nearby schools and dated travel estimates. Sources and sample dates help you decide which journeys to verify.</dd></div>
+          <div><!-- ICON:aid --><dt>Explore housing support and homes</dt><dd>Check published incentives and their application status. When live listing search is enabled, follow example links to confirm the price, bedrooms and availability.</dd></div>
         </dl>
-        <a class="discovery-link" href="https://github.com/itsmanelvelasco/aihousebuyingcompanion/blob/main/apps/mcp-server/README.md#data-and-refresh">See the data sources</a>
+        <a class="discovery-link" href="https://github.com/itsmanelvelasco/aihousebuyingcompanion/blob/main/apps/mcp-server/README.md#data-and-refresh"><!-- ICON:link -->See the data sources</a>
       </div>
     </section>
 
@@ -313,7 +277,7 @@
       <div class="setup-panel">
         <div class="agent-list" id="agents" role="group" aria-label="Choose an agent"></div>
         <div class="agent-detail">
-          <div class="agent-picker">
+          <div class="agent-picker rc-field">
             <label for="agent-select">Choose an agent</label>
             <select id="agent-select"></select>
           </div>
@@ -323,18 +287,18 @@
             <span id="agent-kind"></span>
           </div>
           <p id="agent-intro"></p>
-          <div class="endpoint" id="endpoint-box">
+          <div class="endpoint rc-field" id="endpoint-box">
             <label for="endpoint">ReloCat MCP server URL</label>
             <div class="endpoint-row">
               <input id="endpoint" type="url" value="https://relo.cat/mcp" spellcheck="false" autocomplete="off" aria-describedby="endpoint-note">
-              <button class="button compact" id="copy-url" type="button">Copy URL</button>
+              <button class="rc-btn rc-btn--primary" id="copy-url" type="button"><!-- ICON:copy -->Copy URL</button>
             </div>
             <p id="endpoint-note" class="meta"></p>
           </div>
           <div class="instructions" id="instructions"></div>
           <p class="copy-status" id="feedback" role="status"></p>
           <div class="agent-footer">
-            <a id="docs" target="_blank" rel="noopener noreferrer">Official setup guide</a>
+            <a id="docs" target="_blank" rel="noopener noreferrer">Official setup guide<!-- ICON:external --></a>
             <p class="meta">Available settings depend on your agent version and workspace permissions.</p>
           </div>
           <noscript>Enable JavaScript to choose an agent and generate its configuration.</noscript>
@@ -348,7 +312,7 @@
           <h2 id="questions-title">What would you ask?</h2>
           <p class="section-intro">Copy a question into your agent after connecting ReloCat.</p>
         </div>
-        <img class="mascot guide" src="{{guide}}" alt="" width="289" height="221" loading="lazy">
+        <img class="mascot guide" src="{{art:mascot-guide}}" alt="" width="289" height="221" loading="lazy">
       </div>
       <div>
         <div class="prompt-list" id="prompts"></div>
@@ -376,15 +340,16 @@
         </div>
       </div>
       <div class="footer-bottom">
-        <a class="wordmark" href="/connect" aria-label="ReloCat home">relo<span>.cat</span></a>
+        <a class="rc-wordmark" href="/connect" aria-label="ReloCat home"><!-- MARK --><span>Relo<b>Cat</b></span></a>
         <nav class="footer-links" aria-label="Footer navigation">
           <a href="/preview">Town demo</a>
-          <a href="https://github.com/itsmanelvelasco/aihousebuyingcompanion">GitHub</a>
+          <a href="https://github.com/itsmanelvelasco/aihousebuyingcompanion">GitHub<!-- ICON:external --></a>
         </nav>
       </div>
     </div>
   </footer>
 
+  <template id="generic-agent-icon"><!-- ICON:add --></template>
   <script>
     const agentIcons = {{agent-icons}};
     const agents = [
@@ -514,7 +479,7 @@
         image.src = src;
         mark.append(image);
       } else {
-        mark.classList.add("generic-mark");
+        mark.append(get("generic-agent-icon").content.cloneNode(true));
       }
       return mark;
     }
@@ -560,7 +525,7 @@
       const pre = document.createElement("pre");
       const copyConfig = document.createElement("button");
       copyConfig.type = "button";
-      copyConfig.className = "button compact secondary";
+      copyConfig.className = "rc-btn rc-btn--sm";
       copyConfig.textContent = "Copy configuration";
       copyConfig.onclick = () => copy(pre.textContent, feedback, () => selectContents(pre));
       config.append(pre, copyConfig);
@@ -593,7 +558,7 @@
       question.textContent = text;
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "button compact secondary";
+      button.className = "rc-btn rc-btn--sm";
       button.textContent = "Copy";
       button.setAttribute("aria-label", "Copy question: " + text);
       button.onclick = () => copy(text, get("prompt-feedback"), () => selectContents(question));

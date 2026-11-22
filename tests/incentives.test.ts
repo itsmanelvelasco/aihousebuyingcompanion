@@ -60,22 +60,141 @@ test('effects carry only the figures stated in each verified policy', () => {
       maxBaseEur: 6000,
     });
   }
-  const rent = effect('irpf_rent');
-  assert(rent?.kind === 'annual_rate_of_cost');
-  // The legal cap is €600 a year: neither rate may produce more on the modelled base.
-  assert(rent.rate.rural * rent.maxBaseEur <= 600);
-  assert.equal(rent.rate.special_attention * rent.maxBaseEur, 600);
+  // The law caps the rent deduction by amount (€600, €1,200 joint), not the rent it applies to.
+  assert.deepEqual(effect('irpf_rent'), {
+    kind: 'annual_rate_of_cost',
+    cost: 'rent',
+    rate: { rural: 0.15, special_attention: 0.2, other: 0 },
+    maxAmountEur: { individual: 600, joint: 1200 },
+  });
   for (const id of ['itp_buy', 'itp_rehab_buy']) {
     // A municipality outside the measure keeps the general rate, so it never shows a saving.
     assert.deepEqual(effect(id), {
       kind: 'transfer_tax_rate',
       standardRate: 0.1,
+      standardTariff: generalTariff,
       reducedRate: { rural: 0.04, special_attention: 0.03, other: 0.1 },
     });
   }
+  for (const id of ['itp_young_buyer', 'itp_large_family', 'itp_single_parent', 'itp_disability']) {
+    // The same 5% in every municipality, against the same general tariff.
+    assert.deepEqual(effect(id), {
+      kind: 'transfer_tax_rate',
+      standardRate: 0.1,
+      standardTariff: generalTariff,
+      reducedRate: { rural: 0.05, special_attention: 0.05, other: 0.05 },
+    });
+    assert.equal(policies.find(entry => entry.id === id)?.territory, 'catalonia');
+  }
   assert.equal(effect('renovation_grant_2026')?.kind, 'unquantified');
-  assert.equal(effect('youth_purchase_small_town')?.kind, 'unquantified');
+  // "€15,000 or less, limited to 20% of the cost": the lower of the two.
+  assert.deepEqual(effect('youth_purchase_small_town'), {
+    kind: 'one_off_rate_of_price',
+    rate: 0.2,
+    maxAmountEur: 15_000,
+  });
 });
+
+test('the new effect shapes parse and reject malformed figures', () => {
+  const rent = { kind: 'annual_rate_of_cost', cost: 'rent', rate: { rural: 0.15, special_attention: 0.2 } };
+  assert.equal(policyEffect.safeParse(rent).success, true, 'neither cap is mandatory');
+  assert.equal(policyEffect.safeParse({ ...rent, maxAmountEur: { individual: 600, joint: 1200 } }).success, true);
+  assert.equal(policyEffect.safeParse({ ...rent, maxAmountEur: { individual: 600 } }).success, false);
+  assert.equal(policyEffect.safeParse({ ...rent, maxAmountEur: 600 }).success, false);
+  const aid = { kind: 'one_off_rate_of_price', rate: 0.2, maxAmountEur: 15_000 };
+  assert.equal(policyEffect.safeParse(aid).success, true);
+  assert.equal(policyEffect.safeParse({ ...aid, rate: 20 }).success, false, 'rates are 0–1');
+  assert.equal(policyEffect.safeParse({ kind: 'one_off_rate_of_price', rate: 0.2 }).success, false);
+  const tax = { kind: 'transfer_tax_rate', standardRate: 0.1, reducedRate: { rural: 0.04, special_attention: 0.03 } };
+  assert.equal(policyEffect.safeParse({ ...tax, standardTariff: generalTariff }).success, true);
+  assert.equal(policyEffect.safeParse({ ...tax, standardTariff: [] }).success, false);
+  assert.equal(
+    policyEffect.safeParse({ ...tax, standardTariff: [{ fromEur: 600_000, rate: 0.11 }] }).success,
+    false,
+    'a tariff starts at zero',
+  );
+  assert.equal(
+    policyEffect.safeParse({ ...tax, standardTariff: [...generalTariff].reverse() }).success,
+    false,
+    'brackets ascend',
+  );
+});
+
+const youngItpBuyer: Household = {
+  primaryResidence: true,
+  age: 35,
+  itpBuyerNetTaxBaseEur: 36_000,
+  itpTransaction: true,
+  satisfiesItpOccupancyRules: true,
+};
+
+test('screens the 5% young-buyer ITP rate in every municipality, rural or not', () => {
+  for (const code of [talarn, termens, tremp, calaf, balaguer]) {
+    const eligible = check('itp_young_buyer', code, { eventDate: '2026-12-01', household: youngItpBuyer });
+    assert.equal(eligible.geographicStatus, 'applies');
+    assert.equal(eligible.measureStatus, 'active');
+    assert.equal(eligible.eligibilityStatus, 'eligible');
+    assert.equal(eligible.callStatus, 'unknown', 'a tax rate has no application call');
+  }
+  const screen = (household: Household, eventDate = '2026-12-01') =>
+    check('itp_young_buyer', balaguer, { eventDate, household });
+  assert.match(screen({ ...youngItpBuyer, age: 36 }).unmetCriteria.join(' '), /35 or younger/);
+  assert.match(screen({ ...youngItpBuyer, itpBuyerNetTaxBaseEur: 36_000.01 }).unmetCriteria.join(' '), /36,000/);
+  assert.equal(screen({ ...youngItpBuyer, primaryResidence: false }).eligibilityStatus, 'ineligible');
+  // The 35-year limit dates from 27 June 2025; earlier purchases followed a rule that is not encoded.
+  assert.equal(screen(youngItpBuyer, '2025-06-27').eligibilityStatus, 'eligible');
+  const earlier = screen(youngItpBuyer, '2025-06-26');
+  assert.equal(earlier.measureStatus, 'upcoming');
+  assert.equal(earlier.eligibilityStatus, 'needs_verification');
+});
+
+test('an unknown age or tax base never qualifies for the young-buyer rate', () => {
+  const catalogue = check('itp_young_buyer', balaguer, { eventDate: '2026-12-01' });
+  assert.equal(catalogue.eligibilityStatus, 'needs_verification');
+  assert.deepEqual(catalogue.unmetCriteria, []);
+  assert.equal(catalogue.missingCriteria.length, 5);
+  for (const fact of ['age', 'itpBuyerNetTaxBaseEur'] as const) {
+    const { [fact]: _omitted, ...partial } = youngItpBuyer;
+    const result = check('itp_young_buyer', balaguer, { eventDate: '2026-12-01', household: partial });
+    assert.equal(result.eligibilityStatus, 'needs_verification', fact);
+    assert.equal(result.missingCriteria.length, 1);
+  }
+});
+
+test('screens the other 5% ITP rates that apply anywhere in Catalonia', () => {
+  const base: Household = { primaryResidence: true, itpTransaction: true, satisfiesItpOccupancyRules: true };
+  const screen = (id: string, household: Household) =>
+    check(id, balaguer, { eventDate: '2026-12-01', household: { ...base, ...household } });
+
+  for (const [id, fact] of [
+    ['itp_large_family', 'largeFamily'],
+    ['itp_single_parent', 'singleParent'],
+  ] as const) {
+    assert.equal(screen(id, { [fact]: true, itpFamilyNetTaxBaseEur: 36_000 }).eligibilityStatus, 'eligible');
+    assert.equal(screen(id, { [fact]: false, itpFamilyNetTaxBaseEur: 36_000 }).eligibilityStatus, 'ineligible');
+    assert.equal(screen(id, { itpFamilyNetTaxBaseEur: 36_000 }).eligibilityStatus, 'needs_verification');
+    // Above €36,000 the limit may still be met through the €14,000 per extra child: unknown, not excluded.
+    const above = screen(id, { [fact]: true, itpFamilyNetTaxBaseEur: 40_000 });
+    assert.equal(above.eligibilityStatus, 'needs_verification');
+    assert.match(above.missingCriteria.join(' '), /14,000/);
+  }
+  assert.equal(
+    screen('itp_disability', { disability65: true, itpFamilyNetTaxBaseEur: 36_000 }).eligibilityStatus,
+    'eligible',
+  );
+  assert.equal(
+    screen('itp_disability', { disability65: true, itpFamilyNetTaxBaseEur: 36_001 }).eligibilityStatus,
+    'ineligible',
+  );
+  assert.equal(screen('itp_disability', { itpFamilyNetTaxBaseEur: 30_000 }).eligibilityStatus, 'needs_verification');
+});
+
+const generalTariff = [
+  { fromEur: 0, rate: 0.1 },
+  { fromEur: 600_000, rate: 0.11 },
+  { fromEur: 900_000, rate: 0.12 },
+  { fromEur: 1_500_000, rate: 0.13 },
+];
 
 const rehabBuyer: Household = {
   primaryResidence: true,
@@ -261,7 +380,16 @@ test('keeps the closed 2026 renovation call and the catalogue by intent unchange
   const town = getTown(snapshot, termens);
   const ids = (intent: IncentivesInput['intent']) =>
     evaluateIncentives(policies, town, { municipalityCode: termens, intent }, today).map(entry => entry.id);
-  assert.deepEqual(ids('buy'), ['irpf_buy', 'itp_buy', 'itp_rehab_buy', 'youth_purchase_small_town']);
+  assert.deepEqual(ids('buy'), [
+    'irpf_buy',
+    'itp_buy',
+    'itp_rehab_buy',
+    'itp_young_buyer',
+    'itp_large_family',
+    'itp_single_parent',
+    'itp_disability',
+    'youth_purchase_small_town',
+  ]);
   assert.deepEqual(ids('renovate'), ['irpf_renovate', 'renovation_grant_2026']);
   assert.deepEqual(ids('move'), ['irpf_move']);
   assert.deepEqual(ids('rent'), ['irpf_rent']);

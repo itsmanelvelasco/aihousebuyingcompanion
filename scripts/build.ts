@@ -7,10 +7,9 @@ const bundles = [
     outfile: 'apps/mcp-server/dist/town-explorer.js',
     minify: true,
     legalComments: 'eof' as const,
-    loader: { '.jpg': 'dataurl' as const },
   },
   { entryPoints: ['apps/board/widget.ts'], outfile: 'apps/board/dist/widget.js' },
-  { entryPoints: ['apps/interviewer/app.mjs'], outfile: 'apps/interviewer/dist/app.js' },
+  { entryPoints: ['apps/interviewer/app.ts'], outfile: 'apps/interviewer/dist/app.js' },
   {
     entryPoints: ['apps/web/main.tsx'],
     outfile: 'apps/web/dist/workspace.js',

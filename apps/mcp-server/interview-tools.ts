@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { widgetUri as productWidgetUri } from '../../packages/config/product.ts';
 import { compareSavings, summarizeCsv } from '../../packages/finance/csv.ts';
 import { firstScenarioInput, firstScenarioOutput, generateFirstScenario } from '../../packages/finance/scenario.ts';
+import { inlineUi } from '../../packages/ui/inline.ts';
 import { renderVoiceCard } from './voice-card.ts';
 
 const widgetUri = productWidgetUri('cash-flow.html');
@@ -134,7 +135,7 @@ export function registerInterviewerTools(server: McpServer) {
       description: 'Monthly income and spending for the fictional homebuying demo.',
     },
     async () => ({
-      contents: [{ uri: widgetUri, mimeType: widgetType, text: await readFile(widgetPath, 'utf8') }],
+      contents: [{ uri: widgetUri, mimeType: widgetType, text: inlineUi(await readFile(widgetPath, 'utf8')) }],
     }),
   );
 

@@ -4,7 +4,7 @@
 
 ## Entry points
 
-- `apps/interviewer/server.ts`, `app.mjs`, `index.html`: standalone voice/guided interview on port 3000 (`npm run start:interviewer`). Live voice/API categorization require explicitly configured OpenAI access; guided mode works without paid calls.
+- `apps/interviewer/server.ts`, `app.ts`, `index.html`: voice/guided interview, mounted by the one server at `http://127.0.0.1:8787/interview/` (`npm start`) and still runnable alone on port 3000 (`npm run start:interviewer`). `createInterviewerHandler` serves the page, its bundle, the demo CSV and `/scenario` (deterministic, free) to anyone. `/classify` (OpenAI Decisions) and `/voice` (OpenAI Realtime) spend `OPENAI_API_KEY` credits: by default they answer only same-origin requests made on the server's own machine, and `INTERVIEWER_PUBLIC_AI=on` opens them to the public site with a per-visitor hourly limit. Guided mode works without paid calls.
 - `apps/mcp-server/interview-tools.ts`: interview/cash-flow tools registered by the shared MCP factory. The browser interview retains its own local state; it is not automatically the persisted profile API.
 - `apps/board/intake.ts`: expanded demo intake definitions and validation.
 
@@ -22,7 +22,7 @@ Use integer EUR cents at the API boundary. The UI's debt-inclusive spending must
 
 ## Run and verify
 
-From the root, run `npm run typecheck` and `node --test tests/board.test.ts tests/board-connected.test.ts`. Use the [integration guide](integration-deployment.md) to run the connected API and board.
+From the root, run `npm run typecheck` and `node --test tests/board.test.ts tests/board-connected.test.ts tests/interviewer.test.ts` (the interviewer tests need `npm run build` first and never call OpenAI). Use the [integration guide](integration-deployment.md) to run the connected API and board.
 
 ## Handoff
 
