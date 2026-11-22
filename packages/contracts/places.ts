@@ -172,6 +172,51 @@ export const policyId = z.enum([
   'itp_buy',
   'renovation_grant_2026',
 ]);
+/** An amount or rate that depends on the municipality's rural category. */
+export const byRuralCategory = z
+  .object({
+    rural: z.number().nonnegative(),
+    special_attention: z.number().nonnegative(),
+    /** Municipalities that are neither; zero when the measure does not reach them. */
+    other: z.number().nonnegative().default(0),
+  })
+  .strict();
+/**
+ * The machine-readable part of a policy: how it changes what a household pays or receives.
+ * The planner turns this into fewer months of saving. `benefit` stays as the human summary.
+ */
+export const policyEffect = z.discriminatedUnion('kind', [
+  /** A lower transfer-tax rate on the purchase, replacing `standardRate`. Rates are 0–1. */
+  z
+    .object({
+      kind: z.literal('transfer_tax_rate'),
+      standardRate: z.number().min(0).max(1),
+      reducedRate: byRuralCategory,
+    })
+    .strict(),
+  /** A single payment or deduction in euros. */
+  z.object({ kind: z.literal('one_off_eur'), amount: byRuralCategory }).strict(),
+  /** A fixed amount in euros every year, for at most `maxYears` (null: while conditions hold). */
+  z
+    .object({
+      kind: z.literal('annual_eur'),
+      amount: byRuralCategory,
+      maxYears: z.number().int().positive().nullable(),
+    })
+    .strict(),
+  /** A yearly percentage of a qualifying cost, on a capped base. Rates are 0–1. */
+  z
+    .object({
+      kind: z.literal('annual_rate_of_cost'),
+      cost: z.enum(['purchase_payments', 'rent', 'renovation']),
+      rate: byRuralCategory,
+      maxBaseEur: z.number().positive(),
+    })
+    .strict(),
+  /** A real measure whose amount depends on facts ReloCat does not model. */
+  z.object({ kind: z.literal('unquantified'), reason: z.string().min(1) }).strict(),
+]);
+export type PolicyEffect = z.infer<typeof policyEffect>;
 export const policy = z.object({
   id: policyId,
   version: z.string(),
@@ -186,6 +231,7 @@ export const policy = z.object({
   legalUrl: z.url(),
   lastVerified: isoDate,
   benefit: z.string(),
+  effect: policyEffect.optional(),
   notes: z.array(z.string()),
   municipalityCodes: z.array(municipalityCode).optional(),
 });
