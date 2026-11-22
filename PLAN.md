@@ -4,7 +4,7 @@ This is the hackathon roadmap, based on the project brief dated 21 November 2026
 
 ## Authority and current priority
 
-The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003) is authoritative. Its current overview and [MCP architecture](https://chatgpt.com/space/page_692ac01a0a3c81918ab65c4a0052783f) prioritize Catalonia-only town recommendations, school/transit access and verified incentives. This supersedes older bank-first demo sequences. The overview uses ReloCat; Arrela remains a legacy code/prototype name.
+The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003) is authoritative. Its current overview and [MCP architecture](https://chatgpt.com/space/page_692ac01a0a3c81918ab65c4a0052783f) prioritize Catalonia-only town recommendations, school/transit access and verified incentives. This supersedes older bank-first demo sequences. The product name is ReloCat everywhere.
 
 The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_applicable_incentives`. Bank-informed coaching and [authorized property listings](https://chatgpt.com/space/page_5cb6c5414e088191827364cd0e43b847) are complementary streams, not prerequisites for demo success.
 
