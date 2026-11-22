@@ -1,9 +1,38 @@
-export const stops = [[48, 200], [126, 171], [208, 113], [277, 186], [343, 139], [421, 75]];
-const waypoints = [
-  [[74, 200], [103, 171]], [[151, 171], [182, 113]], [[231, 113], [252, 186]],
-  [[304, 186], [327, 139]], [[374, 139], [394, 105], [421, 105]]
+export const stops = [
+  [48, 200],
+  [126, 171],
+  [208, 113],
+  [277, 186],
+  [343, 139],
+  [421, 75],
 ];
-const shortcut = [[344, 106], [371, 76]];
+const waypoints = [
+  [
+    [74, 200],
+    [103, 171],
+  ],
+  [
+    [151, 171],
+    [182, 113],
+  ],
+  [
+    [231, 113],
+    [252, 186],
+  ],
+  [
+    [304, 186],
+    [327, 139],
+  ],
+  [
+    [374, 139],
+    [394, 105],
+    [421, 105],
+  ],
+];
+const shortcut = [
+  [344, 106],
+  [371, 76],
+];
 export const stopNames = ['Start', 'Savings', 'Plan', 'Buy', 'Repay', 'Debt-free'];
 
 export function nextSegment(index: number, useShortcut: boolean) {
@@ -11,15 +40,21 @@ export function nextSegment(index: number, useShortcut: boolean) {
   return [stops[index], ...points, stops[index + 1]];
 }
 
-export function drawWorld(canvas: HTMLCanvasElement, completed: number, program = "") {
+export function drawWorld(canvas: HTMLCanvasElement, completed: number, program = '') {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const context = ctx;
-  const box = (x: number, y: number, w: number, h: number, color: string) => { context.fillStyle = color; context.fillRect(x, y, w, h); };
+  const box = (x: number, y: number, w: number, h: number, color: string) => {
+    context.fillStyle = color;
+    context.fillRect(x, y, w, h);
+  };
   function poly(points: number[][], color: string) {
     context.fillStyle = color;
     context.beginPath();
-    points.forEach(([x, y], index) => index ? context.lineTo(x, y) : context.moveTo(x, y));
+    for (const [index, [x, y]] of points.entries()) {
+      if (index) context.lineTo(x, y);
+      else context.moveTo(x, y);
+    }
     context.closePath();
     context.fill();
   }
@@ -30,7 +65,10 @@ export function drawWorld(canvas: HTMLCanvasElement, completed: number, program 
     context.strokeStyle = color;
     context.setLineDash(dash);
     context.beginPath();
-    points.forEach(([x, y], index) => index ? context.lineTo(x, y) : context.moveTo(x, y));
+    for (const [index, [x, y]] of points.entries()) {
+      if (index) context.lineTo(x, y);
+      else context.moveTo(x, y);
+    }
     context.stroke();
     context.setLineDash([]);
   }
@@ -40,7 +78,19 @@ export function drawWorld(canvas: HTMLCanvasElement, completed: number, program 
     context.scale(size, size);
     box(-8, -1, 18, 4, '#598b7960');
     box(-2, -10, 4, 10, '#81556a');
-    poly([[-12, -7], [-12, -13], [-7, -18], [-7, -23], [7, -23], [7, -18], [12, -13], [12, -7]], '#3f957c');
+    poly(
+      [
+        [-12, -7],
+        [-12, -13],
+        [-7, -18],
+        [-7, -23],
+        [7, -23],
+        [7, -18],
+        [12, -13],
+        [12, -7],
+      ],
+      '#3f957c',
+    );
     box(-7, -19, 9, 7, '#6abd91');
     box(-4, -13, 11, 6, '#56a986');
     context.restore();
@@ -49,22 +99,135 @@ export function drawWorld(canvas: HTMLCanvasElement, completed: number, program 
     box(x - 18, y - 2, 41, 7, '#53437b47');
     box(x - 14, y - 21, 28, 21, wall);
     box(x + 10, y - 20, 5, 20, '#ab83a0');
-    poly([[x - 20, y - 20], [x, y - 38], [x + 20, y - 20]], roof);
-    poly([[x - 19, y - 20], [x, y - 38], [x + 6, y - 32], [x - 7, y - 20]], '#ffffff38');
+    poly(
+      [
+        [x - 20, y - 20],
+        [x, y - 38],
+        [x + 20, y - 20],
+      ],
+      roof,
+    );
+    poly(
+      [
+        [x - 19, y - 20],
+        [x, y - 38],
+        [x + 6, y - 32],
+        [x - 7, y - 20],
+      ],
+      '#ffffff38',
+    );
     box(x - 3, y - 12, 7, 12, '#695184');
     box(x - 10, y - 15, 5, 5, '#fff2a0');
     box(x + 6, y - 15, 4, 5, '#fff2a0');
   }
 
   box(0, 0, 480, 260, '#9fd4a7');
-  poly([[0, 70], [48, 49], [113, 53], [163, 31], [218, 47], [245, 17], [306, 10], [344, 39], [428, 37], [480, 10], [480, 0], [0, 0]], '#c9c1ec');
-  poly([[0, 70], [68, 39], [93, 56], [145, 12], [209, 61], [246, 23], [300, 53], [330, 17], [364, 55], [432, 30], [480, 58], [480, 0], [0, 0]], '#aea3d9');
-  poly([[103, 44], [145, 12], [181, 41], [153, 33], [139, 40], [128, 33]], '#efe7ff');
-  poly([[300, 52], [330, 17], [356, 47], [334, 37], [324, 40], [320, 33]], '#f0e7ff');
-  poly([[0, 225], [57, 239], [96, 222], [160, 237], [219, 225], [274, 244], [351, 216], [425, 227], [480, 206], [480, 260], [0, 260]], '#86c19a');
-  poly([[398, 165], [435, 158], [462, 166], [480, 181], [480, 228], [452, 236], [409, 225], [389, 206], [387, 184]], '#72b5c1');
-  poly([[410, 170], [452, 167], [480, 193], [480, 217], [441, 226], [410, 213], [398, 199]], '#91d4da');
-  for (const [x, y, w] of [[405, 185, 17], [438, 199, 21], [424, 217, 9], [463, 185, 11]]) box(x, y, w, 2, '#cef2e4');
+  poly(
+    [
+      [0, 70],
+      [48, 49],
+      [113, 53],
+      [163, 31],
+      [218, 47],
+      [245, 17],
+      [306, 10],
+      [344, 39],
+      [428, 37],
+      [480, 10],
+      [480, 0],
+      [0, 0],
+    ],
+    '#c9c1ec',
+  );
+  poly(
+    [
+      [0, 70],
+      [68, 39],
+      [93, 56],
+      [145, 12],
+      [209, 61],
+      [246, 23],
+      [300, 53],
+      [330, 17],
+      [364, 55],
+      [432, 30],
+      [480, 58],
+      [480, 0],
+      [0, 0],
+    ],
+    '#aea3d9',
+  );
+  poly(
+    [
+      [103, 44],
+      [145, 12],
+      [181, 41],
+      [153, 33],
+      [139, 40],
+      [128, 33],
+    ],
+    '#efe7ff',
+  );
+  poly(
+    [
+      [300, 52],
+      [330, 17],
+      [356, 47],
+      [334, 37],
+      [324, 40],
+      [320, 33],
+    ],
+    '#f0e7ff',
+  );
+  poly(
+    [
+      [0, 225],
+      [57, 239],
+      [96, 222],
+      [160, 237],
+      [219, 225],
+      [274, 244],
+      [351, 216],
+      [425, 227],
+      [480, 206],
+      [480, 260],
+      [0, 260],
+    ],
+    '#86c19a',
+  );
+  poly(
+    [
+      [398, 165],
+      [435, 158],
+      [462, 166],
+      [480, 181],
+      [480, 228],
+      [452, 236],
+      [409, 225],
+      [389, 206],
+      [387, 184],
+    ],
+    '#72b5c1',
+  );
+  poly(
+    [
+      [410, 170],
+      [452, 167],
+      [480, 193],
+      [480, 217],
+      [441, 226],
+      [410, 213],
+      [398, 199],
+    ],
+    '#91d4da',
+  );
+  for (const [x, y, w] of [
+    [405, 185, 17],
+    [438, 199, 21],
+    [424, 217, 9],
+    [463, 185, 11],
+  ])
+    box(x, y, w, 2, '#cef2e4');
 
   for (let index = 0; index < 310; index++) {
     const x = (index * 41 + 11) % 480;
@@ -89,18 +252,61 @@ export function drawWorld(canvas: HTMLCanvasElement, completed: number, program 
     line(segment, '#b9a0ff', 2);
   }
 
-  for (const [x, y, size] of [[15,126,1.1], [31,134,.85], [59,156,.8], [88,115,.6], [104,77,.8], [68,82,.7], [265,79,1], [284,83,.73], [303,68,.65], [163,212,.9], [181,216,.65], [224,238,1], [244,243,.7], [334,222,.95], [353,228,.7], [363,200,.64], [473,114,1.1], [457,133,.7], [25,233,.7]]) tree(x,y,size);
+  for (const [x, y, size] of [
+    [15, 126, 1.1],
+    [31, 134, 0.85],
+    [59, 156, 0.8],
+    [88, 115, 0.6],
+    [104, 77, 0.8],
+    [68, 82, 0.7],
+    [265, 79, 1],
+    [284, 83, 0.73],
+    [303, 68, 0.65],
+    [163, 212, 0.9],
+    [181, 216, 0.65],
+    [224, 238, 1],
+    [244, 243, 0.7],
+    [334, 222, 0.95],
+    [353, 228, 0.7],
+    [363, 200, 0.64],
+    [473, 114, 1.1],
+    [457, 133, 0.7],
+    [25, 233, 0.7],
+  ])
+    tree(x, y, size);
 
   house(37, 182, '#7f70c8', '#f9cbb9');
   house(128, 142, '#b377a5', '#fadda9');
   house(207, 90, '#6958bb', '#e4d5f3');
   house(221, 102, '#608ca2', '#f4e1c7');
-  poly([[250,170], [266,144], [277,170]], '#edac76');
-  poly([[263,170], [266,144], [280,156], [292,170]], '#fbcd8b');
-  poly([[260,170], [266,156], [273,170]], '#9a6678');
-  box(327,114,23,9,'#9f74d1');
-  box(334,98,8,24,'#f3d487');
-  box(327,105,22,7,'#f3d487');
+  poly(
+    [
+      [250, 170],
+      [266, 144],
+      [277, 170],
+    ],
+    '#edac76',
+  );
+  poly(
+    [
+      [263, 170],
+      [266, 144],
+      [280, 156],
+      [292, 170],
+    ],
+    '#fbcd8b',
+  );
+  poly(
+    [
+      [260, 170],
+      [266, 156],
+      [273, 170],
+    ],
+    '#9a6678',
+  );
+  box(327, 114, 23, 9, '#9f74d1');
+  box(334, 98, 8, 24, '#f3d487');
+  box(327, 105, 22, 7, '#f3d487');
   house(419, 63, '#a063c6', '#fce8b0');
   house(445, 78, '#cc7dac', '#ffe2bf');
   box(398, 73, 3, 17, '#7c5183');
@@ -139,11 +345,15 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
   const left = 35;
   const usable = width - left - 24;
   const x = (progress: number) => left + usable * progress;
-  const start = x(.07), today = x(.23), detour = x(.43), mortgage = x(.62), finish = x(.94);
+  const start = x(0.07),
+    today = x(0.23),
+    detour = x(0.43),
+    mortgage = x(0.62),
+    finish = x(0.94);
   const bottom = height - 46;
   const top = 39;
   const horizon = Math.max(300, ...lanes.map(lane => pastMonths + (lane.debtFreeMonths ?? 0))) + 4;
-  const y = (months: number) => bottom - months / horizon * (bottom - top);
+  const y = (months: number) => bottom - (months / horizon) * (bottom - top);
   const selectedColor = '#653ec8';
   const doneColor = '#137865';
 
@@ -189,10 +399,26 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
   for (let years = 0; years * 12 <= horizon; years += 5) {
     const level = y(years * 12);
     label(`${years}y`, 9, level, '#685f77');
-    if (years === 0) line('#e7deef', 1, [[left, level], [width - 14, level]]);
-    else line('#d2c6df', 1, [[left, level], [left + 8, level]]);
+    if (years === 0)
+      line('#e7deef', 1, [
+        [left, level],
+        [width - 14, level],
+      ]);
+    else
+      line('#d2c6df', 1, [
+        [left, level],
+        [left + 8, level],
+      ]);
   }
-  line('#91bdaf', 1, [[today, 28], [today, bottom]], [3, 5]);
+  line(
+    '#91bdaf',
+    1,
+    [
+      [today, 28],
+      [today, bottom],
+    ],
+    [3, 5],
+  );
 
   const planned = lanes.filter(lane => lane.upfrontMonths !== null && lane.debtFreeMonths !== null);
   planned.sort((a, b) => Number(a.letter === selected) - Number(b.letter === selected));
@@ -212,15 +438,31 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
     if (lane.waypoint) stop(detour, waypointY, color, isSelected ? 4 : 2.5);
     if (isSelected) {
       const elapsed = pastMonths + lane.debtFreeMonths!;
-      label(elapsed % 12 ? `${Math.floor(elapsed / 12)}y ${elapsed % 12}m` : `${elapsed / 12} years`,
-        finish + 4, finishMortgage - 13, color, true, 'right');
+      label(
+        elapsed % 12 ? `${Math.floor(elapsed / 12)}y ${elapsed % 12}m` : `${elapsed / 12} years`,
+        finish + 4,
+        finishMortgage - 13,
+        color,
+        true,
+        'right',
+      );
       if (lane.waypoint) label(lane.waypoint.label, detour, waypointY - 14, color, true, 'center');
     }
   }
-  line(doneColor, 4.5, [[start, y(0)], [today, y(pastMonths)]]);
+  line(doneColor, 4.5, [
+    [start, y(0)],
+    [today, y(pastMonths)],
+  ]);
   stop(start, y(0), doneColor);
   stop(today, y(pastMonths), doneColor, 6);
-  label(width < 450 ? 'Today' : `Today · year ${pastMonths / 12}`, today, y(pastMonths) - 14, doneColor, true, 'center');
+  label(
+    width < 450 ? 'Today' : `Today · year ${pastMonths / 12}`,
+    today,
+    y(pastMonths) - 14,
+    doneColor,
+    true,
+    'center',
+  );
   label('Start saving', start - 10, height - 20, '#302447', true);
   label(width < 430 ? 'Mortgage' : 'Start mortgage', mortgage, height - 20, '#302447', true, 'center');
   label(width < 430 ? 'Paid off' : 'Mortgage paid off', width - 11, height - 20, '#302447', true, 'right');

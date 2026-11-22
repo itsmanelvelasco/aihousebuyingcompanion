@@ -23,9 +23,13 @@ const agentIcons = {
   gemini: imageUrl('agents/gemini.png', 'png'),
   muse: imageUrl('agents/muse.webp', 'webp'),
 };
-const page = Object.entries(illustrations).reduce((html, [key, file]) => {
-  return html.replace(`{{${key}}}`, imageUrl(file, 'jpeg'));
-}, readFileSync(new URL('connect.html', directory), 'utf8'))
+const page = Object.entries(illustrations)
+  .reduce(
+    (html, [key, file]) => {
+      return html.replace(`{{${key}}}`, imageUrl(file, 'jpeg'));
+    },
+    readFileSync(new URL('connect.html', directory), 'utf8'),
+  )
   .replace('{{agent-icons}}', JSON.stringify(agentIcons));
 
 export function handleConnectPage(req: IncomingMessage, res: ServerResponse): boolean {
@@ -33,7 +37,8 @@ export function handleConnectPage(req: IncomingMessage, res: ServerResponse): bo
   res.writeHead(200, {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-cache',
-    'Content-Security-Policy': "default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    'Content-Security-Policy':
+      "default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
   });

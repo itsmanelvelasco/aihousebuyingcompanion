@@ -4,13 +4,13 @@
 
 ## Entry points
 
-- `apps/interviewer/server.mjs`, `app.mjs`, `index.html`: standalone voice/guided interview on port 3000 (`npm run start:interviewer`). Live voice/API categorization require explicitly configured OpenAI access; guided mode works without paid calls.
-- `apps/interviewer/mcp-tools.ts`: interview/cash-flow tools registered by the shared MCP factory. The browser interview retains its own local state; it is not automatically the persisted profile API.
-- `demo-plugin/intake.ts`: expanded demo intake definitions and validation.
+- `apps/interviewer/server.ts`, `app.mjs`, `index.html`: standalone voice/guided interview on port 3000 (`npm run start:interviewer`). Live voice/API categorization require explicitly configured OpenAI access; guided mode works without paid calls.
+- `apps/mcp-server/interview-tools.ts`: interview/cash-flow tools registered by the shared MCP factory. The browser interview retains its own local state; it is not automatically the persisted profile API.
+- `apps/board/intake.ts`: expanded demo intake definitions and validation.
 
-- `demo-plugin/demo.ts`: question groups, validation, `openDemo` and `updateDemo`.
-- `demo-plugin/server.ts`: ChatGPT-facing `open_demo` and `update_demo` wrappers.
-- `demo-plugin/profiles.ts`: connected-answer validation, partial-input persistence and context-to-board adapter.
+- `apps/board/demo.ts`: question groups, validation, `openDemo` and `updateDemo`.
+- `apps/board/server.ts`: ChatGPT-facing `open_demo` and `update_demo` wrappers.
+- `apps/board/profiles.ts`: connected-answer validation, partial-input persistence and context-to-board adapter.
 - `packages/contracts/inputs.ts`: canonical partial facts and confirmation/provenance semantics.
 - [Shared input API](../../apps/profile-api/INPUTS.md): submit/read/correct persisted answers.
 
@@ -22,7 +22,7 @@ Use integer EUR cents at the API boundary. The UI's debt-inclusive spending must
 
 ## Run and verify
 
-From the root, install the plugin with `npm --prefix demo-plugin ci`. Run `npm --prefix demo-plugin run check` and `npm --prefix demo-plugin test`. Use the [integration guide](integration-deployment.md) to run the connected API and board.
+From the root, run `npm run typecheck` and `node --test tests/board.test.ts tests/board-connected.test.ts`. Use the [integration guide](integration-deployment.md) to run the connected API and board.
 
 ## Handoff
 

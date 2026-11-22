@@ -1,11 +1,11 @@
-import { readFileSync } from "node:fs";
-import { z } from "zod";
-import { metricKind, policy, snapshotSchema, travelEstimateData, relocationDataset } from "../contracts/places.ts";
-import type { Policy, Snapshot } from "../contracts/places.ts";
+import { readFileSync } from 'node:fs';
+import { z } from 'zod';
+import type { Policy, Snapshot } from '../contracts/places.ts';
+import { metricKind, policy, relocationDataset, snapshotSchema, travelEstimateData } from '../contracts/places.ts';
 
-const snapshotPath = new URL("../../data/towns.json", import.meta.url);
-const policyPath = new URL("../../data/incentives.json", import.meta.url);
-const travelEstimatePath = new URL("../../data/travel-estimates.json", import.meta.url);
+const snapshotPath = new URL('../../data/towns.json', import.meta.url);
+const policyPath = new URL('../../data/incentives.json', import.meta.url);
+const travelEstimatePath = new URL('../../data/travel-estimates.json', import.meta.url);
 
 function unique(ids: string[], context: string) {
   if (ids.length !== new Set(ids).size) throw new Error(`Duplicate ${context}`);
@@ -14,15 +14,27 @@ function unique(ids: string[], context: string) {
 export function validateSnapshot(raw: unknown) {
   const snapshot = snapshotSchema.parse(raw);
   const townCodes = new Set(snapshot.municipalities.map(({ code }) => code));
-  unique(snapshot.municipalities.map(({ code }) => code), "municipality");
-  unique(snapshot.schools.map(({ id }) => id), "school");
-  unique(snapshot.rail.stops.map(({ id }) => id), "rail stop");
+  unique(
+    snapshot.municipalities.map(({ code }) => code),
+    'municipality',
+  );
+  unique(
+    snapshot.schools.map(({ id }) => id),
+    'school',
+  );
+  unique(
+    snapshot.rail.stops.map(({ id }) => id),
+    'rail stop',
+  );
 
   for (const town of snapshot.municipalities) {
     const metrics = snapshot.townMetrics[town.code];
-    if (!metrics?.some(({ kind }) => kind === "population")) throw new Error(`Missing population for ${town.code}`);
-    unique(metrics.map(({ kind }) => kind), `metric for ${town.code}`);
-    if (metrics.some(metric => metric.geography !== "municipality" || metric.geographyName !== town.name)) {
+    if (!metrics?.some(({ kind }) => kind === 'population')) throw new Error(`Missing population for ${town.code}`);
+    unique(
+      metrics.map(({ kind }) => kind),
+      `metric for ${town.code}`,
+    );
+    if (metrics.some(metric => metric.geography !== 'municipality' || metric.geographyName !== town.name)) {
       throw new Error(`Incorrect municipal metric scope for ${town.code}`);
     }
   }
@@ -30,15 +42,18 @@ export function validateSnapshot(raw: unknown) {
     if (!townCodes.has(code)) throw new Error(`Orphan municipal metrics for ${code}`);
   }
   for (const [area, metrics] of Object.entries(snapshot.comarcaMetrics)) {
-    unique(metrics.map(({ kind }) => kind), `metric for ${area}`);
-    if (metrics.some(metric => metric.geography !== "comarca" || metric.geographyName !== area)) {
+    unique(
+      metrics.map(({ kind }) => kind),
+      `metric for ${area}`,
+    );
+    if (metrics.some(metric => metric.geography !== 'comarca' || metric.geographyName !== area)) {
       throw new Error(`Incorrect comarca metric scope for ${area}`);
     }
   }
 
   const stops = new Set(snapshot.rail.stops.map(({ id }) => id));
   const services = new Set(snapshot.rail.trips.map(({ service }) => service));
-  if (snapshot.rail.validFrom > snapshot.rail.validThrough) throw new Error("Invalid GTFS coverage dates");
+  if (snapshot.rail.validFrom > snapshot.rail.validThrough) throw new Error('Invalid GTFS coverage dates');
   for (const [date, active] of Object.entries(snapshot.rail.dates)) {
     if (date < snapshot.rail.validFrom || date > snapshot.rail.validThrough || active.some(id => !services.has(id))) {
       throw new Error(`Invalid GTFS service calendar at ${date}`);
@@ -60,10 +75,19 @@ export function validateSnapshot(raw: unknown) {
 }
 
 export function readPolicies(): Policy[] {
-  const policies = z.array(policy).nonempty().parse(JSON.parse(readFileSync(policyPath, "utf8")));
-  unique(policies.map(({ id }) => id), "incentive ID");
+  const policies = z
+    .array(policy)
+    .nonempty()
+    .parse(JSON.parse(readFileSync(policyPath, 'utf8')));
+  unique(
+    policies.map(({ id }) => id),
+    'incentive ID',
+  );
   for (const entry of policies) {
-    if (entry.effectiveFrom > entry.effectiveThrough || (entry.mechanism === "grant" && !entry.municipalityCodes?.length)) {
+    if (
+      entry.effectiveFrom > entry.effectiveThrough ||
+      (entry.mechanism === 'grant' && !entry.municipalityCodes?.length)
+    ) {
       throw new Error(`Invalid dates or geographic scope for ${entry.id}`);
     }
     unique(entry.municipalityCodes ?? [], `incentive geography for ${entry.id}`);
@@ -74,8 +98,14 @@ export function readPolicies(): Policy[] {
 export function combineRelocationData(snapshot: Snapshot, raw: unknown): Snapshot {
   // Parse only research fields: the bundled publicDataSnapshot must never overwrite official data.
   const relocation = relocationDataset.parse(raw);
-  unique(relocation.municipalities.map(town => town.municipalityCode), "relocation municipality");
-  unique(relocation.municipalities.flatMap(town => town.opportunities.map(offer => offer.id)), "opportunity ID");
+  unique(
+    relocation.municipalities.map(town => town.municipalityCode),
+    'relocation municipality',
+  );
+  unique(
+    relocation.municipalities.flatMap(town => town.opportunities.map(offer => offer.id)),
+    'opportunity ID',
+  );
   for (const research of relocation.municipalities) {
     const town = getTown(snapshot, research.municipalityCode);
     if (town.name !== research.name) throw new Error(`Relocation municipality name mismatch for ${town.code}`);
@@ -87,13 +117,16 @@ export function combineRelocationData(snapshot: Snapshot, raw: unknown): Snapsho
 }
 
 export function loadData() {
-  const snapshot = validateSnapshot(JSON.parse(readFileSync(snapshotPath, "utf8")));
-  const travelEstimates = travelEstimateData.parse(JSON.parse(readFileSync(travelEstimatePath, "utf8")));
+  const snapshot = validateSnapshot(JSON.parse(readFileSync(snapshotPath, 'utf8')));
+  const travelEstimates = travelEstimateData.parse(JSON.parse(readFileSync(travelEstimatePath, 'utf8')));
   for (const [code, estimates] of Object.entries(travelEstimates)) {
     getTown(snapshot, code);
-    unique(estimates.map(({ destinationId }) => destinationId), `travel destination for ${code}`);
+    unique(
+      estimates.map(({ destinationId }) => destinationId),
+      `travel destination for ${code}`,
+    );
   }
-  const research = JSON.parse(readFileSync(new URL("../../data/relocat-pilot-data.json", import.meta.url), "utf8"));
+  const research = JSON.parse(readFileSync(new URL('../../data/relocat-pilot-data.json', import.meta.url), 'utf8'));
   return { snapshot: combineRelocationData(snapshot, research), policies: readPolicies(), travelEstimates };
 }
 
@@ -103,7 +136,10 @@ export function snapshotInfo(snapshot: Snapshot) {
 
 export function getTown(snapshot: Snapshot, code: string) {
   const town = snapshot.municipalities.find(town => town.code === code);
-  if (!town) throw new Error(`Municipality ${code} is outside this snapshot. Use list_catalonia_municipalities for pilot coverage.`);
+  if (!town)
+    throw new Error(
+      `Municipality ${code} is outside this snapshot. Use list_catalonia_municipalities for pilot coverage.`,
+    );
   return town;
 }
 

@@ -1,6 +1,6 @@
 # Bank ledger API
 
-This is the complementary finance backend for Relocat. It uses the existing server, token and user IDs. Start it using the [profile API instructions](README.md). All endpoints below require `Authorization: Bearer <PROFILE_API_TOKEN>` and JSON bodies use `Content-Type: application/json`.
+This is the complementary finance backend for ReloCat. It uses the existing server, token and user IDs. Start it using the [profile API instructions](README.md). All endpoints below require `Authorization: Bearer <PROFILE_API_TOKEN>` and JSON bodies use `Content-Type: application/json`.
 
 Only explicitly synthetic EUR records are supported. There is no connection to a bank, payment execution, credit scoring or mortgage approval. The API calculates results and offers review suggestions; it never cancels subscriptions or moves money.
 
@@ -116,7 +116,7 @@ The supplied profiles have a 21 November 2026 snapshot, so demo seeding produces
 
 `GET /users/:id/bank/runtime` reads worker status. `POST` to that path with `{ "enabled": true, "intervalMs": 5000 }` starts a simulated background feed (1000–60000 ms). `{ "enabled": false }` stops it and waits for its active tick. `POST /users/:id/bank/runtime/tick` with `{}` performs one explicit tick without enabling a timer. An empty ledger is seeded from the profile first. The feed appends clearly synthetic grocery purchases with retry-stable IDs, not realistic population spending or bank-synced data. It pauses on errors and exposes a sanitized failure status. At most 20 feeds can run in one API process.
 
-Set `DEMO_BANK_USERS=user-001` and optional `DEMO_BANK_INTERVAL_MS=5000` when starting the profile service to opt in at startup. `npm run dev:stack` uses `user-001` by default; an empty `DEMO_BANK_USERS` disables that default. Runtime enablement is process-local; durable ledger rows/cursors survive restarts. Restart with the startup list to resume timers.
+Set `DEMO_BANK_USERS=user-001` and optional `DEMO_BANK_INTERVAL_MS=5000` when starting the profile service to opt in at startup. `npm run dev` uses `user-001` by default; an empty `DEMO_BANK_USERS` disables that default. Runtime enablement is process-local; durable ledger rows/cursors survive restarts. Restart with the startup list to resume timers.
 
 The existing MCP server can register read-only `get_bank_updates`, `get_bank_runtime` and `get_bank_summary` when both `BANK_API_URL` and `BANK_API_TOKEN` are configured. The integrated plugin uses its server-side `PROFILE_API_URL`/`PROFILE_API_TOKEN` instead. Tokens never enter widget/tool payloads. These are polling tools, not push subscriptions; background mutations do not automatically trigger ChatGPT messages.
 

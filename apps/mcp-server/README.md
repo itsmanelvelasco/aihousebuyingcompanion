@@ -47,8 +47,8 @@ Open [the preview](http://127.0.0.1:8787/preview) to try a sample ESO shortlist,
 ### Try in ChatGPT
 
 1. Run the municipality server and make its `/mcp` endpoint available over HTTPS or with a supported private tunnel. Keep bank connection variables unset for this sample.
-2. In [ChatGPT Plugins](https://chatgpt.com/plugins), choose **Add custom MCP server**, enter your `https://…/mcp` URL, and name the personal plugin **Relocat Town Explorer**. Choose **No authentication** for the public-data sample. Install or refresh the connection. [Official setup guide](https://developers.openai.com/plugins/quickstart)
-3. In a new ChatGPT Work conversation, select the plugin and ask “Open Relocat Town Explorer for Calaf. Show me the travel estimates to Barcelona and Girona.” Switch to Camarasa in the widget to see how a town with driving estimates and no transit samples appears.
+2. In [ChatGPT Plugins](https://chatgpt.com/plugins), choose **Add custom MCP server**, enter your `https://…/mcp` URL, and name the personal plugin **ReloCat Town Explorer**. Choose **No authentication** for the public-data sample. Install or refresh the connection. [Official setup guide](https://developers.openai.com/plugins/quickstart)
+3. In a new ChatGPT Work conversation, select the plugin and ask “Open ReloCat Town Explorer for Calaf. Show me the travel estimates to Barcelona and Girona.” Switch to Camarasa in the widget to see how a town with driving estimates and no transit samples appears.
 
 ## Tools
 
@@ -157,7 +157,7 @@ For example, call `get_town_profile` with `{"municipalityCode":"251180"}` to rec
 
 `search_homes` runs an on-demand Google search through treg's `treg.google.serp.organic` route, constrained to Idealista listing URLs. It returns **indexed examples, not verified live inventory**. Search results can be stale or refer to another town; each example therefore keeps `municipalityCode: null`, `locationConfidence: unknown`, `availability: unknown` and `filtersVerified: false`. Price and bedroom criteria are search hints. The tool does not infer structured prices or bedrooms from snippets, and examples must not be used to satisfy hard household constraints without checking the listing.
 
-Set `TREG_TOKEN` to a valid treg API key in the environment of the server process, then restart it. This works with both `npm run start:mcp` and the connected `npm run dev:stack`. The ChatGPT treg connector's OAuth session is separate from the app's credentials. If using a personal sign-in token, also set `TREG_ORG` to the intended team slug. No Idealista API key is required for this web-search route. For Docker, pass the variables with `--env TREG_TOKEN` and, if needed, `--env TREG_ORG`; never bake them into the image. Environment files are not automatically loaded by these scripts.
+Set `TREG_TOKEN` to a valid treg API key in the environment of the server process, then restart it. This works with both `npm run start:mcp` and the connected `npm run dev`. The ChatGPT treg connector's OAuth session is separate from the app's credentials. If using a personal sign-in token, also set `TREG_ORG` to the intended team slug. No Idealista API key is required for this web-search route. For Docker, pass the variables with `--env TREG_TOKEN` and, if needed, `--env TREG_ORG`; never bake them into the image. Environment files are not automatically loaded by these scripts.
 
 Example tool input:
 
@@ -173,10 +173,10 @@ Validation included a live treg search for Calaf on 21 November 2026 (USD 0.0003
 
 ## Browser test page
 
-Open `http://127.0.0.1:8787/test` after starting either the standalone MCP server or `npm run dev:stack`. Restart an already-running server after updating the code. The page offers town profiles, family/budget recommendations and Idealista example searches, with readable results, source links and an expandable full MCP response. The header reports whether the server process has `TREG_TOKEN` configured; it does not validate the key until a search runs. Never enter a key in the browser.
+Open `http://127.0.0.1:8787/test` after starting either the standalone MCP server or `npm run dev`. Restart an already-running server after updating the code. The page offers town profiles, family/budget recommendations and Idealista example searches, with readable results, source links and an expandable full MCP response. The header reports whether the server process has `TREG_TOKEN` configured; it does not validate the key until a search runs. Never enter a key in the browser.
 
 The page and its API are restricted to localhost hosts, loopback connections and same-origin requests. Its tool allowlist excludes board/bank writes. It calls the real MCP server through an in-memory MCP client; it does not introduce separate recommendation logic. A live search is triggered only by the search button and uses the server's treg account. This is a local test interface, not a publicly deployed user portal.
 
 ## Connect an agent
 
-Open `/connect` on the connected demo or standalone MCP server for the Relocat agent setup guide. It includes ChatGPT, Claude, Hermes, OpenClaw, Codex, Cursor, Gemini CLI and a generic Streamable HTTP path; Meta Muse is explicitly marked unverified. The page provides editable endpoint configuration, copyable examples and links to official client documentation. Localhost is for clients on the same machine; cloud clients need an operator-provided HTTPS endpoint or supported tunnel. This page does not deploy the server or add authentication. Brand logos load from Brandfetch and official provider sites.
+Open `/connect` on the connected demo or standalone MCP server for the ReloCat agent setup guide. It includes ChatGPT, Claude, Hermes, OpenClaw, Codex, Cursor, Gemini CLI and a generic Streamable HTTP path; Meta Muse is explicitly marked unverified. The page provides editable endpoint configuration, copyable examples and links to official client documentation. Localhost is for clients on the same machine; cloud clients need an operator-provided HTTPS endpoint or supported tunnel. This page does not deploy the server or add authentication. Brand logos load from Brandfetch and official provider sites.

@@ -4,10 +4,10 @@
 
 ## Entry points
 
-- `demo-plugin/server.ts`: HTTP preview, MCP registration and paired-board state.
-- `demo-plugin/demo.ts`: persona/run state and interview transitions.
-- `demo-plugin/profiles.ts`: authenticated profile bridge, persisted-answer mapping and provisional town screen.
-- `demo-plugin/widget.ts`, `widget.html`, `map.ts`: board rendering and interaction.
+- `apps/board/server.ts`: HTTP preview, MCP registration and paired-board state.
+- `apps/board/demo.ts`: persona/run state and interview transitions.
+- `apps/board/profiles.ts`: authenticated profile bridge, persisted-answer mapping and provisional town screen.
+- `apps/board/widget.ts`, `widget.html`, `map.ts`: board rendering and interaction.
 - `apps/mcp-server/tools.ts`: municipality MCP tool factory.
 - `apps/mcp-server/bank-tools.ts`: read-only bank polling bridge.
 
@@ -22,10 +22,9 @@ The live board polls its own server for fresh state. MCP bank tools fetch event 
 ## Run and verify
 
 ```powershell
-npm --prefix demo-plugin ci
-npm --prefix demo-plugin run build
-npm --prefix demo-plugin run check
-npm --prefix demo-plugin test
+npm run build
+npm run typecheck
+node --test tests/board.test.ts tests/board-connected.test.ts
 ```
 
 See [integration/deployment](integration-deployment.md) for configuration and startup. Verify configured and explicitly scripted modes separately, including backend failure and stopped-feed behavior.

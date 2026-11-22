@@ -1,36 +1,71 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
-import { createStore } from '../apps/profile-api/store.ts';
-import { createProfileApi } from '../apps/profile-api/server.ts';
-import { profileResult } from '../packages/contracts/places.ts';
+import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { createProfileApi } from '../apps/profile-api/server.ts';
+import { profileResult } from '../packages/contracts/places.ts';
+import { createStore } from '../packages/profiles/store.ts';
 
 test('connected board persists interview inputs, reads runtime bank data and serves municipality tools together', async t => {
   const root = await mkdtemp(join(tmpdir(), 'relocat-plugin-'));
   const doc = { schemaVersion: 1, synthetic: true };
   for (let n = 1; n <= 4; n++) {
     const id = `user-00${n}`;
-    await createStore(root).create(id, { details: { ...doc, id, householdSize: 3 }, preferences: { ...doc, goal: 'buy_primary_home', housingBudgetCents: 13000000, minimumBedrooms: 2, schoolStages: ['eso'], maxCommuteMinutes: 120 }, 'bank-account': { ...doc, snapshotDate: '2026-11-21', balanceCents: 1840000, monthlyIncomeCents: 290000, monthlyExpensesCents: 208000, debtPaymentsCents: 10000 } });
+    await createStore(root).create(id, {
+      details: { ...doc, id, householdSize: 3 },
+      preferences: {
+        ...doc,
+        goal: 'buy_primary_home',
+        housingBudgetCents: 13000000,
+        minimumBedrooms: 2,
+        schoolStages: ['eso'],
+        maxCommuteMinutes: 120,
+      },
+      'bank-account': {
+        ...doc,
+        snapshotDate: '2026-11-21',
+        balanceCents: 1840000,
+        monthlyIncomeCents: 290000,
+        monthlyExpensesCents: 208000,
+        debtPaymentsCents: 10000,
+      },
+    });
   }
   const api = createProfileApi(root, 'test-token');
-  api.listen(0, '127.0.0.1'); await once(api, 'listening');
-  const address = api.address(); assert(address && typeof address !== 'string');
+  api.listen(0, '127.0.0.1');
+  await once(api, 'listening');
+  const address = api.address();
+  assert(address && typeof address !== 'string');
   const apiUrl = `http://127.0.0.1:${address.port}`;
-  const proc = spawn(process.execPath, ['server.ts'], { env: { ...process.env, HOST: '127.0.0.1', PORT: '0', PROFILE_API_URL: apiUrl, PROFILE_API_TOKEN: 'test-token' } });
-  t.after(async () => { proc.kill(); await new Promise<void>(resolve => api.close(() => resolve())); await rm(root, { recursive: true, force: true }); });
+  const proc = spawn(process.execPath, ['apps/board/server.ts'], {
+    env: { ...process.env, HOST: '127.0.0.1', PORT: '0', PROFILE_API_URL: apiUrl, PROFILE_API_TOKEN: 'test-token' },
+  });
+  t.after(async () => {
+    proc.kill();
+    await new Promise<void>(resolve => api.close(() => resolve()));
+    await rm(root, { recursive: true, force: true });
+  });
   const [line] = await once(proc.stdout, 'data');
-  const port = /localhost:(\d+)\/preview/.exec(String(line))?.[1]; assert(port);
+  const port = /localhost:(\d+)\/preview/.exec(String(line))?.[1];
+  assert(port);
   const client = new Client({ name: 'connected-test', version: '1' });
   await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)));
   t.after(() => client.close());
   const toolNames = (await client.listTools()).tools.map(tool => tool.name);
-  for (const name of ['recommend_towns', 'recommend_towns_for_profile', 'get_applicable_incentives', 'open_demo', 'update_demo', 'get_bank_updates']) assert(toolNames.includes(name), name);
+  for (const name of [
+    'recommend_towns',
+    'recommend_towns_for_profile',
+    'get_applicable_incentives',
+    'open_demo',
+    'update_demo',
+    'get_bank_updates',
+  ])
+    assert(toolNames.includes(name), name);
   const town = await client.callTool({ name: 'get_town_profile', arguments: { municipalityCode: '252206' } });
   assert(!town.isError, JSON.stringify(town.content));
   const profile = profileResult.parse(town.structuredContent);
@@ -41,18 +76,56 @@ test('connected board persists interview inputs, reads runtime bank data and ser
   const first = open.structuredContent as Record<string, unknown>;
   const runId = first.runId;
   assert.equal((first.connection as Record<string, unknown>).userId, 'user-001');
-  const update = await client.callTool({ name: 'update_demo', arguments: { runId, action: 'answer_batch', answers: { budget: 130000, floorArea: 85, destinationCode: '251207', maxCommuteMinutes: 120, schoolStages: ['eso'], schoolMode: 'rail', allowComarcaEstimate: true, upfrontTarget: 54000, spending: 2180, spendingIncludesDebt: true } } });
+  const update = await client.callTool({
+    name: 'update_demo',
+    arguments: {
+      runId,
+      action: 'answer_batch',
+      answers: {
+        budget: 130000,
+        floorArea: 85,
+        destinationCode: '251207',
+        maxCommuteMinutes: 120,
+        schoolStages: ['eso'],
+        schoolMode: 'rail',
+        allowComarcaEstimate: true,
+        upfrontTarget: 54000,
+        spending: 2180,
+        spendingIncludesDebt: true,
+      },
+    },
+  });
   assert(!update.isError, JSON.stringify(update.content));
-  const context = await (await fetch(`${apiUrl}/users/user-001/context`, { headers: { Authorization: 'Bearer test-token' } })).json();
+  const context = await (
+    await fetch(`${apiUrl}/users/user-001/context`, { headers: { Authorization: 'Bearer test-token' } })
+  ).json();
   assert.equal(context.resolved.data.housing.homeSizeM2, 85);
   assert.equal(context.resolved.data.finance.monthlyExpensesCents, 218000);
   assert.equal(context.resolved.data.finance.debtPaymentsCents, 0);
-  const refined = await client.callTool({ name: 'update_demo', arguments: { runId, action: 'answer_batch', answers: {
-    homeSize: 86, currentTown: 'Barcelona', dependants: 1, commuteTo: 'Lleida', commuteTime: 90,
-    schoolStages: 'Primary and ESO', transport: 'Train, no car', spending: 2000, debtPayments: 100, reserve: 5000, cashTarget: 55000
-  } } });
+  const refined = await client.callTool({
+    name: 'update_demo',
+    arguments: {
+      runId,
+      action: 'answer_batch',
+      answers: {
+        homeSize: 86,
+        currentTown: 'Barcelona',
+        dependants: 1,
+        commuteTo: 'Lleida',
+        commuteTime: 90,
+        schoolStages: 'Primary and ESO',
+        transport: 'Train, no car',
+        spending: 2000,
+        debtPayments: 100,
+        reserve: 5000,
+        cashTarget: 55000,
+      },
+    },
+  });
   assert(!refined.isError, JSON.stringify(refined.content));
-  const refinedContext = await (await fetch(`${apiUrl}/users/user-001/context`, { headers: { Authorization: 'Bearer test-token' } })).json();
+  const refinedContext = await (
+    await fetch(`${apiUrl}/users/user-001/context`, { headers: { Authorization: 'Bearer test-token' } })
+  ).json();
   assert.equal(refinedContext.resolved.data.housing.homeSizeM2, 86);
   assert.equal(refinedContext.resolved.data.finance.monthlyExpensesCents, 200000);
   assert.equal(refinedContext.resolved.data.finance.debtPaymentsCents, 10000);

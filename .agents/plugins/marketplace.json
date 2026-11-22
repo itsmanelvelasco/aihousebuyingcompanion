@@ -1,6 +1,6 @@
 {
   "name": "relocat-team-marketplace",
-  "interface": { "displayName": "Relocat team" },
+  "interface": { "displayName": "ReloCat team" },
   "plugins": [
     {
       "name": "relocat-team",

@@ -4,21 +4,32 @@ import { once } from 'node:events';
 import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { openDemo, updateDemo } from './demo.ts';
+import { openDemo, updateDemo } from '../apps/board/demo.ts';
 
 test('onboarding batches answers atomically and separates the upfront and payoff milestones', () => {
   const { runId } = openDemo({ persona: 'onboarding' });
-  assert.throws(() => updateDemo({
-    runId, action: 'answer_batch', answers: { town: 'Manresa', bedrooms: 0 },
-  }), /whole number/);
+  assert.throws(
+    () =>
+      updateDemo({
+        runId,
+        action: 'answer_batch',
+        answers: { town: 'Manresa', bedrooms: 0 },
+      }),
+    /whole number/,
+  );
   const blank = openDemo({ runId });
   assert.ok('answers' in blank);
   assert.deepEqual(blank.answers, {});
   const details = updateDemo({
-    runId, action: 'answer_batch', answers: { town: 'Manresa', bedrooms: 2, household: 3, employment: 'Full-time employee' },
+    runId,
+    action: 'answer_batch',
+    answers: { town: 'Manresa', bedrooms: 2, household: 3, employment: 'Full-time employee' },
   });
   assert.ok('group' in details);
-  assert.deepEqual(details.group?.questions.map(question => question.id), ['income', 'spending', 'savings']);
+  assert.deepEqual(
+    details.group?.questions.map(question => question.id),
+    ['income', 'spending', 'savings'],
+  );
   updateDemo({ runId, action: 'answer_batch', answers: { income: 2000, spending: 2000, savings: 3000 } });
   const view = openDemo({ runId });
   assert.ok('plan' in view);
@@ -26,36 +37,61 @@ test('onboarding batches answers atomically and separates the upfront and payoff
   assert.equal(view.plan?.debtFreeMonths, null);
   const next = updateDemo({ runId, action: 'sample_bank' });
   assert.ok('plan' in next);
-  assert.deepEqual(next.plan, { saved: 18400, target: 54000, monthly: 720, upfrontMonths: 50, termMonths: 240, debtFreeMonths: 290 });
-  const refined = updateDemo({ runId, action: 'answer_batch', answers: {
-    budget: 160000, homeSize: 85, schoolStages: 'ESO', commuteTime: 45, debtPayments: 100, reserve: 5000,
-  } });
+  assert.deepEqual(next.plan, {
+    saved: 18400,
+    target: 54000,
+    monthly: 720,
+    upfrontMonths: 50,
+    termMonths: 240,
+    debtFreeMonths: 290,
+  });
+  const refined = updateDemo({
+    runId,
+    action: 'answer_batch',
+    answers: {
+      budget: 160000,
+      homeSize: 85,
+      schoolStages: 'ESO',
+      commuteTime: 45,
+      debtPayments: 100,
+      reserve: 5000,
+    },
+  });
   assert.ok('answers' in refined);
   assert.equal(refined.answers.homeSize, 85);
-  assert.deepEqual(refined.plan, { saved: 13400, target: 48000, monthly: 620, upfrontMonths: 56, termMonths: 240, debtFreeMonths: 296 });
+  assert.deepEqual(refined.plan, {
+    saved: 13400,
+    target: 48000,
+    monthly: 620,
+    upfrontMonths: 56,
+    termMonths: 240,
+    debtFreeMonths: 296,
+  });
   assert.throws(() => updateDemo({ runId, action: 'answer_batch', answers: { cashTarget: 0 } }), /whole number/);
 });
 
 test('MCP transport serves the widget and supports each of the four scenarios', async t => {
-  const proc = spawn(process.execPath, ['server.ts'], { env: { ...process.env, HOST: '127.0.0.1', PORT: '0', PUBLIC_ORIGIN: 'https://arrela.example' } });
+  const proc = spawn(process.execPath, ['apps/board/server.ts'], {
+    env: { ...process.env, HOST: '127.0.0.1', PORT: '0', PUBLIC_ORIGIN: 'https://relocat.example' },
+  });
   t.after(() => proc.kill());
   const [line] = await once(proc.stdout, 'data');
   const port = /localhost:(\d+)\/preview/.exec(line.toString())?.[1];
   assert.ok(port, 'The test server reports its bound port.');
   const origin = `http://127.0.0.1:${port}`;
-  const client = new Client({ name: 'relo-cat-test', version: '1.0.0' });
+  const client = new Client({ name: 'relocat-test', version: '1.0.0' });
   const transport = new StreamableHTTPClientTransport(new URL('/mcp', origin));
   await client.connect(transport);
   t.after(() => client.close());
   const tools = (await client.listTools()).tools;
   const ui = tools.find(tool => tool.name === 'open_demo')?._meta?.ui as { resourceUri?: string } | undefined;
-  assert.equal(ui?.resourceUri, 'ui://arrela/journey-v5.html');
-  const resource = await client.readResource({ uri: 'ui://arrela/journey-v5.html' });
+  assert.equal(ui?.resourceUri, 'ui://relocat/journey-board-v1.html');
+  const resource = await client.readResource({ uri: 'ui://relocat/journey-board-v1.html' });
   const [widget] = resource.contents;
   assert.equal(widget.mimeType, 'text/html;profile=mcp-app');
   assert.ok('text' in widget);
   assert.match(widget.text, /Demo personas/);
-  const preview = await fetch(origin + '/preview');
+  const preview = await fetch(`${origin}/preview`);
   assert.equal(preview.status, 200);
   await preview.arrayBuffer();
 
@@ -68,7 +104,7 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   const first = await call('open_demo');
   const runId = first.runId;
   assert.equal(first.persona, 'onboarding');
-  assert.equal(first.boardUrl, 'https://arrela.example/preview');
+  assert.equal(first.boardUrl, 'https://relocat.example/preview');
   assert.equal(first.sharedBoard, true);
   const reopened = await call('open_demo');
   assert.equal(reopened.runId, runId);
@@ -76,13 +112,13 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   const open = (persona: string) => call('open_demo', { runId, persona });
 
   const home = await update('answer_batch', { answers: { town: 'Manresa', bedrooms: 2, household: 3 } });
-  const live = await fetch(origin + '/preview/state');
+  const live = await fetch(`${origin}/preview/state`);
   assert.equal(live.headers.get('Access-Control-Allow-Origin'), '*');
   const synced = await live.json();
   assert.deepEqual(synced.answers, home.answers);
   assert.equal(synced.revision, home.revision);
   assert.equal(synced.runId, runId);
-  assert.equal((await fetch(origin + '/preview/state?run=invalid')).status, 400);
+  assert.equal((await fetch(`${origin}/preview/state?run=invalid`)).status, 400);
 
   await open('progress');
   const progress = await update('join_quest');
@@ -104,12 +140,20 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
   const read = await update('read_inbox');
   assert.equal(read.unread, 0);
   assert.equal(read.pastMonths, 24);
-  const inbox = read.inbox as { id: string; upfrontMonths: number; debtFreeMonths: number; waypoint: { label: string; offset: number } }[];
+  const inbox = read.inbox as {
+    id: string;
+    upfrontMonths: number;
+    debtFreeMonths: number;
+    waypoint: { label: string; offset: number };
+  }[];
   assert.equal(inbox.length, 5);
   assert.equal(inbox.find(item => item.id === 'rule')?.upfrontMonths, 0);
   assert.equal(inbox.find(item => item.id === 'rule')?.debtFreeMonths, 240);
   assert.deepEqual(inbox.find(item => item.id === 'job')?.waypoint, { label: 'Change jobs', offset: 4 });
-  assert.deepEqual(inbox.slice(0, 3).map(item => item.id), ['rule', 'listing', 'job']);
+  assert.deepEqual(
+    inbox.slice(0, 3).map(item => item.id),
+    ['rule', 'listing', 'job'],
+  );
   const previewed = await update('preview_shortcut', { opportunity: 'listing' });
   assert.equal(previewed.previewed, 'listing');
   assert.equal(previewed.chosen, null);

@@ -6,7 +6,10 @@
 
 - `packages/contracts/inputs.ts`: `inputSchema`, `resolveInputs`, `buildRecommendationInput`.
 - `packages/contracts/places.ts`: town/policy data and MCP request/result schemas.
-- `apps/profile-api/finance.ts`: synthetic movement, period and savings-scenario schemas.
+- `packages/finance/cashflow.ts`: synthetic movement, period and savings-scenario schemas.
+- `packages/finance/savings.ts`: `monthsToTarget`, the one savings-timeline rule every surface uses.
+- `packages/contracts/ids.ts`: `safeId` for users, accounts, movements and goals.
+- `packages/contracts/habits.ts`: habit summaries, goals and check-ins.
 - `apps/profile-api/bank.ts`: synthetic account/ledger schemas.
 
 ## Rules
@@ -21,6 +24,6 @@
 
 ## Verification and handoff
 
-Run root `npm run typecheck` and `npm test`. Relevant tests include inputs, bank API, finance, bank runtime/bridge and municipality MCP tests. The plugin also has its own type check/tests because it has a separate package and build. End-to-end checks must exercise persisted profiles, configured plugin tools and runtime changes together.
+Run root `npm run typecheck` and `npm test`. Relevant tests include inputs, bank API, finance, bank runtime/bridge and municipality MCP tests. The board is part of the root package, so the same commands cover it. End-to-end checks must exercise persisted profiles, configured plugin tools and runtime changes together.
 
 For any contract change, identify producers, consumers, fixture migrations and exact unit changes in the same review. Add boundary tests where behavior changes; do not create parallel, incompatible representations of household needs. The context adapter prepares a request but does not itself call MCP or prove property suitability.

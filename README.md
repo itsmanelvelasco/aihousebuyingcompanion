@@ -79,8 +79,7 @@ For developers and teammates, install **Node.js 24 or newer** and run these comm
 
 ```sh
 npm ci
-npm run setup:app
-npm run dev:stack
+npm run dev
 ```
 
 Then open:
@@ -102,12 +101,12 @@ For the separate interviewer, see [voice and guided interview setup](apps/interv
 
 | Folder | What you will find |
 | --- | --- |
-| [`demo-plugin/`](demo-plugin/) | Connected journey board and combined MCP demo server. |
-| [`apps/mcp-server/`](apps/mcp-server/README.md) | Municipality tools, Town Explorer and agent connection pages. |
-| [`apps/interviewer/`](apps/interviewer/README.md) | Voice/guided interview and savings scenario tools. |
+| [`apps/board/`](apps/board/README.md) | Journey board: the same MCP server plus the live demo page. |
+| [`apps/mcp-server/`](apps/mcp-server/README.md) | The MCP server: municipality, interview and bank tools, Town Explorer and agent connection pages. |
+| [`apps/interviewer/`](apps/interviewer/README.md) | Standalone voice and guided interview in the browser. |
 | [`apps/profile-api/`](apps/profile-api/README.md) | Profile storage, shared inputs, bank movements and financial analysis. |
 | [`apps/habits-agent/`](apps/habits-agent/README.md) | Optional habit suggestions, goals and check-ins. |
-| [`packages/`](packages/) | Shared validation contracts, matching logic and policy calculations. |
+| [`packages/`](packages/) | Shared code: validation contracts, town matching, finance calculations, HTTP helpers and configuration. |
 | [`data/`](data/) | Dated municipality/policy snapshots and fictional user fixtures. |
 | [`docs/`](docs/README.md) | Area guides, integration notes and team setup. |
 
@@ -120,11 +119,9 @@ Start with the [development map](docs/README.md) and the relevant area guide. Th
 For code changes, the repository checks are:
 
 ```sh
-npm run typecheck
-npm test
-npm run data:validate
-npm run check:app
-npm run test:app
+npm run check
 ```
+
+That runs the linter, type checks, tests and data validation. `npm run format` applies the shared code style.
 
 Keep calculations explicit, preserve source links and dates, and show uncertainty where the evidence does not support a conclusion.

@@ -1,6 +1,6 @@
 ---
 name: relocat-development
-description: Develop or review the Relocat monorepo using its shared area ownership, contracts and checks. Use when working in a checkout of aihousebuyingcompanion, not for unrelated repositories.
+description: Develop or review the ReloCat monorepo using its shared area ownership, contracts and checks. Use when working in a checkout of aihousebuyingcompanion, not for unrelated repositories.
 ---
 
 Read the checkout's `AGENTS.md` and `docs/README.md` before changes. The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003) is authoritative for product decisions; code and tests establish what actually runs. If unavailable, disclose that limitation and use the last verified decisions.

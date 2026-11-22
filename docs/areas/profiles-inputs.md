@@ -5,7 +5,7 @@
 ## Entry points
 
 - `apps/profile-api/server.ts`: authenticated profile, input, context and bank routes.
-- `apps/profile-api/store.ts`: profile section storage.
+- `packages/profiles/store.ts`: profile section storage.
 - `apps/profile-api/inputs.ts`: source-event storage, normalization and context assembly.
 - `packages/contracts/inputs.ts`: schemas, resolution and municipality input adapter.
 - `data/users/`: 500 committed synthetic profile fixtures; `scripts/generate-users.ts` regenerates them.
@@ -18,7 +18,7 @@ Use `POST /users/:id/inputs` for partial records and `GET /users/:id/context` fo
 
 ## Run and verify
 
-Set `PROFILE_API_TOKEN`, then run root `npm start` on port 3001. `PROFILE_DATA_DIR` changes the runtime directory. `npm run typecheck` and `npm test` cover storage, input merging, authorization and fixture consistency.
+Set `PROFILE_API_TOKEN`, then run `npm run start:api` on port 3001. `PROFILE_DATA_DIR` changes the runtime directory. `npm run typecheck` and `npm test` cover storage, input merging, authorization and fixture consistency.
 
 ## Handoff
 

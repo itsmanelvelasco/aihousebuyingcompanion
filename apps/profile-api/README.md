@@ -3,9 +3,9 @@
 Requires Node.js 24+. Run commands from the repository root:
 
 ```powershell
-npm install
+npm ci
 $env:PROFILE_API_TOKEN = [guid]::NewGuid().ToString('N')
-npm start
+npm run start:api
 ```
 
 The API listens on `http://127.0.0.1:3001`. `PORT` changes the port. All routes require `Authorization: Bearer <PROFILE_API_TOKEN>`. The token is required at startup; keep it in your local environment and share it only with trusted local clients.

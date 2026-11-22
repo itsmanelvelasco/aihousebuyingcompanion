@@ -1,12 +1,13 @@
-FROM node:24-bookworm-slim AS widget
+# Public ReloCat MCP server (apps/mcp-server). Build context is trimmed by .dockerignore.
+FROM node:24-bookworm-slim AS build
 
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY apps/mcp-server/town-explorer-widget.ts apps/mcp-server/town-explorer-contract.ts apps/mcp-server/town-map.ts ./apps/mcp-server/
-COPY apps/mcp-server/assets ./apps/mcp-server/assets
-COPY packages/contracts ./packages/contracts
-RUN npm run build:mcp-ui
+COPY apps ./apps
+COPY packages ./packages
+COPY scripts/build.ts ./scripts/build.ts
+RUN npm run build
 
 FROM node:24-bookworm-slim
 
@@ -17,12 +18,9 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY --chown=node:node apps/mcp-server ./apps/mcp-server
-COPY --chown=node:node apps/interviewer ./apps/interviewer
-COPY --from=widget --chown=node:node /app/apps/mcp-server/dist ./apps/mcp-server/dist
-COPY --chown=node:node apps/profile-api/finance.ts apps/profile-api/store.ts ./apps/profile-api/
-COPY --chown=node:node apps/habits-agent/agent.ts apps/habits-agent/contracts.ts ./apps/habits-agent/
+COPY --from=build --chown=node:node /app/apps/mcp-server/dist ./apps/mcp-server/dist
 COPY --chown=node:node packages ./packages
-COPY --chown=node:node data/towns.json data/incentives.json data/travel-estimates.json data/relocat-pilot-data.json ./data/
+COPY --chown=node:node data ./data
 
 USER node
 EXPOSE 8787

@@ -15,7 +15,7 @@ const launchScript = `
       })).observe(document.querySelector('main'));
     });
     send('ui/initialize', {
-      appInfo: { name: 'Relocat Start talking', version: '1.0.0' },
+      appInfo: { name: 'ReloCat Start talking', version: '1.0.0' },
       appCapabilities: {},
       protocolVersion: '2026-01-26',
     }, 1);
@@ -35,25 +35,38 @@ const launchScript = `
   });
 `;
 
-export function renderVoiceCard(launchUrl) {
-  const instructions = 'Select the Voice icon in ChatGPT, then say “Use Relocat Team to start my homebuying interview.”';
+export function renderVoiceCard(launchUrl: string | null) {
+  const instructions =
+    'Select the Voice icon in ChatGPT, then say “Use ReloCat Team to start my homebuying interview.”';
   const control = launchUrl
-    ? h('div', null,
-      h('a', { className: 'action launch', href: launchUrl, target: '_blank', rel: 'noopener noreferrer' }, 'Start talking'),
-      h('p', { className: 'help' }, 'Opens the Relocat voice interviewer.'),
-      h('p', { id: 'launch-help', className: 'help', hidden: true, role: 'status' }, instructions))
-    : h('details', null,
-      h('summary', { className: 'action' }, 'Start talking'),
-      h('p', { className: 'help' }, instructions));
-  const card = h('main', { 'aria-labelledby': 'title' },
-    h('div', { className: 'orb', 'aria-hidden': 'true' },
-      h('span', { className: 'wave' }, '▂ ▅ █ ▅ ▂')),
+    ? h(
+        'div',
+        null,
+        h(
+          'a',
+          { className: 'action launch', href: launchUrl, target: '_blank', rel: 'noopener noreferrer' },
+          'Start talking',
+        ),
+        h('p', { className: 'help' }, 'Opens the ReloCat voice interviewer.'),
+        h('p', { id: 'launch-help', className: 'help', hidden: true, role: 'status' }, instructions),
+      )
+    : h(
+        'details',
+        null,
+        h('summary', { className: 'action' }, 'Start talking'),
+        h('p', { className: 'help' }, instructions),
+      );
+  const card = h(
+    'main',
+    { 'aria-labelledby': 'title' },
+    h('div', { className: 'orb', 'aria-hidden': 'true' }, h('span', { className: 'wave' }, '▂ ▅ █ ▅ ▂')),
     h('h1', { id: 'title' }, 'Your homebuying interview'),
     h('p', null, 'Start with your bank transactions and talk through your home goals.'),
-    control);
+    control,
+  );
   return `<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Relocat homebuying interview</title>
+<title>ReloCat homebuying interview</title>
 <style>
   :root { color-scheme: light dark; font: 15px/1.5 system-ui,sans-serif; }
   body { margin:0; color:#f3f8ed; background:#10251b; text-align:center; }

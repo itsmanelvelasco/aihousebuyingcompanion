@@ -1,6 +1,6 @@
-# One Relocat setup for teammates
+# One ReloCat setup for teammates
 
-The canonical team bundle is **`relocat-team` version `1.1.0`**, sourced from `plugins/relocat-team/`. It includes the same three workflows for every teammate: Relocat demo, Relocat development, and synthetic finance/habits. These workflows do not clone somebody else's ChatGPT account, copy third-party plugins, share credentials, change personal permissions or install anything remotely in another account.
+The canonical team bundle is **`relocat-team` version `1.2.0`**, sourced from `plugins/relocat-team/`. It includes the same three workflows for every teammate: ReloCat demo, ReloCat development, and synthetic finance/habits. These workflows do not clone somebody else's ChatGPT account, copy third-party plugins, share credentials, change personal permissions or install anything remotely in another account.
 
 ## What is ready
 
@@ -20,7 +20,7 @@ npm ci
 npm run package:team-plugin
 ```
 
-Output: `artifacts/team-plugin/relocat-team-1.1.0-skills-only.zip` and its `.sha256` checksum. Artifacts are ignored by Git. The packager deliberately includes only the manifest and Markdown skills/references, not profiles, runtime state, secrets, application code or dependencies. It does not contact an MCP service or spend OpenAI credits.
+Output: `artifacts/team-plugin/relocat-team-1.2.0-skills-only.zip` and its `.sha256` checksum. Artifacts are ignored by Git. The packager deliberately includes only the manifest and Markdown skills/references, not profiles, runtime state, secrets, application code or dependencies. It does not contact an MCP service or spend OpenAI credits.
 
 To include the team's actual deployed endpoint:
 
@@ -28,7 +28,7 @@ To include the team's actual deployed endpoint:
 npm run package:team-plugin -- --mcp-url https://your-team-host/mcp
 ```
 
-Replace that example hostname with the real service; it is not a deployed Relocat URL. The alternative `RELOCAT_MCP_URL` environment variable is supported. The MCP variant uses portable `mcp.json` with Streamable HTTP and no credential header. The builder rejects localhost/IP addresses, HTTP, embedded credentials, query strings and fragments. Passing syntactic validation does not prove that the endpoint is reachable, authenticated or authorized for a workspace.
+Replace that example hostname with the real service; it is not a deployed ReloCat URL. The alternative `RELOCAT_MCP_URL` environment variable is supported. The MCP variant uses portable `mcp.json` with Streamable HTTP and no credential header. The builder rejects localhost/IP addresses, HTTP, embedded credentials, query strings and fragments. Passing syntactic validation does not prove that the endpoint is reachable, authenticated or authorized for a workspace.
 
 Do not distribute `http://127.0.0.1:8787/mcp` as the team's remote endpoint: localhost refers to each teammate's own computer. Use an approved shared HTTPS deployment or the platform's supported private-tunnel connection flow. The current integrated MCP demonstration uses synthetic data; it is not a production per-user banking service. A production authentication requirement needs the corresponding registered connection/OAuth configuration, not a token baked into a ZIP.
 
@@ -38,15 +38,15 @@ For a common ChatGPT workspace, a workspace administrator can import/sync the re
 
 For teammates using separate accounts/workspaces, share the same reviewed ZIP/source and checksum. Each person installs it through their supported plugin surface, then completes any service connection required by their own workspace. Workspace-only publication does not grant access to accounts outside that workspace. Local repo marketplace support also varies by surface; follow the current official UI guidance.
 
-After installation/update, start a new chat/session so the bundled skills can load. Verify **Relocat Team** appears in Installed and that the three skill names are available. For the MCP variant, verify tools in the actual connection before running a demo. A skill's mention of a tool is not proof that the connection provides it.
+After installation/update, start a new chat/session so the bundled skills can load. Verify **ReloCat Team** appears in Installed and that the three skill names are available. For the MCP variant, verify tools in the actual connection before running a demo. A skill's mention of a tool is not proof that the connection provides it.
 
 ## Teammate acceptance check
 
-To hear the interview, select ChatGPT's **Voice** icon before invoking Relocat. The MCP tool starts the interview in the current chat mode.
+To hear the interview, select ChatGPT's **Voice** icon before invoking ReloCat. The MCP tool starts the interview in the current chat mode.
 
-In text chat, ask **@Relocat Team** to start the homebuying interview to show its green **Start talking** card. The card shows the ChatGPT Live steps by default. Set `RELOCAT_VOICE_URL` on the MCP server to the HTTPS page of a separately deployed voice interviewer if the card should open that page instead. Refresh the MCP connection after deploying the card.
+In text chat, ask **@ReloCat Team** to start the homebuying interview to show its green **Start talking** card. The card shows the ChatGPT Live steps by default. Set `RELOCAT_VOICE_URL` on the MCP server to the HTTPS page of a separately deployed voice interviewer if the card should open that page instead. Refresh the MCP connection after deploying the card.
 
-For the bank-first interview, update Relocat Team to version 1.1.0 and connect the deployment that exposes `start_homebuying_interview`. Start a new ChatGPT Live voice conversation and say “Use Relocat Team to start my homebuying interview.” ChatGPT asks whether to use a CSV, the fictional demo bank, or spoken estimates. Attach any CSV in the chat. Live availability and plugin access depend on the account and workspace. The same entry point also works in a text chat.
+For the bank-first interview, update ReloCat Team to version 1.2.0 and connect the deployment that exposes `start_homebuying_interview`. Start a new ChatGPT Live voice conversation and say “Use ReloCat Team to start my homebuying interview.” ChatGPT asks whether to use a CSV, the fictional demo bank, or spoken estimates. Attach any CSV in the chat. Live availability and plugin access depend on the account and workspace. The same entry point also works in a text chat.
 
 1. Confirm the bundle name/version and SHA-256 match the team's chosen artifact.
 2. Confirm all three skills are available in a new session.

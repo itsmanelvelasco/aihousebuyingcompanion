@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Discover places to live in Catalonia. Compare towns, schools, transport and housing support with relo.cat.">
+  <meta name="description" content="Discover places to live in Catalonia. Compare towns, schools, transport and housing support with ReloCat.">
   <meta name="theme-color" content="#fcf7ee">
-  <title>relo.cat · Find your place in Catalonia</title>
+  <title>ReloCat · Find your place in Catalonia</title>
   <style>
     :root {
       --paper: #fcf7ee;
@@ -267,7 +267,7 @@
 <body>
   <a class="skip" href="#main">Skip to content</a>
   <header class="masthead wrap">
-    <a class="wordmark" href="/connect" aria-label="relo.cat home">relo<span>.cat</span></a>
+    <a class="wordmark" href="/connect" aria-label="ReloCat home">relo<span>.cat</span></a>
     <nav class="site-nav" aria-label="Main navigation">
       <a class="nav-link" href="/preview">Town demo</a>
       <a class="button compact secondary" href="#setup">Connect an agent</a>
@@ -307,7 +307,7 @@
 
     <section class="body-section" id="setup" aria-labelledby="setup-title">
       <div class="setup-heading">
-        <h2 id="setup-title">Bring relo.cat into your chat.</h2>
+        <h2 id="setup-title">Bring ReloCat into your chat.</h2>
         <p class="section-intro">Choose your AI agent for step-by-step connection instructions.</p>
       </div>
       <div class="setup-panel">
@@ -324,7 +324,7 @@
           </div>
           <p id="agent-intro"></p>
           <div class="endpoint" id="endpoint-box">
-            <label for="endpoint">relo.cat MCP server URL</label>
+            <label for="endpoint">ReloCat MCP server URL</label>
             <div class="endpoint-row">
               <input id="endpoint" type="url" value="https://relo.cat/mcp" spellcheck="false" autocomplete="off" aria-describedby="endpoint-note">
               <button class="button compact" id="copy-url" type="button">Copy URL</button>
@@ -346,7 +346,7 @@
       <div class="question-intro">
         <div>
           <h2 id="questions-title">What would you ask?</h2>
-          <p class="section-intro">Copy a question into your agent after connecting relo.cat.</p>
+          <p class="section-intro">Copy a question into your agent after connecting ReloCat.</p>
         </div>
         <img class="mascot guide" src="{{guide}}" alt="" width="289" height="221" loading="lazy">
       </div>
@@ -365,7 +365,7 @@
           <p>Sources include official municipal statistics and dated relocation research for three pilot towns. Housing averages describe the local market. Check listing availability, school admissions and walkability separately. Incentives show application status and household eligibility separately.</p>
         </div>
         <div>
-          <h2>Running relo.cat yourself?</h2>
+          <h2>Running ReloCat yourself?</h2>
           <p>Use fictional profiles for the local connected demo. Add authentication and access controls before sharing a public deployment.</p>
           <details>
             <summary>Local server and live listing setup</summary>
@@ -376,7 +376,7 @@
         </div>
       </div>
       <div class="footer-bottom">
-        <a class="wordmark" href="/connect" aria-label="relo.cat home">relo<span>.cat</span></a>
+        <a class="wordmark" href="/connect" aria-label="ReloCat home">relo<span>.cat</span></a>
         <nav class="footer-links" aria-label="Footer navigation">
           <a href="/preview">Town demo</a>
           <a href="https://github.com/itsmanelvelasco/aihousebuyingcompanion">GitHub</a>
@@ -393,8 +393,8 @@
         name: 'ChatGPT',
         kind: 'Cloud connection',
         docs: 'https://developers.openai.com/plugins/deploy/connect-chatgpt',
-        intro: 'Add relo.cat as a custom MCP plugin to use its tools in your conversations.',
-        steps: ['Open ChatGPT’s Plugins page. Select the plus button, then “Add custom MCP server”.','Name it relo.cat. Choose a public URL connection and paste the MCP server URL shown above. A configured Secure MCP Tunnel is another option.','Use the authentication settings supplied by the operator. Review the tools and create the plugin.','Install it, start a new chat, and type @ to select relo.cat. Try one of the prompts below.']
+        intro: 'Add ReloCat as a custom MCP plugin to use its tools in your conversations.',
+        steps: ['Open ChatGPT’s Plugins page. Select the plus button, then “Add custom MCP server”.','Name it ReloCat. Choose a public URL connection and paste the MCP server URL shown above. A configured Secure MCP Tunnel is another option.','Use the authentication settings supplied by the operator. Review the tools and create the plugin.','Install it, start a new chat, and type @ to select ReloCat. Try one of the prompts below.']
       },
       {
         id: 'claude',
@@ -402,15 +402,15 @@
         kind: 'Cloud connection',
         docs: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
         intro: 'Add a custom connector in Claude. Remote connectors connect from Claude’s cloud, including in Claude Desktop.',
-        steps: ['Open Customize → Connectors. Choose “+ Add”, then “Add custom connector”.','Name the connector relo.cat and paste the MCP server URL shown above.','Review the detected authentication and follow your operator’s settings. Team or Enterprise users may need an administrator to add it first.','Enable relo.cat from the chat’s + menu → Connectors, then ask about a town.']
+        steps: ['Open Customize → Connectors. Choose “+ Add”, then “Add custom connector”.','Name the connector ReloCat and paste the MCP server URL shown above.','Review the detected authentication and follow your operator’s settings. Team or Enterprise users may need an administrator to add it first.','Enable ReloCat from the chat’s + menu → Connectors, then ask about a town.']
       },
       {
         id: 'hermes',
         name: 'Hermes',
         kind: 'Local or remote',
         docs: 'https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp',
-        intro: 'Add relo.cat to the MCP servers in your active Hermes profile. Localhost works when Hermes and relo.cat run on the same machine.',
-        steps: ['Merge this entry into mcp_servers in your active profile’s config.yaml (default: ~/.hermes/config.yaml). Preserve your existing servers.','Start a fresh Hermes session and ask it to use relo.cat’s town tools.'],
+        intro: 'Add ReloCat to the MCP servers in your active Hermes profile. Localhost works when Hermes and ReloCat run on the same machine.',
+        steps: ['Merge this entry into mcp_servers in your active profile’s config.yaml (default: ~/.hermes/config.yaml). Preserve your existing servers.','Start a fresh Hermes session and ask it to use ReloCat’s town tools.'],
         snippet: url=>`mcp_servers:\n  relocat:\n    url: ${JSON.stringify(url)}`
       },
       {
@@ -418,8 +418,8 @@
         name: 'OpenClaw',
         kind: 'Local or remote',
         docs: 'https://docs.openclaw.ai/tools/mcp',
-        intro: 'Register relo.cat as a Streamable HTTP MCP server in OpenClaw.',
-        steps: ['Run the command below in the environment where OpenClaw runs.','Probe the connection, then ask your agent to use relo.cat. A remote OpenClaw installation cannot reach your laptop’s localhost.'],
+        intro: 'Register ReloCat as a Streamable HTTP MCP server in OpenClaw.',
+        steps: ['Run the command below in the environment where OpenClaw runs.','Probe the connection, then ask your agent to use ReloCat. A remote OpenClaw installation cannot reach your laptop’s localhost.'],
         snippet: url=>`openclaw mcp add relocat --url '${url}' --transport streamable-http\nopenclaw mcp doctor relocat --probe`
       },
       {
@@ -427,8 +427,8 @@
         name: 'Codex',
         kind: 'Local or remote',
         docs: 'https://developers.openai.com/codex/mcp',
-        intro: 'Add relo.cat to Codex’s MCP configuration using the CLI.',
-        steps: ['Run the command below on the machine where Codex runs.','Start a new session, check that relo.cat’s tools are available, and ask a town question.'],
+        intro: 'Add ReloCat to Codex’s MCP configuration using the CLI.',
+        steps: ['Run the command below on the machine where Codex runs.','Start a new session, check that ReloCat’s tools are available, and ask a town question.'],
         snippet: url=>`codex mcp add relocat --url '${url}'`
       },
       {
@@ -436,8 +436,8 @@
         name: 'Cursor',
         kind: 'Local or remote',
         docs: 'https://cursor.com/docs/context/mcp',
-        intro: 'Give Cursor Agent access to relo.cat’s tools through an MCP server entry.',
-        steps: ['Merge this entry into .cursor/mcp.json for this project, or ~/.cursor/mcp.json for your account. Preserve other servers.','Enable relo.cat in Cursor’s MCP settings, then use it from Agent.'],
+        intro: 'Give Cursor Agent access to ReloCat’s tools through an MCP server entry.',
+        steps: ['Merge this entry into .cursor/mcp.json for this project, or ~/.cursor/mcp.json for your account. Preserve other servers.','Enable ReloCat in Cursor’s MCP settings, then use it from Agent.'],
         snippet: url=>JSON.stringify({mcpServers:{relocat:{url}}},null,2)
       },
       {
@@ -462,8 +462,8 @@
         name: 'Another agent',
         kind: 'Streamable HTTP',
         docs: 'https://modelcontextprotocol.io/docs/learn/client-concepts',
-        intro: 'Use any MCP client that supports Streamable HTTP and can reach your relo.cat server.',
-        steps: ['Add a server named relo.cat in your agent’s MCP settings.','Select Streamable HTTP and enter the MCP server URL shown above. Use the authentication required by your server operator.','Connect, list the available tools, and try get_town_profile or recommend_towns. Client configuration formats differ; follow your client’s documentation.']
+        intro: 'Use any MCP client that supports Streamable HTTP and can reach your ReloCat server.',
+        steps: ['Add a server named ReloCat in your agent’s MCP settings.','Select Streamable HTTP and enter the MCP server URL shown above. Use the authentication required by your server operator.','Connect, list the available tools, and try get_town_profile or recommend_towns. Client configuration formats differ; follow your client’s documentation.']
       }
     ];
 
@@ -583,7 +583,7 @@
     }
 
     for (const text of [
-      "Use relo.cat to find towns where I could rent for €700 a month and reach a primary school without a car. Explain the trade-offs.",
+      "Use ReloCat to find towns where I could rent for €700 a month and reach a primary school without a car. Explain the trade-offs.",
       "Compare Calaf, Juncosa and Ulldemolins. Show sources, research dates and anything that still needs checking.",
       "Look for Idealista examples in Calaf. Separate search results from verified available homes.",
     ]) {

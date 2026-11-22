@@ -1,4 +1,11 @@
-const categories = {
+import { monthsToTarget } from './savings.ts';
+
+/**
+ * Bank CSV intake for the interview: parse statement rows, group spending by keyword category
+ * and average it per observed month. Amounts are parsed to integer cents and reported in the
+ * statement's currency units. Runs unchanged in Node and in the browser.
+ */
+const categories: Record<string, RegExp> = {
   Rent: /\brent\b|alquiler|arrendamiento/,
   Groceries: /grocer|supermarket|mercadona|lidl|aldi|carrefour/,
   'Eating out': /restaurant|cafe|coffee|takeaway|delivery|glovo|uber eats/,
@@ -9,24 +16,34 @@ const categories = {
   Health: /pharmacy|farmacia|medical|dental|clinic/,
   Entertainment: /cinema|theat(er|re)|museum|concert|ticketmaster/,
 };
+const internalTransfer = /internal transfer|own account|transferencia propia/;
 
 export const expenseCategories = [...Object.keys(categories), 'Other'];
 export const incomeCategories = ['Payroll', 'Other income'];
 export const classificationLimit = 80;
 
-function merchantCandidate({ label, cents }) {
-  if (!cents || /internal transfer|own account|transferencia propia/.test(label)) return null;
+export type CsvTransaction = { month: string; label: string; cents: number };
+export type MerchantCandidate = { direction: 'in' | 'out'; description: string };
+export type CashFlowSummary = ReturnType<typeof summarizeTransactions>;
+export type SavingsPlanInput = { target: number; saved: number; monthly: number; habit: number };
+
+function merchantCandidate({ label, cents }: CsvTransaction): MerchantCandidate | null {
+  if (!cents || internalTransfer.test(label)) return null;
   const description = label
     .replace(/https?:\/\/\S+|\S+@\S+|\b[\p{L}]{2}\d[\p{L}\d]{8,}\b/gu, ' ')
     .replace(/[^\p{L}\s&'-]+/gu, ' ')
-    .replace(/\s+/g, ' ').trim().slice(0, 100).trim();
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100)
+    .trim();
   return description ? { direction: cents > 0 ? 'in' : 'out', description } : null;
 }
 
-const merchantKey = candidate => `${candidate.direction}:${candidate.description}`;
+const merchantKey = (candidate: MerchantCandidate) => `${candidate.direction}:${candidate.description}`;
 
-export function classificationCandidates(transactions) {
-  const unique = new Map();
+/** Distinct shortened merchant descriptions that may be sent for optional classification. */
+export function classificationCandidates(transactions: CsvTransaction[]) {
+  const unique = new Map<string, MerchantCandidate>();
   for (const transaction of transactions) {
     const candidate = merchantCandidate(transaction);
     if (!candidate) continue;
@@ -36,11 +53,11 @@ export function classificationCandidates(transactions) {
   return [...unique.values()];
 }
 
-function parseCsv(source) {
-  const csv = source.replace(/^\uFEFF/, '').trim();
+function parseCsv(source: string) {
+  const csv = source.replace(/^﻿/, '').trim();
   const delimiter = csv.split(/\r?\n/, 1)[0].includes(';') ? ';' : ',';
-  const rows = [];
-  let row = [];
+  const rows: string[][] = [];
+  let row: string[] = [];
   let field = '';
   let quoted = false;
   for (let i = 0; i < csv.length; i++) {
@@ -64,7 +81,7 @@ function parseCsv(source) {
   return rows.filter(cells => cells.some(Boolean));
 }
 
-export function parseTransactions(csv) {
+export function parseTransactions(csv: string): CsvTransaction[] {
   const [headers = [], ...rows] = parseCsv(csv);
   const names = headers.map(header => header.toLowerCase());
   const date = names.indexOf('date');
@@ -78,28 +95,36 @@ export function parseTransactions(csv) {
     const day = row[date];
     const label = row[description]?.toLowerCase();
     const rawAmount = row[amount]?.replace(',', '.');
-    const value = Number(rawAmount);
-    const cents = Math.round(value * 100);
+    const cents = Math.round(Number(rawAmount) * 100);
     totalCents += Math.abs(cents);
     const parsedDate = new Date(day);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(+parsedDate) ||
-        parsedDate.toISOString().slice(0, 10) !== day || !label ||
-        !/^[+-]?\d+(?:\.\d{1,2})?$/.test(rawAmount) || !Number.isSafeInteger(totalCents)) {
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(day) ||
+      !Number.isFinite(+parsedDate) ||
+      parsedDate.toISOString().slice(0, 10) !== day ||
+      !label ||
+      !/^[+-]?\d+(?:\.\d{1,2})?$/.test(rawAmount) ||
+      !Number.isSafeInteger(totalCents)
+    ) {
       throw new Error(`Invalid transaction on data row ${index + 1}. Use YYYY-MM-DD dates and signed amounts.`);
     }
     return { month: day.slice(0, 7), label, cents };
   });
 }
 
-export function summarizeTransactions(transactions, candidates = [], decisions = []) {
-  const classifications = new Map();
+export function summarizeTransactions(
+  transactions: CsvTransaction[],
+  candidates: MerchantCandidate[] = [],
+  decisions: (string | null)[] = [],
+) {
+  const classifications = new Map<string, string>();
   for (const [index, candidate] of candidates.entries()) {
     const category = decisions[index];
     const allowed = candidate.direction === 'in' ? incomeCategories : expenseCategories;
-    if (allowed.includes(category)) classifications.set(merchantKey(candidate), category);
+    if (category && allowed.includes(category)) classifications.set(merchantKey(candidate), category);
   }
-  const months = new Map();
-  const expenses = {};
+  const months = new Map<string, number>();
+  const expenses: Record<string, number> = {};
   let inflows = 0;
   let outflows = 0;
   let payroll = 0;
@@ -109,12 +134,12 @@ export function summarizeTransactions(transactions, candidates = [], decisions =
     if (!months.has(month)) months.set(month, 0);
     const candidate = classifications.size ? merchantCandidate(transaction) : null;
     const predicted = candidate && classifications.get(merchantKey(candidate));
-    if (/internal transfer|own account|transferencia propia/.test(label)) {
+    if (internalTransfer.test(label)) {
       transfers++;
     } else if (cents > 0) {
       inflows += cents;
       if (predicted === 'Payroll' || /salary|payroll|n[oó]mina|wages/.test(label)) {
-        months.set(month, months.get(month) + cents);
+        months.set(month, (months.get(month) ?? 0) + cents);
         payroll += cents;
       }
     } else if (cents < 0) {
@@ -124,7 +149,7 @@ export function summarizeTransactions(transactions, candidates = [], decisions =
       expenses[category] = (expenses[category] ?? 0) - cents;
     }
   }
-  const average = cents => Math.round(cents / months.size) / 100;
+  const average = (cents: number) => Math.round(cents / months.size) / 100;
   const pay = [...months.values()];
   return {
     observedMonths: [...months.keys()].sort(),
@@ -136,21 +161,24 @@ export function summarizeTransactions(transactions, candidates = [], decisions =
     monthlyInflows: average(inflows),
     monthlyCostOfLiving: average(outflows),
     monthlyNetCashFlow: average(inflows - outflows),
-    monthlyExpenses: Object.fromEntries(Object.entries(expenses)
-      .sort((a, b) => b[1] - a[1]).map(([name, value]) => [name, average(value)])),
+    monthlyExpenses: Object.fromEntries(
+      Object.entries(expenses)
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, value]) => [name, average(value)]),
+    ),
   };
 }
 
-export function summarizeCsv(csv) {
+export function summarizeCsv(csv: string) {
   return summarizeTransactions(parseTransactions(csv));
 }
 
-export function compareSavings({ target, saved, monthly, habit }) {
+/** Baseline and habit-adjusted months to a cash target, using the shared timeline rule. */
+export function compareSavings({ target, saved, monthly, habit }: SavingsPlanInput) {
   const remaining = Math.max(0, target - saved);
-  const months = rate => {
-    if (remaining === 0) return 0;
-    const estimate = Math.ceil(remaining / rate);
-    return rate > 0 && Number.isSafeInteger(estimate) ? estimate : null;
+  return {
+    remaining,
+    baselineMonths: monthsToTarget(remaining, monthly),
+    withHabitMonths: monthsToTarget(remaining, monthly + habit),
   };
-  return { remaining, baselineMonths: months(monthly), withHabitMonths: months(monthly + habit) };
 }

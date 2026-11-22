@@ -5,7 +5,7 @@
 ## Entry points
 
 - `apps/profile-api/bank.ts`: accounts, ledger persistence and movement CRUD/import.
-- `apps/profile-api/finance.ts`: deterministic cash flow, recurring candidates and savings scenarios.
+- `packages/finance/cashflow.ts`: deterministic cash flow, recurring candidates and savings scenarios.
 - `apps/profile-api/runtime.ts`: simulated movement producer, timers and stop/status handling.
 - `apps/profile-api/server.ts`: authenticated bank routes and runtime wiring.
 - `apps/mcp-server/bank-tools.ts`: HTTP-backed read-only MCP access.
@@ -28,6 +28,6 @@ Keep one API process as the runtime-directory writer. The producer shares that p
 
 ## Run, verify and hand off
 
-Start the profile API with `PROFILE_API_TOKEN` and root `npm start`. Set `DEMO_BANK_USERS=user-001` (comma-separated IDs for several users) to opt into startup feeds; `DEMO_BANK_INTERVAL_MS` defaults to 5000. The combined `npm run dev:stack` launcher defaults its demo feed to `user-001`. Follow [BANK_API.md](../../apps/profile-api/BANK_API.md) for detailed semantics. Run `npm run typecheck` and `npm test`; cover import idempotency, concurrent writes, event cursors, restart persistence, shutdown and background errors.
+Start the profile API with `PROFILE_API_TOKEN` and `npm run start:api`. Set `DEMO_BANK_USERS=user-001` (comma-separated IDs for several users) to opt into startup feeds; `DEMO_BANK_INTERVAL_MS` defaults to 5000. The combined `npm run dev` launcher defaults its demo feed to `user-001`. Follow [BANK_API.md](../../apps/profile-api/BANK_API.md) for detailed semantics. Run `npm run typecheck` and `npm test`; cover import idempotency, concurrent writes, event cursors, restart persistence, shutdown and background errors.
 
 Give the board freshness, aggregate figures and event revision rather than credentials/raw transactions. Missing months produce unknown estimates. Financial scenarios are user-reviewed assumptions, not credit scores, mortgage approval or guaranteed affordability.

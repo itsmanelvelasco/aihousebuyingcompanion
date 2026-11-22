@@ -1,16 +1,27 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createStore } from '../apps/profile-api/store.ts';
+import { test } from 'node:test';
 import { createBankStore } from '../apps/profile-api/bank.ts';
 import { createBankRuntime } from '../apps/profile-api/runtime.ts';
+import { createStore } from '../packages/profiles/store.ts';
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'relocat-runtime-'));
   const doc = { schemaVersion: 1, synthetic: true };
-  await createStore(root).create('demo', { details: { ...doc, id: 'demo' }, preferences: doc, 'bank-account': { ...doc, snapshotDate: '2026-11-21', balanceCents: 500000, monthlyIncomeCents: 240000, monthlyExpensesCents: 170000, debtPaymentsCents: 10000 } });
+  await createStore(root).create('demo', {
+    details: { ...doc, id: 'demo' },
+    preferences: doc,
+    'bank-account': {
+      ...doc,
+      snapshotDate: '2026-11-21',
+      balanceCents: 500000,
+      monthlyIncomeCents: 240000,
+      monthlyExpensesCents: 170000,
+      debtPaymentsCents: 10000,
+    },
+  });
   return { root, bank: createBankStore(root) };
 }
 test('bank events persist monotonic cursors and idempotent runtime ticks do not repeat movements', async () => {
@@ -36,13 +47,16 @@ test('bank events persist monotonic cursors and idempotent runtime ticks do not 
     ledger.events = [ledger.events.at(-1)];
     await writeFile(path, JSON.stringify(ledger));
     assert.equal((await bank.events('demo', 0, 50)).requiresRefresh, true);
-  } finally { await runtime.close(); await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await runtime.close();
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('enabled bank feed writes between requests and stops when disabled', async () => {
   const { root, bank } = await fixture();
   let time = new Date('2026-11-21T12:00:00Z').getTime();
-  const runtime = createBankRuntime(bank, () => new Date(time += 5000));
+  const runtime = createBankRuntime(bank, () => new Date((time += 5000)));
   try {
     await runtime.configure('demo', { enabled: true, intervalMs: 1000 });
     for (let attempt = 0; attempt < 50 && (await runtime.status('demo')).tickCount === 0; attempt++) {
@@ -55,5 +69,8 @@ test('enabled bank feed writes between requests and stops when disabled', async 
     await new Promise(resolve => setTimeout(resolve, 1100));
     assert.equal((await bank.read('demo')).revision, revision);
     assert.equal((await runtime.status('demo')).enabled, false);
-  } finally { await runtime.close(); await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await runtime.close();
+    await rm(root, { recursive: true, force: true });
+  }
 });
