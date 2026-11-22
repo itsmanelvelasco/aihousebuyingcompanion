@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { stateSchema } from '../contracts/habits.ts';
+import { household as householdFacts } from '../contracts/places.ts';
 import type { Habit, Person } from '../contracts/planner.ts';
 import { person } from '../contracts/planner.ts';
 
@@ -25,7 +26,6 @@ export type HabitState = z.input<typeof stateSchema>;
 type FieldProvenance = { confirmed: boolean; observedAt: string };
 /** The `resolved` part of `GET /users/:id/context` (`resolveInputs`); only the fields read here matter. */
 export type PersonContext = {
-  synthetic?: boolean;
   resolved: {
     data: Record<string, Record<string, unknown> | undefined>;
     provenance?: Record<string, FieldProvenance[] | undefined>;
@@ -34,6 +34,11 @@ export type PersonContext = {
 
 export type BuildPersonInput = {
   userId: string;
+  /**
+   * Whether the person's records are fictional. Required: a missing flag is never defaulted, because
+   * real data must not be labelled synthetic nor the reverse.
+   */
+  synthetic: boolean;
   context: PersonContext;
   bankSummary?: BankSummaryInput;
   habitState?: HabitState;
@@ -57,11 +62,43 @@ function adherence(goalId: string, checkins: HabitState['checkins']): number | n
   return own.length ? own.filter(checkin => checkin.completed).length / own.length : null;
 }
 
+/**
+ * The day a stored goal started. The goal contract has no such date yet; this reads `startedOn` as
+ * soon as the store carries it, and until then every stored habit has an unknown start.
+ */
+function startedOn(goal: object): { startedOn?: string } {
+  const date = z.iso.date().safeParse((goal as { startedOn?: unknown }).startedOn);
+  return date.success ? { startedOn: date.data } : {};
+}
+
+/**
+ * The household facts used to screen incentives, from the `eligibility` group of the resolved inputs.
+ * A fact is taken only when a confirmed input states it; an unconfirmed, conflicting (null) or
+ * malformed value is left out, so the screening keeps it at needs_verification. Nothing is inferred:
+ * the household size or the number of dependants never becomes a child's age or a family status.
+ * The purchase price is not read here; the planner screens with the price of the plan.
+ */
+function householdFrom(
+  facts: Record<string, unknown> | undefined,
+  provenance: Record<string, FieldProvenance[] | undefined>,
+): Person['household'] {
+  const known: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(facts ?? {})) {
+    if (value === null || value === undefined || field === 'purchasePriceEur') continue;
+    if (!provenance[`eligibility.${field}`]?.some(item => item.confirmed)) continue;
+    const schema = (householdFacts.shape as Record<string, z.ZodType | undefined>)[field];
+    const parsed = schema?.safeParse(value);
+    if (parsed?.success) known[field] = parsed.data;
+  }
+  return Object.keys(known).length ? householdFacts.parse(known) : undefined;
+}
+
 /** Stored goals are habits the person adopted: `active` or `paused`, never merely `proposed`. */
 export function habitsFromState(state: HabitState | undefined): Habit[] {
   if (!state) return [];
   const { goals, checkins } = stateSchema.parse(state);
   return goals.map(goal => ({
+    ...startedOn(goal),
     id: goal.id,
     title: goal.title,
     category: goal.category,
@@ -85,6 +122,9 @@ export function habitsFromState(state: HabitState | undefined): Habit[] {
  * Debt is counted once. Declared expenses are `monthlyExpensesCents + debtPaymentsCents` (the
  * interview already folds debt into spending and sends debt as zero). Bank expenses already contain
  * the debt movements, so declared debt is not added to them.
+ *
+ * Household facts for incentive screening come only from confirmed `eligibility` inputs (see
+ * `householdFrom`). `synthetic` is whatever the caller states; it has no default.
  *
  * Savings and the emergency reserve are always declared: a bank balance is never assumed to be
  * money available for the purchase. An undeclared reserve is 0, which the plan states out loud.
@@ -124,10 +164,12 @@ export function buildPerson(input: BuildPersonInput): Person {
   const asOf = usesBank && observed ? observed.to : (declaredDates.at(-1) ?? null);
 
   const size = data.household?.size;
+  const facts = householdFrom(data.eligibility, provenance);
   return person.parse({
     id: input.userId,
     ...(input.displayName ? { displayName: input.displayName } : {}),
-    synthetic: input.context.synthetic ?? true,
+    synthetic: input.synthetic,
+    ...(facts ? { household: facts } : {}),
     householdSize: typeof size === 'number' && Number.isInteger(size) && size >= 1 ? size : null,
     currentMunicipalityCode: input.currentMunicipalityCode ?? null,
     finances: {
@@ -140,7 +182,8 @@ export function buildPerson(input: BuildPersonInput): Person {
     },
     home: {
       floorAreaM2: positiveOrNull(data.housing?.homeSizeM2),
-      budgetCents: centsOrNull(data.housing?.budgetCents),
+      // A budget of zero is not a price: it is left unknown.
+      budgetCents: centsOrNull(data.housing?.budgetCents) || null,
     },
     habits: habitsFromState(input.habitState),
   });

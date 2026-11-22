@@ -5,7 +5,10 @@ import { z } from 'zod';
 import { defaultPorts, envFlag, envInteger, envPort, envString, openaiModels } from '../../packages/config/env.ts';
 import { classificationLimit, expenseCategories, incomeCategories } from '../../packages/finance/csv.ts';
 import { firstScenarioInput, generateFirstScenario } from '../../packages/finance/scenario.ts';
+import type { ClientAddressSource } from '../../packages/http/rate-limit.ts';
+import { createRateLimiter } from '../../packages/http/rate-limit.ts';
 import { ApiError, readText, sendJson, sendText } from '../../packages/http/server.ts';
+import { inlineUi } from '../../packages/ui/inline.ts';
 
 /**
  * The voice and guided interviewer as a request handler, so the one server can mount it under a
@@ -26,6 +29,8 @@ export type InterviewerOptions = {
   models?: { classification: string; realtime: string };
   fetcher?: typeof fetch;
   now?: () => number;
+  /** Which header states the client's address for the paid-route limit. Default: the environment's. */
+  clientAddress?: ClientAddressSource;
 };
 
 type Handler = (request: IncomingMessage, response: ServerResponse) => Promise<void>;
@@ -79,11 +84,6 @@ const forwardingHeaders = [
 const isLoopback = (address: string) =>
   address === '::1' || address.startsWith('127.') || address.startsWith('::ffff:127.');
 
-function lastHeader(request: IncomingMessage, name: string) {
-  const value = request.headers[name];
-  return (Array.isArray(value) ? value.at(-1) : value)?.split(',').at(-1)?.trim() || undefined;
-}
-
 /** A browser on this machine talking straight to this listener: local Host, loopback socket, no proxy headers. */
 function isLocalRequest(request: IncomingMessage) {
   let host: URL;
@@ -100,39 +100,6 @@ function isLocalRequest(request: IncomingMessage) {
   );
 }
 
-/**
- * The address a rate limit is counted against. A loopback peer is a local tunnel or proxy, so the
- * address it appended is used; a direct peer cannot choose its own socket address, so headers are ignored.
- */
-function clientAddress(request: IncomingMessage) {
-  const peer = request.socket.remoteAddress ?? 'unknown';
-  if (!isLoopback(peer)) return peer;
-  return lastHeader(request, 'cf-connecting-ip') ?? lastHeader(request, 'x-forwarded-for') ?? peer;
-}
-
-/** Fixed-window counter per key, with a shared ceiling so rotating addresses cannot spend without bound. */
-function createRateLimit(perClient: number, now: () => number) {
-  const windows = new Map<string, { count: number; resetAt: number }>();
-  const take = (key: string, limit: number, time: number) => {
-    let window = windows.get(key);
-    if (!window || window.resetAt <= time) {
-      window = { count: 0, resetAt: time + hourMs };
-      windows.set(key, window);
-    }
-    if (window.count >= limit) return Math.ceil((window.resetAt - time) / 1000);
-    window.count++;
-    return 0;
-  };
-  /** Seconds to wait, or zero when the request may proceed. */
-  return (client: string) => {
-    const time = now();
-    if (windows.size > 10_000) {
-      for (const [key, window] of windows) if (window.resetAt <= time) windows.delete(key);
-    }
-    return take(`client ${client}`, perClient, time) || take('all', perClient * 10, time);
-  };
-}
-
 /** Build the interviewer handler. Mount it with `createInterviewerHandler({ prefix: '/interview', ... })`. */
 export function createInterviewerHandler(options: InterviewerOptions = {}): Handler {
   const prefix = (options.prefix ?? '').replace(/\/+$/, '');
@@ -147,7 +114,16 @@ export function createInterviewerHandler(options: InterviewerOptions = {}): Hand
     .min(1)
     .max(10_000)
     .parse(options.aiRequestsPerHour ?? 20);
-  const waitSeconds = createRateLimit(perHour, options.now ?? Date.now);
+  // The shared limiter, with this route's stricter rules: an hourly window, a ceiling of ten times
+  // one client's allowance for everyone together, and no exemption for requests from this machine.
+  const limiter = createRateLimiter({
+    limit: perHour,
+    globalLimit: perHour * 10,
+    windowMs: hourMs,
+    now: options.now,
+    countLocal: true,
+    clientAddress: options.clientAddress,
+  });
 
   /** Why a paid request is refused, or null when its origin is acceptable. */
   function refusal(request: IncomingMessage) {
@@ -179,9 +155,9 @@ export function createInterviewerHandler(options: InterviewerOptions = {}): Hand
       return false;
     }
     if (publicAi) {
-      const wait = waitSeconds(clientAddress(request));
-      if (wait) {
-        response.setHeader('Retry-After', String(wait));
+      const { allowed, retryAfterSeconds } = limiter.check(request);
+      if (!allowed) {
+        response.setHeader('Retry-After', String(retryAfterSeconds));
         error(response, 429, 'Too many voice or categorization requests. Try again later.');
         return false;
       }
@@ -295,7 +271,9 @@ export function createInterviewerHandler(options: InterviewerOptions = {}): Hand
       const route = path.slice(prefix.length);
       if (request.method === 'GET' && Object.hasOwn(assets, route)) {
         const [file, type] = assets[route];
-        return sendText(response, 200, await readFile(file, 'utf8'), type);
+        const body = await readFile(file, 'utf8');
+        // The page template carries theme, mark and favicon placeholders filled from packages/ui.
+        return sendText(response, 200, type === 'text/html' ? inlineUi(body) : body, type);
       }
       if (request.method !== 'POST' || !Object.hasOwn(routes, route)) return error(response, 404, 'Unknown route.');
       await routes[route](request, response);

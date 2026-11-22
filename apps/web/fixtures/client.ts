@@ -11,6 +11,7 @@ export function fixtureCallTool(variant: string, delayMs = 350): CallTool {
   const ok = (structuredContent: unknown): ToolResult => ({ structuredContent });
   const fail = (text: string): ToolResult => ({ isError: true, content: [{ type: 'text', text }] });
   const startedAt = Date.now();
+  // `transactionCount` is the size of the ledger after the change, as the real bank events report it.
   const event = (sequence: number, secondsAgo: number, transactionCount: number) => ({
     sequence,
     occurredAt: new Date(startedAt - secondsAgo * 1000).toISOString(),
@@ -28,6 +29,17 @@ export function fixtureCallTool(variant: string, delayMs = 350): CallTool {
       // The fixture does not recalculate: an edited person is echoed back with the same timelines.
       return ok({ ...base, person: args.person ?? base.person, plans });
     }
+    if (name === 'show_workspace')
+      return ok({
+        subject: variant === 'signed-in' ? 'me' : args.demoId ? 'demo' : 'none',
+        demoId: variant === 'signed-in' ? null : (args.demoId ?? null),
+        signedIn: variant === 'signed-in',
+        demoIds: ['user-001', 'user-002', 'user-003', 'user-004'],
+        municipalityCodes: args.municipalityCodes ?? [],
+      });
+    if (name === 'save_my_inputs') return ok({ saved: true, inputId: 'fixture-input', inputCount: 1 });
+    // The demo tools answer like the personal ones; only who they read differs.
+    name = name.replace(/^get_demo_bank_/, 'get_bank_');
     if (name.startsWith('get_bank_') && variant === 'bank-error')
       return fail(
         'Synthetic bank data is unavailable or invalid. Check the local profile API and server-side bridge configuration.',
@@ -35,8 +47,9 @@ export function fixtureCallTool(variant: string, delayMs = 350): CallTool {
     if (name === 'get_bank_updates') {
       polls += 1;
       const after = Number(args.after ?? 0);
-      // Two stored events at first, then one new event on the third poll to exercise the refresh.
-      const all = [event(1, 5400, 6), event(2, 900, 3), ...(polls >= 3 ? [event(3, 0, 2)] : [])];
+      // Two stored events at first (ledger of 181, then 184 movements), then two more movements
+      // arrive after a few polls to exercise the refresh: the strip must say "2 new transactions".
+      const all = [event(1, 5400, 181), event(2, 900, 184), ...(polls >= 4 ? [event(3, 0, 186)] : [])];
       const latest = all.at(-1)!.sequence;
       return ok({
         synthetic: true,

@@ -1,6 +1,6 @@
 # Habits agent
 
-An independent synthetic-data service for optional money habits, explicit goals and check-ins. It uses aggregate spending categories, not transaction descriptions, bank identifiers or personal demographics. Rules work without OpenAI or paid calls. Suggestions never create goals, cancel commitments, move money or assess credit automatically.
+Optional money habits, explicit goals and check-ins for the fictional demo users. It is a request handler (`createHabitsHandler` in `server.ts`) that the one ReloCat server mounts under `/api`, next to the profile and bank routes; it is not a process of its own. It uses aggregate spending categories, not transaction descriptions, bank identifiers or personal demographics. Rules work without OpenAI or paid calls. Suggestions never create goals, cancel commitments, move money or assess credit automatically.
 
 ## Entry point and local setup
 
@@ -12,7 +12,7 @@ $env:PROFILE_API_TOKEN = [guid]::NewGuid().ToString('N')
 npm start
 ```
 
-The server listens on `http://127.0.0.1:8787/api`. Every endpoint requires `Authorization: Bearer <PROFILE_API_TOKEN>`. `HABITS_PORT` changes the port. `PROFILE_DATA_DIR` defaults to committed synthetic profiles in `data/users`; point it at `data/runtime-users` to share the profile API's current user directory. Profiles are read only. Habit state belongs in the separately ignored `HABITS_DATA_DIR` (`data/runtime-habits` by default).
+The routes below are served at `http://127.0.0.1:8787/api` (`PORT` changes the port). Every endpoint requires `Authorization: Bearer <PROFILE_API_TOKEN>`, the same token as the rest of `/api`; when the variable is unset the server invents a token for that run, so set it when something outside the server must call these routes. Users are the ones in the runtime database (seeded from `data/users/`); an unknown user is a 404. Profiles are read only here.
 
 ## Routes
 
@@ -61,8 +61,8 @@ These limits **do not enforce a $100 dollar budget** or know the account credit 
 
 ## Storage and integration boundaries
 
-State is stored atomically in `data/runtime-habits/users/:id.json`; the global attempt counter is separate. Writes are serialized within one process. Run one habits process per data directory. This is a shared-token local demo; production per-user authorization, audited history, provider consent and multi-process database transactions are not implemented. The service does not initiate check-in reminders or send messages.
+Goals and check-ins are rows of the runtime SQLite database (`DATABASE_FILE`, default `data/relocat.db`): tables `habit_goals` and `habit_checkins`, written through `packages/db/habits.ts`, each change in one transaction. The daily counter of paid calls is a row of `ai_usage`, so it survives a restart. `HABITS_DATA_DIR` (`data/runtime-habits`) is only a legacy import source: JSON files an earlier version wrote there are imported once into an empty database and left untouched. This is a shared-token local demo; production per-user authorization, audited history and provider consent are not implemented. The service does not initiate check-in reminders or send messages.
 
-The profile/bank service remains the authoritative writer of bank data. A frontend or server adapter can read bank aggregates, request habit suggestions and allow the person to adopt a goal. This branch deliberately avoids changing the other teams' MCP/widget code. No MCP registration or frontend wiring is claimed here.
+The profile/bank service remains the authoritative writer of bank data. A frontend or server adapter can read bank aggregates, request habit suggestions and allow the person to adopt a goal. No MCP registration or frontend wiring is claimed here.
 
 Run `npm run typecheck` and `npm test`. Focused tests: `node --test tests/habits.test.ts`.

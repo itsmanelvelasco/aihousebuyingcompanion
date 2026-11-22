@@ -88,6 +88,7 @@ export function buildPlace(snapshot: Snapshot, municipalityCode: string): Place 
     name: town.name,
     comarca: town.comarca,
     rural: town.rural.category,
+    ruralEffectiveFrom: town.rural.effectiveFrom ?? null,
     centre: { latitude: town.centre.latitude, longitude: town.centre.longitude },
     indicators,
     services: services.success ? services.data : [],

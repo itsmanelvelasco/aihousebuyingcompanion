@@ -1,94 +1,81 @@
-import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { z } from 'zod';
 import { checkinSchema, goalSchema, stateSchema } from '../../packages/contracts/habits.ts';
 import { safeId } from '../../packages/contracts/ids.ts';
+import type { Database } from '../../packages/db/database.ts';
+import {
+  getCheckin,
+  getGoal,
+  habitsUsageScope,
+  insertCheckin,
+  insertGoal,
+  listCheckins,
+  listGoals,
+  updateGoal,
+  usageAttempts,
+  writeUsage,
+} from '../../packages/db/habits.ts';
 import { ApiError } from '../../packages/http/server.ts';
-import { createStore } from '../../packages/profiles/store.ts';
+import { requireUser } from '../../packages/profiles/store.ts';
 
-export function createHabitStore(root: string, profileRoot: string) {
-  const profiles = createStore(profileRoot);
-  const queues = new Map<string, Promise<unknown>>();
+/** Habit goals and check-ins of each user, and the daily AI attempt counter, in the runtime database. */
+export function createHabitStore(db: Database) {
+  function state(id: string) {
+    return stateSchema.parse({
+      schemaVersion: 1,
+      synthetic: true,
+      userId: id,
+      goals: listGoals(db, id),
+      checkins: listCheckins(db, id),
+    });
+  }
   async function read(id: string) {
-    safeId.parse(id);
-    await profiles.read(id, 'details');
-    try {
-      return stateSchema.parse(JSON.parse(await readFile(join(root, 'users', `${id}.json`), 'utf8')));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      return stateSchema.parse({ schemaVersion: 1, synthetic: true, userId: id, goals: [], checkins: [] });
-    }
+    requireUser(db, id);
+    return db.transaction(() => state(id));
   }
-  async function write(path: string, value: unknown) {
-    await mkdir(dirname(path), { recursive: true });
-    const temporary = `${path}.${randomUUID()}.tmp`;
-    try {
-      await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-      await rename(temporary, path);
-    } finally {
-      await rm(temporary, { force: true });
-    }
-  }
-  async function serial<T>(key: string, operation: () => Promise<T>) {
-    const pending = (queues.get(key) ?? Promise.resolve()).catch(() => {}).then(operation);
-    queues.set(key, pending);
-    try {
-      return await pending;
-    } finally {
-      if (queues.get(key) === pending) queues.delete(key);
-    }
+  /** Run one change for an existing user in a transaction and check the limits of the whole state. */
+  function mutate<T>(id: string, change: () => T) {
+    return db.transaction(() => {
+      requireUser(db, id);
+      const result = change();
+      // At most 20 goals and 1000 check-ins; a change beyond that is rolled back.
+      state(id);
+      return result;
+    });
   }
   return {
     read,
     async saveGoal(id: string, value: unknown, replace = false) {
       const goal = goalSchema.parse(value);
-      return serial(id, async () => {
-        const state = await read(id);
-        const index = state.goals.findIndex(item => item.id === goal.id);
-        if (!replace && index >= 0) throw new ApiError(409, 'Habit already exists');
-        if (replace && index < 0) throw new ApiError(404, 'Habit not found');
-        if (index < 0) state.goals.push(goal);
-        else state.goals[index] = goal;
-        stateSchema.parse(state);
-        await write(join(root, 'users', `${id}.json`), state);
+      return mutate(id, () => {
+        const existing = getGoal(db, id, goal.id);
+        if (!replace && existing) throw new ApiError(409, 'Habit already exists');
+        if (replace && !existing) throw new ApiError(404, 'Habit not found');
+        if (existing) updateGoal(db, id, goal);
+        else insertGoal(db, id, goal);
         return goal;
       });
     },
     async checkin(id: string, goalId: string, value: unknown) {
       safeId.parse(goalId);
       const checkin = checkinSchema.parse(value);
-      return serial(id, async () => {
-        const state = await read(id);
-        const goal = state.goals.find(item => item.id === goalId);
+      return mutate(id, () => {
+        const goal = getGoal(db, id, goalId);
         if (!goal) throw new ApiError(404, 'Habit not found');
         if (!goal.active) throw new ApiError(409, 'Habit is inactive');
         const entry = { ...checkin, goalId };
-        const previous = state.checkins.find(item => item.id === checkin.id);
+        const previous = getCheckin(db, id, checkin.id);
         if (previous && JSON.stringify(previous) !== JSON.stringify(entry))
           throw new ApiError(409, 'Check-in ID conflict');
-        if (!previous) state.checkins.push(entry);
-        stateSchema.parse(state);
-        await write(join(root, 'users', `${id}.json`), state);
+        if (!previous) insertCheckin(db, id, entry);
         return { inserted: !previous, checkin: entry };
       });
     },
+    /** Count one paid attempt for `date`, or refuse it (429) when the day's limit is used up. */
     async reserveCall(limit: number, date = new Date().toISOString().slice(0, 10)) {
-      return serial(':usage', async () => {
-        await mkdir(root, { recursive: true });
-        const path = join(root, 'openai-usage.json');
-        const schema = z.object({ date: z.iso.date(), attempts: z.number().int().nonnegative() }).strict();
-        let usage = { date, attempts: 0 };
-        try {
-          const saved = schema.parse(JSON.parse(await readFile(path, 'utf8')));
-          if (saved.date === date) usage = saved;
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        }
-        if (usage.attempts >= limit) throw new ApiError(429, 'Daily OpenAI attempt limit reached');
-        usage.attempts++;
-        await write(path, usage);
-        return usage;
+      return db.transaction(() => {
+        const attempts = usageAttempts(db, habitsUsageScope, date);
+        if (attempts >= limit) throw new ApiError(429, 'Daily OpenAI attempt limit reached');
+        writeUsage(db, habitsUsageScope, date, attempts + 1);
+        return { date, attempts: attempts + 1 };
       });
     },
   };

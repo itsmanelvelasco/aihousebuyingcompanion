@@ -296,7 +296,19 @@ export const policy = z.object({
    * `null`: the measure needs a call and none could be verified, so `callStatus` stays `unknown`.
    * Absent: a grant's effective dates are its call window; tax measures have no call.
    */
-  callWindow: z.object({ opensOn: isoDate, closesOn: isoDate }).nullable().optional(),
+  callWindow: z
+    .object({
+      opensOn: isoDate,
+      closesOn: isoDate,
+      /**
+       * Local time (Europe/Madrid) at which the call closes on `closesOn`, when the source states one
+       * earlier than the end of the day. Eligibility is screened by date, with no time of day, so a call
+       * with a closing time reads `closed` for the whole of its closing day.
+       */
+      closesAtLocalTime: clockTime.optional(),
+    })
+    .nullable()
+    .optional(),
 });
 export const eligibility = policy.extend({
   geographicStatus: z.enum(['applies', 'does_not_apply', 'needs_verification']),

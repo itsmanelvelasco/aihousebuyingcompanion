@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { ApiError } from '../../packages/http/server.ts';
@@ -8,8 +8,9 @@ import { createCustomers, merchantCategories, nextDay, planDay, transactionTypes
 /**
  * Banc Demo: the state and behaviour of a fictional neobank, without any HTTP.
  *
- * It keeps customers, accounts and transactions in memory, walks the scripted simulation one
- * movement per tick, and pushes signed webhook events with retries. `server.ts` puts the REST API on
+ * It keeps customers, accounts and the newest transactions in memory (a rolling window: the oldest
+ * are folded into the account balances), walks the scripted simulation one movement per tick, and
+ * pushes signed webhook events with retries. `server.ts` puts the REST API on
  * top. It is a demo: one process, no database, and every record it produces is fabricated.
  */
 
@@ -117,6 +118,11 @@ const snapshotSchema = z
     ticks: z.number().int().nonnegative(),
     counters: z.object({ tx: cents, seq: cents, event: cents, subscription: cents, delivery: cents }).strict(),
     queue: z.array(actionSchema),
+    /** Completed cents of the transactions dropped from the window, per account. */
+    carried: z.record(z.string(), cents).default({}),
+    /** Highest change position dropped from the window; a cursor before it has missed changes. */
+    droppedThroughSeq: cents.default(0),
+    droppedCount: cents.default(0),
     transactions: z.array(transactionSchema),
     subscriptions: z.array(subscriptionSchema),
     deliveries: z.array(deliverySchema),
@@ -143,6 +149,9 @@ export const simulateTransactionSchema = z
   })
   .strict();
 
+/** Body of `PUT /webhooks/:id/secret`. Without a secret the bank invents a new one. */
+export const rotateSecretSchema = z.object({ signing_secret: z.string().min(16).max(200).optional() }).strict();
+
 /** Body of `POST /webhooks`. */
 export const subscribeSchema = z
   .object({
@@ -153,9 +162,15 @@ export const subscribeSchema = z
   .strict();
 
 export type DemoBankCoreOptions = {
-  /** Same seed, same start date and same customer count give the same history. Default `banc-demo`. */
+  /**
+   * Same seed, same start date and same customer count give the same history. Default `banc-demo`.
+   * When a snapshot is restored, an unset seed or start date is taken from the snapshot.
+   */
   seed?: string;
-  /** First simulated day, `YYYY-MM-DD`. Default: the first day of the month three months before now. */
+  /**
+   * First simulated day, `YYYY-MM-DD`. Default: the first day of the month three months before now,
+   * decided once: a snapshot keeps the date it started with, so a new month does not move it.
+   */
   startDate?: string;
   /** Number of fictional customers (`cust-001`, ...). Default 4. */
   customers?: number;
@@ -185,7 +200,12 @@ export type DemoBankCoreOptions = {
   };
   /** Accept webhook URLs on any host. By default only this machine (loopback) can be called. */
   allowRemoteWebhooks?: boolean;
-  /** The simulation pauses when this many transactions exist. Default 5000. */
+  /**
+   * Size of the rolling window of transactions. Beyond it the transaction that changed longest ago
+   * is dropped and its completed amount is folded into the account's balance, so the bank never
+   * stops producing movements. A cursor that points before the window is answered with 410.
+   * Default 5000.
+   */
   maxTransactions?: number;
   /** HTTP client used for deliveries; tests can replace it. */
   fetch?: typeof fetch;
@@ -220,39 +240,19 @@ export function signWebhook(secret: string, timestamp: string, rawBody: string) 
   return createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');
 }
 
+/**
+ * A short, non-reversible mark of a signing secret, shown on each webhook so its owner can tell
+ * whether the bank still signs with the secret the receiver verifies with.
+ */
+export function secretFingerprint(secret: string) {
+  return createHash('sha256').update(`demo-bank-webhook-secret\n${secret}`).digest('hex').slice(0, 16);
+}
+
 const padded = (value: number) => String(value).padStart(6, '0');
 
-/** True for URLs that point at this machine. */
-function isLoopback(url: URL) {
-  const host = url.hostname.toLowerCase();
-  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host.endsWith('.localhost');
-}
-
-/** The first day of the month three months before the given instant. */
-function defaultStartDate(now: Date) {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3, 1)).toISOString().slice(0, 10);
-}
-
-export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
-  const clock = options.clock ?? (() => new Date());
-  const seed = options.seed ?? 'banc-demo';
-  const customerCount = z
-    .number()
-    .int()
-    .min(1)
-    .max(50)
-    .parse(options.customers ?? 4);
-  const startDate = day.parse(options.startDate ?? defaultStartDate(clock()));
-  const maxTransactions = options.maxTransactions ?? 5000;
-  const maxAttempts = options.delivery?.maxAttempts ?? 6;
-  const retryBaseMs = options.delivery?.baseMs ?? 1000;
-  const timeoutMs = options.delivery?.timeoutMs ?? 5000;
-  const pumpMs = options.delivery?.pumpMs ?? 250;
-  const http = options.fetch ?? fetch;
-
-  const customers = createCustomers(seed, customerCount);
-  const customerById = new Map(customers.map(customer => [customer.id, customer]));
-  const accounts = customers.flatMap(customer => {
+/** The two accounts of every customer. */
+function createAccounts(customers: Customer[]) {
+  return customers.flatMap(customer => {
     const number = customer.id.slice('cust-'.length);
     return [
       {
@@ -271,7 +271,40 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
       },
     ];
   });
-  type Account = (typeof accounts)[number];
+}
+type Account = ReturnType<typeof createAccounts>[number];
+
+/** True for URLs that point at this machine. */
+function isLoopback(url: URL) {
+  const host = url.hostname.toLowerCase();
+  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host.endsWith('.localhost');
+}
+
+/** The first day of the month three months before the given instant. */
+function defaultStartDate(now: Date) {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3, 1)).toISOString().slice(0, 10);
+}
+
+export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
+  const clock = options.clock ?? (() => new Date());
+  const customerCountSchema = z.number().int().min(1).max(50);
+  let seed = options.seed ?? 'banc-demo';
+  let customerCount = customerCountSchema.parse(options.customers ?? 4);
+  let startDate = day.parse(options.startDate ?? defaultStartDate(clock()));
+  const maxTransactions = z
+    .number()
+    .int()
+    .min(1)
+    .parse(options.maxTransactions ?? 5000);
+  const maxAttempts = options.delivery?.maxAttempts ?? 6;
+  const retryBaseMs = options.delivery?.baseMs ?? 1000;
+  const timeoutMs = options.delivery?.timeoutMs ?? 5000;
+  const pumpMs = options.delivery?.pumpMs ?? 250;
+  const http = options.fetch ?? fetch;
+
+  let customers = createCustomers(seed, customerCount);
+  let customerById = new Map(customers.map(customer => [customer.id, customer]));
+  let accounts = createAccounts(customers);
   const accountOf = (customerId: string, kind: 'main' | 'savings') =>
     accounts.find(account => account.customerId === customerId && account.kind === kind)!;
 
@@ -281,6 +314,9 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
   let ticks = 0;
   let counters = { tx: 0, seq: 0, event: 0, subscription: 0, delivery: 0 };
   let queue: Action[] = [];
+  let carried: Record<string, number> = {};
+  let droppedThroughSeq = 0;
+  let droppedCount = 0;
   const transactions = new Map<string, StoredTransaction>();
   const subscriptions = new Map<string, Subscription>();
   let deliveries: Delivery[] = [];
@@ -309,6 +345,9 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
       ticks,
       counters,
       queue,
+      carried,
+      droppedThroughSeq,
+      droppedCount,
       transactions: [...transactions.values()],
       subscriptions: [...subscriptions.values()],
       deliveries,
@@ -354,13 +393,26 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
       throw error;
     }
     const stored = snapshotSchema.parse(JSON.parse(text));
-    if (stored.seed !== seed || stored.startDate !== startDate || stored.customerCount !== customerCount)
+    // Only a setting that was given can disagree with the snapshot. The default start date depends
+    // on today's date, so comparing it would refuse the bank's own snapshot when the month changes.
+    if (
+      (options.seed !== undefined && stored.seed !== seed) ||
+      (options.startDate !== undefined && stored.startDate !== startDate) ||
+      (options.customers !== undefined && stored.customerCount !== customerCount)
+    )
       throw new Error(
         'The demo bank snapshot was made with another seed, start date or customer count; delete it or restore those settings',
       );
-    ({ epoch, simTime, ticks, counters, queue, deliveries } = stored);
+    // The history belongs to the seed, start date and customers it was made with: reuse them.
+    ({ seed, startDate, epoch, simTime, ticks, counters, queue, deliveries } = stored);
+    ({ carried, droppedThroughSeq, droppedCount } = stored);
+    customerCount = customerCountSchema.parse(stored.customerCount);
+    customers = createCustomers(seed, customerCount);
+    customerById = new Map(customers.map(customer => [customer.id, customer]));
+    accounts = createAccounts(customers);
     nextPlanDay = stored.nextDay;
     for (const transaction of stored.transactions) transactions.set(transaction.id, transaction);
+    trim();
     for (const subscription of stored.subscriptions) subscriptions.set(subscription.id, subscription);
     return true;
   }
@@ -506,7 +558,28 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
     };
     transactions.set(transaction.id, transaction);
     if (notify) emit('TransactionCreated', transaction, null);
+    trim();
     return transaction;
+  }
+
+  /**
+   * Keep the window at its size: drop the transactions that changed longest ago. A completed one
+   * stays in its account's balance through `carried`; a pending one never settled and counts for
+   * nothing. Readers whose cursor is older than a dropped change are told to start again (410).
+   */
+  function trim() {
+    while (transactions.size > maxTransactions) {
+      // Usually one transaction too many: a scan is cheaper than keeping a second ordering.
+      let oldest: StoredTransaction | undefined;
+      for (const transaction of transactions.values())
+        if (!oldest || transaction.seq < oldest.seq) oldest = transaction;
+      if (!oldest) return;
+      if (oldest.state === 'completed')
+        carried[oldest.accountId] = (carried[oldest.accountId] ?? 0) + oldest.amountCents;
+      droppedThroughSeq = Math.max(droppedThroughSeq, oldest.seq);
+      droppedCount++;
+      transactions.delete(oldest.id);
+    }
   }
 
   /** Create a movement and, for an own-account transfer, its mirror leg on the receiving account. */
@@ -591,14 +664,8 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
     return created;
   }
 
-  /** Why the simulation is not producing movements, or null when it can. */
-  function pausedReason() {
-    return transactions.size >= maxTransactions ? 'transaction limit reached' : null;
-  }
-
-  /** Run one planned action. Returns the transactions it created or changed (none when paused). */
+  /** Run one planned action. Returns the transactions it created or changed. */
   function tick(notify = true) {
-    if (pausedReason()) return [];
     plan();
     const affected = apply(queue.shift()!, notify);
     ticks++;
@@ -612,7 +679,7 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
   /** Replay the plan silently up to the wall clock, so a new bank has a past to pull. */
   function backfill() {
     const until = clock().toISOString();
-    while (!pausedReason()) {
+    for (;;) {
       plan();
       if (queue[0].at > until) break;
       tick(false);
@@ -628,8 +695,22 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
 
   // --- Views: what the API returns. ---------------------------------------------------------------
 
+  /** Balance just before the oldest transaction still in the window. */
+  function windowOpeningCents(account: Account) {
+    return account.openingBalanceCents + (carried[account.id] ?? 0);
+  }
+
+  /** First day the window covers for an account: the start date until history has been dropped. */
+  function windowOpenedOn(account: Account) {
+    if (!droppedCount) return startDate;
+    let first = simTime;
+    for (const transaction of transactions.values())
+      if (transaction.accountId === account.id && transaction.createdAt < first) first = transaction.createdAt;
+    return first.slice(0, 10);
+  }
+
   function balanceCents(account: Account) {
-    let balance = account.openingBalanceCents;
+    let balance = windowOpeningCents(account);
     for (const transaction of transactions.values())
       if (transaction.accountId === account.id && transaction.state === 'completed') balance += transaction.amountCents;
     return balance;
@@ -644,9 +725,13 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
       currency: 'EUR',
       /** Opening balance plus completed transactions. */
       balance: centsToDecimal(balanceCents(account)),
-      /** Balance immediately before the first transaction of `opened_on`. */
-      opening_balance: centsToDecimal(account.openingBalanceCents),
-      opened_on: startDate,
+      /**
+       * Balance immediately before the oldest transaction the bank still lists, and the day of that
+       * transaction. They move forward together when old history leaves the rolling window, so
+       * opening balance plus listed completed transactions always equals `balance`.
+       */
+      opening_balance: centsToDecimal(windowOpeningCents(account)),
+      opened_on: windowOpenedOn(account),
       synthetic: true,
     };
   }
@@ -681,6 +766,8 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
       id: subscription.id,
       url: subscription.url,
       events: subscription.events,
+      /** Changes when the signing secret changes; the secret itself is never listed. */
+      secret_fingerprint: secretFingerprint(subscription.secret),
       created_at: subscription.createdAt,
       synthetic: true,
     };
@@ -693,7 +780,10 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
   }
 
   const encodeCursor = (seq: number) => Buffer.from(JSON.stringify({ e: epoch, s: seq })).toString('base64url');
-  /** The position a cursor stands for. A cursor of another bank life is refused with 410. */
+  /**
+   * The position a cursor stands for. A cursor of another bank life, or one so old that changes
+   * after it have left the rolling window, is refused with 410.
+   */
   function decodeCursor(cursor: string) {
     let parsed: unknown;
     try {
@@ -703,7 +793,7 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
     }
     const position = z.object({ e: z.string(), s: z.number().int().nonnegative() }).safeParse(parsed);
     if (!position.success) throw new ApiError(400, 'Invalid cursor');
-    if (position.data.e !== epoch || position.data.s > counters.seq)
+    if (position.data.e !== epoch || position.data.s > counters.seq || position.data.s < droppedThroughSeq)
       throw new ApiError(410, 'Cursor expired: start again without a cursor');
     return position.data.s;
   }
@@ -791,6 +881,24 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
       return [...subscriptions.values()].map(subscriptionView);
     },
 
+    /**
+     * Replace the signing secret of a webhook, with the one given or a new random one. Its owner
+     * uses this when the receiver starts verifying with another secret; deliveries that are still
+     * waiting are signed with the new secret on their next attempt.
+     */
+    rotateSecret(subscriptionId: string, input: unknown) {
+      const request = rotateSecretSchema.parse(input ?? {});
+      const subscription = subscriptions.get(subscriptionId);
+      if (!subscription) throw new ApiError(404, 'Webhook not found');
+      subscription.secret = request.signing_secret ?? `whsec-${randomBytes(24).toString('hex')}`;
+      changed();
+      return {
+        ...subscriptionView(subscription),
+        signing_secret: subscription.secret,
+        signature_tolerance_seconds: signatureToleranceSeconds,
+      };
+    },
+
     /** Remove a webhook. Its deliveries that were still waiting are dead-lettered on their next attempt. */
     unsubscribe(subscriptionId: string) {
       if (!subscriptions.delete(subscriptionId)) throw new ApiError(404, 'Webhook not found');
@@ -850,7 +958,6 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
         if (amountCents > 0) throw new ApiError(400, 'A transfer leaves account_id: use a negative amount');
         if (request.state !== 'completed') throw new ApiError(400, 'Own-account transfers are completed at once');
       }
-      if (pausedReason()) throw new ApiError(409, 'Transaction limit reached');
       const created = createMovement(
         {
           customerId: request.customer_id,
@@ -897,9 +1004,13 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
         ticks,
         running: Boolean(tickTimer),
         interval_ms: options.intervalMs ?? null,
-        paused_reason: pausedReason(),
+        /** Always null: the bank keeps a rolling window instead of pausing. Kept for older readers. */
+        paused_reason: null,
         customers: customers.length,
+        /** Transactions in the rolling window, its size, and how many older ones have left it. */
         transactions: transactions.size,
+        max_transactions: maxTransactions,
+        dropped_transactions: droppedCount,
         webhooks: subscriptions.size,
         deliveries: {
           pending: deliveries.filter(delivery => delivery.state === 'pending').length,

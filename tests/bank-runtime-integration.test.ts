@@ -1,20 +1,20 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { createHabitStore } from '../apps/habits-agent/store.ts';
 import { createHttpServer } from '../apps/mcp-server/http.ts';
-import { createProfileApi } from '../apps/profile-api/server.ts';
+import { createProfileApiHandler } from '../apps/profile-api/server.ts';
+import { createPeople } from '../apps/server/people.ts';
+import { open } from '../packages/db/database.ts';
 import { loadData } from '../packages/places/data.ts';
 import { createStore } from '../packages/profiles/store.ts';
 
 test('real bank runtime changes are readable across MCP connections without raw records or credentials', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'relocat-runtime-mcp-'));
+  const db = open(':memory:');
   const document = { schemaVersion: 1, synthetic: true };
-  await createStore(root).create('demo', {
+  await createStore(db).create('demo', {
     details: { ...document, id: 'demo' },
     preferences: document,
     'bank-account': {
@@ -27,14 +27,12 @@ test('real bank runtime changes are readable across MCP connections without raw 
     },
   });
   const token = 'integration-secret-token';
-  const api = createProfileApi(root, token);
-  api.listen(0, '127.0.0.1');
-  await once(api, 'listening');
-  const apiAddress = api.address();
-  assert(apiAddress && typeof apiAddress === 'object');
+  const api = createProfileApiHandler(db, token);
+  // The tools reach the stores in-process through a handle bound to the caller's own person.
+  const people = createPeople({ ...api.people, habits: createHabitStore(db).read });
   const { snapshot, policies } = loadData();
   const mcp = createHttpServer(snapshot, policies, {
-    bankApi: { baseUrl: `http://127.0.0.1:${apiAddress.port}`, token },
+    caller: { me: people.own('demo'), scopes: ['person:read'], demo: null },
   });
   mcp.listen(0, '127.0.0.1');
   await once(mcp, 'listening');
@@ -46,12 +44,14 @@ test('real bank runtime changes are readable across MCP connections without raw 
     await client.connect(new StreamableHTTPClientTransport(endpoint));
     const tools = await client.listTools();
     assert(tools.tools.some(tool => tool.name === 'get_bank_updates'));
-    const before = await client.callTool({ name: 'get_bank_updates', arguments: { userId: 'demo' } });
+    const before = await client.callTool({ name: 'get_bank_updates', arguments: {} });
     assert(!before.isError);
     assert.equal((before.structuredContent as Record<string, unknown>).latestRevision, 0);
+    // Naming a user is not possible: the argument does not exist.
+    assert((await client.callTool({ name: 'get_bank_updates', arguments: { userId: 'demo' } })).isError);
     const tick = await api.bankRuntime.tick('demo');
     assert.equal(tick.inserted, 1);
-    const update = await client.callTool({ name: 'get_bank_updates', arguments: { userId: 'demo', after: 0 } });
+    const update = await client.callTool({ name: 'get_bank_updates', arguments: { after: 0 } });
     assert(!update.isError);
     const data = update.structuredContent as { nextCursor: number; latestRevision: number; events: unknown[] };
     assert(data.events.length >= 2);
@@ -60,7 +60,7 @@ test('real bank runtime changes are readable across MCP connections without raw 
     assert(!JSON.stringify(update).includes('description'));
     const summary = await client.callTool({
       name: 'get_bank_summary',
-      arguments: { userId: 'demo', from: '2026-08-01', to: '2026-10-31' },
+      arguments: { from: '2026-08-01', to: '2026-10-31' },
     });
     assert(!summary.isError);
     const aggregates = summary.structuredContent as Record<string, unknown>;
@@ -68,17 +68,17 @@ test('real bank runtime changes are readable across MCP connections without raw 
     assert.equal(aggregates.averageMonthlySavingsCents, 72000);
     assert(!('transactions' in aggregates));
     assert(!JSON.stringify(summary).includes(token));
-    const status = await client.callTool({ name: 'get_bank_runtime', arguments: { userId: 'demo' } });
+    const status = await client.callTool({ name: 'get_bank_runtime', arguments: {} });
     assert(!status.isError);
     assert.equal((status.structuredContent as Record<string, unknown>).tickCount, 1);
     await client.close();
     client = new Client({ name: 'runtime-reconnect', version: '1' });
     await client.connect(new StreamableHTTPClientTransport(endpoint));
-    const replay = await client.callTool({ name: 'get_bank_updates', arguments: { userId: 'demo', after: 0 } });
+    const replay = await client.callTool({ name: 'get_bank_updates', arguments: { after: 0 } });
     assert.deepEqual(replay.structuredContent, update.structuredContent);
     const after = await client.callTool({
       name: 'get_bank_updates',
-      arguments: { userId: 'demo', after: data.nextCursor },
+      arguments: { after: data.nextCursor },
     });
     assert(!after.isError);
     assert.deepEqual((after.structuredContent as Record<string, unknown>).events, []);
@@ -86,7 +86,6 @@ test('real bank runtime changes are readable across MCP connections without raw 
     await client.close();
     await api.bankRuntime.close();
     await new Promise<void>((resolve, reject) => mcp.close(error => (error ? reject(error) : resolve())));
-    await new Promise<void>((resolve, reject) => api.close(error => (error ? reject(error) : resolve())));
-    await rm(root, { recursive: true, force: true });
+    db.close();
   }
 });

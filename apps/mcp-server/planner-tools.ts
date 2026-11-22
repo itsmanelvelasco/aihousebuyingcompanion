@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { stateSchema } from '../../packages/contracts/habits.ts';
-import { safeId } from '../../packages/contracts/ids.ts';
+import { inputSchema } from '../../packages/contracts/inputs.ts';
 import type { Policy, Snapshot } from '../../packages/contracts/places.ts';
 import { municipalityCode } from '../../packages/contracts/places.ts';
 import type { Person } from '../../packages/contracts/planner.ts';
@@ -11,21 +11,22 @@ import { bankSummaryInput, buildPerson } from '../../packages/model/person.ts';
 import { buildPlace } from '../../packages/model/place.ts';
 import { normalizedName } from '../../packages/places/geography.ts';
 import { planForPlaces } from '../../packages/planner/plan.ts';
+import type { Caller, PersonReader } from './identity.ts';
+import { anonymous, ownPerson, security } from './identity.ts';
 
 export type PlannerToolOptions = {
   snapshot: Snapshot;
   policies: Policy[];
   /** Clock for date-dependent rules; tests pin it. */
   today: () => string;
-  /** Read-only bridge to the profile API. Without it only inline persons can be planned. */
-  profileApi?: { baseUrl: string; token: string };
+  /** Who is calling. Without it only inline persons can be planned. */
+  caller?: Caller;
 };
 
 const readOnly = { readOnlyHint: true, openWorldHint: false, destructiveHint: false, idempotentHint: true };
 /** Complete calendar months of bank movements averaged into a typical month. */
 const bankMonths = 3;
 const contextResult = z.object({
-  synthetic: z.boolean().optional(),
   resolved: z.object({
     data: z.record(z.string(), z.record(z.string(), z.unknown())),
     provenance: z.record(z.string(), z.array(z.object({ confirmed: z.boolean(), observedAt: z.string() }))).optional(),
@@ -47,58 +48,47 @@ function completeMonths(today: string, count: number) {
   return { from: day(new Date(Date.UTC(year, month - 1 - count, 1))), to: day(new Date(Date.UTC(year, month - 1, 0))) };
 }
 
-/** A message that is safe to show: never an upstream body, a URL or the token. */
+/** A message that is safe to show: never an upstream body or a URL. */
 class PersonUnavailable extends Error {}
 
-function profileReader(config: NonNullable<PlannerToolOptions['profileApi']>) {
-  const base = new URL(config.baseUrl);
-  if (base.username || base.password || base.search || base.hash || !config.token.trim())
-    throw new Error('Invalid profile API configuration');
-  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(base.hostname);
-  if (base.protocol !== 'https:' && !(base.protocol === 'http:' && loopback))
-    throw new Error('Profile API requires HTTPS or loopback HTTP');
-  /** Parsed JSON, `null` for 404, or a thrown error for anything else. */
-  return async function read<T extends z.ZodType>(path: string, schema: T): Promise<z.infer<T> | null> {
-    const response = await fetch(base.href.replace(/\/$/, '') + path, {
-      headers: { Authorization: `Bearer ${config.token}`, Accept: 'application/json' },
-      signal: AbortSignal.timeout(5000),
-      redirect: 'error',
-    });
-    if (response.status === 404) return null;
-    if (!response.ok) throw new Error('Unavailable');
-    return schema.parse(await response.json());
-  };
-}
-
+/**
+ * The person, place and plan tools. A stored person is reached only through the caller: `me` for
+ * the signed-in person, or a read-only demo persona. No tool here accepts a user id.
+ */
 export function registerPlannerTools(server: McpServer, options: PlannerToolOptions) {
   const { snapshot, policies, today } = options;
-  const read = options.profileApi ? profileReader(options.profileApi) : null;
+  const caller = options.caller ?? anonymous;
+  const demoIds = caller.demo?.ids ?? [];
+  /** Only the configured demo personas can be named; any other id fails validation before a handler runs. */
+  const demoId = z.enum((demoIds.length ? demoIds : ['none']) as [string, ...string[]]);
 
   /**
-   * Load a stored person. The context is required; bank movements and habits are optional
-   * evidence, and each one that could not be read is reported instead of being silently dropped.
+   * Assemble a person from a handle that is already bound to one id. The context is required; bank
+   * movements and habits are optional evidence, and each one that could not be read is reported
+   * instead of being silently dropped.
    */
-  async function loadPerson(userId: string): Promise<{ person: Person; notes: string[] }> {
-    if (!read)
-      throw new PersonUnavailable(
-        'Stored persons are not available on this server. Pass the person inline instead of a userId.',
-      );
-    const context = await read(`/users/${userId}/context`, contextResult).catch(() => {
-      throw new PersonUnavailable('The profile API is unavailable or returned an invalid context.');
+  async function loadPerson(reader: PersonReader): Promise<{ person: Person; notes: string[] }> {
+    const raw = await reader.context().catch(() => {
+      throw new PersonUnavailable('The stored profile is unavailable right now.');
     });
-    if (!context) throw new PersonUnavailable('No stored person has that userId.');
+    if (!raw) throw new PersonUnavailable('No stored person was found.');
+    const context = contextResult.parse(raw);
     const notes: string[] = [];
-    const { from, to } = completeMonths(today(), bankMonths);
-    const bankSummary = await read(`/users/${userId}/bank/summary?from=${from}&to=${to}`, bankSummaryInput).catch(
-      () => {
+    const period = completeMonths(today(), bankMonths);
+    const bankSummary = await reader
+      .bankSummary(period)
+      .then(value => bankSummaryInput.parse(value))
+      .catch(() => {
         notes.push('Bank movements could not be read; only declared figures were used.');
         return null;
-      },
-    );
-    const habitState = await read(`/users/${userId}/habits`, stateSchema).catch(() => {
-      notes.push('Habits could not be read; none were counted.');
-      return null;
-    });
+      });
+    const habitState = await reader
+      .habits()
+      .then(value => stateSchema.parse(value))
+      .catch(() => {
+        notes.push('Habits could not be read; none were counted.');
+        return null;
+      });
     const name = context.resolved.data.location?.currentMunicipality;
     const current =
       typeof name === 'string'
@@ -106,7 +96,9 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
         : undefined;
     return {
       person: buildPerson({
-        userId,
+        userId: reader.userId,
+        // Fictional for a demo persona, real for a person who belongs to an account: stated by the handle.
+        synthetic: reader.synthetic,
         context,
         bankSummary: bankSummary ?? undefined,
         habitState: habitState ?? undefined,
@@ -114,6 +106,13 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
       }),
       notes,
     };
+  }
+
+  /** The read-only handle of a demo persona; a tool error when the demo is off or the id is not allowed. */
+  function demoPerson(id: string) {
+    const reader = caller.demo?.open(id);
+    if (!reader) throw new PersonUnavailable('That demo persona is not available on this server.');
+    return reader;
   }
 
   /** Run a tool body and turn every failure into a tool error that carries no upstream detail. */
@@ -128,22 +127,40 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
     }
   }
 
+  const planToolInput = z
+    .object({
+      /** A person sent inline, for a what-if or an anonymous estimate. */
+      person: person.optional(),
+      /** Plan for the signed-in person. There is no user id argument: the server knows who is calling. */
+      me: z.literal(true).optional(),
+      demoId: demoId.optional().describe('A fictional demo persona, read-only'),
+      municipalityCodes: planInput.shape.municipalityCodes,
+      assumptions: planInput.shape.assumptions,
+    })
+    .strict();
+
   server.registerTool(
     'plan_home_savings',
     {
       title: 'Estimate months of saving to buy in each place',
       description:
-        'For one person and up to eight municipalities, compute the upfront cash to buy (deposit, transfer tax, purchase fees) and the months of saving needed: with current savings, with the person’s habits, and with the benefits each place offers. Pass userId for a stored person or an inline person. Benefits are counted only when eligibility is confirmed unless includeUnverifiedBenefits is set; closed calls are never counted. This is arithmetic on supplied figures: it is not mortgage approval and no aid is guaranteed. Present assumptions, dataMissing and limitations with the result.',
-      inputSchema: planInput,
+        'For one person and up to eight municipalities, compute the upfront cash to buy (deposit, transfer tax, purchase fees) and the months of saving needed: with current savings, with the person’s habits, and with the benefits each place offers. Pass exactly one of: me:true for the signed-in person (needs sign-in), an inline person, or demoId for a fictional demo persona. There is no user id argument. Benefits are counted only when eligibility is confirmed unless includeUnverifiedBenefits is set; closed calls are never counted. This is arithmetic on supplied figures: it is not mortgage approval and no aid is guaranteed. Present assumptions, dataMissing and limitations with the result.',
+      inputSchema: planToolInput,
       outputSchema: planResult,
       annotations: readOnly,
+      _meta: security('either'),
     },
     input =>
       guarded(async () => {
-        if (!input.person && !input.userId) return failure('Provide either userId or person.');
-        const loaded = input.person
-          ? { person: input.person, notes: [] as string[] }
-          : await loadPerson(input.userId as string);
+        const chosen = [input.person, input.me, input.demoId].filter(value => value !== undefined);
+        if (chosen.length !== 1) return failure('Provide exactly one of me:true, person or demoId.');
+        let loaded: { person: Person; notes: string[] };
+        if (input.person) loaded = { person: input.person, notes: [] };
+        else if (input.me) {
+          const own = ownPerson(caller, 'person:read');
+          if ('error' in own) return own.error;
+          loaded = await loadPerson(own.me);
+        } else loaded = await loadPerson(demoPerson(input.demoId as string));
         const places = [...new Set(input.municipalityCodes)].map(code => buildPlace(snapshot, code));
         const plan = planForPlaces(loaded.person, places, policies, input.assumptions, today());
         const finite = plan.plans.filter(item => item.withPlaceBenefits?.months != null);
@@ -158,20 +175,114 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
   server.registerTool(
     'get_person',
     {
-      title: 'Read a person: finances, home needs and habits',
+      title: 'Read my person: finances, home needs and habits',
       description:
-        'Assemble the stored person entity from the resolved inputs, recent synthetic bank cash flow and habit goals. Unknown facts are null, not zero. finances.basis says whether figures were declared or observed in bank movements.',
-      inputSchema: z.object({ userId: safeId }).strict(),
+        'Assemble the signed-in person from their saved inputs, recent bank cash flow and habit goals. Takes no arguments: it always reads the caller’s own person and needs sign-in. Unknown facts are null, not zero. finances.basis says whether figures were declared or observed in bank movements.',
+      inputSchema: z.object({}).strict(),
       outputSchema: person,
       annotations: readOnly,
+      _meta: security('personal'),
     },
-    ({ userId }) =>
+    () =>
       guarded(async () => {
-        const loaded = await loadPerson(userId);
-        const text = ['Person assembled from stored inputs.', ...loaded.notes].join(' ');
-        return result(text, loaded.person);
+        const own = ownPerson(caller, 'person:read');
+        if ('error' in own) return own.error;
+        const loaded = await loadPerson(own.me);
+        return result(['Your person, assembled from your saved inputs.', ...loaded.notes].join(' '), loaded.person);
       }),
   );
+
+  server.registerTool(
+    'get_my_inputs',
+    {
+      title: 'Read what I have saved',
+      description:
+        'Return the signed-in person’s saved input records and the resolved context built from them (which value wins per field, its source, and unresolved conflicts). Takes no arguments and needs sign-in.',
+      inputSchema: z.object({}).strict(),
+      outputSchema: z.object({
+        inputCount: z.number().int().nonnegative(),
+        inputs: z.array(z.record(z.string(), z.unknown())),
+        resolved: z.record(z.string(), z.unknown()),
+        recommendation: z.record(z.string(), z.unknown()).nullable(),
+        warnings: z.array(z.string()),
+      }),
+      annotations: readOnly,
+      _meta: security('personal'),
+    },
+    () =>
+      guarded(async () => {
+        const own = ownPerson(caller, 'person:read');
+        if ('error' in own) return own.error;
+        const context = await own.me.context();
+        if (!context) throw new PersonUnavailable('No stored person was found.');
+        const stored = z.object({ inputs: z.array(z.record(z.string(), z.unknown())) }).parse(await own.me.inputs());
+        return result(`${stored.inputs.length} saved input records.`, {
+          inputCount: stored.inputs.length,
+          // The storage flag is not a statement about the person; ownership by an account is.
+          inputs: stored.inputs.map(({ synthetic: _flag, ...input }) => input),
+          resolved: (context.resolved ?? {}) as Record<string, unknown>,
+          recommendation: (context.recommendation ?? null) as Record<string, unknown> | null,
+          warnings: Array.isArray(context.warnings) ? (context.warnings as string[]) : [],
+        });
+      }),
+  );
+
+  server.registerTool(
+    'save_my_inputs',
+    {
+      title: 'Save details to my profile',
+      description:
+        'Save facts the signed-in person stated about their household, housing needs, schools, transport, finances (integer cents) or eligibility. Needs sign-in with write permission; it always writes to the caller’s own person. Set confirmed:true only when the person explicitly confirmed the values; otherwise false. Each call adds one dated record; earlier records are kept, and conflicts are reported by get_my_inputs.',
+      inputSchema: z
+        .object({
+          data: inputSchema.shape.data,
+          confirmed: z.boolean(),
+          source: z.enum(['interview', 'manual']).default('interview'),
+        })
+        .strict(),
+      outputSchema: z.object({ saved: z.boolean(), inputId: z.string(), inputCount: z.number().int().nonnegative() }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      _meta: security('personal', ['person:write']),
+    },
+    input =>
+      guarded(async () => {
+        const own = ownPerson(caller, 'person:write');
+        if ('error' in own) return own.error;
+        const inputId = `mcp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+        await own.me.saveInputs([
+          {
+            id: inputId,
+            source: input.source,
+            observedAt: new Date().toISOString(),
+            confirmed: input.confirmed,
+            // Required literal of the input contract; see packages/auth/README.md on the storage flag.
+            synthetic: true,
+            data: input.data,
+          },
+        ]);
+        const stored = z.object({ inputs: z.array(z.unknown()) }).parse(await own.me.inputs());
+        return result('Saved to your profile.', { saved: true, inputId, inputCount: stored.inputs.length });
+      }),
+  );
+
+  if (demoIds.length)
+    server.registerTool(
+      'get_demo_person',
+      {
+        title: 'Read a fictional demo persona',
+        description:
+          'Read one of the fictional demo personas (synthetic: true): invented household, finances and habits used to show the product. Read-only; it can never address a real person.',
+        inputSchema: z.object({ demoId }).strict(),
+        outputSchema: person,
+        annotations: readOnly,
+        _meta: security('public'),
+      },
+      ({ demoId: id }) =>
+        guarded(async () => {
+          const loaded = await loadPerson(demoPerson(id));
+          return result(['Fictional demo persona.', ...loaded.notes].join(' '), loaded.person);
+        }),
+    );
 
   server.registerTool(
     'get_place',

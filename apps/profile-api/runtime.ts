@@ -25,7 +25,7 @@ const failureNote = 'Synthetic feed failed; inspect account dates, profile seed 
 export function seedEmptyLedger(bank: BankStore) {
   return async (userId: string, provider: BankProvider) => {
     if (provider.id !== synthetic.id) return;
-    const ledger = await bank.read(userId);
+    const ledger = await bank.head(userId);
     if (!ledger.accounts.length) await bank.seedDemo(userId);
   };
 }
@@ -98,13 +98,13 @@ export function createBankRuntime(bank: BankStore, clock = () => new Date(), sha
 
   return {
     async status(id: string) {
-      await bank.read(id);
+      await bank.head(id);
       return view(id);
     },
     tick,
     async configure(id: string, input: unknown) {
       const settings = runtimeSettings.parse(input);
-      await bank.read(id);
+      await bank.head(id);
       const existing = await engine.connection(id, runtimeConnectionId);
       if (!settings.enabled && !existing) return view(id);
       if (settings.enabled && !existing?.polling && (await enabledFeeds()) >= maxFeeds)

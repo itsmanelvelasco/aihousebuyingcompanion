@@ -271,7 +271,7 @@ function renderCash() {
     showRows(ui.expenses, []);
     return;
   }
-  ui.importStatus.textContent = `${cash.transactionCount} transactions across ${cash.observedMonths.length} observed months. ${cash.excludedTransfers} identified internal transfers excluded.`;
+  ui.importStatus.textContent = `${cash.transactionCount} transactions across ${cash.observedMonths.length} observed months. ${cash.excludedTransfers} identified internal transfers excluded. ${cash.averagingNote}`;
   const otherIncome: [string, string][] =
     cash.monthlyOtherIncome > 0 ? [['Other monthly income', money(cash.monthlyOtherIncome)]] : [];
   showRows(ui.cash, [

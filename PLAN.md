@@ -30,7 +30,7 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 
 - [x] Generate 500 fictional homebuyer households with varied preferences, demographics and financial/credit barriers, with documented Idescat grounding and explicit sampling limitations.
 - [x] Store each profile in separate details, preferences and bank-account JSON documents; provide full JSON and flattened CSV exports.
-- [x] Add a token-protected local API to list/read/create users and replace sections, using isolated runtime storage and atomic file writes.
+- [x] Add a token-protected local API to list/read/create users and replace sections, using isolated runtime storage (first atomic JSON files, since replaced by the SQLite database in `packages/db`).
 - [x] Verify dataset/export consistency, API authorization, invalid inputs, persistence and runtime edit preservation with automated tests and TypeScript checks.
 - [x] Add synthetic bank accounts and movement import/correction/deletion with idempotent IDs and serialized atomic ledger persistence.
 - [x] Implement monthly cash-flow/category analysis, recurring-expense candidates and savings scenarios with explicit reserves, assumptions and unknown-data handling.
@@ -119,7 +119,7 @@ Agree shared contracts first, then assign separate file ownership. Household req
 - [ ] Optionally connect `get_ownership_plan`/`simulate_ownership` and update the target/timeline after selection once the core flow works.
 - [ ] Show synthetic-data labels, assumptions, evidence links, data freshness and missing-data messages in the UI.
 - [ ] Run the MCP endpoint and widget together; document the actual run instructions.
-- [x] Provide a standalone browser preview for the Town Explorer, using the live municipality MCP.
+- [x] Provide a standalone browser preview for the Town Explorer, using the live municipality MCP. (Since retired: `/preview` is now the journey board; the Town Explorer is the MCP widget and `/test` exercises its tools.)
 
 ## Phase 4 — Verify and rehearse (145–180 minutes)
 

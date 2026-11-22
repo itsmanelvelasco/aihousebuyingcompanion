@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Person, PlanResult } from '../../packages/contracts/planner.ts';
 import type { BankEvent, BankRuntime, BankSummary, PlanAssumptionsInput, ToolClient } from './client.ts';
 import { ToolError } from './client.ts';
+import type { Subject } from './launch.ts';
+import { subjectKey } from './launch.ts';
 import type { HabitOverrides } from './view-model.ts';
-import { applyHabitOverrides, effectiveOverrides, lastCompleteMonths } from './view-model.ts';
+import { addedTransactions, applyHabitOverrides, effectiveOverrides, lastCompleteMonths } from './view-model.ts';
 
 const asToolError = (error: unknown, tool: string) =>
   error instanceof ToolError ? error : new ToolError(tool, 'failed', `The ${tool} tool could not be reached.`);
@@ -24,12 +26,13 @@ export type PlanState = {
 const idlePlan: PlanState = { phase: 'idle', result: null, error: null, refreshing: false, loadedAt: null };
 
 /**
- * Loads the plan and re-runs it when places, switches or habit toggles change. The stored person is
- * read by `userId`; a what-if with toggled habits sends that person inline with edited statuses.
+ * Loads the plan and re-runs it when places, switches or habit toggles change. A stored person is
+ * named by the subject (the signed-in person or a demo persona, never a user id); a what-if with
+ * toggled habits, or a person typed into the page, is sent inline.
  */
 export function usePlan(
   client: ToolClient,
-  userId: string | null,
+  subject: Subject,
   municipalityCodes: string[],
   assumptions: PlanAssumptionsInput,
   overrides: HabitOverrides,
@@ -37,7 +40,10 @@ export function usePlan(
   const [state, setState] = useState<PlanState>(idlePlan);
   /** The person as stored, before any what-if toggles. */
   const [storedPerson, setStoredPerson] = useState<Person | null>(null);
-  const stored = useRef<{ userId: string; person: Person } | null>(null);
+  const stored = useRef<{ key: string; person: Person } | null>(null);
+  const key = subjectKey(subject);
+  const subjectRef = useRef(subject);
+  subjectRef.current = subject;
   const run = useRef(0);
   const codesKey = municipalityCodes.join(',');
   const { includeProposedHabits, includeUnverifiedBenefits } = assumptions;
@@ -46,13 +52,19 @@ export function usePlan(
     async (rereadPerson: boolean) => {
       const current = ++run.current;
       const codes = codesKey ? codesKey.split(',') : [];
-      if (!userId || codes.length === 0) {
+      const subject = subjectRef.current;
+      if (stored.current && stored.current.key !== key) {
+        stored.current = null;
+        setStoredPerson(null);
+      }
+      if (subject.kind === 'none' || codes.length === 0) {
         setState(idlePlan);
         return;
       }
-      if (stored.current && stored.current.userId !== userId) {
-        stored.current = null;
-        setStoredPerson(null);
+      // A person typed into the page is its own source: there is nothing stored to read first.
+      if (subject.kind === 'inline' && !stored.current) {
+        stored.current = { key, person: subject.person };
+        setStoredPerson(subject.person);
       }
       const planAssumptions = { includeProposedHabits, includeUnverifiedBenefits };
       setState(previous => ({
@@ -63,9 +75,9 @@ export function usePlan(
       try {
         let result: PlanResult | null = null;
         if (!stored.current || rereadPerson) {
-          result = await client.plan({ userId, municipalityCodes: codes, assumptions: planAssumptions });
+          result = await client.plan({ subject, municipalityCodes: codes, assumptions: planAssumptions });
           if (current !== run.current) return;
-          stored.current = { userId, person: result.person };
+          stored.current = { key, person: result.person };
           setStoredPerson(result.person);
         }
         const person = stored.current.person;
@@ -77,7 +89,7 @@ export function usePlan(
             assumptions: planAssumptions,
           });
         } else if (!result) {
-          result = await client.plan({ userId, municipalityCodes: codes, assumptions: planAssumptions });
+          result = await client.plan({ subject, municipalityCodes: codes, assumptions: planAssumptions });
         }
         if (current !== run.current) return;
         setState({ phase: 'ready', result, error: null, refreshing: false, loadedAt: Date.now() });
@@ -91,7 +103,7 @@ export function usePlan(
         }));
       }
     },
-    [client, userId, codesKey, includeProposedHabits, includeUnverifiedBenefits, overrides],
+    [client, key, codesKey, includeProposedHabits, includeUnverifiedBenefits, overrides],
   );
 
   useEffect(() => {
@@ -114,8 +126,11 @@ export type BankFeedState = {
   checkedAt: number | null;
   /** When a poll last brought new activity while the workspace was open. */
   changedAt: number | null;
-  /** Transactions that arrived while the workspace was open. */
-  newTransactions: number;
+  /**
+   * Movements added to the ledger while the workspace was open, or null when that cannot be told
+   * (the size of the ledger before the first change is not known).
+   */
+  newTransactions: number | null;
   error: ToolError | null;
   pollMs: number;
 };
@@ -136,18 +151,24 @@ const idleFeed: BankFeedState = {
 const clampPoll = (intervalMs: number | undefined) => Math.min(60_000, Math.max(5_000, intervalMs ?? 10_000));
 
 /**
- * Follows the synthetic bank feed by cursor polling `get_bank_updates`. New activity calls
+ * Follows the bank feed by cursor polling the bank-updates tool of the subject. New activity calls
  * `onActivity` so the plan re-reads the person's figures. Polling pauses while the tab is hidden.
+ * Only a stored subject has a feed: the signed-in person or a demo persona.
  */
-export function useBankFeed(client: ToolClient, userId: string | null, onActivity: () => void) {
+export function useBankFeed(client: ToolClient, subject: Subject, onActivity: () => void) {
   const [state, setState] = useState<BankFeedState>(idleFeed);
   const [attempt, setAttempt] = useState(0);
   const notify = useRef(onActivity);
   notify.current = onActivity;
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` restarts the feed on retry.
+  const key = subjectKey(subject);
+  const subjectRef = useRef(subject);
+  subjectRef.current = subject;
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for the subject; `attempt` restarts the feed on retry.
   useEffect(() => {
-    if (!userId) {
+    const subject = subjectRef.current;
+    if (subject.kind === 'none' || subject.kind === 'inline') {
       setState(idleFeed);
       return;
     }
@@ -155,13 +176,15 @@ export function useBankFeed(client: ToolClient, userId: string | null, onActivit
     let timer: ReturnType<typeof setTimeout> | undefined;
     let cursor = 0;
     let first = true;
+    /** Movements in the ledger at the last event seen; null until that is known. */
+    let ledgerSize: number | null = null;
     let pollMs = idleFeed.pollMs;
     setState({ ...idleFeed, phase: 'connecting' });
 
     const loadSummary = async () => {
       try {
         const period = lastCompleteMonths(new Date().toISOString().slice(0, 10), 3);
-        const summary = await client.bankSummary(userId, period);
+        const summary = await client.bankSummary(subject, period);
         if (!cancelled) setState(previous => ({ ...previous, summary, summaryError: null }));
       } catch (error) {
         if (!cancelled)
@@ -170,7 +193,7 @@ export function useBankFeed(client: ToolClient, userId: string | null, onActivit
     };
     const loadRuntime = async () => {
       try {
-        const runtime = await client.bankRuntime(userId);
+        const runtime = await client.bankRuntime(subject);
         if (cancelled) return;
         pollMs = clampPoll(runtime.intervalMs);
         setState(previous => ({ ...previous, runtime, pollMs }));
@@ -188,8 +211,15 @@ export function useBankFeed(client: ToolClient, userId: string | null, onActivit
       try {
         const received: BankEvent[] = [];
         let requiresRefresh = false;
+        if (first) {
+          // Start near the end of the log: the five newest events are enough for the list.
+          const head = await client.bankUpdates(subject, 0, 1);
+          cursor = Math.max(0, head.latestRevision - 5);
+          // An empty log on an untouched ledger means the ledger holds nothing yet.
+          if (head.latestRevision === 0) ledgerSize = 0;
+        }
         for (let page = 0; page < 5; page += 1) {
-          const updates = await client.bankUpdates(userId, cursor, 100);
+          const updates = await client.bankUpdates(subject, cursor, 100);
           cursor = updates.nextCursor;
           received.push(...updates.events);
           requiresRefresh ||= updates.requiresRefresh;
@@ -197,7 +227,9 @@ export function useBankFeed(client: ToolClient, userId: string | null, onActivit
         }
         if (cancelled) return;
         const changed = !first && (received.length > 0 || requiresRefresh);
-        const added = received.reduce((total, event) => total + event.transactionCount, 0);
+        // `transactionCount` is the size of the ledger after each change, not a per-event delta.
+        const added = first ? 0 : addedTransactions(ledgerSize, received);
+        ledgerSize = received.at(-1)?.transactionCount ?? ledgerSize;
         const now = Date.now();
         setState(previous => ({
           ...previous,
@@ -206,7 +238,12 @@ export function useBankFeed(client: ToolClient, userId: string | null, onActivit
           checkedAt: now,
           events: [...received.reverse(), ...previous.events].slice(0, 5),
           changedAt: changed ? now : previous.changedAt,
-          newTransactions: previous.newTransactions + (changed ? added : 0),
+          newTransactions:
+            !changed || received.length === 0
+              ? previous.newTransactions
+              : added === null || previous.newTransactions === null
+                ? null
+                : previous.newTransactions + added,
         }));
         if (first) {
           first = false;
@@ -227,7 +264,7 @@ export function useBankFeed(client: ToolClient, userId: string | null, onActivit
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [client, userId, attempt]);
+  }, [client, key, attempt]);
 
   return { state, retry: useCallback(() => setAttempt(value => value + 1), []) };
 }

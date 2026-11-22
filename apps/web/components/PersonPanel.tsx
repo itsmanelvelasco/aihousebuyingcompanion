@@ -1,20 +1,26 @@
-import { useId } from 'react';
+import { type FormEvent, useId, useState } from 'react';
 import type { Habit, Person, PlanResult } from '../../../packages/contracts/planner.ts';
+import type { ToolClient } from '../client.ts';
 import { formatDate, formatEuros, formatMonthly, formatShare } from '../format.ts';
 import type { PlanState } from '../hooks.ts';
+import type { Subject, WorkspaceLaunch } from '../launch.ts';
 import type { HabitOverrides } from '../view-model.ts';
 import {
   baselineMonthlySavingsCents,
   basisLabel,
+  eurosToCents,
   habitCounted,
   habitMonthlyEffectCents,
   habitStatusLabel,
 } from '../view-model.ts';
 import { Badge, ErrorNote, Icon, Skeleton, Switch } from './bits.tsx';
 
-const demoProfiles = ['user-001', 'user-002', 'user-003', 'user-004'];
-
 type Props = {
+  client: ToolClient;
+  subject: Subject;
+  launch: WorkspaceLaunch;
+  mode: 'host' | 'standalone' | 'fixture';
+  /** A label for whose figures these are, or null when nobody is selected. */
   userId: string | null;
   plan: PlanState;
   /** The person as stored; habit rows show these statuses, not the what-if ones. */
@@ -25,9 +31,150 @@ type Props = {
   onToggleHabit: (habit: Habit, on: boolean) => void;
   onIncludeProposed: (on: boolean) => void;
   onReset: () => void;
-  onChooseUser: (userId: string) => void;
+  onSubject: (subject: Subject) => void;
+  /** Plan for a person typed into the page; nothing is stored. */
+  onInline: (person: Person) => void;
+  /** The signed-in person saved a detail: re-read the plan. */
+  onSaved: () => void;
   onRetry: () => void;
 };
+
+const euroFields = [
+  { name: 'income', label: 'Monthly income, €' },
+  { name: 'expenses', label: 'Monthly expenses, €' },
+  { name: 'savings', label: 'Savings today, €' },
+  { name: 'budget', label: 'Home budget, €' },
+] as const;
+
+/** Four money fields in whole euros. The values go to the server as integer cents; no sum is made here. */
+function FiguresForm(props: {
+  submit: string;
+  busy?: boolean;
+  onSubmit: (cents: Record<string, number | undefined>) => void;
+}) {
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    props.onSubmit(
+      Object.fromEntries(euroFields.map(({ name }) => [name, eurosToCents(String(form.get(name) ?? ''))])),
+    );
+  };
+  return (
+    <form className="figures-form" onSubmit={onSubmit}>
+      {euroFields.map(field => (
+        <label key={field.name} className="rc-field">
+          {field.label}
+          <input name={field.name} inputMode="decimal" autoComplete="off" />
+        </label>
+      ))}
+      <button type="submit" className="rc-btn rc-btn--primary rc-btn--sm" disabled={props.busy}>
+        {props.submit}
+      </button>
+    </form>
+  );
+}
+
+/** Nobody is selected: say what signing in gives, offer the demo personas and a what-if that stores nothing. */
+function NoPerson(props: Props) {
+  const { launch, mode } = props;
+  const whatIf = (cents: Record<string, number | undefined>) =>
+    props.onInline({
+      id: 'what-if',
+      displayName: 'What-if estimate',
+      synthetic: false,
+      householdSize: null,
+      currentMunicipalityCode: null,
+      finances: {
+        monthlyIncomeCents: cents.income ?? null,
+        monthlyExpensesCents: cents.expenses ?? null,
+        currentSavingsCents: cents.savings ?? null,
+        emergencyReserveCents: 0,
+        basis: 'declared',
+        asOf: null,
+      },
+      home: { floorAreaM2: null, budgetCents: cents.budget ?? null, depositRate: 0.2 },
+      habits: [],
+    });
+  return (
+    <div className="rc-note no-person">
+      <p>
+        <strong>You are not signed in.</strong> With an account your own answers, bank summary and habits are kept
+        privately and this page plans from them; assistants you connect can read and save them only with your
+        permission.{' '}
+        {mode === 'host' ? (
+          'Ask ReloCat in the chat to connect your account.'
+        ) : (
+          <>
+            <a href="/login?next=%2Fworkspace">Sign in</a> or <a href="/signup?next=%2Fworkspace">create an account</a>.
+          </>
+        )}
+      </p>
+      {launch.demoIds.length ? (
+        <>
+          <p>Or look at a fictional demo persona (invented figures, read-only):</p>
+          <div className="choices">
+            {launch.demoIds.map(id => (
+              <button
+                key={id}
+                type="button"
+                className="rc-btn rc-btn--sm"
+                onClick={() => props.onSubject({ kind: 'demo', demoId: id })}
+              >
+                {id}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
+      <details>
+        <summary>Try a what-if with your own numbers (nothing is saved)</summary>
+        <FiguresForm submit="Estimate" onSubmit={whatIf} />
+      </details>
+    </div>
+  );
+}
+
+/** The signed-in person can add details to their own profile; a demo persona and a what-if cannot be saved. */
+function SaveDetails(props: Props) {
+  const [state, setState] = useState<{ busy: boolean; message: string | null; failed: boolean }>({
+    busy: false,
+    message: null,
+    failed: false,
+  });
+  const save = async (cents: Record<string, number | undefined>) => {
+    const finance = {
+      ...(cents.income === undefined ? {} : { monthlyIncomeCents: cents.income }),
+      ...(cents.expenses === undefined ? {} : { monthlyExpensesCents: cents.expenses }),
+      ...(cents.savings === undefined ? {} : { currentSavingsCents: cents.savings }),
+    };
+    const data = {
+      ...(Object.keys(finance).length ? { finance } : {}),
+      ...(cents.budget ? { housing: { tenure: 'buy', budgetCents: cents.budget } } : {}),
+    };
+    if (!Object.keys(data).length)
+      return setState({ busy: false, message: 'Enter at least one figure.', failed: true });
+    setState({ busy: true, message: null, failed: false });
+    try {
+      await props.client.saveInputs(data, true);
+      setState({ busy: false, message: 'Saved to your profile.', failed: false });
+      props.onSaved();
+    } catch (error) {
+      setState({ busy: false, message: error instanceof Error ? error.message : 'Could not save.', failed: true });
+    }
+  };
+  return (
+    <details className="save-details">
+      <summary>Add or correct your figures</summary>
+      <p className="hint">Saved to your own profile as confirmed by you. Leave a field empty to keep what is stored.</p>
+      <FiguresForm submit="Save" busy={state.busy} onSubmit={cents => void save(cents)} />
+      {state.message ? (
+        <p className={state.failed ? 'hint hint-warn' : 'hint'} role="status">
+          {state.message}
+        </p>
+      ) : null}
+    </details>
+  );
+}
 
 export function PersonPanel(props: Props) {
   const { plan, person } = props;
@@ -40,30 +187,30 @@ export function PersonPanel(props: Props) {
         </h2>
         {person?.synthetic ? (
           <Badge tone="violet" title="A fictional profile created for the demo.">
-            Synthetic profile
+            Fictional demo profile
+          </Badge>
+        ) : props.subject.kind === 'me' ? (
+          <Badge tone="ok" title="Your own profile, kept in your account.">
+            Your profile
           </Badge>
         ) : null}
       </header>
-      {!props.userId ? (
-        <div className="rc-note">
-          <p>
-            <strong>No person selected.</strong> Ask ReloCat in the chat to open the workspace for a profile, or pick
-            one of the synthetic demo profiles.
-          </p>
-          <div className="choices">
-            {demoProfiles.map(id => (
-              <button key={id} type="button" className="rc-btn rc-btn--sm" onClick={() => props.onChooseUser(id)}>
-                {id}
-              </button>
-            ))}
-          </div>
-        </div>
+      {props.subject.kind === 'none' ? (
+        <NoPerson {...props} />
+      ) : !person && plan.phase === 'error' && plan.error?.kind === 'signin' ? (
+        <p className="rc-note rc-note--warn">
+          <strong>Sign in to see your own plan.</strong> {plan.error.message}{' '}
+          {props.mode === 'host' ? null : <a href="/login?next=%2Fworkspace">Sign in</a>}
+        </p>
       ) : !person && plan.phase === 'error' && plan.error ? (
         <ErrorNote title="Could not load this person" error={plan.error} onRetry={props.onRetry} />
       ) : !person && !props.hasPlaces ? (
-        <p className="rc-note">
-          Profile <strong>{props.userId}</strong>. The figures load with the plan: add a place to compare first.
-        </p>
+        <>
+          <p className="rc-note">
+            Showing <strong>{props.userId}</strong>. The figures load with the plan: add a place to compare first.
+          </p>
+          {props.subject.kind === 'me' ? <SaveDetails {...props} /> : null}
+        </>
       ) : !person ? (
         <>
           <p className="rc-sr-only" role="status">
@@ -72,7 +219,10 @@ export function PersonPanel(props: Props) {
           <Skeleton lines={6} />
         </>
       ) : (
-        <PersonDetails {...props} person={person} result={plan.result} />
+        <>
+          <PersonDetails {...props} person={person} result={plan.result} />
+          {props.subject.kind === 'me' ? <SaveDetails {...props} /> : null}
+        </>
       )}
     </section>
   );
@@ -207,7 +357,7 @@ function PersonDetails(props: Props & { person: Person; result: PlanResult | nul
           ) : null}
         </div>
         <p id={noteId} className="hint">
-          Switches re-run the plan as a what-if. Nothing is saved to the profile.
+          Switches re-run the plan as a what-if. They do not change what is stored.
         </p>
       </div>
     </div>

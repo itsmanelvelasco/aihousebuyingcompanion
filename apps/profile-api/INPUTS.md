@@ -6,13 +6,24 @@ The interviewer, frontend, bank-analysis client and property-selection flow can 
 
 | Method | Route | Result |
 | --- | --- | --- |
-| POST | `/users/:id/inputs` | Atomically import `{ "inputs": [...] }`, 1–50 records per request. Identical ID/data retries are idempotent; conflicting ID reuse returns 409. |
+| POST | `/users/:id/inputs` | Atomically import `{ "inputs": [...] }`, 1–50 records per request. A record whose ID is new is added; the same ID with the same content is an idempotent retry; the same ID with different content replaces the stored record, so a client can update its own record. Answers `{ inserted, replaced, duplicates, pruned }`. |
 | GET | `/users/:id/inputs` | Read stored source records. |
 | PUT | `/users/:id/inputs/:inputId` | Replace a complete source record to correct it; ID must match. |
 | DELETE | `/users/:id/inputs/:inputId` | Remove a source record; older values may become visible again. |
 | GET | `/users/:id/context` | Read normalized data, field provenance, conflicts, warnings and a prepared municipality-tool input. No recommendation call is executed. |
 
-Up to 500 source records are stored in each runtime user's `app-inputs.json`. Writes are atomic and serialized per user within one API process. Existing body limits and shared-token demo limitations apply. Original profile files and aggregate exports are unchanged by input events. Full replacements use last-write-wins; multiple server processes need database-level coordination.
+Source records are rows of the `input_records` table of the runtime SQLite database (`DATABASE_FILE`), at most 500 per user. Each request is one transaction: all of its records are stored, or none. Existing body limits and shared-token demo limitations apply. Committed profile fixtures and aggregate exports are unchanged by input events. Replacements use last-write-wins.
+
+## Retention: what happens at 500 records
+
+Reaching the cap does not lock the profile. After a write that takes a user past 500 records, the server deletes **superseded** records until 500 remain, and reports how many in `pruned`:
+
+- A record is superseded when every field it carries has a strictly newer observation (`observedAt`) from the same `source`. Such a record no longer takes part in resolution, so `/context` is the same with or without it.
+- Superseded records of the sources just written go first, then those of other sources; within each group the oldest observation goes first. Records of the request itself are never pruned.
+- A record that holds the newest observation of its source for even one field is never deleted, whether it is confirmed or not. The winning value of a field, confirmed or not, is therefore never dropped, and neither is a candidate of an open conflict.
+- Only when 500 stored records each still decide some field is the write refused, with 409 and a message asking to delete records. That takes hundreds of records sharing one timestamp, or far more distinct fields than the contract has.
+
+One consequence: after pruning, deleting the newest record of a field no longer brings back a value older than the ones that were pruned. Below the cap nothing is pruned and `DELETE` behaves as described above.
 
 ## Example: several inputs in one request
 
@@ -74,7 +85,7 @@ Money uses integer EUR cents. Finance amounts are nonnegative; debt payments are
 
 For each field, use the latest observation **within each source type**. If those latest source candidates include confirmed values, compare only confirmed candidates. Matching values resolve together with their provenance. Different values remain a conflict, and that field resolves to null. Equal timestamps with different values within a source also conflict. Source labels have no hidden priority. School-stage arrays are normalized as sets.
 
-A newer unconfirmed observation replaces an older confirmed observation within the same source type before cross-source comparison. Use confirmation carefully and correct erroneous source records with PUT/DELETE. `observedAt` is supplied by the client, so submitting a future timestamp can dominate that source; this demo does not independently attest timestamps. There is no automatic expiration.
+A newer unconfirmed observation replaces an older confirmed observation within the same source type before cross-source comparison. Use confirmation carefully and correct erroneous source records with PUT/DELETE, or by posting the record again under the same ID. `observedAt` is supplied by the client, so submitting a future timestamp can dominate that source; this demo does not independently attest timestamps. There is no automatic expiration.
 
 The context also reads current saved details/preferences/bank snapshot as an unconfirmed baseline. Known stage aliases such as `ESO` and `primaria` are normalized. Invalid saved fields are omitted with a warning; they are not treated as verified. A missing profile date uses a documented 1970 ordering sentinel. Profile bank values are snapshot totals, not live ledger results: submit reviewed bank-analysis aggregates explicitly. Confirmed input values can supersede the baseline. Remaining disagreements are exposed.
 

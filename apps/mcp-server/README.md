@@ -12,15 +12,15 @@ npm start
 curl http://127.0.0.1:8787/health
 ```
 
-The Streamable HTTP endpoint is `http://127.0.0.1:8787/mcp`. In MCP Inspector, select **Streamable HTTP** and enter that URL. Run `npm test` to exercise initialization, tool discovery and every tool through the official client. Run `npm run typecheck` and `npm run data:validate` to check the code and snapshot.
+`npm start` runs the one ReloCat server (`apps/server/index.ts`); the MCP server described here is assembled by `createMcpServer` in `tools.ts` and mounted at `/mcp`. The Streamable HTTP endpoint is `http://127.0.0.1:8787/mcp`. In MCP Inspector, select **Streamable HTTP** and enter that URL. Run `npm test` to exercise initialization, tool discovery and every tool through the official client. Run `npm run typecheck` and `npm run data:validate` to check the code and snapshot.
 
-For hosting, use `npm start` with `HOST=0.0.0.0` and the platform’s `PORT`, or build the included image with `docker build -t relocat-mcp .` and run it with `docker run --rm -p why 127.0.0.1:8787:8787 relocat-mcp`. The service speaks HTTP behind the host’s TLS proxy. Connect ChatGPT to the resulting HTTPS `/mcp` URL or use Secure MCP Tunnel. Requests from browser origins are rejected unless their exact origin is listed in `ALLOWED_ORIGINS` as a comma-separated value. [OpenAI’s connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt)
+For hosting, use `npm start` with `HOST=0.0.0.0` and the platform’s `PORT`, or build the included image with `docker build -t relocat-mcp .` and run it with `docker run --rm -p 127.0.0.1:8787:8787 relocat-mcp`. The service speaks HTTP behind the host’s TLS proxy. Connect ChatGPT to the resulting HTTPS `/mcp` URL or use Secure MCP Tunnel. A request that carries a browser `Origin` is rejected unless it comes from the site's own pages, from `PUBLIC_ORIGIN`, or from an exact origin listed in `ALLOWED_ORIGINS` (comma-separated); agents send no `Origin` and are not affected. [OpenAI’s connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt)
 
 The tools are read-only. The application processes supplied household criteria in memory for the duration of the call. The schema takes age, tax-base amounts and qualifying facts. It has no fields for identities, tax IDs or bank details.
 
 ## Town Explorer sample plugin
 
-Town Explorer is a read-only MCP App on the same `/mcp` endpoint. `show_town_explorer` opens a map of Catalonia with cards for a recommendation or the pilot directory. Selecting a pin or card loads sourced housing indicators, sample driving and public transport times, schools, and housing measures through the MCP Apps host bridge. It runs with no profile API, bank data, or OpenAI API key. [OpenAI’s MCP Apps UI guide](https://developers.openai.com/plugins/build/chatgpt-ui)
+Town Explorer is a read-only MCP App on the same `/mcp` endpoint. `show_town_explorer` opens a map of Catalonia with cards for a recommendation or the pilot directory. Selecting a pin or card loads sourced housing indicators, sample driving and public transport times, schools, and housing measures through the MCP Apps host bridge. It needs no bank data and no OpenAI API key. [OpenAI’s MCP Apps UI guide](https://developers.openai.com/plugins/build/chatgpt-ui)
 
 After either recommendation tool, pass its name and exact arguments to `show_town_explorer`. The widget reruns that read-only query against the same snapshot, preserving filters, result order, and the travel date. For example, if the original call was `recommend_towns` with `{"schoolStages":["eso"],"limit":3}`, pass:
 
@@ -35,22 +35,42 @@ After either recommendation tool, pass its name and exact arguments to `show_tow
 
 The map uses the pilot’s sourced town centres and simplified ICGC provincial boundaries (20 January 2026, 1:1,000,000). The illustration and boundaries are bundled with the widget. [ICGC boundary data](https://www.icgc.cat/en/Geoinformation-and-Maps/Data-and-products/Cartographic-geoinformation/Administrative-boundaries) · [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 
-### Preview in a browser
+### Try it in a browser
+
+There is no standalone browser page for the Town Explorer: `/preview` on the server is the [journey board](../board/README.md). The Town Explorer is an MCP App, so it renders inside a host that supports MCP Apps (ChatGPT, below). To exercise the same tools from a browser, start the server and open the local test page:
 
 ```sh
 npm ci
-ALLOWED_ORIGINS=http://127.0.0.1:8787 npm start
+npm start
 ```
 
-Open [the preview](http://127.0.0.1:8787/preview) to try a sample ESO shortlist, or [start on Calaf](http://127.0.0.1:8787/preview?town=080312). Pick any visible card or pin to fetch its profile from the running MCP. Use the same host and port in the preview URL and the origin allowlist. If port 8787 is occupied, set `PORT` and update both URLs.
+Then open [the test page](http://127.0.0.1:8787/test) (see [Browser test page](#browser-test-page)). If port 8787 is occupied, set `PORT` and use that port in the URL.
 
 ### Try in ChatGPT
 
-1. Run the municipality server and make its `/mcp` endpoint available over HTTPS or with a supported private tunnel. Keep bank connection variables unset for this sample.
-2. In [ChatGPT Plugins](https://chatgpt.com/plugins), choose **Add custom MCP server**, enter your `https://…/mcp` URL, and name the personal plugin **ReloCat Town Explorer**. Choose **No authentication** for the public-data sample. Install or refresh the connection. [Official setup guide](https://developers.openai.com/plugins/quickstart)
+1. Run the server (`npm start`) and make its `/mcp` endpoint available over HTTPS or with a supported private tunnel.
+2. In [ChatGPT Plugins](https://chatgpt.com/plugins), choose **Add custom MCP server**, enter your `https://…/mcp` URL, and name the personal plugin **ReloCat Town Explorer**. Choose **No authentication** for the public-data sample. (Choose **OAuth** instead to use your own account through the personal tools; see the tool table below.) Install or refresh the connection. [Official setup guide](https://developers.openai.com/plugins/quickstart)
 3. In a new ChatGPT Work conversation, select the plugin and ask “Open ReloCat Town Explorer for Calaf. Show me the travel estimates to Barcelona and Girona.” Switch to Camarasa in the widget to see how a town with driving estimates and no transit samples appears.
 
 ## Tools
+
+The table lists the place, incentive and listing tools. The same endpoint also registers the interview and cash-flow tools (`apps/mcp-server/interview-tools.ts`), the savings planner (`planner-tools.ts`), the read-only bank tools (`bank-tools.ts`), the workspace widget and `get_data_sources`.
+
+### Public and personal tools
+
+**No tool takes a user id.** The HTTP layer resolves who is calling and hands `createMcpServer` a `Caller` (`identity.ts`); a tool reaches the caller's own person, or a read-only demo persona from the allowlist, and nothing else.
+
+| Tool | Access | Reads or writes |
+| --- | --- | --- |
+| Every tool in the table below, `get_place`, `get_data_sources`, the interview and cash-flow tools, `show_town_explorer` | Public | Places, incentives, schools, transport, sources, calculators. No person. |
+| `plan_home_savings` with an inline `person` | Public | Arithmetic on the figures sent; nothing stored. |
+| `plan_home_savings` with `demoId`, `get_demo_person`, `get_demo_bank_summary`, `get_demo_bank_updates`, `get_demo_bank_runtime` | Public demo (only while `PUBLIC_DEMO` is on) | A fictional persona from `DEMO_USER_IDS`, read-only. |
+| `show_workspace` | Public | Opens the workspace for the signed-in person, a demo persona (`demoId`) or nobody. |
+| `open_demo`, `update_demo` (registered by `apps/board`) | Public | A board run's own scripted state; never a stored person. |
+| `plan_home_savings` with `me: true`, `get_person`, `get_my_inputs`, `get_bank_summary`, `get_bank_updates`, `get_bank_runtime` | Personal, scope `person:read` | The caller's own person. |
+| `save_my_inputs` | Personal, scope `person:write` | Adds one dated input record to the caller's own person. |
+
+A personal tool called without sign-in answers HTTP `401` with `WWW-Authenticate` (and the tool error carries `_meta["mcp/www_authenticate"]`); with a token that lacks the scope, `403`. Each tool declares `securitySchemes` in `_meta` (`noauth`, `oauth2`, or both). The standalone server in `http.ts` has no accounts: there the personal tools say so.
 
 | Tool | Use |
 | --- | --- |
@@ -135,7 +155,7 @@ npm run data:refresh
 npm run data:validate
 ```
 
-Refresh downloads the public sources and validates identifiers, metric scopes and rail references before replacing `data/towns.json` atomically. A failed source refresh leaves the previous snapshot available. The annual resale workbook defaults to 2025. Use `SALES_YEAR` for a published annual workbook. The server loads the published fixture at startup. Restart or redeploy after refreshing it. Policy changes are reviewed against the linked official rules and updated in `data/incentives.json` and `packages/places/eligibility.ts`.
+Refresh downloads the public sources and validates identifiers, metric scopes and rail references before replacing `data/towns.json` atomically. A failed source refresh leaves the previous snapshot available. The annual resale workbook defaults to the latest published year; `SALES_YEAR` pins another one. The server loads the published fixture at startup. Restart or redeploy after refreshing it. Policy changes are reviewed against the linked official rules and updated in `data/incentives.json` and `packages/places/eligibility.ts`.
 
 The committed FGC RL1/RL2 service calendar covers November 19 through December 31, 2026. Calaf, Juncosa and Ulldemolins have school directory coverage. Their local transport schedules are outside the current feed. School journeys use the official directory’s geographic coordinates and FGC stop times, with estimated walks based on straight-line distance from town centres. Admissions, school transport, precise walking routes, disruptions and round trips require separate checks. Missing price and indicator data are reported explicitly. Resale estimates describe historical averages, and retail figures retain their census year. Grant call status is independent of household eligibility.
 
@@ -157,7 +177,7 @@ For example, call `get_town_profile` with `{"municipalityCode":"251180"}` to rec
 
 `search_homes` runs an on-demand Google search through treg's `treg.google.serp.organic` route, constrained to Idealista listing URLs. It returns **indexed examples, not verified live inventory**. Search results can be stale or refer to another town; each example therefore keeps `municipalityCode: null`, `locationConfidence: unknown`, `availability: unknown` and `filtersVerified: false`. Price and bedroom criteria are search hints. The tool does not infer structured prices or bedrooms from snippets, and examples must not be used to satisfy hard household constraints without checking the listing.
 
-Set `TREG_TOKEN` to a valid treg API key in the environment of the server process, then restart it. This works with both `npm start` and the connected `npm run dev`. The ChatGPT treg connector's OAuth session is separate from the app's credentials. If using a personal sign-in token, also set `TREG_ORG` to the intended team slug. No Idealista API key is required for this web-search route. For Docker, pass the variables with `--env TREG_TOKEN` and, if needed, `--env TREG_ORG`; never bake them into the image. Environment files are not automatically loaded by these scripts.
+Set `TREG_TOKEN` to a valid treg API key in the environment of the server process (or in `.env`), then restart it. This works with both `npm start` and `npm run dev`. The ChatGPT treg connector's OAuth session is separate from the app's credentials. If using a personal sign-in token, also set `TREG_ORG` to the intended team slug. No Idealista API key is required for this web-search route. For Docker, pass the variables with `--env TREG_TOKEN` and, if needed, `--env TREG_ORG`; never bake them into the image. `npm start` and `npm run dev` load `.env` when it exists; the Docker image does not.
 
 Example tool input:
 
@@ -167,16 +187,18 @@ Example tool input:
 
 At most three town queries run per call, each with a USD 0.01 route ceiling and `Cache-Control: no-cache`. Each successful town response includes up to five deduplicated Idealista property URLs, search titles/snippets, the search timestamp and the charge when reported by treg. Missing access returns `provider_unavailable`; authentication, quota, rate limits and transport/schema failures return `provider_error`; a successful search with no accepted links returns `no_indexed_examples`. None means that no properties exist. A Google query link is returned for manual follow-up in every case.
 
+**Spending guard.** The tool needs no sign-in, so the server bounds what it can spend (`packages/listings/budget.ts`). Paid searches are counted per town query: at most `LISTINGS_PER_MINUTE_LIMIT` a minute (default 12) and `LISTINGS_DAILY_LIMIT` per UTC day (default 200, about USD 2 at the route ceiling), for all callers together. The server keeps the counters in the `ai_usage` table of the runtime database, so a restart does not reset them. A town query refused by a cap returns `status: "budget_exhausted"` with `errorCode` `minute_limit` or `daily_limit`, no examples and its `searchUrl`: it was not run, so it says nothing about homes. An identical query (same town, operation, hints and `limitPerTown`) within `LISTINGS_CACHE_SECONDS` (default 600) is answered from memory with `cached: true` and `costUsd: 0`, so a retry is not a second charge; failed searches are not cached.
+
 The server forwards only town names/comarcas and the explicit operation, budget and bedroom hints—not profiles, bank data or household identities. It does not fetch listing pages or relay Idealista's official ChatGPT/Claude app. Those apps do not support manual use by other MCP clients. Sources: [treg integration documentation](https://treg.to/llms.txt), [Idealista app documentation](https://idealista.github.io/mcp-app-docs/openai/).
 
 Validation included a live treg search for Calaf on 21 November 2026 (USD 0.00038), followed by adapter normalization of that actual response. Automated tests use injected provider responses and never spend credits. A live end-to-end call from the local server still requires configuring `TREG_TOKEN`.
 
 ## Browser test page
 
-Open `http://127.0.0.1:8787/test` after starting either the standalone MCP server or `npm run dev`. Restart an already-running server after updating the code. The page offers town profiles, family/budget recommendations and Idealista example searches, with readable results, source links and an expandable full MCP response. The header reports whether the server process has `TREG_TOKEN` configured; it does not validate the key until a search runs. Never enter a key in the browser.
+Open `http://127.0.0.1:8787/test` after starting the server with `npm start` or `npm run dev`. Restart an already-running server after updating the code. The page offers town profiles, family/budget recommendations and Idealista example searches, with readable results, source links and an expandable full MCP response. The header reports whether the server process has `TREG_TOKEN` configured; it does not validate the key until a search runs. Never enter a key in the browser.
 
 The page and its API are restricted to localhost hosts, loopback connections and same-origin requests. Its tool allowlist excludes board/bank writes. It calls the real MCP server through an in-memory MCP client; it does not introduce separate recommendation logic. A live search is triggered only by the search button and uses the server's treg account. This is a local test interface, not a publicly deployed user portal.
 
 ## Connect an agent
 
-Open `/connect` on the connected demo or standalone MCP server for the ReloCat agent setup guide. It includes ChatGPT, Claude, Hermes, OpenClaw, Codex, Cursor, Gemini CLI and a generic Streamable HTTP path; Meta Muse is explicitly marked unverified. The page provides editable endpoint configuration, copyable examples and links to official client documentation. Localhost is for clients on the same machine; cloud clients need an operator-provided HTTPS endpoint or supported tunnel. This page does not deploy the server or add authentication. Brand logos load from Brandfetch and official provider sites.
+Open `/connect` on the running server for the ReloCat agent setup guide. It includes ChatGPT, Claude, Hermes, OpenClaw, Codex, Cursor, Gemini CLI and a generic Streamable HTTP path; Meta Muse is explicitly marked unverified. The page provides editable endpoint configuration, copyable examples and links to official client documentation. Localhost is for clients on the same machine; cloud clients need an operator-provided HTTPS endpoint or supported tunnel. This page does not deploy the server or add authentication. Brand logos load from Brandfetch and official provider sites.

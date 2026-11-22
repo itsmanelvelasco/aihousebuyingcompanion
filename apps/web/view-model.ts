@@ -99,6 +99,7 @@ const statusText: Record<PlacePlan['status'], string> = {
   target_reached: 'Upfront cash already covered',
   no_positive_savings: 'No finite timeline: nothing is being saved each month',
   insufficient_data: 'Not enough data to estimate',
+  beyond_horizon: 'No timeline: at this rate the upfront cash is more than 50 years away',
 };
 
 const priceBasisText: Record<PlacePlan['priceBasis'], string> = {
@@ -324,13 +325,21 @@ export function habitCounted(habit: Habit, includeProposed: boolean, overrides: 
 /**
  * The person to send to `plan_home_savings` after toggles: a habit switched on becomes `active`, a
  * habit switched off becomes `paused`. Untouched habits keep their stored status.
+ *
+ * A habit switched on here was not running while the person's figures were observed, so it starts
+ * after them: it is given the day after `finances.asOf` as its start. The planner adds a habit on
+ * top of bank-observed figures only when it started after the observed period.
  */
 export function applyHabitOverrides(person: Person, overrides: HabitOverrides): Person {
+  const asOf = person.finances.asOf;
+  const dayAfter = asOf ? new Date(Date.parse(`${asOf}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10) : null;
   return {
     ...person,
     habits: person.habits.map(habit => {
       const override = overrides[habit.id];
-      return override === undefined ? habit : { ...habit, status: override ? 'active' : 'paused' };
+      if (override === undefined) return habit;
+      if (!override) return { ...habit, status: 'paused' };
+      return { ...habit, status: 'active', ...(habit.status !== 'active' && dayAfter ? { startedOn: dayAfter } : {}) };
     }),
   };
 }
@@ -389,4 +398,21 @@ export function lastCompleteMonths(today: string, count: number) {
   const [year, month] = today.split('-').map(Number);
   const iso = (date: Date) => date.toISOString().slice(0, 10);
   return { from: iso(new Date(Date.UTC(year, month - 1 - count, 1))), to: iso(new Date(Date.UTC(year, month - 1, 0))) };
+}
+
+/**
+ * Movements added by a run of bank events. Each event's `transactionCount` is the size of the
+ * ledger after that change, so the number added is the last size minus the size before the run.
+ * Null when the size before is unknown; never negative (a deletion is not "new transactions").
+ */
+export function addedTransactions(sizeBefore: number | null, events: { transactionCount: number }[]) {
+  const last = events.at(-1);
+  if (!last) return 0;
+  return sizeBefore === null ? null : Math.max(0, last.transactionCount - sizeBefore);
+}
+
+/** Whole euros typed into a form as integer cents, or undefined for an empty or unusable value. */
+export function eurosToCents(text: string) {
+  const value = Number(text.trim().replace(/\s/g, '').replace(',', '.'));
+  return text.trim() === '' || !Number.isFinite(value) || value < 0 ? undefined : Math.round(value * 100);
 }

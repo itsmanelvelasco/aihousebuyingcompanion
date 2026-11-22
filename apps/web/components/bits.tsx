@@ -83,6 +83,7 @@ const errorTitles = {
   unavailable: 'Not available on this server',
   failed: 'The request failed',
   invalid: 'Unreadable answer',
+  signin: 'Sign in needed',
 };
 
 /** A failed tool call, with the reason and a way to try again. Never replaced by sample data. */

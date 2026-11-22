@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -19,6 +19,9 @@ import { createBankRegistry, loadBankRegistry } from '../packages/banks/registry
 import type { BankEvent } from '../packages/banks/sync.ts';
 import { createBankSync } from '../packages/banks/sync.ts';
 import { safeId } from '../packages/contracts/ids.ts';
+import { getConnection } from '../packages/db/bank-sync.ts';
+import type { Database } from '../packages/db/database.ts';
+import { open } from '../packages/db/database.ts';
 import { createStore } from '../packages/profiles/store.ts';
 
 const webhookSecret = 'fake-webhook-secret';
@@ -76,11 +79,11 @@ const movement = (externalId: string, amountCents: number, status: 'booked' | 'p
   status,
 });
 
-async function fixture(prefix: string) {
-  const root = await mkdtemp(join(tmpdir(), prefix));
+async function fixture() {
+  const db = open(':memory:');
   const document = { schemaVersion: 1 as const, synthetic: true as const };
   for (const id of ['alice', 'bob']) {
-    await createStore(root).create(id, {
+    await createStore(db).create(id, {
       details: { ...document, id },
       preferences: document,
       'bank-account': {
@@ -93,7 +96,7 @@ async function fixture(prefix: string) {
       },
     });
   }
-  return root;
+  return db;
 }
 
 /** Wait until a condition holds, for work the server does in the background. */
@@ -171,11 +174,11 @@ test('provider helpers give stable IDs, exact cents and sign-safe categories', (
 });
 
 test('a provider syncs end to end: connect, import, idempotent re-sync, updates and events', async () => {
-  const root = await fixture('relocat-banks-sync-');
+  const db = await fixture();
   const { provider, state } = fakeBank();
-  const bank = createBankStore(root);
+  const bank = createBankStore(db);
   const registry = createBankRegistry([provider], fakeEnv);
-  const sync = createBankSync({ ledger: bank, registry, root, clock: () => new Date('2026-11-21T12:00:00Z') });
+  const sync = createBankSync({ ledger: bank, registry, db, clock: () => new Date('2026-11-21T12:00:00Z') });
   const events: BankEvent[] = [];
   const unsubscribe = sync.onEvent(event => events.push(event));
   try {
@@ -227,8 +230,7 @@ test('a provider syncs end to end: connect, import, idempotent re-sync, updates 
     assert.equal(events.length, 3);
     assert.equal(events[2].event.transactionCount, 3);
 
-    const stored = JSON.parse(await readFile(join(root, 'alice', 'bank-connections.json'), 'utf8'));
-    assert.equal(stored.connections[0].cursor, 'cursor-3');
+    assert.equal(getConnection(db, 'alice', connection.id)?.cursor, 'cursor-3');
     assert.equal((await sync.listConnections('alice'))[0].lastSyncAt, '2026-11-21T12:00:00.000Z');
 
     state.feed = [{ ...movement('TX/4', -100), accountId: 'not-an-account' }];
@@ -244,12 +246,12 @@ test('a provider syncs end to end: connect, import, idempotent re-sync, updates 
   } finally {
     unsubscribe();
     await sync.close();
-    await rm(root, { recursive: true, force: true });
+    db.close();
   }
 });
 
 test('connections without webhooks are polled, and persisted links survive a restart', async () => {
-  const root = await fixture('relocat-banks-poll-');
+  const db = await fixture();
   const { provider, state } = fakeBank();
   const polled = defineBankProvider({
     ...provider,
@@ -258,9 +260,9 @@ test('connections without webhooks are polled, and persisted links survive a res
     verifyWebhook: undefined,
     parseWebhook: undefined,
   });
-  const bank = createBankStore(root);
+  const bank = createBankStore(db);
   const registry = createBankRegistry([polled], {});
-  let sync = createBankSync({ ledger: bank, registry, root });
+  let sync = createBankSync({ ledger: bank, registry, db });
   try {
     state.feed = [{ ...movement('TX/1', -2500), id: 'polled-tx-1' }];
     const connection = await sync.connect('alice', {
@@ -272,7 +274,7 @@ test('connections without webhooks are polled, and persisted links survive a res
     await eventually(async () => (await bank.read('alice')).transactions.length === 1, 'polling never imported');
     await sync.close();
 
-    sync = createBankSync({ ledger: bank, registry, root });
+    sync = createBankSync({ ledger: bank, registry, db });
     const restored = await sync.listConnections('alice');
     assert.equal(restored.length, 1);
     assert.equal(restored[0].pollIntervalMs, 1000);
@@ -280,12 +282,12 @@ test('connections without webhooks are polled, and persisted links survive a res
     await assert.rejects(sync.connect('bob', { providerId: 'polled-bank', ref: 'link-poll' }), { status: 409 });
   } finally {
     await sync.close();
-    await rm(root, { recursive: true, force: true });
+    db.close();
   }
 });
 
 test('HTTP routes list providers, manage connections, verify webhooks and stream ledger events', async () => {
-  const root = await fixture('relocat-banks-http-');
+  const db = await fixture();
   const { provider, state } = fakeBank();
   const token = 'banks-test-token';
   const needy = defineBankProvider({
@@ -293,7 +295,7 @@ test('HTTP routes list providers, manage connections, verify webhooks and stream
     id: 'needy-bank',
     env: [{ name: 'BANK_NEEDY_BANK_KEY', description: 'Never set in this test.' }],
   });
-  const server = createProfileApi(root, token, {
+  const server = createProfileApi(db, token, {
     bankRegistry: createBankRegistry([provider, synthetic, needy], fakeEnv),
     heartbeatMs: 40,
   });
@@ -386,7 +388,7 @@ test('HTTP routes list providers, manage connections, verify webhooks and stream
     assert.equal(await webhook('fake-bank', notification, sign(`${notification} `)), 401);
     assert.equal(await webhook('fake-bank', 'x'.repeat(70_000), sign('x')), 413);
     assert.equal((await request('/webhooks/bank/fake-bank')).status, 405);
-    assert.equal((await bank(root).read('alice')).transactions.length, 0, 'rejected webhooks import nothing');
+    assert.equal((await bank(db).read('alice')).transactions.length, 0, 'rejected webhooks import nothing');
 
     state.feed = [movement('TX/1', -2500)];
     assert.equal(await webhook('fake-bank', notification, sign(notification)), 202);
@@ -394,7 +396,7 @@ test('HTTP routes list providers, manage connections, verify webhooks and stream
     const pushed = JSON.parse(/id: 2\nevent: bank\.updated\ndata: (\{[^\n]*\})\n\n/.exec(received)![1]);
     const polled = await request('/users/alice/bank/events?after=1&limit=1');
     assert.deepEqual(pushed, polled.data.events[0], 'stream items have the shape of /events items');
-    const ledger = await bank(root).read('alice');
+    const ledger = await bank(db).read('alice');
     assert.deepEqual(
       ledger.transactions.map(tx => tx.amountCents),
       [-2500],
@@ -427,12 +429,12 @@ test('HTTP routes list providers, manage connections, verify webhooks and stream
     // Closing the server must end the open event stream instead of waiting for it.
     await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
     stream.abort();
-    await rm(root, { recursive: true, force: true });
+    db.close();
   }
 });
 
 test('a non-synthetic provider stores real records, and any real record makes results non-synthetic', async () => {
-  const root = await fixture('relocat-banks-real-');
+  const db = await fixture();
   const { provider, state } = fakeBank();
   // Still a test double: `synthetic: false` only declares how its records must be labelled.
   const realAccount = stableId('real-bank', 'acc-1');
@@ -454,7 +456,7 @@ test('a non-synthetic provider stores real records, and any real record makes re
     },
   });
   const token = 'banks-real-token';
-  const server = createProfileApi(root, token, { bankRegistry: createBankRegistry([real, synthetic], {}) });
+  const server = createProfileApi(db, token, { bankRegistry: createBankRegistry([real, synthetic], {}) });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
@@ -485,7 +487,7 @@ test('a non-synthetic provider stores real records, and any real record makes re
     assert.equal(synced.data.results[0].status, 'synced');
     assert.equal(synced.data.results[0].inserted, 3);
 
-    const stored = await bank(root).read('alice');
+    const stored = await bank(db).read('alice');
     assert.equal(stored.synthetic, false);
     assert.ok(stored.accounts.every(account => account.synthetic === false));
     assert.ok(stored.transactions.every(tx => tx.synthetic === false));
@@ -512,7 +514,7 @@ test('a non-synthetic provider stores real records, and any real record makes re
     assert.equal((await request('/bob/bank/sync', 'POST', { connectionId: 'missing' })).status, 404);
     const mixed = await request('/bob/bank/sync', 'POST', {});
     assert.ok(mixed.data.results.every((result: any) => result.status === 'synced'));
-    const bob = await bank(root).read('bob');
+    const bob = await bank(db).read('bob');
     assert.ok(bob.transactions.some(tx => tx.synthetic) && bob.transactions.some(tx => !tx.synthetic));
     assert.equal(bob.synthetic, false);
     assert.equal((await request(`/bob/bank/summary${period}`)).data.synthetic, false);
@@ -526,11 +528,74 @@ test('a non-synthetic provider stores real records, and any real record makes re
     assert.equal((await request('/alice/bank/transactions', 'POST', { transactions: [unlabelled] })).status, 400);
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
-    await rm(root, { recursive: true, force: true });
+    db.close();
   }
 });
 
 /** A second store instance, to assert what was actually persisted. */
-function bank(root: string) {
-  return createBankStore(root);
+function bank(db: Database) {
+  return createBankStore(db);
 }
+
+test('a full ledger rejects the batch once, says so on the connection and is not retried', async () => {
+  const db = await fixture();
+  const { provider, state } = fakeBank();
+  const ledger = createBankStore(db, { maxTransactions: 3 });
+  const registry = createBankRegistry([provider], fakeEnv);
+  let now = Date.parse('2026-11-21T12:00:00Z');
+  const sync = createBankSync({
+    ledger,
+    registry,
+    db,
+    clock: () => new Date(now),
+    housekeepingMs: null,
+    retryBaseMs: 1000,
+    fallbackPollMs: 60_000,
+  });
+  const fetches = () => state.sinceSeen.length;
+  try {
+    const connection = await sync.connect('alice', { providerId: 'fake-bank', ref: 'link-alice' });
+    state.feed = [movement('TX/1', -100), movement('TX/2', -200), movement('TX/3', -300)];
+    assert.equal((await sync.sync('alice')).results[0].status, 'synced');
+
+    // The bank now has more than the ledger may hold: the batch is refused whole.
+    state.feed = [...state.feed, movement('TX/4', -400), movement('TX/5', -500)];
+    const failed = (await sync.sync('alice')).results[0];
+    assert.equal(failed.status, 'failed');
+    assert.match(String('error' in failed && failed.error), /Movement limit reached.*3 movements/);
+    let view = await sync.connection('alice', connection.id);
+    assert.match(view?.lastError ?? '', /Delete older movements, then sync again/);
+    assert.equal(view?.consecutiveFailures, 1);
+    assert.equal(view?.nextRetryAt, null, 'no retry is scheduled');
+    assert.equal((await ledger.read('alice')).transactions.length, 3, 'nothing of the refused batch was stored');
+
+    // Neither time passing nor more webhooks make the engine ask the bank again.
+    const before = fetches();
+    for (let round = 0; round < 5; round++) {
+      now += 120_000;
+      await sync.acceptWebhook('fake-bank', { connectionRef: 'link-alice', eventId: `evt-${round}` });
+      await sync.runDue();
+      await sync.idle();
+    }
+    assert.equal(fetches(), before);
+    assert.equal((await sync.connection('alice', connection.id))?.consecutiveFailures, 1);
+    assert.equal(sync.webhookStatus().pending, 1, 'the notification waits; it is not lost');
+
+    // Once there is room, a sync asked for by a caller succeeds and the connection is healthy again.
+    await ledger.deleteTransaction('alice', stableId('fake-bank', 'TX/1'));
+    await ledger.deleteTransaction('alice', stableId('fake-bank', 'TX/2'));
+    state.feed = state.feed.slice(2);
+    assert.equal((await sync.sync('alice')).results[0].status, 'synced');
+    view = await sync.connection('alice', connection.id);
+    assert.equal(view?.lastError, null);
+    assert.equal(view?.consecutiveFailures, 0);
+    assert.equal(sync.webhookStatus().pending, 0);
+    state.feed = [movement('TX/3', -301)];
+    await sync.acceptWebhook('fake-bank', { connectionRef: 'link-alice', eventId: 'evt-after' });
+    await sync.idle();
+    assert.equal(fetches(), before + 2, 'webhooks drive syncs again');
+  } finally {
+    await sync.close();
+    db.close();
+  }
+});

@@ -32,9 +32,10 @@ There are several views of the project:
 | --- | --- |
 | Public website | Project introduction and agent connection guide. |
 | ChatGPT widgets | Interactive interview cards, town maps and comparisons returned during a conversation. |
+| React workspace | The person, the places and the savings plan, at `/workspace` and as a ChatGPT widget. |
 | Local journey board | A developer/demo view with fictional households and simulated financial activity. |
 
-The public deployment and local development branches can contain different features. The [React workspace in PR #18](https://github.com/itsmanelvelasco/aihousebuyingcompanion/pull/18) adds profile/input management, bank controls and reviewed interviews to both a local web view and an MCP widget; it is separate from the features currently merged into `main`.
+The public deployment can lag behind the repository. The React workspace lives in [`apps/web`](apps/web/) and is served at `/workspace` by the same server, and as a widget through the MCP endpoint.
 
 ## What is real, and what is simulated?
 
@@ -52,7 +53,7 @@ ReloCat connects a conversational interface to a set of small, specialised servi
 | --- | --- |
 | **TypeScript and Node.js** | Run the backend, data tools and local services. Shared types help the different parts agree on the shape of information. |
 | **MCP — Model Context Protocol** | Gives ChatGPT a standard way to call ReloCat's tools, such as looking up a town or checking an incentive. The combined demo exposes one `/mcp` endpoint. |
-| **Interactive web widgets** | Present maps, cards and forms inside a supported chat client. The current implementation includes bundled TypeScript widgets; the React workspace is developed in PR #18. |
+| **Interactive web widgets** | Present maps, cards and forms inside a supported chat client. The current implementation includes bundled TypeScript widgets and the React workspace in `apps/web`. |
 | **Zod validation** | Checks incoming data before the app uses or stores it, including municipality codes, money amounts and household criteria. |
 | **Official data snapshots** | Keep municipal facts, policy rules and evidence dates available for repeatable comparisons. They are not assumed to be live feeds. |
 | **OpenAI APIs, when enabled** | Support the optional voice interview, transaction classification and bounded AI habit suggestions. Keys stay on the server. |
@@ -76,8 +77,9 @@ One server serves everything from a single origin: `http://127.0.0.1:8787` local
 | `/mcp` | The MCP endpoint ChatGPT and other agents connect to. |
 | `/workspace` | React workspace: the person, the places and the savings plan. |
 | `/preview` | Journey board with the four demo stories. |
+| `/interview/` | Voice and guided interview. |
 | `/connect` | Homepage and agent setup guide. |
-| `/api` | Profiles, interview answers, bank ledger, bank events and habits. Bearer token, server-side only. |
+| `/api` | Profiles, interview answers, bank ledger, bank events and habits. The operator's admin token, or a signed-in person for their own data only. |
 | `/health` | Readiness and the freshness of each data source. |
 
 Two entities sit at the centre. A **person** is a household with finances and habits. A **place** is a municipality with indicators (population, density, share of foreign residents, prices, services nearby) and benefits. The planner joins them: how many months until this person has the upfront cash to buy in this place, and how many fewer because of their habits and of what the place offers. A benefit is counted only when its money arrives before the purchase and eligibility is verified; everything else is shown, not counted.
@@ -85,7 +87,7 @@ Two entities sit at the centre. A **person** is a household with finances and ha
 Information comes in through plug-ins, one file each:
 
 - **Official place data** is fetched when the server starts, cached on disk and refreshed in the background. The snapshot committed in `data/` remains the baseline and the fallback. A new source is one file in `packages/sources/definitions/`.
-- **Bank movements** come from providers. A new bank is one file in `packages/banks/providers/` implementing a handful of functions. Banks announce new movements at `/api/webhooks/bank/<provider>`, and clients receive them through a live event stream. Only the synthetic demo provider ships today.
+- **Bank movements** come from providers. A new bank is one file in `packages/banks/providers/` implementing a handful of functions. Banks announce new movements at `/api/webhooks/bank/<provider>`, and clients receive them through a live event stream. Two providers ship, both fictional: the in-process `synthetic` feed and `demo-bank`, which talks HTTP to Banc Demo (`apps/demo-bank`), a fictional bank running as its own process.
 
 ## Run the local demo
 
@@ -100,17 +102,17 @@ Then open:
 
 | Address | Purpose |
 | --- | --- |
-| `http://127.0.0.1:8787/workspace?user=user-001&towns=250404,252542,251207` | React workspace: person, places and the savings plan. |
+| `http://127.0.0.1:8787/workspace?demo=user-001&towns=250404,252542,251207` | React workspace: a fictional demo persona (read-only), or your own plan once signed in (`/signup`, `/login`). |
 | `http://127.0.0.1:8787/preview` | Connected journey board. |
 | `http://127.0.0.1:8787/connect` | Homepage and agent setup guide. |
 | `http://127.0.0.1:8787/test` | Local tool-testing page. |
 | `http://127.0.0.1:8787/mcp` | MCP endpoint for a client, rather than a normal webpage. |
 
-One process starts everything and enables the synthetic bank feed for `user-001`. Stop it with **Ctrl+C**. No API key is needed; [.env.example](.env.example) lists every optional setting, ordered by where each piece of information comes from. Optional voice and AI features may consume API credits.
+One command starts everything. Outside production it also starts Banc Demo, a fictional bank on port 3003, and links `user-001` to it, so new fictional movements keep arriving (`DEMO_BANK=off` switches it off). Stop it with **Ctrl+C**. No API key is needed; [.env.example](.env.example) lists every optional setting, ordered by where each piece of information comes from. Optional voice and AI features may consume API credits.
 
 Agents running on another computer need a reachable HTTPS endpoint; your localhost address only points to your own machine.
 
-For the separate interviewer, see [voice and guided interview setup](apps/interviewer/README.md). For the React workspace, follow [PR #18](https://github.com/itsmanelvelasco/aihousebuyingcompanion/pull/18) and its branch instructions.
+For the interviewer, see [voice and guided interview setup](apps/interviewer/README.md). The React workspace needs no extra step: `npm run dev` builds it and serves it at `/workspace`.
 
 ## Find your way around the repository
 
@@ -118,16 +120,19 @@ For the separate interviewer, see [voice and guided interview setup](apps/interv
 | --- | --- |
 | [`apps/board/`](apps/board/README.md) | Journey board: the same MCP server plus the live demo page. |
 | [`apps/mcp-server/`](apps/mcp-server/README.md) | The MCP server: municipality, interview and bank tools, Town Explorer and agent connection pages. |
-| [`apps/interviewer/`](apps/interviewer/README.md) | Standalone voice and guided interview in the browser. |
+| [`apps/interviewer/`](apps/interviewer/README.md) | Voice and guided interview in the browser, mounted at `/interview/`. |
+| [`apps/demo-bank/`](apps/demo-bank/README.md) | Banc Demo: a fictional bank with a pull API and signed webhooks, on its own port. |
 | [`apps/profile-api/`](apps/profile-api/README.md) | Profile storage, shared inputs, bank movements and financial analysis. |
-| [`apps/habits-agent/`](apps/habits-agent/README.md) | Optional habit suggestions, goals and check-ins. |
+| [`apps/habits-agent/`](apps/habits-agent/README.md) | Habit suggestions, goals and check-ins, served under `/api`. |
 | [`apps/server/`](apps/server/index.ts) | The one server that mounts everything on a single origin. |
-| [`apps/web/`](apps/web/) | React workspace widget for ChatGPT. |
+| [`apps/web/`](apps/web/) | React workspace: the `/workspace` page and the ChatGPT widget. |
 | [`packages/`](packages/) | Shared code: contracts, the person and place entities, the savings planner, bank providers, live data sources, town matching, finance, HTTP helpers and configuration. |
 | [`data/`](data/) | Dated municipality/policy snapshots and fictional user fixtures. |
 | [`docs/`](docs/README.md) | Area guides, integration notes and team setup. |
 
-Committed demo fixtures stay separate from ignored runtime records. Never commit real financial records, API keys or access tokens. The shared-token demo is not production per-user access control.
+Committed demo fixtures stay separate from the runtime database (`data/relocat.db`, ignored by Git). Never commit real financial records, API keys or access tokens.
+
+Every stored person belongs to an account (`/signup`, `/login`, `/account`), and MCP clients such as ChatGPT connect on a person's behalf with OAuth 2.1. No tool takes a user id: personal tools read and write only the caller's own person, and the four fictional personas are a read-only public demo. See [`packages/auth/README.md`](packages/auth/README.md) and [`docs/areas/integration-deployment.md`](docs/areas/integration-deployment.md).
 
 ## Contributing and verification
 

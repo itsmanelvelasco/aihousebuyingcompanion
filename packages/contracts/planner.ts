@@ -40,6 +40,12 @@ export const habit = z
     status: z.enum(['proposed', 'active', 'paused']),
     /** Share of planned check-ins completed, 0–1, when check-ins exist. */
     adherence: z.number().min(0).max(1).nullable(),
+    /**
+     * The day the person started the habit. When the monthly figures were observed in bank movements,
+     * a habit counts on top of them only if it started after the observed period ended; without this
+     * date the plan cannot tell whether the saving is already inside the observed figures.
+     */
+    startedOn: isoDate.optional(),
   })
   .strict();
 
@@ -118,6 +124,11 @@ export const place = z
     name: z.string(),
     comarca: z.string(),
     rural,
+    /**
+     * The day the rural classification took effect. A rural tax measure does not apply to a purchase
+     * before it. Null or absent: not stated by the source.
+     */
+    ruralEffectiveFrom: isoDate.nullable().optional(),
     centre: z.object({ latitude: z.number(), longitude: z.number() }),
     indicators: z
       .object({
@@ -154,14 +165,21 @@ export const planAssumptions = z
 const timeline = z.object({
   upfrontCashCents: positiveCents,
   monthlySavingsCents: cents,
-  /** Null when savings are zero, negative or unknown: there is no finite timeline. */
+  /**
+   * Null when there is no finite timeline to show: savings are zero, negative or unknown, or the
+   * target lies beyond the planning horizon (`maxPlanningMonths`, 600 months).
+   */
   months: z.number().int().nonnegative().nullable(),
 });
 
 export const placePlan = z
   .object({
     place,
-    status: z.enum(['estimated', 'target_reached', 'no_positive_savings', 'insufficient_data']),
+    /**
+     * `beyond_horizon`: the person saves something each month, but the upfront cash is more than
+     * 600 months away, so no timeline is given. Results produced before this status existed never carry it.
+     */
+    status: z.enum(['estimated', 'target_reached', 'no_positive_savings', 'insufficient_data', 'beyond_horizon']),
     purchasePriceCents: positiveCents.nullable(),
     priceBasis: z.enum(['budget', 'municipal_eur_per_m2', 'comarca_eur_per_m2', 'unknown']),
     /**
@@ -181,6 +199,12 @@ export const placePlan = z
       .strict()
       .nullable()
       .optional(),
+    /**
+     * The day the person could buy with the benefits of this place: the plan date plus
+     * `withPlaceBenefits.months`. Buy-side benefits are screened on this date, with ages advanced to it.
+     * Null when there is no finite timeline. Absent in results produced before this field existed.
+     */
+    estimatedPurchaseDate: isoDate.nullable().optional(),
     /** The transfer tax the person would pay anywhere in Catalonia, no place benefits, no habits. */
     baseline: timeline.nullable(),
     /** The person's active habits, still without place benefits. */

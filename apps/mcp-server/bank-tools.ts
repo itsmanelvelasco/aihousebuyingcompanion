@@ -3,8 +3,9 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { safeId } from '../../packages/contracts/ids.ts';
 import { periodSchema } from '../../packages/finance/cashflow.ts';
+import type { Caller, PersonReader } from './identity.ts';
+import { ownPerson, security } from './identity.ts';
 
-export type BankToolConfig = { baseUrl: string; token: string };
 const count = z.number().int().safe().nonnegative();
 const cents = z.number().int().safe();
 const timestamp = z.string().nullable();
@@ -77,87 +78,139 @@ const summaryResult = z.object({
   ledgerUpdatedAt: timestamp.optional(),
 });
 
-export function registerBankTools(server: McpServer, config: BankToolConfig) {
-  const base = new URL(config.baseUrl);
-  if (base.username || base.password || base.search || base.hash || !config.token.trim())
-    throw new Error('Invalid bank bridge configuration');
-  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(base.hostname);
-  if (base.protocol !== 'https:' && !(base.protocol === 'http:' && loopback))
-    throw new Error('Bank bridge requires HTTPS or loopback HTTP');
+/**
+ * Bank tools. The three personal tools read the signed-in person's own ledger and take no user id;
+ * the three demo tools read a fictional persona from the allowlist and exist only when the public
+ * demo is on. Every result is an aggregate: no tool returns movements.
+ */
+export function registerBankTools(server: McpServer, caller: Caller) {
   const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
-  async function call<T extends z.ZodType>(path: string, schema: T, message: string): Promise<CallToolResult> {
+  const unavailable: CallToolResult = {
+    isError: true,
+    content: [{ type: 'text', text: 'Bank data is unavailable or invalid right now.' }],
+  };
+
+  /** Read one aggregate through a person handle and check its shape; any failure is one plain tool error. */
+  async function answer<T extends z.ZodType>(read: () => Promise<unknown>, schema: T, message: string) {
     try {
-      const response = await fetch(base.href.replace(/\/$/, '') + path, {
-        headers: { Authorization: `Bearer ${config.token}`, Accept: 'application/json' },
-        signal: AbortSignal.timeout(5000),
-        redirect: 'error',
-      });
-      if (!response.ok) throw new Error('Unavailable');
-      const data = schema.parse(await response.json()) as Record<string, unknown>;
-      return { content: [{ type: 'text', text: `${message} ${provenance(data)}` }], structuredContent: data };
-    } catch {
+      const data = schema.parse(await read()) as Record<string, unknown>;
+      // The feed's last error may quote a provider; the model only needs to know it needs attention.
+      if ('lastError' in data && data.lastError) data.lastError = 'Background bank feed needs attention.';
       return {
-        isError: true,
-        content: [
-          {
-            type: 'text',
-            text: 'Bank data is unavailable or invalid. Check the profile API and server-side bridge configuration.',
-          },
-        ],
-      };
+        content: [{ type: 'text' as const, text: `${message} ${provenance(data)}` }],
+        structuredContent: data,
+      } satisfies CallToolResult;
+    } catch {
+      return unavailable;
     }
   }
+
+  /** Run `read` for the caller's own person, or return the sign-in challenge. */
+  function mine(read: (me: PersonReader) => Promise<CallToolResult>) {
+    const own = ownPerson(caller, 'person:read');
+    return 'error' in own ? own.error : read(own.me);
+  }
+
+  /** Run `read` for a demo persona, or fail when the id is not an allowed demo id. */
+  function demo(id: string, read: (persona: PersonReader) => Promise<CallToolResult>) {
+    const persona = caller.demo?.open(id);
+    return persona ? read(persona) : unavailable;
+  }
+
+  const updatesInput = { after: count.default(0), limit: z.number().int().min(1).max(100).default(50) };
+  const updates = (person: PersonReader, after: number, limit: number) =>
+    answer(() => person.bankUpdates(after, limit), eventsResult, 'Bank changes since the supplied cursor.');
+  const runtime = (person: PersonReader) => answer(() => person.bankRuntime(), runtimeResult, 'Bank demo feed status.');
+  const summary = (person: PersonReader, period: { from: string; to: string }) =>
+    answer(
+      () => person.bankSummary(period),
+      summaryResult,
+      'Historical bank cash-flow aggregates; review data status and assumptions.',
+    );
+  const descriptions = {
+    updates:
+      'Poll persisted bank change events after a cursor; save nextCursor for the next call. The synthetic flag in the result says whether every underlying record is fabricated demo data (true) or real bank data is included (false). Events carry counts and timestamps only, never movements; transactionCount is the size of the ledger after the change, not the number added. requiresRefresh means earlier events expired or the cursor reset: refresh the bank summary. This read-only tool does not start a feed, subscribe to notifications, wake ChatGPT or send proactive messages.',
+    runtime:
+      'Read the status of the background demo feed. This feed only ever produces synthetic movements; it is not a real bank connection. Polling this tool cannot wake ChatGPT or deliver proactive messages.',
+    summary:
+      'Read aggregate bank cash flow for 1–24 complete calendar months. The synthetic flag in the result is true only when every movement in the ledger is fabricated demo data, and false when real bank data is included; report it as labelled. Pending movements and owned-account transfers are excluded; empty months may mean missing data. This does not assess creditworthiness or mortgage approval. Raw movements and recurring merchant/account identifiers are not returned.',
+  };
+  const own = ' Reads the signed-in person’s own ledger; takes no user id and needs sign-in.';
+
   server.registerTool(
     'get_bank_updates',
     {
-      title: 'Read bank changes',
-      description:
-        'Poll persisted bank change events after a cursor; save nextCursor for the next call. The synthetic flag in the result says whether every underlying record is fabricated demo data (true) or real bank data is included (false). Events carry counts and timestamps only, never movements. requiresRefresh means earlier events expired or the cursor reset: refresh the bank summary. This read-only tool does not start a feed, subscribe to notifications, wake ChatGPT or send proactive messages.',
-      inputSchema: z
-        .object({ userId: safeId, after: count.default(0), limit: z.number().int().min(1).max(100).default(50) })
-        .strict(),
+      title: 'Read my bank changes',
+      description: descriptions.updates + own,
+      inputSchema: z.object(updatesInput).strict(),
       outputSchema: output,
       annotations,
+      _meta: security('personal'),
     },
-    ({ userId, after, limit }) =>
-      call(
-        `/users/${userId}/bank/events?after=${after}&limit=${limit}`,
-        eventsResult,
-        'Bank changes since the supplied cursor.',
-      ),
+    ({ after, limit }) => mine(me => updates(me, after, limit)),
   );
   server.registerTool(
     'get_bank_runtime',
     {
-      title: 'Read bank demo feed status',
-      description:
-        'Read the status of the background demo feed for one user. This feed only ever produces synthetic movements; it is not a real bank connection. The worker runs in the profile API independently of tool calls; polling this tool cannot wake ChatGPT or deliver proactive messages.',
-      inputSchema: z.object({ userId: safeId }).strict(),
+      title: 'Read my bank demo feed status',
+      description: descriptions.runtime + own,
+      inputSchema: z.object({}).strict(),
       outputSchema: output,
       annotations,
+      _meta: security('personal'),
     },
-    async ({ userId }) => {
-      const result = await call(`/users/${userId}/bank/runtime`, runtimeResult, 'Bank demo feed status.');
-      if (result.structuredContent?.lastError)
-        result.structuredContent.lastError = 'Background bank feed needs attention.';
-      return result;
-    },
+    () => mine(me => runtime(me)),
   );
   server.registerTool(
     'get_bank_summary',
     {
-      title: 'Read monthly bank cash flow',
-      description:
-        'Read aggregate bank cash flow for 1–24 complete calendar months. The synthetic flag in the result is true only when every movement in the ledger is fabricated demo data, and false when real bank data is included; report it as labelled. Pending movements and owned-account transfers are excluded; empty months may mean missing data. This does not assess creditworthiness or mortgage approval. Raw movements and recurring merchant/account identifiers are not returned.',
-      inputSchema: periodSchema.safeExtend({ userId: safeId }),
+      title: 'Read my monthly bank cash flow',
+      description: descriptions.summary + own,
+      inputSchema: periodSchema,
       outputSchema: output,
       annotations,
+      _meta: security('personal'),
     },
-    ({ userId, from, to }) =>
-      call(
-        `/users/${userId}/bank/summary?from=${from}&to=${to}`,
-        summaryResult,
-        'Historical bank cash-flow aggregates; review data status and assumptions.',
-      ),
+    ({ from, to }) => mine(me => summary(me, { from, to })),
+  );
+
+  if (!caller.demo?.ids.length) return;
+  const demoId = z.enum(caller.demo.ids as [string, ...string[]]).describe('A fictional demo persona');
+  const fictional = ' Reads a fictional demo persona only; it can never address a real person.';
+  server.registerTool(
+    'get_demo_bank_updates',
+    {
+      title: 'Read a demo persona’s bank changes',
+      description: descriptions.updates + fictional,
+      inputSchema: z.object({ demoId, ...updatesInput }).strict(),
+      outputSchema: output,
+      annotations,
+      _meta: security('public'),
+    },
+    ({ demoId: id, after, limit }) => demo(id, persona => updates(persona, after, limit)),
+  );
+  server.registerTool(
+    'get_demo_bank_runtime',
+    {
+      title: 'Read a demo persona’s bank feed status',
+      description: descriptions.runtime + fictional,
+      inputSchema: z.object({ demoId }).strict(),
+      outputSchema: output,
+      annotations,
+      _meta: security('public'),
+    },
+    ({ demoId: id }) => demo(id, persona => runtime(persona)),
+  );
+  server.registerTool(
+    'get_demo_bank_summary',
+    {
+      title: 'Read a demo persona’s monthly bank cash flow',
+      description: descriptions.summary + fictional,
+      inputSchema: periodSchema.safeExtend({ demoId }),
+      outputSchema: output,
+      annotations,
+      _meta: security('public'),
+    },
+    ({ demoId: id, from, to }) => demo(id, persona => summary(persona, { from, to })),
   );
 }

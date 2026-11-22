@@ -219,6 +219,9 @@ test('public AI is same-origin, limited per client and capped across clients', a
   const classify = await send('POST', '/interview/classify', publicHeaders(json, '203.0.113.1'), descriptors);
   assert.equal(classify.status, 429);
   assert.equal((await voice('198.51.100.7, 203.0.113.1')).status, 429);
+  // Nor does a CF-Connecting-IP header the client wrote itself: it is not the configured header.
+  const forged = { ...publicHeaders(sdp, '203.0.113.1'), 'cf-connecting-ip': '198.51.100.99' };
+  assert.equal((await send('POST', '/interview/voice', forged, 'v=0')).status, 429);
   assert.equal(calls.length, 2);
 
   assert.equal((await voice('203.0.113.2')).status, 200);

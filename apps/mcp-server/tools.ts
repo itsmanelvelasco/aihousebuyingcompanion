@@ -32,8 +32,9 @@ import { evaluateIncentives } from '../../packages/places/eligibility.ts';
 import { madridDate, nextSchoolDay, normalizedName } from '../../packages/places/geography.ts';
 import { recommendTowns, recommendTownsForProfile } from '../../packages/places/recommend.ts';
 import { getRelocationResearch } from '../../packages/places/relocation.ts';
-import type { BankToolConfig } from './bank-tools.ts';
 import { registerBankTools } from './bank-tools.ts';
+import type { Caller } from './identity.ts';
+import { anonymous } from './identity.ts';
 import { interviewerRouting, registerInterviewerTools } from './interview-tools.ts';
 import { registerPlannerTools } from './planner-tools.ts';
 import { registerTownExplorer } from './town-explorer.ts';
@@ -68,8 +69,11 @@ export type McpServerOptions = {
   listings?: ListingSearchConfig;
   /** Built Town Explorer page. When present, the map widget and its tool are registered. */
   townExplorerPage?: string;
-  /** Read-only bridge to the profile API's synthetic bank. */
-  bankApi?: BankToolConfig;
+  /**
+   * Who is calling: the signed-in person and the read-only public demo. The HTTP layer resolves it
+   * per request. Omitted: an anonymous caller without a demo, so only public tools return data.
+   */
+  caller?: Caller;
   /** Built React workspace page. When present, the workspace widget and its tool are registered. */
   workspacePage?: string;
   /** Freshness of the live data sources, for the `get_data_sources` tool. */
@@ -347,12 +351,20 @@ export function createMcpServer(options: McpServerOptions) {
     },
   );
 
+  const caller = options.caller ?? anonymous;
   if (options.townExplorerPage) registerTownExplorer(server, snapshot, options.townExplorerPage);
-  if (options.workspacePage) registerWorkspace(server, options.workspacePage);
-  if (options.bankApi) registerBankTools(server, options.bankApi);
-  // Person and place entities and the savings plan; the profile API supplies stored people.
+  if (options.workspacePage) registerWorkspace(server, options.workspacePage, caller);
+  // Personal bank tools are always listed, so a chat host can see that they need sign-in.
+  registerBankTools(server, caller);
   if (options.dataStatus) {
     const dataStatus = options.dataStatus;
+    const sourceStatus = z.object({
+      id: z.string(),
+      title: z.string(),
+      authority: z.string(),
+      status: z.string(),
+      fetchedAt: z.string().nullable(),
+    });
     server.registerTool(
       'get_data_sources',
       {
@@ -362,12 +374,19 @@ export function createMcpServer(options: McpServerOptions) {
         inputSchema: z.object({}).strict(),
         outputSchema: z.object({
           snapshot: z.object({ version: z.string(), generatedOn: z.string() }),
-          sources: z.array(z.record(z.string(), z.unknown())),
+          sources: z.array(sourceStatus),
         }),
         annotations: readOnly,
       },
       () => {
-        const sources = dataStatus() as Record<string, unknown>[];
+        // Only what a person needs: no environment variable names, upstream URLs or raw error text.
+        const sources = (dataStatus() as Record<string, unknown>[]).map(source => ({
+          id: String(source.id ?? ''),
+          title: String(source.title ?? ''),
+          authority: String(source.authority ?? ''),
+          status: String(source.status ?? 'unknown'),
+          fetchedAt: typeof source.fetchedAt === 'string' ? source.fetchedAt : null,
+        }));
         return result(`${sources.length} live data sources; the committed snapshot is the baseline.`, {
           snapshot: metadata,
           sources,
@@ -375,6 +394,7 @@ export function createMcpServer(options: McpServerOptions) {
       },
     );
   }
-  registerPlannerTools(server, { snapshot, policies, today, profileApi: options.bankApi });
+  // Person and place entities and the savings plan. A stored person is reached only through the caller.
+  registerPlannerTools(server, { snapshot, policies, today, caller });
   return server;
 }

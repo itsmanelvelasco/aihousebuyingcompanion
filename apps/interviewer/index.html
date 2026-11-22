@@ -4,18 +4,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#101d19">
-<title>Homebuying Interviewer</title>
+<title>ReloCat · Homebuying interview</title>
+<!-- FAVICON -->
 <style>
+  /* THEME */
+  /* The interview is a night scene: the shared theme's deep-green panel, with gold as the accent. */
   :root {
     color-scheme: dark;
-    font: 16px/1.5 system-ui, sans-serif;
+    font: 16px/1.5 var(--rc-font-text, system-ui, sans-serif);
     color: #f9f4e8;
-    background: #101d19;
+    background: var(--rc-night, #143326);
     --muted: #b4c7b9;
     --line: #355248;
-    --accent: #e1efbf;
-    --panel: #182b24;
+    --accent: var(--rc-gold, #f6c95c);
+    --panel: #1b3d2e;
   }
+  body { color: #f9f4e8; background: var(--rc-night, #143326); }
+  h1, h2 { font-family: var(--rc-font-display, ui-serif, Georgia, serif); color: inherit; }
+  .top .rc-wordmark, .top .rc-wordmark b { color: inherit; }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   body { min-height: 100svh; margin: 0; display: flex; flex-direction: column; }
@@ -39,7 +45,6 @@
     padding: 22px clamp(18px, 4vw, 60px); border-bottom: 1px solid #ffffff13;
   }
   .brand { display: flex; gap: 10px; align-items: center; font-size: .94rem; font-weight: 680; }
-  .brand span { border-radius: 50%; width: 12px; height: 12px; background: #cce5a5; box-shadow: 0 0 18px #cce5a580; }
   .top .actions { justify-content: flex-end; }
   .top button { font-size: .88rem; padding: 7px 12px; }
   .stage {
@@ -121,7 +126,7 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span aria-hidden="true"></span> Homebuying Interviewer</div>
+  <div class="brand"><span class="rc-wordmark"><!-- MARK --><span>Relo<b>Cat</b></span></span> · Interview</div>
   <nav class="actions" aria-label="Interview tools">
     <button id="source-button" data-open="data-panel">Add bank data</button>
     <button data-open="plan-panel">Your plan</button>

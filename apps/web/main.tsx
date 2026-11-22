@@ -7,7 +7,7 @@ import { createToolClient, httpCallTool } from './client.ts';
 import { fixtureCallTool } from './fixtures/client.ts';
 import { fixturePlan } from './fixtures/plan.ts';
 import type { WorkspaceLaunch } from './launch.ts';
-import { emptyLaunch, launchFromQuery, parseLaunch } from './launch.ts';
+import { emptyLaunch, launchRequestFromQuery, parseLaunch } from './launch.ts';
 import { Workspace } from './Workspace.tsx';
 
 const requestOptions = { timeout: 20_000 };
@@ -106,26 +106,50 @@ function Shell({ children }: { children: ReactNode }) {
 
 /**
  * Outside a chat host. `?fixture=1` shows the hand-written sample (other values pick a state to
- * inspect); otherwise the page calls the MCP endpoint on its own origin.
+ * inspect); otherwise the page calls the MCP endpoint on its own origin with the session cookie.
+ * Who is shown is the server's answer to `show_workspace`: the signed-in person, the demo persona
+ * named with `?demo=`, or nobody. The page never names a user id.
  */
 function Standalone() {
   const query = new URLSearchParams(window.location.search);
   const fixture = query.get('fixture');
   const theme = query.get('theme');
   if (theme === 'dark' || theme === 'light') applyDocumentTheme(theme);
-  const fromQuery = launchFromQuery(window.location.search);
-  if (fixture !== null) {
-    const launch: WorkspaceLaunch =
-      fromQuery.userId || fromQuery.municipalityCodes.length || query.has('blank')
-        ? fromQuery
-        : {
-            userId: fixturePlan.person.id,
-            municipalityCodes: fixturePlan.plans.map(plan => plan.place.municipalityCode),
-          };
-    return <Workspace client={createToolClient(fixtureCallTool(fixture))} launch={launch} mode="fixture" />;
-  }
-  const client = createToolClient(httpCallTool(new URL('/mcp', window.location.href).href));
-  return <Workspace client={client} launch={fromQuery} mode="standalone" />;
+  const client = useMemo(
+    () =>
+      createToolClient(
+        fixture !== null ? fixtureCallTool(fixture) : httpCallTool(new URL('/mcp', window.location.href).href),
+      ),
+    [fixture],
+  );
+  const [launch, setLaunch] = useState<WorkspaceLaunch | null>(null);
+  useEffect(() => {
+    let active = true;
+    const request = launchRequestFromQuery(window.location.search);
+    const blank = new URLSearchParams(window.location.search).has('blank');
+    // The fixture opens on its sample persona unless the address asks for something else.
+    if (fixture !== null && !request.demoId && !request.municipalityCodes.length && !blank) {
+      request.demoId = fixturePlan.person.id;
+      request.municipalityCodes = fixturePlan.plans.map(plan => plan.place.municipalityCode);
+    }
+    client.launch(request).then(
+      result => active && setLaunch(result),
+      // A server without the tool still gets a usable workspace: nobody selected, the places kept.
+      () => active && setLaunch({ ...emptyLaunch, municipalityCodes: request.municipalityCodes }),
+    );
+    return () => {
+      active = false;
+    };
+  }, [client, fixture]);
+  if (!launch)
+    return (
+      <Shell>
+        <p className="note" role="status">
+          Opening the workspace…
+        </p>
+      </Shell>
+    );
+  return <Workspace client={client} launch={launch} mode={fixture !== null ? 'fixture' : 'standalone'} />;
 }
 
 // A fixture preview is always standalone, even when the page is shown inside a frame.

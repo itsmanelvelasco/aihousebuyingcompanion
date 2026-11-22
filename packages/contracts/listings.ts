@@ -22,11 +22,22 @@ export const homeSearchResult = z.object({
       municipalityName: z.string(),
       query: z.string(),
       searchUrl: z.url(),
-      status: z.enum(['ok', 'no_indexed_examples', 'provider_unavailable', 'provider_error']),
+      /** `budget_exhausted`: the server's own spending cap refused the paid search; `searchUrl` still works. */
+      status: z.enum(['ok', 'no_indexed_examples', 'provider_unavailable', 'provider_error', 'budget_exhausted']),
       errorCode: z
-        .enum(['not_configured', 'authentication', 'quota_or_cost_limit', 'rate_limited', 'upstream_error'])
+        .enum([
+          'not_configured',
+          'authentication',
+          'quota_or_cost_limit',
+          'rate_limited',
+          'upstream_error',
+          'daily_limit',
+          'minute_limit',
+        ])
         .nullable(),
       costUsd: z.number().nonnegative().nullable(),
+      /** True when the result was reused from a recent identical search, at no cost. */
+      cached: z.boolean().optional(),
       examples: z.array(
         z.object({
           provider: z.literal('idealista'),

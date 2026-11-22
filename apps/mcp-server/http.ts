@@ -3,8 +3,8 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { Policy, Snapshot, TravelEstimateData } from '../../packages/contracts/places.ts';
 import type { ListingSearchConfig } from '../../packages/listings/search.ts';
 import { snapshotInfo } from '../../packages/places/data.ts';
-import type { BankToolConfig } from './bank-tools.ts';
 import { handleConnectPage } from './connect-page.ts';
+import type { Caller } from './identity.ts';
 import { handleTestUi } from './test-ui.ts';
 import { createMcpServer } from './tools.ts';
 
@@ -14,7 +14,8 @@ export function createHttpServer(
   options: {
     allowedOrigins?: Set<string>;
     today?: () => string;
-    bankApi?: BankToolConfig;
+    /** A fixed caller for every request; this standalone server has no accounts of its own. */
+    caller?: Caller;
     travelEstimates?: TravelEstimateData;
     listings?: ListingSearchConfig;
     townExplorerPage?: string;

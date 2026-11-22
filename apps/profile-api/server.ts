@@ -7,18 +7,21 @@ import { loadBankRegistry } from '../../packages/banks/registry.ts';
 import type { BankSyncOptions, LedgerEvent } from '../../packages/banks/sync.ts';
 import { createBankSync } from '../../packages/banks/sync.ts';
 import { safeId } from '../../packages/contracts/ids.ts';
+import type { Database } from '../../packages/db/database.ts';
 import { analyzeTransactions, periodSchema, scenarioSchema, simulateSavings } from '../../packages/finance/cashflow.ts';
+import type { ApiAuthorizer } from '../../packages/http/server.ts';
 import {
   ApiError,
+  apiAccess,
   pathParts,
   readJson,
   readText,
   sendJson as reply,
-  requireBearer,
+  requireOwnRoute,
 } from '../../packages/http/server.ts';
 import type { Section } from '../../packages/profiles/store.ts';
 import { createStore, profileSchema, sections } from '../../packages/profiles/store.ts';
-import { accountBalances, createBankStore, dateSchema } from './bank.ts';
+import { createBankStore, dateSchema } from './bank.ts';
 import { createInputStore } from './inputs.ts';
 import { createBankRuntime, seedEmptyLedger } from './runtime.ts';
 
@@ -48,20 +51,34 @@ export type ProfileApiOptions = {
   clock?: () => Date;
   /** Retry, fallback-pull and housekeeping settings of the sync engine; see `BankSyncOptions`. */
   bankSync?: Pick<BankSyncOptions, 'retryBaseMs' | 'retryMaxMs' | 'fallbackPollMs' | 'housekeepingMs'>;
+  /**
+   * Recognises a person's own credential (OAuth access token or browser session). Such a caller
+   * reaches only `/users/<its own id>/…`: every read, and writes to `inputs`. Without it only the
+   * admin token is accepted.
+   */
+  authorize?: ApiAuthorizer;
+  /** True when a person record belongs to an account, so its context is not labelled fictional. */
+  ownedByAccount?: (userId: string) => boolean;
 };
 
-/** The profile, inputs and bank routes as a request handler, so one server can mount them under a prefix. */
-export function createProfileApiHandler(root: string, token: string, options: ProfileApiOptions = {}) {
+/** Routes a person may write with their own credential. Ledger, feed and profile documents stay admin-only. */
+const personWritable = (parts: string[]) => parts[2] === 'inputs';
+
+/**
+ * The profile, inputs and bank routes as a request handler, so one server can mount them under a
+ * prefix. All state lives in `db`; the caller opens it and closes it after `close()` has resolved.
+ */
+export function createProfileApiHandler(db: Database, token: string, options: ProfileApiOptions = {}) {
   if (!token) throw new Error('PROFILE_API_TOKEN is required');
-  const store = createStore(root);
-  const bank = createBankStore(root);
-  const inputs = createInputStore(root);
+  const store = createStore(db);
+  const bank = createBankStore(db);
+  const inputs = createInputStore(db);
   const registry = Promise.resolve(options.bankRegistry ?? loadBankRegistry());
   registry.catch(() => {});
   const sync = createBankSync({
     ledger: bank,
     registry,
-    root,
+    db,
     clock: options.clock,
     beforeSync: seedEmptyLedger(bank),
     ...options.bankSync,
@@ -150,7 +167,7 @@ export function createProfileApiHandler(root: string, token: string, options: Pr
     };
     streams.add(end);
     try {
-      const ledger = await bank.read(id);
+      const ledger = await bank.eventLog(id);
       const oldest = ledger.events[0]?.sequence ?? ledger.revision + 1;
       const requiresRefresh = after > ledger.revision || after < oldest - 1;
       cursor = Math.min(after, ledger.revision);
@@ -176,11 +193,46 @@ export function createProfileApiHandler(root: string, token: string, options: Pr
     res.on('close', end);
   }
 
+  /**
+   * In-process reads and the one write the rest of the server needs for a person. Each takes the
+   * user id explicitly; `apps/server/people.ts` binds them to one id before any tool sees them.
+   */
+  const people = {
+    /** The resolved context. A person who belongs to an account is not labelled fictional. */
+    async context(id: string) {
+      const context = await inputs.context(id);
+      return options.ownedByAccount?.(id) ? { ...context, synthetic: false } : context;
+    },
+    inputs: (id: string) => inputs.read(id),
+    addInputs: (id: string, value: unknown) => inputs.add(id, value),
+    /** Cash-flow aggregates of complete calendar months; never movements. */
+    async bankSummary(id: string, period: { from: unknown; to: unknown }) {
+      const { from, to } = periodSchema.parse(period);
+      // Only the movements up to the end of the period are loaded; later ones cannot affect it.
+      const ledger = await bank.history(id, to);
+      return {
+        ...analyzeTransactions(ledger.transactions, from, to),
+        // Provenance covers the whole ledger: one real movement anywhere makes it real.
+        synthetic: ledger.transactionsSynthetic,
+        ledgerUpdatedAt: ledger.updatedAt || null,
+      };
+    },
+    bankEvents: (id: string, after: number, limit: number) => bank.events(id, after, limit),
+    bankRuntime: (id: string) => runtime.status(id),
+    /** Sum of today's booked balances in cents, or null when there are no accounts. */
+    async bankBalanceCents(id: string) {
+      const { accounts } = await bank.balances(id, new Date().toISOString().slice(0, 10));
+      if (!accounts.length || !accounts.every(account => typeof account.balanceCents === 'number')) return null;
+      return accounts.reduce((sum, account) => sum + (account.balanceCents as number), 0);
+    },
+  };
+
   const handle = async (req: IncomingMessage, res: ServerResponse) => {
     try {
       const parts = pathParts(req);
       if (parts[0] === 'webhooks') return await webhook(req, res, parts);
-      requireBearer(req, token);
+      const access = apiAccess(req, token, options.authorize);
+      requireOwnRoute(access, req, parts, personWritable);
       const query = new URLSearchParams((req.url ?? '').split('?')[1] ?? '');
       if (parts[0] === 'bank' && parts[1] === 'providers' && parts.length === 2) {
         if (req.method !== 'GET') throw new ApiError(405, 'Method not allowed');
@@ -199,7 +251,7 @@ export function createProfileApiHandler(root: string, token: string, options: Pr
         const id = safeId.parse(parts[1]);
         if (parts[2] === 'context' && parts.length === 3) {
           if (req.method !== 'GET') throw new ApiError(405, 'Method not allowed');
-          return reply(res, 200, await inputs.context(id));
+          return reply(res, 200, await people.context(id));
         }
         if (parts[2] === 'inputs') {
           if (parts.length === 3 && req.method === 'GET') return reply(res, 200, await inputs.read(id));
@@ -262,12 +314,13 @@ export function createProfileApiHandler(root: string, token: string, options: Pr
           }
           if (route === 'accounts') {
             if (parts.length === 4 && req.method === 'GET') {
-              const ledger = await bank.read(id);
+              await bank.head(id);
               const asOf = dateSchema.parse(query.get('asOf') ?? new Date().toISOString().slice(0, 10));
+              const ledger = await bank.balances(id, asOf);
               return reply(res, 200, {
                 synthetic: ledger.synthetic,
                 updatedAt: ledger.updatedAt || null,
-                accounts: accountBalances(ledger, asOf),
+                accounts: ledger.accounts,
               });
             }
             if (parts.length === 4 && req.method === 'POST')
@@ -282,12 +335,12 @@ export function createProfileApiHandler(root: string, token: string, options: Pr
             if (parts.length === 5 && req.method === 'DELETE')
               return reply(res, 200, (await bank.deleteTransaction(id, itemId!)).result);
             if (parts.length === 4 && req.method === 'GET') {
-              const ledger = await bank.read(id);
+              const { accounts } = await bank.head(id);
               const from = query.has('from') ? dateSchema.parse(query.get('from')) : undefined;
               const to = query.has('to') ? dateSchema.parse(query.get('to')) : undefined;
               if (from && to && from > to) throw new ApiError(400, 'from must not follow to');
               const accountId = query.has('accountId') ? safeId.parse(query.get('accountId')) : undefined;
-              if (accountId && !ledger.accounts.some(account => account.id === accountId))
+              if (accountId && !accounts.some(account => account.id === accountId))
                 throw new ApiError(404, 'Account not found');
               const limit = z.coerce
                 .number()
@@ -301,29 +354,26 @@ export function createProfileApiHandler(root: string, token: string, options: Pr
                 .min(0)
                 .max(10000)
                 .parse(query.get('offset') ?? 0);
-              const transactions = ledger.transactions
-                .filter(
-                  tx =>
-                    (!from || tx.date >= from) && (!to || tx.date <= to) && (!accountId || tx.accountId === accountId),
-                )
-                .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+              // The database filters, orders and pages; only the requested page is loaded.
+              const ledger = await bank.transactions(id, { from, to, accountId }, { limit, offset });
               return reply(res, 200, {
                 synthetic: ledger.synthetic,
                 updatedAt: ledger.updatedAt || null,
-                total: transactions.length,
+                total: ledger.total,
                 offset,
                 limit,
-                transactions: transactions.slice(offset, offset + limit),
+                transactions: ledger.transactions,
               });
             }
           } else if ((route === 'summary' && req.method === 'GET') || (route === 'simulate' && req.method === 'POST')) {
             if (parts.length !== 4) throw new ApiError(404, 'Route not found');
-            const { from, to } = periodSchema.parse({ from: query.get('from'), to: query.get('to') });
-            const ledger = await bank.read(id);
-            const summary = analyzeTransactions(ledger.transactions, from, to);
+            const { ledgerUpdatedAt, ...summary } = await people.bankSummary(id, {
+              from: query.get('from'),
+              to: query.get('to'),
+            });
             const result =
               route === 'simulate' ? simulateSavings(summary, scenarioSchema.parse(await body(req))) : summary;
-            return reply(res, 200, { ...result, ledgerUpdatedAt: ledger.updatedAt || null });
+            return reply(res, 200, { ...result, ledgerUpdatedAt });
           }
           if (!bankRoutes.includes(route ?? '')) throw new ApiError(404, 'Bank route not found');
           throw new ApiError(405, 'Method not allowed');
@@ -354,6 +404,7 @@ export function createProfileApiHandler(root: string, token: string, options: Pr
     /** Closing the runtime closes everything, so callers that only know `bankRuntime` still shut down cleanly. */
     bankRuntime: { ...runtime, close },
     bank,
+    people,
     bankSync: sync,
     /** In-process subscription to every persisted ledger revision: `bankEvents.onEvent(listener)`. */
     bankEvents: { onEvent: sync.onEvent },
@@ -362,14 +413,15 @@ export function createProfileApiHandler(root: string, token: string, options: Pr
 }
 
 /** The same API as a standalone HTTP server; used by tests and tools that want an isolated instance. */
-export function createProfileApi(root: string, token: string, options: ProfileApiOptions = {}) {
-  const api = createProfileApiHandler(root, token, options);
+export function createProfileApi(db: Database, token: string, options: ProfileApiOptions = {}) {
+  const api = createProfileApiHandler(db, token, options);
   const server = createServer(api.handle);
   // Open event streams would keep `server.close()` waiting, so they are ended first.
   const closeServer = server.close.bind(server);
   server.close = callback => {
-    void api.close();
-    return closeServer(callback);
+    // The callback waits for syncs in flight, so the caller may close the database right after it.
+    const stopped = api.close().catch(() => {});
+    return closeServer(error => void stopped.then(() => callback?.(error)));
   };
   return Object.assign(server, { bankRuntime: api.bankRuntime, bankSync: api.bankSync, bankEvents: api.bankEvents });
 }

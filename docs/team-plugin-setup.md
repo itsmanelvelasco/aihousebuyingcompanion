@@ -1,6 +1,6 @@
 # One ReloCat setup for teammates
 
-The canonical team bundle is **`relocat-team` version `1.2.0`**, sourced from `plugins/relocat-team/`. It includes the same three workflows for every teammate: ReloCat demo, ReloCat development, and synthetic finance/habits. These workflows do not clone somebody else's ChatGPT account, copy third-party plugins, share credentials, change personal permissions or install anything remotely in another account.
+The canonical team bundle is **`relocat-team` version `1.2.1`**, sourced from `plugins/relocat-team/`. It includes the same three workflows for every teammate: ReloCat demo, ReloCat development, and synthetic finance/habits. These workflows do not clone somebody else's ChatGPT account, copy third-party plugins, share credentials, change personal permissions or install anything remotely in another account.
 
 ## What is ready
 
@@ -46,7 +46,7 @@ To hear the interview, select ChatGPT's **Voice** icon before invoking ReloCat. 
 
 In text chat, ask **@ReloCat Team** to start the homebuying interview to show its green **Start talking** card. The card shows the ChatGPT Live steps by default. Set `RELOCAT_VOICE_URL` on the MCP server to the HTTPS page of a separately deployed voice interviewer if the card should open that page instead. Refresh the MCP connection after deploying the card.
 
-For the bank-first interview, update ReloCat Team to version 1.2.0 and connect the deployment that exposes `start_homebuying_interview`. Start a new ChatGPT Live voice conversation and say “Use ReloCat Team to start my homebuying interview.” ChatGPT asks whether to use a CSV, the fictional demo bank, or spoken estimates. Attach any CSV in the chat. Live availability and plugin access depend on the account and workspace. The same entry point also works in a text chat.
+For the bank-first interview, update ReloCat Team to version 1.2.1 and connect the deployment that exposes `start_homebuying_interview`. Start a new ChatGPT Live voice conversation and say “Use ReloCat Team to start my homebuying interview.” ChatGPT asks whether to use a CSV, the fictional demo bank, or spoken estimates. Attach any CSV in the chat. Live availability and plugin access depend on the account and workspace. The same entry point also works in a text chat.
 
 1. Confirm the bundle name/version and SHA-256 match the team's chosen artifact.
 2. Confirm all three skills are available in a new session.
@@ -54,7 +54,7 @@ For the bank-first interview, update ReloCat Team to version 1.2.0 and connect t
 4. Run a fictional demo and check official evidence links, unknown eligibility and synthetic-finance labels. Do not enter real financial credentials.
 5. Record **installed** and **connected** only after that teammate verifies those states. Keep existing personal plugins and permissions unchanged.
 
-The standalone habits HTTP API does not yet become an MCP tool merely because its workflow is bundled. Its rules/API setup remains in `apps/habits-agent/README.md`; Sol requests stay optional and separately configured.
+The habits HTTP API (part of the one server, under `/api`) does not become an MCP tool merely because its workflow is bundled. Its rules/API setup remains in `apps/habits-agent/README.md`; Sol requests stay optional and separately configured.
 
 ## Maintenance and sources
 

@@ -13,12 +13,12 @@ import { createDemoBankCore } from './bank.ts';
  * `packages/banks/providers/demo-bank.ts`, exactly as it would reach a real bank.
  *
  *   Pull   GET /customers, /customers/:id/accounts, /customers/:id/transactions[/:transactionId]
- *   Push   POST|GET /webhooks, DELETE /webhooks/:id, GET /webhooks/deliveries
+ *   Push   POST|GET /webhooks, DELETE /webhooks/:id, PUT /webhooks/:id/secret, GET /webhooks/deliveries
  *   Demo   GET /simulate/status, POST /simulate/step, /simulate/transaction,
  *          /simulate/transactions/:id/state            (admin key)
  *
- * It is a demo: a single process with its state in memory (and an optional JSON snapshot), no
- * database and no real money. Every response carries `X-Demo-Bank: fictional` and every resource
+ * It is a demo: a single process with a rolling window of transactions in memory (and an optional
+ * JSON snapshot), no database and no real money. Every response carries `X-Demo-Bank: fictional` and every resource
  * `synthetic: true`. See README.md in this folder.
  */
 
@@ -116,6 +116,8 @@ export function createDemoBank(options: DemoBankOptions) {
         });
       if (parts.length === 2 && method === 'DELETE')
         return sendJson(response, 200, bank.unsubscribe(id.parse(parts[1])));
+      if (parts.length === 3 && parts[2] === 'secret' && method === 'PUT')
+        return sendJson(response, 200, bank.rotateSecret(id.parse(parts[1]), await body()));
       throw new ApiError(parts.length <= 2 ? 405 : 404, parts.length <= 2 ? 'Method not allowed' : 'Route not found');
     }
     throw new ApiError(404, 'Route not found');

@@ -1,16 +1,14 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { test } from 'node:test';
 import { createBankStore } from '../apps/profile-api/bank.ts';
 import { createBankRuntime } from '../apps/profile-api/runtime.ts';
+import { open } from '../packages/db/database.ts';
 import { createStore } from '../packages/profiles/store.ts';
 
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), 'relocat-runtime-'));
+  const db = open(':memory:');
   const doc = { schemaVersion: 1, synthetic: true };
-  await createStore(root).create('demo', {
+  await createStore(db).create('demo', {
     details: { ...doc, id: 'demo' },
     preferences: doc,
     'bank-account': {
@@ -22,10 +20,10 @@ async function fixture() {
       debtPaymentsCents: 10000,
     },
   });
-  return { root, bank: createBankStore(root) };
+  return { db, bank: createBankStore(db) };
 }
 test('bank events persist monotonic cursors and idempotent runtime ticks do not repeat movements', async () => {
-  const { root, bank } = await fixture();
+  const { db, bank } = await fixture();
   const runtime = createBankRuntime(bank, () => new Date('2026-11-21T12:00:00Z'));
   try {
     const first = await runtime.tick('demo');
@@ -34,7 +32,7 @@ test('bank events persist monotonic cursors and idempotent runtime ticks do not 
     const repeated = await runtime.tick('demo');
     assert.equal(repeated.inserted, 0);
     assert.equal(repeated.revision, revision);
-    const events = await createBankStore(root).events('demo', 0, 1);
+    const events = await createBankStore(db).events('demo', 0, 1);
     assert.equal(events.events.length, 1);
     assert.equal(events.hasMore, true);
     const next = await bank.events('demo', events.nextCursor, 50);
@@ -42,19 +40,17 @@ test('bank events persist monotonic cursors and idempotent runtime ticks do not 
     assert.equal(next.latestRevision, 2);
     assert.equal((await bank.events('demo', next.nextCursor, 50)).events.length, 0);
     assert.equal((await bank.events('demo', 9000, 50)).requiresRefresh, true);
-    const path = join(root, 'demo', 'bank-ledger.json');
-    const ledger = JSON.parse(await readFile(path, 'utf8'));
-    ledger.events = [ledger.events.at(-1)];
-    await writeFile(path, JSON.stringify(ledger));
+    // A reader whose cursor is older than the events still kept must refresh instead of replaying.
+    db.run('DELETE FROM bank_events WHERE user_id = ? AND sequence < ?', 'demo', next.latestRevision);
     assert.equal((await bank.events('demo', 0, 50)).requiresRefresh, true);
   } finally {
     await runtime.close();
-    await rm(root, { recursive: true, force: true });
+    db.close();
   }
 });
 
 test('enabled bank feed writes between requests and stops when disabled', async () => {
-  const { root, bank } = await fixture();
+  const { db, bank } = await fixture();
   let time = new Date('2026-11-21T12:00:00Z').getTime();
   const runtime = createBankRuntime(bank, () => new Date((time += 5000)));
   try {
@@ -71,6 +67,6 @@ test('enabled bank feed writes between requests and stops when disabled', async 
     assert.equal((await runtime.status('demo')).enabled, false);
   } finally {
     await runtime.close();
-    await rm(root, { recursive: true, force: true });
+    db.close();
   }
 });

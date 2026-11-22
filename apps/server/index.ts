@@ -1,143 +1,172 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
-import { defaultPorts, demoBankConfig, envInteger, envList, envPort, openaiModels } from '../../packages/config/env.ts';
+import {
+  accessConfig,
+  defaultPorts,
+  demoBankConfig,
+  envInteger,
+  envList,
+  envPort,
+  envString,
+  envText,
+  openaiModels,
+  publicOriginConfig,
+  storageConfig,
+} from '../../packages/config/env.ts';
 import { product } from '../../packages/config/product.ts';
-import { createRateLimiter } from '../../packages/http/rate-limit.ts';
-import { sendJson } from '../../packages/http/server.ts';
+import { open, readMeta, writeMeta } from '../../packages/db/database.ts';
+import { importLegacyJson } from '../../packages/db/legacy.ts';
 import { seedRuntime } from '../../packages/profiles/store.ts';
 import { createLiveData } from '../../packages/sources/live.ts';
-import { createBoardApp } from '../board/server.ts';
 import { connectDemoBank } from '../demo-bank/connect.ts';
 import { startDemoBankFromEnv } from '../demo-bank/server.ts';
-import { createHabitsHandler } from '../habits-agent/server.ts';
 import { createInterviewerHandler, interviewerEnv } from '../interviewer/server.ts';
-import { createProfileApiHandler } from '../profile-api/server.ts';
+import { createApp } from './app.ts';
 
 /**
  * The one ReloCat server. Everything is served from a single origin:
  *
- *   /mcp            MCP endpoint for ChatGPT and other agents
+ *   /mcp            MCP endpoint for ChatGPT and other agents (OAuth for personal tools)
+ *   /signup /login /account /oauth/*   accounts, consent and the OAuth endpoints
  *   /preview        journey board         /connect   homepage and agent setup
- *   /interview/     voice and guided interview
- *   /api/...        profiles, inputs, bank ledger, bank events and habits (bearer token)
+ *   /workspace      the React workspace   /interview/  voice and guided interview
+ *   /api/...        profiles, inputs, bank ledger, bank events and habits (admin token or own credential)
  *   /health         readiness
+ *
+ * Runtime state (accounts, profiles, inputs, ledgers, bank connections, habits, board runs) lives in
+ * one SQLite database, `DATABASE_FILE`. This process opens it once and hands it to `createApp`
+ * (`app.ts`), which holds the routing and the identity rule.
  *
  * Locally that origin is http://127.0.0.1:8787; in production it is https://www.relo.cat.
  */
-const host = process.env.HOST ?? '127.0.0.1';
+
+// An empty variable (`HOST=`) is the same as an unset one, so it can never bind every interface by accident.
+const host = envText('HOST', '127.0.0.1');
 const port = envPort('PORT', defaultPorts.app);
-const publicOrigin = process.env.PUBLIC_ORIGIN ? new URL(process.env.PUBLIC_ORIGIN).origin : null;
-// The API token never leaves the server; a random one per start is enough when none is configured.
-const token = process.env.PROFILE_API_TOKEN || randomUUID();
-const profileRoot = resolve(process.env.PROFILE_DATA_DIR ?? 'data/runtime-users');
+const publicOrigin = publicOriginConfig();
+const access = accessConfig();
+// The admin token never leaves the server; a random one per start is enough when none is configured.
+const token = envString('PROFILE_API_TOKEN') ?? randomUUID();
 const apiPrefix = '/api';
+
+const storage = storageConfig();
+const db = open(storage.databaseFile);
 
 // Banc Demo: a separate fictional bank on its own port that pushes signed webhooks to /api.
 // On by default outside production; DEMO_BANK=off returns to the in-process synthetic feed.
-const demoBankOn = process.env.NODE_ENV !== 'production' && process.env.DEMO_BANK !== 'off';
+const demoBankOn = !access.production && process.env.DEMO_BANK !== 'off';
+/** The ReloCat user Banc Demo feeds (the default of `connectDemoBank`). */
+const demoBankUser = 'user-001';
 if (demoBankOn) {
   // The bank registry reads these when the API handler is created, so they are set first.
   process.env.BANK_DEMO_BANK_BASE_URL ||= `http://127.0.0.1:${demoBankConfig().port}`;
   process.env.BANK_DEMO_BANK_API_KEY ||= randomUUID();
-  process.env.BANK_DEMO_BANK_WEBHOOK_SECRET ||= randomUUID();
+  // The bank keeps its webhook subscription across restarts (its snapshot), so the secret it signs
+  // with must survive a restart too: a generated one is kept in the database and reused.
+  const storedSecret = readMeta(db, 'demo-bank.webhook-secret');
+  process.env.BANK_DEMO_BANK_WEBHOOK_SECRET ||= storedSecret ?? randomUUID();
+  if (process.env.BANK_DEMO_BANK_WEBHOOK_SECRET !== storedSecret)
+    writeMeta(db, 'demo-bank.webhook-secret', process.env.BANK_DEMO_BANK_WEBHOOK_SECRET);
   process.env.DEMO_BANK_SNAPSHOT_FILE ||= 'data/cache/demo-bank.json';
 }
 let demoBank: Awaited<ReturnType<typeof startDemoBankFromEnv>> | undefined;
 
-const fixtures = resolve('data/users');
-if (existsSync(fixtures)) await seedRuntime(fixtures, profileRoot);
-
-const profiles = createProfileApiHandler(profileRoot, token);
-const habits = createHabitsHandler({
-  token,
-  dataRoot: resolve(process.env.HABITS_DATA_DIR ?? 'data/runtime-habits'),
-  profileRoot,
-  dailyCalls: envInteger('HABITS_DAILY_AI_CALLS', 20),
-  openai: {
-    apiKey: process.env.OPENAI_API_KEY,
-    model: openaiModels().habits,
-    maxOutputTokens: envInteger('HABITS_MAX_OUTPUT_TOKENS', 1024),
-  },
+// First start on a machine that ran the JSON-file version: bring that state in once. The files stay.
+const legacy = await importLegacyJson(db, {
+  profileDir: resolve(storage.legacyProfileDir),
+  habitsDir: resolve(storage.legacyHabitsDir),
 });
-
-// Official data: the committed snapshot is the baseline; fresher cached values are overlaid on it.
-const live = createLiveData({ cacheDir: resolve(process.env.DATA_CACHE_DIR ?? 'data/cache') });
-const liveEnabled = process.env.LIVE_DATA !== 'off';
-
-// One client cannot saturate the server. Bank webhooks are exempt: the bank retries on its own schedule.
-const limiter = createRateLimiter({
-  limit: envInteger('RATE_LIMIT_PER_MINUTE', 300),
-  windowMs: 60_000,
-  trustProxy: process.env.TRUST_PROXY === 'on',
-});
-
-// Voice and guided interview. Its paid OpenAI routes stay local-only unless explicitly enabled.
-const interviewer = createInterviewerHandler({ prefix: '/interview', publicOrigin, ...interviewerEnv() });
-
-let board: ReturnType<typeof createBoardApp> | undefined;
-
-async function route(request: IncomingMessage, response: ServerResponse) {
-  const path = (request.url ?? '/').split('?')[0];
-  if (path === '/health' && request.method === 'GET') {
-    return sendJson(response, 200, {
-      status: 'ok',
-      product: product.name,
-      version: product.version,
-      snapshot: live.current().snapshot.version,
-      liveData: liveEnabled,
-      sources: live.status().map(({ id, status, fetchedAt, applied }) => ({ id, status, fetchedAt, applied })),
-    });
-  }
-  if (!path.startsWith(`${apiPrefix}/webhooks/`)) {
-    const { allowed, retryAfterSeconds } = limiter.check(request);
-    if (!allowed) {
-      response.setHeader('Retry-After', String(retryAfterSeconds));
-      return sendJson(response, 429, { error: 'Too many requests' });
-    }
-  }
-  if (path === apiPrefix || path.startsWith(`${apiPrefix}/`)) {
-    request.url = (request.url ?? '').slice(apiPrefix.length) || '/';
-    const parts = request.url.split('?')[0].split('/').filter(Boolean);
-    const isHabits = parts[0] === 'limits' || (parts[0] === 'users' && parts[2] === 'habits');
-    return isHabits ? habits(request, response) : profiles.handle(request, response);
-  }
-  if (path === '/interview' || path.startsWith('/interview/')) return interviewer(request, response);
-  if (!board) return sendJson(response, 503, { error: 'Server is starting' });
-  return board.handle(request, response);
+if (legacy.status === 'imported') {
+  const { users, bank_transactions: movements, bank_connections: connections } = legacy.counts;
+  console.log(
+    'Imported the JSON runtime files into %s: %d users, %d movements, %d bank connections. The files were left in place.',
+    storage.databaseFile,
+    users,
+    movements,
+    connections,
+  );
+  for (const { path, reason } of legacy.skipped) console.warn('  not imported: %s (%s)', path, reason);
 }
 
-const server = createServer((request, response) => {
-  route(request, response).catch(() => {
-    if (!response.headersSent) sendJson(response, 500, { error: 'Internal server error' });
-    else response.destroy();
-  });
+// Committed fixtures fill in demo personas that do not exist yet; an existing user's edits are never overwritten.
+const fixtures = resolve('data/users');
+if (existsSync(fixtures)) {
+  const { skipped } = await seedRuntime(fixtures, db);
+  for (const { id, reason } of skipped) console.warn('Fixture %s was not seeded: %s', id, reason);
+}
+
+// Official data: the committed snapshot is the baseline; fresher cached values are overlaid on it.
+const live = createLiveData({ cacheDir: resolve(envText('DATA_CACHE_DIR', 'data/cache')) });
+const liveEnabled = process.env.LIVE_DATA !== 'off';
+
+let boundPort = port;
+const app = createApp({
+  db,
+  adminToken: token,
+  publicOrigin,
+  port: () => boundPort,
+  access,
+  allowedOrigins: new Set(envList('ALLOWED_ORIGINS')),
+  data: () => live.current(),
+  dataStatus: () => live.status(),
+  // Voice and guided interview. Its paid OpenAI routes stay local-only unless explicitly enabled.
+  interviewer: createInterviewerHandler({ prefix: '/interview', publicOrigin, ...interviewerEnv() }),
+  health: () => ({
+    product: product.name,
+    version: product.version,
+    snapshot: live.current().snapshot.version,
+    liveData: liveEnabled,
+    database: { schemaVersion: db.schemaVersion },
+    sources: live.status().map(({ id, status, fetchedAt, applied }) => ({ id, status, fetchedAt, applied })),
+  }),
+  rateLimit: {
+    perMinute: envInteger('RATE_LIMIT_PER_MINUTE', 300),
+    webhooksPerMinute: envInteger('WEBHOOK_RATE_LIMIT_PER_MINUTE', 120),
+    trustProxy: process.env.TRUST_PROXY === 'on',
+  },
+  habits: {
+    dailyCalls: envInteger('HABITS_DAILY_AI_CALLS', 20),
+    openai: {
+      apiKey: process.env.OPENAI_API_KEY,
+      model: openaiModels().habits,
+      maxOutputTokens: envInteger('HABITS_MAX_OUTPUT_TOKENS', 1024),
+    },
+  },
+});
+const { profiles } = app;
+
+const server = createServer(app.handle);
+
+// A port that is taken, or an address that cannot be bound, is a failed start: say so and exit non-zero.
+server.once('error', (error: NodeJS.ErrnoException) => {
+  console.error(
+    error.code === 'EADDRINUSE'
+      ? `Port ${port} on ${host} is already in use. Stop the other process or set PORT.`
+      : `The server could not start: ${error.message}`,
+  );
+  db.close();
+  process.exit(1);
 });
 
 server.listen(port, host, async () => {
   const address = server.address();
-  const boundPort = address && typeof address === 'object' ? address.port : port;
+  boundPort = address && typeof address === 'object' ? address.port : port;
   const local = `http://127.0.0.1:${boundPort}`;
-  // The board and MCP tools reach the API over loopback, exactly as an external client would.
-  board = createBoardApp({
-    connection: { baseUrl: local + apiPrefix, token },
-    publicOrigin,
-    allowedOrigins: new Set(envList('ALLOWED_ORIGINS')),
-    data: () => live.current(),
-    dataStatus: () => live.status(),
-  });
   if (liveEnabled) {
     // Pre-cache every source once, then keep refreshing in the background. Failures keep the last good copy.
     void live.warm().then(() => live.start());
   }
-  // Outside production the demo feed for user-001 runs unless DEMO_BANK_USERS says otherwise.
-  // With Banc Demo running, user-001 gets movements from it; the in-process feed would double them.
-  const demoUsers =
-    process.env.DEMO_BANK_USERS === undefined && process.env.NODE_ENV !== 'production' && !demoBankOn
-      ? ['user-001']
-      : envList('DEMO_BANK_USERS');
+  // Outside production the in-process demo feed for user-001 runs unless DEMO_BANK_USERS says otherwise.
+  // A user Banc Demo feeds never gets it as well, whether the list is the default or explicit: two
+  // fictional banks writing one ledger would double every movement.
+  // Unset means the default; set and empty (`DEMO_BANK_USERS=`) means nobody.
+  const configured = process.env.DEMO_BANK_USERS;
+  const requested = configured === undefined ? (access.production ? [] : [demoBankUser]) : envList('DEMO_BANK_USERS');
+  const demoUsers = requested.filter(id => !(demoBankOn && id === demoBankUser));
+  if (configured !== undefined && demoUsers.length !== requested.length)
+    console.warn('  The in-process feed for %s is off: Banc Demo already feeds that user.', demoBankUser);
   for (const id of demoUsers) {
     await profiles.bankRuntime.configure(id, { enabled: true, intervalMs: envInteger('DEMO_BANK_INTERVAL_MS', 5000) });
     await profiles.bankRuntime.tick(id);
@@ -150,6 +179,8 @@ server.listen(port, host, async () => {
         bankApiKey: process.env.BANK_DEMO_BANK_API_KEY ?? '',
         relocatApiUrl: local + apiPrefix,
         relocatToken: token,
+        userId: demoBankUser,
+        // A subscription the bank kept from an earlier start is moved to the secret this start verifies with.
         expectedSecret: process.env.BANK_DEMO_BANK_WEBHOOK_SECRET,
       });
       console.log(
@@ -163,26 +194,50 @@ server.listen(port, host, async () => {
     }
   }
   console.log('%s server: %s', product.name, publicOrigin ?? local);
-  console.log('  board    %s/preview', local);
-  console.log('  workspace %s/workspace?user=user-001&towns=250404,252542,251207', local);
+  console.log('  board     %s/preview', local);
+  console.log('  workspace %s/workspace', local);
+  console.log('  account   %s/signup  %s/login', local, local);
   console.log('  interview %s/interview/', local);
-  console.log('  connect  %s/connect', local);
-  console.log('  MCP      %s/mcp', local);
-  console.log('  API      %s%s (bearer token, server-side only)', local, apiPrefix);
+  console.log('  connect   %s/connect', local);
+  console.log('  MCP       %s/mcp (OAuth issuer %s)', local, app.origin());
+  console.log('  API       %s%s (admin token, or a person’s own credential)', local, apiPrefix);
+  console.log(
+    '  public demo %s (%s) · shared board %s',
+    access.publicDemo ? 'on' : 'off',
+    access.demoUserIds.join(', '),
+    access.sharedBoard ? 'on' : 'off',
+  );
+  if (access.production && !publicOrigin)
+    console.warn('  PUBLIC_ORIGIN is not set: sign-in links and OAuth metadata point at %s.', local);
 });
 
 // A failure in background work (a bank sync, a source refresh) is logged and must not stop the server.
 process.on('unhandledRejection', reason => {
   console.error('Unhandled rejection:', reason instanceof Error ? reason.message : 'unknown error');
 });
+// After an uncaught exception the process is in an unknown state: log it and exit non-zero so a
+// supervisor restarts a clean one instead of serving from a broken one.
 process.on('uncaughtException', error => {
-  console.error('Uncaught exception:', error.message);
+  console.error('Uncaught exception, exiting:', error.message);
+  try {
+    db.close();
+  } catch {
+    // Exiting anyway.
+  }
+  process.exit(1);
 });
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
     live.stop();
     void demoBank?.close();
-    void profiles.close().then(() => server.close());
+    // Order matters: the bank engine finishes its writes, the HTTP server stops, then the database closes.
+    void app
+      .close()
+      .catch(() => {})
+      .then(() => {
+        server.close(() => db.close());
+        server.closeIdleConnections();
+      });
   });
 }

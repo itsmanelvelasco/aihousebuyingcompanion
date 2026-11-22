@@ -13,24 +13,28 @@ npm ci
 npm run dev
 ```
 
-`npm run dev` starts the profile API and the board together, so answers persist and the simulated bank feed runs. Open [127.0.0.1:8787/preview](http://127.0.0.1:8787/preview).
+`npm run dev` starts the one server, which mounts the board next to the profile API, so answers persist and the fictional bank feed runs. Open [127.0.0.1:8787/preview](http://127.0.0.1:8787/preview).
 
-To run the board alone, with scripted data and no profile API:
+To run the board alone, with scripted data and no profile API, stop `npm run dev` first (both listen on port 8787) or give this one another `PORT`:
 
 ```sh
 npm run start:board
 ```
 
-Runs are held in server memory and clear on restart. `PORT` changes the port.
+Started alone, runs are held in server memory and clear on restart. Under `npm run dev` they are rows of the runtime database (`board_runs`) and survive a restart.
 
-## Two modes
+## What the board can and cannot do
+
+The board is a demo: four scripted stories. Every action changes only the run's own scripted state. Answers typed into it are **not** saved to any stored person, and it cannot start, stop or seed a bank feed.
 
 | Mode | When | What changes |
 | --- | --- | --- |
-| Connected | `PROFILE_API_URL` and `PROFILE_API_TOKEN` are set (`npm run dev` does this) | Interview answers are saved through the profile API, the bank bridge tools are registered, and the four personas map to `user-001` … `user-004`. A backend failure is shown as an error, never replaced by scripted data. |
-| Scripted | Neither variable is set | The board runs from in-memory scenes only. |
+| Public demo | Under the one server (`npm run dev`) with `PUBLIC_DEMO` on | Each persona maps to one fictional stored person (`user-001` … `user-004`). The board adds a read-only panel with that persona's bank feed (ledger revision, cash-flow summary) and a provisional town screen from its stored preferences (`apps/board/profiles.ts`). |
+| Scripted | `npm run start:board`, or `PUBLIC_DEMO=off` | The board runs from in-memory scenes only. |
 
-Both modes expose the same municipality, interview and Town Explorer tools.
+A run is addressed by its unguessable id (`/preview?run=<id>`). `SHARED_BOARD` adds one board that every visitor without a run id joins and may restart: a convenience for a local demo, on only outside production and without a `PUBLIC_ORIGIN`. On a public origin each visitor gets a private run, nobody can reset or read another visitor's run, and new runs are limited per address so the store cannot be filled to push runs out. `/preview/state` is same-origin only; inside a chat host the widget re-reads its run through `open_demo`.
+
+A signed-in person does not get a "connected" board: their own figures are in the workspace (`/workspace`) and the personal MCP tools.
 
 ## Connect it to ChatGPT
 
@@ -40,15 +44,17 @@ ChatGPT needs an HTTPS endpoint. With the server running, start a [Cloudflare Qu
 cloudflared tunnel --url http://127.0.0.1:8787
 ```
 
-Restart the board with the printed origin so it can link to the shared page:
+Stop the server and start it again with the printed origin so it can link to the shared page (or put `PUBLIC_ORIGIN` in `.env`):
 
 ```sh
-PUBLIC_ORIGIN=https://your-tunnel-host.trycloudflare.com npm run start:board
+PUBLIC_ORIGIN=https://your-tunnel-host.trycloudflare.com npm run dev
 ```
 
-In ChatGPT, open **Plugins**, choose **Add custom MCP server**, name it **ReloCat Demo**, enter the tunnel URL ending in `/mcp` and select **No authentication**. Install it, start a new chat, select the plugin and say **“ReloCat, start.”** If the widget is hidden, open the board link the tool returns.
+The tunnel runs on the same machine, so the rate limiter recognises it without further settings.
 
-Do not expose the profile API through the tunnel; it is an internal service with a shared demo token.
+In ChatGPT, open **Plugins**, choose **Add custom MCP server**, name it **ReloCat Demo**, enter the tunnel URL ending in `/mcp` and select **No authentication** for the demo and the public tools, or **OAuth** to let ChatGPT use your own account (see `docs/areas/integration-deployment.md`). Install it, start a new chat, select the plugin and say **“ReloCat, start.”** If the widget is hidden, open the board link the tool returns.
+
+The tunnel exposes the whole origin, including `/api`. `/api` answers only to the admin token, which stays on the server (random per start unless you set `PROFILE_API_TOKEN`), or to a signed-in person for their own data; never put the admin token in a page, a URL or a chat. A tunnel hostname other than `PUBLIC_ORIGIN` must be listed in `ALLOWED_HOSTS`.
 
 ## The four stories
 

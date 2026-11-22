@@ -369,12 +369,13 @@ function render(view: BoardView) {
         : 'inbox' in view
           ? shortcuts(view)
           : payoff(view);
-  if (view.connection?.mode === 'connected_synthetic') {
+  if (view.connection?.mode === 'public_demo') {
     const connection = view.connection;
     const screen = view.townScreening;
+    // Read-only: the board shows the fictional persona's feed and cannot start, stop or write anything.
     byId('view').insertAdjacentHTML(
       'afterbegin',
-      `<section class="panel"><span class="label">Connected fictional profile · ${safe(connection.userId)}</span><h2>Runtime bank feed</h2><p>Ledger revision ${safe(connection.ledgerRevision ?? 0)} · ${connection.runtime?.enabled ? 'Background simulation running' : 'Background simulation stopped'}</p><div class="actions">${button(connection.runtime?.enabled ? 'Stop simulated feed' : 'Start simulated feed', connection.runtime?.enabled ? 'stop_bank_runtime' : 'start_bank_runtime', '', '')}${button('Refresh bank data', 'refresh_data', '', 'link')}</div>${connection.summary ? `<p class="small">Observed net cash flow: ${euro.format(connection.summary.netCashflowCents / 100)} (${safe(connection.summary.from)} to ${safe(connection.summary.to)}). Historical totals are not a current-month forecast.</p>` : ''}</section>`,
+      `<section class="panel"><span class="label">Fictional demo profile · ${safe(connection.userId)} · read-only</span><h2>Demo bank feed</h2><p>Ledger revision ${safe(connection.ledgerRevision ?? 0)} · invented movements from the demo bank. Answers typed here stay in this rehearsal and are not saved.</p><div class="actions">${button('Refresh bank data', 'refresh_data', '', 'link')}</div>${connection.summary ? `<p class="small">Observed net cash flow: ${euro.format(connection.summary.netCashflowCents / 100)} (${safe(connection.summary.from)} to ${safe(connection.summary.to)}). Historical totals are not a current-month forecast.</p>` : ''}</section>`,
     );
     if (screen)
       byId('view').insertAdjacentHTML(
@@ -544,16 +545,23 @@ document.addEventListener('submit', event => {
 });
 
 async function refresh() {
-  if (!active || busy || refreshing || (app && !active.boardUrl)) return;
+  if (!active || busy || refreshing) return;
   const runId = active.runId;
-  const origin = app ? new URL(active.boardUrl!).origin : location.origin;
-  const url = new URL('/preview/state', origin);
-  if (!active.sharedBoard) url.searchParams.set('run', runId);
   refreshing = true;
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(4000) });
-    if (!response.ok) throw new Error('Board unavailable');
-    const view = (await response.json()) as BoardView;
+    let view: BoardView;
+    if (app) {
+      // Inside a chat host the frame is on another origin, so the board is re-read through the host.
+      const result = await app.callServerTool({ name: 'open_demo', arguments: { runId } });
+      if (result.isError || !result.structuredContent) throw new Error('Board unavailable');
+      view = result.structuredContent as BoardView;
+    } else {
+      const url = new URL('/preview/state', location.origin);
+      if (!active.sharedBoard) url.searchParams.set('run', runId);
+      const response = await fetch(url, { signal: AbortSignal.timeout(4000) });
+      if (!response.ok) throw new Error('Board unavailable');
+      view = (await response.json()) as BoardView;
+    }
     if (!busy && active.runId === runId) render(view);
     byId('connection').textContent = 'Live board · synced with chat';
   } catch {
@@ -562,7 +570,8 @@ async function refresh() {
     refreshing = false;
   }
 }
-setInterval(() => void refresh(), 1000);
+// A page polls its own origin every second; a hosted frame goes through the host, so it polls less often.
+setInterval(() => void refresh(), app ? 4000 : 1000);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) void refresh();
 });

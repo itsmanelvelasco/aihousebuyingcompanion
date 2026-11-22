@@ -1,11 +1,11 @@
 # Habits area
 
-Branch: `feat/habits-agent`. Owner: habits development; coordinate shared contracts with integration. This is a separate feature from the bank worker and does not modify bank data.
+Owner: habits development; coordinate shared contracts with integration. This is a separate feature from the bank worker and does not modify bank data.
 
-- Entry point: `apps/habits-agent/server.ts`, started by `npm start` (served under `/api` on port 8787).
+- Entry point: `apps/habits-agent/server.ts`, a handler mounted by the one server (`npm start` or `npm run dev`) under `/api` on port 8787, with the same bearer token as the rest of `/api`.
 - Contracts: `packages/contracts/habits.ts`; strict aggregate summaries, user-reviewed habit goals and explicit check-ins.
 - Rules/AI: `packages/finance/habits.ts` (rules) and `apps/habits-agent/agent.ts` (optional model); rules by default, optional `gpt-6.2-sol` Responses requests only on explicit demand.
-- Persistence: `apps/habits-agent/store.ts`; separate ignored runtime files, no changes to committed profile fixtures.
+- Persistence: `apps/habits-agent/store.ts` over `packages/db/habits.ts`; tables `habit_goals`, `habit_checkins` and the `ai_usage` counter in the runtime database, no changes to committed profile fixtures.
 - Verification: `tests/habits.test.ts`; mock API tests make no paid calls.
 - Setup, routes and cost limits: [service README](../../apps/habits-agent/README.md).
 

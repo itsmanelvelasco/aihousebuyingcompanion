@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { test } from 'node:test';
 import { createOpenAIHabits } from '../apps/habits-agent/agent.ts';
 import { createHabitsApi } from '../apps/habits-agent/server.ts';
 import { createHabitStore } from '../apps/habits-agent/store.ts';
 import { summarySchema } from '../packages/contracts/habits.ts';
+import { open } from '../packages/db/database.ts';
 import { suggestHabits } from '../packages/finance/habits.ts';
 import { createStore } from '../packages/profiles/store.ts';
 
@@ -77,14 +75,12 @@ test('Responses calls use Sol, bounded structured output and no stored identity;
   await assert.rejects(createOpenAIHabits().suggest(summary), /not configured/);
 });
 test('habit goals and check-ins persist, remain isolated and AI attempt cap survives restart', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'relocat-habit-'));
-  const profileRoot = join(root, 'profiles');
-  const dataRoot = join(root, 'habits');
+  const db = open(':memory:');
   const doc = { schemaVersion: 1, synthetic: true };
-  const profile = createStore(profileRoot);
+  const profile = createStore(db);
   for (const id of ['demo', 'other'])
     await profile.create(id, { details: { ...doc, id }, preferences: doc, 'bank-account': doc });
-  const store = createHabitStore(dataRoot, profileRoot);
+  const store = createHabitStore(db);
   const goal = {
     id: 'weekly-review',
     title: 'Weekly review',
@@ -100,7 +96,7 @@ test('habit goals and check-ins persist, remain isolated and AI attempt cap surv
     assert.equal((await store.checkin('demo', goal.id, checkin)).inserted, true);
     assert.equal((await store.checkin('demo', goal.id, checkin)).inserted, false);
     await assert.rejects(store.checkin('demo', goal.id, { ...checkin, completed: false }), /conflict/);
-    const restarted = createHabitStore(dataRoot, profileRoot);
+    const restarted = createHabitStore(db);
     assert.equal((await restarted.read('demo')).checkins.length, 1);
     assert.equal((await restarted.read('other')).goals.length, 0);
     await Promise.all([store.reserveCall(2, '2026-11-21'), store.reserveCall(2, '2026-11-21')]);
@@ -108,19 +104,18 @@ test('habit goals and check-ins persist, remain isolated and AI attempt cap surv
     assert.equal((await restarted.reserveCall(2, '2026-11-22')).attempts, 1);
     await assert.rejects(store.read('../escape'));
   } finally {
-    await rm(root, { recursive: true, force: true });
+    db.close();
   }
 });
 test('habits HTTP API enforces auth, explicit AI requests and validated persistent writes', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'relocat-habit-http-'));
-  const profileRoot = join(root, 'profiles');
+  const db = open(':memory:');
   const doc = { schemaVersion: 1, synthetic: true };
-  await createStore(profileRoot).create('demo', {
+  await createStore(db).create('demo', {
     details: { ...doc, id: 'demo' },
     preferences: doc,
     'bank-account': doc,
   });
-  const server = createHabitsApi({ token: 'test-token', dataRoot: join(root, 'habits'), profileRoot });
+  const server = createHabitsApi({ token: 'test-token', db });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
@@ -168,6 +163,6 @@ test('habits HTTP API enforces auth, explicit AI requests and validated persiste
     assert.equal((await (await fetch(`${base}/users/demo/habits`, { headers })).json()).checkins.length, 1);
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
-    await rm(root, { recursive: true, force: true });
+    db.close();
   }
 });

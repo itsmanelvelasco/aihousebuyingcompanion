@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isoDate, municipalityCode, recommendationInput, schoolStage } from './places.ts';
+import { household, isoDate, municipalityCode, recommendationInput, schoolStage } from './places.ts';
 
 const optional = <T extends z.ZodType>(schema: T) => schema.nullable().optional();
 const cents = z.number().int().safe().nonnegative().max(100_000_000_000);
@@ -66,6 +66,14 @@ const dataSchema = z
       .object({ required: optional(z.boolean()) })
       .strict()
       .optional(),
+    /**
+     * The household facts that decide whether a tax measure or an aid applies: the buyer's age, the
+     * children and their ages, habitual residence, family status, the type of tax return and the tax
+     * bases. The fields are those of the incentive screening (`household` in `places.ts`), without the
+     * purchase price, which the planner takes from the plan. A tax base is the figure on the tax
+     * return, never a salary. The planner reads a fact only from a confirmed input.
+     */
+    eligibility: household.omit({ purchasePriceEur: true }).optional(),
   })
   .strict()
   .refine(

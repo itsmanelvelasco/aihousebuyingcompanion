@@ -2,8 +2,18 @@ import { monthsToTarget } from './savings.ts';
 
 /**
  * Bank CSV intake for the interview: parse statement rows, group spending by keyword category
- * and average it per observed month. Amounts are parsed to integer cents and reported in the
+ * and average it per complete month. Amounts are parsed to integer cents and reported in the
  * statement's currency units. Runs unchanged in Node and in the browser.
+ *
+ * Which months are averaged. The statement covers the days from its earliest to its latest row. A
+ * calendar month is complete when that range contains it from its first to its last day; a complete
+ * month without rows counts as a month with no movements. Monthly figures are the totals of the
+ * complete months divided by their number, each rounded once to the cent. The first and last months
+ * are usually partial and are left out, and reported in `partialMonths`.
+ *
+ * When no month is complete the figures cannot be a monthly average. They are then the totals of
+ * every row divided by the days covered, expressed in months of 365.25 / 12 days and never less than
+ * one month, and `averageBasis` says `partial_months_only`: read them as a rough indication.
  */
 const categories: Record<string, RegExp> = {
   Rent: /\brent\b|alquiler|arrendamiento/,
@@ -22,7 +32,7 @@ export const expenseCategories = [...Object.keys(categories), 'Other'];
 export const incomeCategories = ['Payroll', 'Other income'];
 export const classificationLimit = 80;
 
-export type CsvTransaction = { month: string; label: string; cents: number };
+export type CsvTransaction = { date: string; month: string; label: string; cents: number };
 export type MerchantCandidate = { direction: 'in' | 'out'; description: string };
 export type CashFlowSummary = ReturnType<typeof summarizeTransactions>;
 export type SavingsPlanInput = { target: number; saved: number; monthly: number; habit: number };
@@ -108,7 +118,7 @@ export function parseTransactions(csv: string): CsvTransaction[] {
     ) {
       throw new Error(`Invalid transaction on data row ${index + 1}. Use YYYY-MM-DD dates and signed amounts.`);
     }
-    return { month: day.slice(0, 7), label, cents };
+    return { date: day, month: day.slice(0, 7), label, cents };
   });
 }
 
@@ -123,7 +133,31 @@ export function summarizeTransactions(
     const allowed = candidate.direction === 'in' ? incomeCategories : expenseCategories;
     if (category && allowed.includes(category)) classifications.set(merchantKey(candidate), category);
   }
-  const months = new Map<string, number>();
+  // Complete months, judged from the range of dates in the file.
+  const dates = transactions.map(transaction => transaction.date).sort();
+  const coveredFrom = dates[0] ?? null;
+  const coveredTo = dates.at(-1) ?? null;
+  const observedMonths = [...new Set(transactions.map(transaction => transaction.month))].sort();
+  const completeMonths: string[] = [];
+  if (coveredFrom && coveredTo) {
+    let [year, month] = [Number(coveredFrom.slice(0, 4)), Number(coveredFrom.slice(5, 7))];
+    for (;;) {
+      const name = `${year}-${String(month).padStart(2, '0')}`;
+      if (name > coveredTo.slice(0, 7)) break;
+      const lastDay = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+      if (coveredFrom <= `${name}-01` && coveredTo >= lastDay) completeMonths.push(name);
+      [year, month] = month === 12 ? [year + 1, 1] : [year, month + 1];
+    }
+  }
+  const partialMonths = observedMonths.filter(month => !completeMonths.includes(month));
+  const averageBasis = completeMonths.length ? ('complete_months' as const) : ('partial_months_only' as const);
+  const coveredDays =
+    coveredFrom && coveredTo ? Math.round((Date.parse(coveredTo) - Date.parse(coveredFrom)) / 86_400_000) + 1 : 0;
+  // Months the totals are divided by: the complete months, else the days covered (at least one month).
+  const divisor = completeMonths.length || Math.max(1, coveredDays / (365.25 / 12));
+  const averaged = (month: string) => averageBasis === 'partial_months_only' || completeMonths.includes(month);
+
+  const payMonths = new Set<string>();
   const expenses: Record<string, number> = {};
   let inflows = 0;
   let outflows = 0;
@@ -131,15 +165,16 @@ export function summarizeTransactions(
   let transfers = 0;
   for (const transaction of transactions) {
     const { month, label, cents } = transaction;
-    if (!months.has(month)) months.set(month, 0);
     const candidate = classifications.size ? merchantCandidate(transaction) : null;
     const predicted = candidate && classifications.get(merchantKey(candidate));
     if (internalTransfer.test(label)) {
       transfers++;
+    } else if (!averaged(month)) {
+      // A row of a partial month is counted in `transactionCount` and left out of every average.
     } else if (cents > 0) {
       inflows += cents;
       if (predicted === 'Payroll' || /salary|payroll|n[oó]mina|wages/.test(label)) {
-        months.set(month, (months.get(month) ?? 0) + cents);
+        payMonths.add(month);
         payroll += cents;
       }
     } else if (cents < 0) {
@@ -149,15 +184,33 @@ export function summarizeTransactions(
       expenses[category] = (expenses[category] ?? 0) - cents;
     }
   }
-  const average = (cents: number) => Math.round(cents / months.size) / 100;
-  const pay = [...months.values()];
+  const average = (cents: number) => Math.round(cents / divisor) / 100;
+  const list = (months: string[]) => months.join(', ');
+  const averagingNote =
+    averageBasis === 'complete_months'
+      ? `Monthly figures are averages of ${completeMonths.length} complete month(s): ${list(completeMonths)}.${
+          partialMonths.length
+            ? ` Left out as partial: ${list(partialMonths)} (the statement runs from ${coveredFrom} to ${coveredTo}).`
+            : ''
+        }`
+      : `The statement runs from ${coveredFrom} to ${coveredTo} and covers no complete calendar month (${list(partialMonths)} are partial). The monthly figures are the totals of those ${coveredDays} day(s) spread over ${Math.round(divisor * 100) / 100} month(s): a rough indication, not a monthly average.`;
   return {
-    observedMonths: [...months.keys()].sort(),
+    /** Every month with at least one row, complete or not. */
+    observedMonths,
+    /** The months the monthly figures average; empty when only partial months exist. */
+    completeMonths,
+    /** Months with rows that the statement does not cover from the first to the last day. */
+    partialMonths,
+    averageBasis,
+    averagingNote,
+    coveredFrom,
+    coveredTo,
     transactionCount: transactions.length,
     excludedTransfers: transfers,
     estimatedMonthlySalary: payroll ? average(payroll) : null,
     monthlyOtherIncome: average(inflows - payroll),
-    salaryMonths: pay.filter(Boolean).length,
+    /** Averaged months in which pay was identified. */
+    salaryMonths: payMonths.size,
     monthlyInflows: average(inflows),
     monthlyCostOfLiving: average(outflows),
     monthlyNetCashFlow: average(inflows - outflows),

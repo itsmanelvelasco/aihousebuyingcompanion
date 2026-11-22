@@ -6,11 +6,15 @@ type Props = { userId: string | null; feed: BankFeedState; onRetry: () => void }
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
-/** Recent bank activity for the person. The data is fictional and says so on every state. */
+/** Recent bank activity for the person, labelled synthetic or real from the records themselves. */
 export function BankStrip({ userId, feed, onRetry }: Props) {
-  const feedOff = feed.runtime !== null && !feed.runtime.enabled;
-  const state = feed.phase === 'live' ? (feedOff ? 'paused' : 'live') : feed.phase === 'error' ? 'error' : 'waiting';
-  const stateLabel = { live: 'Live', paused: 'Feed off', error: 'Unavailable', waiting: 'Connecting' }[state];
+  // The runtime describes only the built-in simulator. Movements also arrive from connected banks,
+  // so being "live" means this view is following the ledger, whichever source feeds it.
+  const simulatorOn = feed.runtime?.enabled === true;
+  const state = feed.phase === 'live' ? 'live' : feed.phase === 'error' ? 'error' : 'waiting';
+  const stateLabel = { live: 'Live', error: 'Unavailable', waiting: 'Connecting' }[state];
+  // Unknown until a summary arrives; never call data real or synthetic on a guess.
+  const synthetic = feed.summary?.synthetic;
 
   return (
     <section className="panel bank" aria-labelledby="bank-title">
@@ -23,9 +27,15 @@ export function BankStrip({ userId, feed, onRetry }: Props) {
           <Icon name="bank" />
           Bank activity
         </h2>
-        <Badge tone="violet" title="Fictional transactions generated for the demo. No real bank is connected.">
-          Synthetic data
-        </Badge>
+        {synthetic === true ? (
+          <Badge tone="violet" title="Fictional transactions generated for the demo. No real bank is connected.">
+            Synthetic data
+          </Badge>
+        ) : synthetic === false ? (
+          <Badge tone="ok" title="These figures include movements from a connected bank.">
+            Bank data
+          </Badge>
+        ) : null}
         <span className="bank-status" role="status">
           {!userId ? (
             'No person selected, so there is no feed to follow.'
@@ -40,7 +50,12 @@ export function BankStrip({ userId, feed, onRetry }: Props) {
                 <>
                   {' · '}
                   <strong>
-                    {plural(feed.newTransactions, 'new transaction')}, figures refreshed <Ago since={feed.changedAt} />
+                    {feed.newTransactions === null
+                      ? 'New activity'
+                      : feed.newTransactions === 0
+                        ? 'Ledger changed'
+                        : plural(feed.newTransactions, 'new transaction')}
+                    , figures refreshed <Ago since={feed.changedAt} />
                   </strong>
                 </>
               ) : feed.events[0] ? (
@@ -72,19 +87,19 @@ export function BankStrip({ userId, feed, onRetry }: Props) {
                       <time dateTime={event.occurredAt}>
                         {formatDate(event.occurredAt)}, {formatClock(event.occurredAt)}
                       </time>
+                      {/* The count is the size of the ledger after the change, not what the change added. */}
                       <span>
-                        {plural(event.transactionCount, 'transaction')} on {plural(event.accountCount, 'account')}
+                        ledger at {plural(event.transactionCount, 'movement')} on{' '}
+                        {plural(event.accountCount, 'account')}
                       </span>
                     </li>
                   ))}
                 </ul>
               )}
               <p className="hint">
-                {feed.runtime === null
-                  ? 'Feed status unknown.'
-                  : feedOff
-                    ? 'The synthetic feed is switched off; this is the last stored activity.'
-                    : `The synthetic feed adds movements about every ${Math.round(feed.runtime.intervalMs / 1000)} s.`}{' '}
+                {simulatorOn && feed.runtime
+                  ? `The built-in simulator adds movements about every ${Math.round(feed.runtime.intervalMs / 1000)} s.`
+                  : 'Movements appear when a connected bank reports them.'}{' '}
                 Checked here every {Math.round(feed.pollMs / 1000)} s while this view is visible.
               </p>
             </div>

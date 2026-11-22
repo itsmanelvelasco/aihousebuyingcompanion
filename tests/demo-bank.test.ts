@@ -12,6 +12,10 @@ import { createDemoBank } from '../apps/demo-bank/server.ts';
 import { createProfileApiHandler } from '../apps/profile-api/server.ts';
 import demoBankProvider from '../packages/banks/providers/demo-bank.ts';
 import { createBankRegistry } from '../packages/banks/registry.ts';
+import { demoBankConfig } from '../packages/config/env.ts';
+import { countSeenWebhooks, listConnections, pendingWebhooks } from '../packages/db/bank-sync.ts';
+import type { Database } from '../packages/db/database.ts';
+import { open } from '../packages/db/database.ts';
 import { createStore } from '../packages/profiles/store.ts';
 
 /**
@@ -55,14 +59,14 @@ async function call(url: string, key: string | null, method = 'GET', body?: unkn
  * Start both services. `gate` lets a test take either one down: `refuse` drops the connection (the
  * process is not there), `error` answers 503 (it is there but failing).
  */
-async function world(options: { webhook?: boolean; bank?: Partial<DemoBankOptions>; root?: string } = {}) {
+async function world(options: { webhook?: boolean; bank?: Partial<DemoBankOptions>; db?: Database } = {}) {
   const time = { now: startedAt };
   const clock = () => new Date(time.now);
   const gate = { bank: 'up' as 'up' | 'refuse' | 'error', relocat: 'up' as 'up' | 'refuse' | 'error' };
-  const root = options.root ?? (await mkdtemp(join(tmpdir(), 'relocat-demo-bank-')));
-  if (!options.root) {
+  const db = options.db ?? open(':memory:');
+  if (!options.db) {
     const document = { schemaVersion: 1 as const, synthetic: true as const };
-    await createStore(root).create('alice', {
+    await createStore(db).create('alice', {
       details: { ...document, id: 'alice' },
       preferences: document,
       'bank-account': { ...document, snapshotDate: '2026-11-21' },
@@ -102,7 +106,7 @@ async function world(options: { webhook?: boolean; bank?: Partial<DemoBankOption
     secret = subscribed.data.signing_secret;
   }
   const startRelocat = () =>
-    createProfileApiHandler(root, token, {
+    createProfileApiHandler(db, token, {
       bankRegistry: createBankRegistry([demoBankProvider], {
         BANK_DEMO_BANK_BASE_URL: bankUrl,
         BANK_DEMO_BANK_API_KEY: apiKey,
@@ -117,14 +121,14 @@ async function world(options: { webhook?: boolean; bank?: Partial<DemoBankOption
   return {
     time,
     gate,
-    root,
+    db,
     bank,
     bankUrl,
     apiUrl,
     webhookUrl,
     secret,
     sync: () => relocat!.bankSync,
-    /** Stop ReloCat's API (keeping its files) and start a new instance on the same port and root. */
+    /** Stop ReloCat's API (keeping its database) and start a new instance on the same port and database. */
     async restartRelocat() {
       await relocat!.close();
       relocat = startRelocat();
@@ -197,12 +201,12 @@ async function world(options: { webhook?: boolean; bank?: Partial<DemoBankOption
       await response.body?.cancel();
       return response.status;
     },
-    async close(keepRoot = false) {
+    async close(keepDatabase = false) {
       await relocat!.close();
       await bank.close();
       await stop(apiServer);
       await stop(bankServer);
-      if (!keepRoot) await rm(root, { recursive: true, force: true });
+      if (!keepDatabase) db.close();
     },
   };
 }
@@ -632,12 +636,11 @@ test('a webhook accepted while the bank cannot be pulled survives a restart of R
     assert.equal(w.bank.listDeliveries()[0].state, 'delivered', 'the bank was answered with a 202');
     assert.equal(w.sync().webhookStatus().pending, 1, 'acknowledged, queued, not yet imported');
     assert.equal((await w.connection()).consecutiveFailures, 1);
-    const queued = JSON.parse(await readFile(join(w.root, 'bank-webhook-queue.json'), 'utf8'));
     assert.deepEqual(
-      queued.pending.map((item: Json) => [item.providerId, item.ref]),
+      pendingWebhooks(w.db).map(item => [item.providerId, item.ref]),
       [['demo-bank', 'cust-001']],
     );
-    assert.equal(queued.seen.length, 1);
+    assert.equal(countSeenWebhooks(w.db), 1);
 
     // ReloCat stops before it could import the movement, and the bank recovers meanwhile.
     await w.restartRelocat();
@@ -677,14 +680,13 @@ test('the bank keeps its history, webhooks and cursors across a restart when it 
     await first.connect();
     const [payment] = await first.fire({ amount: '-11.00', description: 'Papereria Demo' });
     await first.settle();
-    const cursorBefore = JSON.parse(await readFile(join(first.root, 'alice', 'bank-connections.json'), 'utf8'))
-      .connections[0].cursor;
+    const cursorBefore = listConnections(first.db, 'alice')[0].cursor;
     const known = (await first.bankTransactions()).map(transaction => transaction.id);
     await first.close(true);
     assert.equal(JSON.parse(await readFile(snapshotFile, 'utf8')).synthetic, true);
 
     // A new bank process with the same snapshot: same transactions, same webhook, cursor still valid.
-    second = await world({ bank: { snapshotFile }, root: first.root, webhook: false });
+    second = await world({ bank: { snapshotFile }, db: first.db, webhook: false });
     assert.deepEqual(
       (await second.bankTransactions()).map(transaction => transaction.id),
       known,
@@ -700,7 +702,7 @@ test('the bank keeps its history, webhooks and cursors across a restart when it 
     await second.close(true);
 
     // A bank that lost its state refuses the old cursor; ReloCat starts over and nothing is duplicated.
-    second = await world({ root: first.root, webhook: false });
+    second = await world({ db: first.db, webhook: false });
     const expired = await call(`${second.bankUrl}/customers/cust-001/transactions?cursor=${cursorBefore}`, apiKey);
     assert.equal(expired.status, 410);
     const rows = (await second.ledger()).length;
@@ -710,7 +712,7 @@ test('the bank keeps its history, webhooks and cursors across a restart when it 
     assert.equal((await second.ledger()).length, rows);
   } finally {
     await second?.close();
-    await rm(first.root, { recursive: true, force: true });
+    first.db.close();
     await rm(directory, { recursive: true, force: true });
   }
 });
@@ -745,4 +747,146 @@ test('the connect helper wires both services idempotently over HTTP', async () =
   } finally {
     await w.close();
   }
+});
+
+const toCents = (amount: string) => Math.round(Number(amount) * 100);
+
+test('the bank never stops: old history leaves a rolling window, balances stay exact and old cursors get 410', async () => {
+  const w = await world({ webhook: false, bank: { maxTransactions: 60 } });
+  // The same bank with room for everything: the reference for what the balances must be.
+  const whole = createDemoBank({
+    apiKey,
+    seed: 'test-seed',
+    startDate: '2026-09-01',
+    clock: () => new Date(startedAt),
+  });
+  await whole.ready;
+  try {
+    const status = () => w.bank.status();
+    assert.equal(status().transactions, 60);
+    assert.equal(status().max_transactions, 60);
+    assert.ok(status().dropped_transactions > 100, 'three months of history do not fit the window');
+    assert.equal(status().paused_reason, null);
+
+    // ReloCat pulls what the window holds and remembers its cursor.
+    await w.connect();
+    const firstCursor = listConnections(w.db, 'alice')[0].cursor;
+
+    // Far more movements than the window holds: every tick still produces something.
+    let produced = 0;
+    for (let round = 0; round < 6; round++) produced += (await w.bank.step(100)).length;
+    await whole.step(600);
+    assert.ok(produced >= 600);
+    assert.equal(status().transactions, 60);
+
+    // Opening balance plus the listed completed transactions is the balance, and the balance is
+    // what a bank that kept everything reports.
+    const accounts = (await call(`${w.bankUrl}/customers/cust-001/accounts`, apiKey)).data.accounts as Json[];
+    const listed = await w.bankTransactions();
+    assert.ok(listed.length > 0 && listed.length <= 60);
+    const reference = createServer((request, response) => void whole.handle(request, response));
+    const referenceUrl = await listen(reference);
+    const expected = (await call(`${referenceUrl}/customers/cust-001/accounts`, apiKey)).data.accounts as Json[];
+    await stop(reference);
+    for (const account of accounts) {
+      const completed = listed
+        .filter(transaction => transaction.account_id === account.id && transaction.state === 'completed')
+        .reduce((sum, transaction) => sum + toCents(transaction.amount), 0);
+      assert.equal(toCents(account.opening_balance) + completed, toCents(account.balance), account.id);
+      assert.equal(account.balance, expected.find(item => item.id === account.id)?.balance, account.id);
+      assert.ok(account.opened_on > '2026-09-01', 'the opening date moved with the window');
+      assert.ok(
+        listed.every(item => item.account_id !== account.id || item.created_at.slice(0, 10) >= account.opened_on),
+      );
+    }
+
+    // The cursor from before points at history that is gone: 410, and ReloCat starts again by itself.
+    const expired = await call(`${w.bankUrl}/customers/cust-001/transactions?cursor=${firstCursor}`, apiKey);
+    assert.equal(expired.status, 410);
+    const resync = (await call(`${w.apiUrl}/users/alice/bank/sync`, token, 'POST', {})).data.results[0];
+    assert.equal(resync.status, 'synced');
+    assert.ok(resync.inserted > 0);
+    const fresh = listConnections(w.db, 'alice')[0].cursor;
+    assert.equal((await call(`${w.bankUrl}/customers/cust-001/transactions?cursor=${fresh}`, apiKey)).status, 200);
+  } finally {
+    await whole.close();
+    await w.close();
+  }
+});
+
+test('a snapshot is accepted in a later month and keeps the seed and start date it was made with', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'relocat-demo-bank-month-'));
+  const snapshotFile = join(directory, 'demo-bank.json');
+  try {
+    // No start date configured: "three months ago" is decided on 22 November.
+    const first = createDemoBank({ apiKey, seed: 'kept-seed', snapshotFile, clock: () => new Date(startedAt) });
+    await first.ready;
+    await first.step(3);
+    const before = first.status();
+    assert.equal(before.start_date, '2026-08-01');
+    await first.close();
+
+    // December: the default would now be 1 September, and no seed is given at all.
+    const later = createDemoBank({ apiKey, snapshotFile, clock: () => new Date('2026-12-03T09:00:00.000Z') });
+    await later.ready;
+    const after = later.status();
+    assert.deepEqual(
+      [after.start_date, after.seed, after.transactions, after.ticks],
+      [before.start_date, 'kept-seed', before.transactions, before.ticks],
+    );
+    assert.ok((await later.step(1)).length > 0, 'and it goes on from where it was');
+    await later.close();
+
+    // A start date that was configured and disagrees is still an error, not a silent new history.
+    await assert.rejects(createDemoBank({ apiKey, startDate: '2026-10-01', snapshotFile }).ready, /start date/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a webhook that signs with an old secret gets the current one when ReloCat is connected again', async () => {
+  // ReloCat verifies with `w.secret`; the bank holds a subscription made for an earlier secret.
+  const w = await world({ webhook: false });
+  try {
+    const stale = await call(`${w.bankUrl}/webhooks`, apiKey, 'POST', { url: w.webhookUrl });
+    assert.notEqual(stale.data.signing_secret, w.secret);
+    await w.connect();
+    await w.fire({ amount: '-3.00', description: 'Abans de la rotació' });
+    await w.settle();
+    const rejected = (await call(`${w.bankUrl}/webhooks/deliveries`, apiKey)).data.deliveries[0];
+    assert.deepEqual([rejected.state, rejected.last_status], ['pending', 401]);
+
+    const options = { bankUrl: w.bankUrl, bankApiKey: apiKey, relocatApiUrl: w.apiUrl, relocatToken: token };
+    const fixed = await connectDemoBank({ ...options, userId: 'alice', expectedSecret: w.secret });
+    assert.deepEqual([fixed.webhook.created, fixed.webhook.secretReplaced, fixed.warnings], [false, true, []]);
+    assert.equal(fixed.webhook.id, stale.data.id, 'the subscription is kept, only its secret changes');
+    const listed = (await call(`${w.bankUrl}/webhooks`, apiKey)).data.webhooks;
+    assert.equal(listed.length, 1);
+    assert.ok(!JSON.stringify(listed).includes(w.secret), 'the secret itself is never listed');
+
+    const [payment] = await w.fire({ amount: '-4.00', description: 'Després de la rotació' });
+    await w.settle();
+    const delivered = (await call(`${w.bankUrl}/webhooks/deliveries?state=delivered`, apiKey)).data.deliveries;
+    assert.ok(delivered.length >= 1);
+    assert.ok((await w.ledger()).some(row => row.id === ledgerId(payment.id)));
+
+    const again = await connectDemoBank({ ...options, userId: 'alice', expectedSecret: w.secret });
+    assert.equal(again.webhook.secretReplaced, false, 'nothing to replace the second time');
+
+    // The route itself: owner only, a secret of a sensible length, and an unknown webhook is a 404.
+    const route = `${w.bankUrl}/webhooks/${stale.data.id}/secret`;
+    assert.equal((await call(route, 'wrong-key', 'PUT', {})).status, 401);
+    assert.equal((await call(route, apiKey, 'PUT', { signing_secret: 'short' })).status, 400);
+    assert.equal((await call(`${w.bankUrl}/webhooks/wh-999999/secret`, apiKey, 'PUT', {})).status, 404);
+    const invented = await call(route, apiKey, 'PUT', {});
+    assert.match(invented.data.signing_secret, /^whsec-[0-9a-f]{48}$/);
+  } finally {
+    await w.close();
+  }
+});
+
+test('the bank has its own tick variable and still honours the old shared one', () => {
+  assert.equal(demoBankConfig({}).intervalMs, 5000);
+  assert.equal(demoBankConfig({ DEMO_BANK_INTERVAL_MS: '2000' }).intervalMs, 2000);
+  assert.equal(demoBankConfig({ DEMO_BANK_INTERVAL_MS: '2000', DEMO_BANK_TICK_MS: '750' }).intervalMs, 750);
 });

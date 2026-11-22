@@ -55,8 +55,15 @@ async function tool(name: string, args: Record<string, unknown>) {
 test('discovers schemas and exposes sourced profiles, schools and business indicators', async () => {
   assert.equal(client.getServerVersion()?.name, 'relocat');
   const listed = await client.listTools();
-  assert.equal(listed.tools.length, 19);
-  assert(listed.tools.every(tool => tool.inputSchema && tool.outputSchema && tool.annotations?.readOnlyHint));
+  assert.equal(listed.tools.length, 24);
+  // Every tool reads only, except the one that saves to the signed-in person's own profile.
+  const writers = listed.tools.filter(tool => !tool.annotations?.readOnlyHint).map(tool => tool.name);
+  assert.deepEqual(writers, ['save_my_inputs']);
+  assert(listed.tools.every(tool => tool.inputSchema && tool.outputSchema));
+  // No tool takes a user id from the model; this server has no accounts, so personal tools say so.
+  for (const tool of listed.tools) assert(!('userId' in (tool.inputSchema.properties ?? {})), tool.name);
+  const personal = await client.callTool({ name: 'get_person', arguments: {} });
+  assert(personal.isError);
   const profileTool = listed.tools.find(tool => tool.name === 'recommend_towns_for_profile');
   assert.deepEqual(Object.keys(profileTool?.inputSchema.properties ?? {}).sort(), ['limit', 'profile']);
   assert.deepEqual(profileTool?.inputSchema.required, ['profile']);
@@ -98,7 +105,16 @@ test('serves the fictional interviewer cash-flow card and compares a savings hab
   assert.match(JSON.stringify(start), /how many people will live in the home/);
   const sample = await tool('sample_cash_flow', {});
   assert(typeof sample === 'object' && sample !== null && 'monthlyNetCashFlow' in sample);
-  assert.equal(sample.monthlyNetCashFlow, 854.33);
+  // The demo statement runs from 1 August to 25 October: August and September are averaged, October is partial.
+  assert.equal(sample.monthlyNetCashFlow, 873.5);
+  assert.deepEqual(
+    [
+      'completeMonths' in sample && sample.completeMonths,
+      'partialMonths' in sample && sample.partialMonths,
+      'averageBasis' in sample && sample.averageBasis,
+    ],
+    [['2026-08', '2026-09'], ['2026-10'], 'complete_months'],
+  );
   const resource = await client.readResource({ uri: 'ui://relocat/cash-flow.html' });
   assert.equal(resource.contents[0].mimeType, 'text/html;profile=mcp-app');
   const input = { target: 30_000, saved: 6_000, monthly: 600, currency: 'EUR' };

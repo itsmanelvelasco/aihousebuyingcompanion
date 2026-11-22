@@ -1,0 +1,407 @@
+import type { Database } from './database.ts';
+
+/**
+ * Queries for accounts, browser sessions, sign-in throttling and OAuth (clients, grants, codes and
+ * tokens). Every secret arrives here already hashed; this file never sees a password or a token.
+ * Timestamps are ISO 8601 text, compared as strings.
+ */
+
+export type AccountRecord = {
+  id: string;
+  email: string;
+  passwordHash: string;
+  /** The one person record this account owns. */
+  userId: string;
+  createdAt: string;
+  lastLoginAt: string | null;
+};
+
+const accountColumns =
+  'id, email, password_hash AS passwordHash, user_id AS userId, created_at AS createdAt, last_login_at AS lastLoginAt';
+
+export function accountByEmail(db: Database, email: string) {
+  return db.get<AccountRecord>(`SELECT ${accountColumns} FROM accounts WHERE email = ?`, email);
+}
+
+export function accountById(db: Database, id: string) {
+  return db.get<AccountRecord>(`SELECT ${accountColumns} FROM accounts WHERE id = ?`, id);
+}
+
+/** The account that owns a person record, or undefined for a demo fixture. */
+export function accountIdOfUser(db: Database, userId: string) {
+  return db.get<{ id: string }>('SELECT id FROM accounts WHERE user_id = ?', userId)?.id;
+}
+
+export function insertAccount(db: Database, account: Omit<AccountRecord, 'lastLoginAt'>) {
+  db.run(
+    'INSERT INTO accounts (id, email, password_hash, user_id, created_at) VALUES (?, ?, ?, ?, ?)',
+    account.id,
+    account.email,
+    account.passwordHash,
+    account.userId,
+    account.createdAt,
+  );
+}
+
+export function touchLogin(db: Database, accountId: string, now: string) {
+  db.run('UPDATE accounts SET last_login_at = ? WHERE id = ?', now, accountId);
+}
+
+export function updatePasswordHash(db: Database, accountId: string, passwordHash: string) {
+  db.run('UPDATE accounts SET password_hash = ? WHERE id = ?', passwordHash, accountId);
+}
+
+/**
+ * Delete an account and everything stored about its person. The account row takes its sessions,
+ * grants, codes and tokens with it; the `users` row takes the profile, inputs, ledger, bank
+ * connections, events and habits. Queued bank webhooks carry no user id, so they go by reference.
+ * Returns the number of rows removed per table that held any.
+ */
+export function deleteAccountAndPerson(db: Database, accountId: string) {
+  return db.transaction(() => {
+    const account = accountById(db, accountId);
+    if (!account) return null;
+    const { userId } = account;
+    const count = (sql: string, ...parameters: string[]) => db.get<{ total: number }>(sql, ...parameters)?.total ?? 0;
+    const removed: Record<string, number> = {};
+    const perUser = [
+      'profile_sections',
+      'input_records',
+      'bank_ledgers',
+      'bank_accounts',
+      'bank_transactions',
+      'bank_events',
+      'bank_connections',
+      'habit_goals',
+      'habit_checkins',
+    ];
+    for (const table of perUser)
+      removed[table] = count(`SELECT COUNT(*) AS total FROM ${table} WHERE user_id = ?`, userId);
+    removed.auth_sessions = count('SELECT COUNT(*) AS total FROM auth_sessions WHERE account_id = ?', accountId);
+    removed.oauth_grants = count('SELECT COUNT(*) AS total FROM oauth_grants WHERE account_id = ?', accountId);
+    db.run(
+      `
+        DELETE FROM bank_webhook_queue
+        WHERE EXISTS (
+          SELECT 1 FROM bank_connections c
+          WHERE c.user_id = ? AND c.provider_id = bank_webhook_queue.provider_id AND c.ref = bank_webhook_queue.ref
+        )
+      `,
+      userId,
+    );
+    db.run('DELETE FROM auth_throttle WHERE key = ?', `account:${account.email}`);
+    db.run('DELETE FROM accounts WHERE id = ?', accountId);
+    // Rows that reference the user only through a composite key are removed explicitly first.
+    db.run('DELETE FROM habit_checkins WHERE user_id = ?', userId);
+    db.run('DELETE FROM bank_transactions WHERE user_id = ?', userId);
+    db.run('DELETE FROM users WHERE id = ?', userId);
+    removed.accounts = 1;
+    removed.users = 1;
+    return { userId, removed };
+  });
+}
+
+/** Rows that still mention a person or an account anywhere; used to prove a deletion was complete. */
+export function remainingRows(db: Database, accountId: string, userId: string) {
+  const byUser = [
+    'profile_sections',
+    'input_records',
+    'bank_ledgers',
+    'bank_accounts',
+    'bank_transactions',
+    'bank_events',
+    'bank_connections',
+    'habit_goals',
+    'habit_checkins',
+  ];
+  let total = db.get<{ total: number }>('SELECT COUNT(*) AS total FROM users WHERE id = ?', userId)!.total;
+  for (const table of byUser)
+    total += db.get<{ total: number }>(`SELECT COUNT(*) AS total FROM ${table} WHERE user_id = ?`, userId)!.total;
+  for (const table of ['auth_sessions', 'oauth_grants'])
+    total += db.get<{ total: number }>(`SELECT COUNT(*) AS total FROM ${table} WHERE account_id = ?`, accountId)!.total;
+  total += db.get<{ total: number }>('SELECT COUNT(*) AS total FROM accounts WHERE id = ?', accountId)!.total;
+  total += db.get<{ total: number }>(
+    `
+      SELECT COUNT(*) AS total FROM oauth_tokens t
+      WHERE NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.id = t.grant_id)
+    `,
+  )!.total;
+  return total;
+}
+
+// ----------------------------------------------------------------- sessions
+
+export type SessionRecord = { accountId: string; createdAt: string; lastSeenAt: string; expiresAt: string };
+
+export function insertSession(db: Database, idHash: string, session: SessionRecord) {
+  db.run(
+    'INSERT INTO auth_sessions (id_hash, account_id, created_at, last_seen_at, expires_at) VALUES (?, ?, ?, ?, ?)',
+    idHash,
+    session.accountId,
+    session.createdAt,
+    session.lastSeenAt,
+    session.expiresAt,
+  );
+}
+
+export function sessionByHash(db: Database, idHash: string) {
+  return db.get<SessionRecord>(
+    `
+      SELECT account_id AS accountId, created_at AS createdAt, last_seen_at AS lastSeenAt, expires_at AS expiresAt
+      FROM auth_sessions WHERE id_hash = ?
+    `,
+    idHash,
+  );
+}
+
+export function touchSession(db: Database, idHash: string, now: string) {
+  db.run('UPDATE auth_sessions SET last_seen_at = ? WHERE id_hash = ?', now, idHash);
+}
+
+export function deleteSession(db: Database, idHash: string) {
+  db.run('DELETE FROM auth_sessions WHERE id_hash = ?', idHash);
+}
+
+export function deleteSessionsOfAccount(db: Database, accountId: string) {
+  db.run('DELETE FROM auth_sessions WHERE account_id = ?', accountId);
+}
+
+/** Remove sessions past their absolute end or idle for longer than allowed. */
+export function deleteExpiredSessions(db: Database, now: string, idleBefore: string) {
+  db.run('DELETE FROM auth_sessions WHERE expires_at <= ? OR last_seen_at <= ?', now, idleBefore);
+}
+
+// ----------------------------------------------------------------- throttle
+
+export type ThrottleRecord = { failures: number; windowStart: string; lockedUntil: string | null };
+
+export function readThrottle(db: Database, key: string) {
+  return db.get<ThrottleRecord>(
+    'SELECT failures, window_start AS windowStart, locked_until AS lockedUntil FROM auth_throttle WHERE key = ?',
+    key,
+  );
+}
+
+export function writeThrottle(db: Database, key: string, record: ThrottleRecord) {
+  db.run(
+    `
+      INSERT INTO auth_throttle (key, failures, window_start, locked_until) VALUES (?, ?, ?, ?)
+      ON CONFLICT (key) DO UPDATE SET
+        failures = excluded.failures, window_start = excluded.window_start, locked_until = excluded.locked_until
+    `,
+    key,
+    record.failures,
+    record.windowStart,
+    record.lockedUntil,
+  );
+}
+
+export function clearThrottle(db: Database, key: string) {
+  db.run('DELETE FROM auth_throttle WHERE key = ?', key);
+}
+
+export function deleteStaleThrottles(db: Database, before: string) {
+  db.run(
+    'DELETE FROM auth_throttle WHERE window_start <= ? AND (locked_until IS NULL OR locked_until <= ?)',
+    before,
+    before,
+  );
+}
+
+// -------------------------------------------------------------------- oauth
+
+export type ClientRecord = {
+  id: string;
+  secretHash: string | null;
+  name: string;
+  redirectUris: string[];
+  authMethod: 'none' | 'client_secret_post' | 'client_secret_basic';
+  createdAt: string;
+};
+
+export function insertClient(db: Database, client: ClientRecord) {
+  db.run(
+    'INSERT INTO oauth_clients (id, secret_hash, name, redirect_uris, auth_method, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    client.id,
+    client.secretHash,
+    client.name,
+    JSON.stringify(client.redirectUris),
+    client.authMethod,
+    client.createdAt,
+  );
+}
+
+export function clientById(db: Database, id: string): ClientRecord | undefined {
+  const row = db.get<Omit<ClientRecord, 'redirectUris'> & { redirectUris: string }>(
+    `
+      SELECT id, secret_hash AS secretHash, name, redirect_uris AS redirectUris, auth_method AS authMethod,
+        created_at AS createdAt
+      FROM oauth_clients WHERE id = ?
+    `,
+    id,
+  );
+  return row && { ...row, redirectUris: JSON.parse(row.redirectUris) as string[] };
+}
+
+export function countClients(db: Database) {
+  return db.get<{ total: number }>('SELECT COUNT(*) AS total FROM oauth_clients')!.total;
+}
+
+/** Clients nobody ever authorized, registered before `before`: abandoned registrations. */
+export function deleteUnusedClients(db: Database, before: string) {
+  db.run(
+    `
+      DELETE FROM oauth_clients
+      WHERE created_at <= ? AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.id)
+    `,
+    before,
+  );
+}
+
+export type GrantRecord = {
+  id: string;
+  accountId: string;
+  clientId: string;
+  scopes: string;
+  resource: string;
+  createdAt: string;
+  revokedAt: string | null;
+};
+
+const grantColumns =
+  'id, account_id AS accountId, client_id AS clientId, scopes, resource, created_at AS createdAt, revoked_at AS revokedAt';
+
+export function insertGrant(db: Database, grant: Omit<GrantRecord, 'revokedAt'>) {
+  db.run(
+    'INSERT INTO oauth_grants (id, account_id, client_id, scopes, resource, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    grant.id,
+    grant.accountId,
+    grant.clientId,
+    grant.scopes,
+    grant.resource,
+    grant.createdAt,
+  );
+}
+
+export function grantById(db: Database, id: string) {
+  return db.get<GrantRecord>(`SELECT ${grantColumns} FROM oauth_grants WHERE id = ?`, id);
+}
+
+/** Active grants of an account with the client's name, newest first: the "connected clients" list. */
+export function activeGrants(db: Database, accountId: string) {
+  return db.all<GrantRecord & { clientName: string }>(
+    `
+      SELECT g.id, g.account_id AS accountId, g.client_id AS clientId, g.scopes, g.resource,
+        g.created_at AS createdAt, g.revoked_at AS revokedAt, c.name AS clientName
+      FROM oauth_grants g JOIN oauth_clients c ON c.id = g.client_id
+      WHERE g.account_id = ? AND g.revoked_at IS NULL
+        AND EXISTS (SELECT 1 FROM oauth_tokens t WHERE t.grant_id = g.id)
+      ORDER BY g.created_at DESC, g.id
+    `,
+    accountId,
+  );
+}
+
+/** Revoke a grant and remove every code and token issued under it. */
+export function revokeGrant(db: Database, grantId: string, now: string) {
+  db.transaction(() => {
+    db.run('UPDATE oauth_grants SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?', now, grantId);
+    db.run('DELETE FROM oauth_tokens WHERE grant_id = ?', grantId);
+    db.run('DELETE FROM oauth_codes WHERE grant_id = ?', grantId);
+  });
+}
+
+export type CodeRecord = {
+  grantId: string;
+  redirectUri: string;
+  codeChallenge: string;
+  expiresAt: string;
+  usedAt: string | null;
+};
+
+export function insertCode(db: Database, codeHash: string, code: Omit<CodeRecord, 'usedAt'>) {
+  db.run(
+    'INSERT INTO oauth_codes (code_hash, grant_id, redirect_uri, code_challenge, expires_at) VALUES (?, ?, ?, ?, ?)',
+    codeHash,
+    code.grantId,
+    code.redirectUri,
+    code.codeChallenge,
+    code.expiresAt,
+  );
+}
+
+export function codeByHash(db: Database, codeHash: string) {
+  return db.get<CodeRecord>(
+    `
+      SELECT grant_id AS grantId, redirect_uri AS redirectUri, code_challenge AS codeChallenge,
+        expires_at AS expiresAt, used_at AS usedAt
+      FROM oauth_codes WHERE code_hash = ?
+    `,
+    codeHash,
+  );
+}
+
+export function markCodeUsed(db: Database, codeHash: string, now: string) {
+  db.run('UPDATE oauth_codes SET used_at = ? WHERE code_hash = ?', now, codeHash);
+}
+
+export type TokenRecord = {
+  grantId: string;
+  kind: 'access' | 'refresh';
+  createdAt: string;
+  expiresAt: string;
+  usedAt: string | null;
+};
+
+export function insertToken(db: Database, tokenHash: string, token: Omit<TokenRecord, 'usedAt'>) {
+  db.run(
+    'INSERT INTO oauth_tokens (token_hash, grant_id, kind, created_at, expires_at) VALUES (?, ?, ?, ?, ?)',
+    tokenHash,
+    token.grantId,
+    token.kind,
+    token.createdAt,
+    token.expiresAt,
+  );
+}
+
+export function tokenByHash(db: Database, tokenHash: string) {
+  return db.get<TokenRecord>(
+    `
+      SELECT grant_id AS grantId, kind, created_at AS createdAt, expires_at AS expiresAt, used_at AS usedAt
+      FROM oauth_tokens WHERE token_hash = ?
+    `,
+    tokenHash,
+  );
+}
+
+export function markTokenUsed(db: Database, tokenHash: string, now: string) {
+  db.run('UPDATE oauth_tokens SET used_at = ? WHERE token_hash = ?', now, tokenHash);
+}
+
+export function deleteToken(db: Database, tokenHash: string) {
+  db.run('DELETE FROM oauth_tokens WHERE token_hash = ?', tokenHash);
+}
+
+export function touchClient(db: Database, clientId: string, now: string) {
+  db.run('UPDATE oauth_clients SET last_used_at = ? WHERE id = ?', now, clientId);
+}
+
+/** Housekeeping: expired codes and tokens. Used refresh tokens are kept until they expire, to detect reuse. */
+export function deleteExpiredOauth(db: Database, now: string) {
+  db.run('DELETE FROM oauth_codes WHERE expires_at <= ?', now);
+  db.run('DELETE FROM oauth_tokens WHERE expires_at <= ?', now);
+}
+
+/** How many rows of each kind are stored about a person, for the account page. */
+export function storedCounts(db: Database, userId: string) {
+  const count = (table: string) =>
+    db.get<{ total: number }>(`SELECT COUNT(*) AS total FROM ${table} WHERE user_id = ?`, userId)!.total;
+  return {
+    inputs: count('input_records'),
+    bankAccounts: count('bank_accounts'),
+    bankMovements: count('bank_transactions'),
+    bankConnections: count('bank_connections'),
+    habitGoals: count('habit_goals'),
+    habitCheckins: count('habit_checkins'),
+  };
+}

@@ -3,8 +3,10 @@ import { createServer } from 'node:http';
 import { z } from 'zod';
 import { goalSchema, summarySchema } from '../../packages/contracts/habits.ts';
 import { safeId } from '../../packages/contracts/ids.ts';
+import type { Database } from '../../packages/db/database.ts';
 import { suggestHabits } from '../../packages/finance/habits.ts';
-import { ApiError, pathParts, readJson, requireBearer, sendJson } from '../../packages/http/server.ts';
+import type { ApiAuthorizer } from '../../packages/http/server.ts';
+import { ApiError, apiAccess, pathParts, readJson, requireOwnRoute, sendJson } from '../../packages/http/server.ts';
 import { createOpenAIHabits } from './agent.ts';
 import { createHabitStore } from './store.ts';
 
@@ -12,16 +14,18 @@ const body = (req: Parameters<typeof readJson>[0]) => readJson(req, 65_536, 'Bod
 
 export type HabitsOptions = {
   token: string;
-  dataRoot: string;
-  profileRoot: string;
+  /** The runtime database; habits live next to the profiles they belong to. */
+  db: Database;
   openai?: Parameters<typeof createOpenAIHabits>[0];
   dailyCalls?: number;
+  /** Recognises a person's own credential; such a caller reaches only its own `/users/<id>/habits`. */
+  authorize?: ApiAuthorizer;
 };
 
 /** Habit goals, check-ins and suggestions as a request handler, so one server can mount them. */
 export function createHabitsHandler(options: HabitsOptions) {
-  if (!options.token) throw new Error('HABITS_API_TOKEN is required');
-  const store = createHabitStore(options.dataRoot, options.profileRoot);
+  if (!options.token) throw new Error('The habits handler needs an API token');
+  const store = createHabitStore(options.db);
   const ai = createOpenAIHabits(options.openai);
   const dailyCalls = z
     .number()
@@ -29,11 +33,13 @@ export function createHabitsHandler(options: HabitsOptions) {
     .min(1)
     .max(100)
     .parse(options.dailyCalls ?? 20);
-  return async (req: IncomingMessage, res: ServerResponse) => {
+  const handle = async (req: IncomingMessage, res: ServerResponse) => {
     const reply = (status: number, value: unknown) => sendJson(res, status, value);
     try {
-      requireBearer(req, options.token);
+      const access = apiAccess(req, options.token, options.authorize);
       const parts = pathParts(req);
+      // A person may keep their own goals and check-ins; the paid suggestion source stays with the operator.
+      requireOwnRoute(access, req, parts, () => true);
       if (parts.length === 1 && parts[0] === 'limits' && req.method === 'GET')
         return reply(200, {
           openaiConfigured: ai.configured,
@@ -54,6 +60,7 @@ export function createHabitsHandler(options: HabitsOptions) {
           .strict()
           .parse(await body(req));
         if (input.source === 'rules') return reply(200, suggestHabits(input.summary));
+        if (access !== 'admin') throw new ApiError(403, 'Forbidden');
         if (!ai.configured)
           throw new ApiError(503, 'OpenAI is not configured; use rules or set server-side credentials');
         await store.reserveCall(dailyCalls);
@@ -81,6 +88,8 @@ export function createHabitsHandler(options: HabitsOptions) {
       reply(500, { error: 'Habit storage unavailable' });
     }
   };
+  /** The handler, with in-process read access to one user's habit state for the rest of the server. */
+  return Object.assign(handle, { read: (id: string) => store.read(id) });
 }
 
 /** The same API as a standalone HTTP server, for tests and isolated use. */

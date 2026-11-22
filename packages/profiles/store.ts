@@ -1,8 +1,9 @@
-import { randomUUID } from 'node:crypto';
-import { cp, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { safeId } from '../contracts/ids.ts';
+import type { Database } from '../db/database.ts';
+import { insertUser, listUserIds, readSection, userExists, writeSection } from '../db/profiles.ts';
 import { ApiError } from '../http/server.ts';
 
 export const sections = ['details', 'preferences', 'bank-account'] as const;
@@ -18,88 +19,81 @@ export const profileSchema = z
   .strict();
 export type Profile = z.infer<typeof profileSchema>;
 
-export function createStore(root: string) {
-  function directory(id: string) {
-    return join(root, safeId.parse(id));
-  }
-  async function exists(id: string) {
-    try {
-      await readFile(join(directory(id), 'details.json'));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new ApiError(404, 'User not found');
-      throw error;
-    }
-  }
+/** Reject an unsafe ID (400) or an unknown user (404). Every per-user store starts with this. */
+export function requireUser(db: Database, id: string) {
+  safeId.parse(id);
+  if (!userExists(db, id)) throw new ApiError(404, 'User not found');
+}
+
+/** Profile storage: a user row and one JSON document per section in the runtime database. */
+export function createStore(db: Database) {
   return {
     async list() {
-      await mkdir(root, { recursive: true });
-      const entries = await readdir(root, { withFileTypes: true });
-      return entries
-        .filter(e => e.isDirectory() && safeId.safeParse(e.name).success)
-        .map(e => e.name)
-        .sort();
+      return listUserIds(db);
     },
     async read(id: string, section: Section) {
-      await exists(id);
-      return documentSchema.parse(JSON.parse(await readFile(join(directory(id), `${section}.json`), 'utf8')));
+      requireUser(db, id);
+      return documentSchema.parse(readSection(db, id, section));
     },
+    /** Create a user with all three documents, or nothing at all when the user already exists. */
     async create(id: string, input: unknown) {
       const profile = profileSchema.parse(input);
       if (profile.details.id !== id) throw new ApiError(400, 'details.id must match user ID');
-      await mkdir(root, { recursive: true });
-      const staging = join(root, `.staging-${randomUUID()}`);
-      await mkdir(staging);
-      try {
-        for (const section of sections)
-          await writeFile(join(staging, `${section}.json`), `${JSON.stringify(profile[section], null, 2)}\n`, {
-            mode: 0o600,
-          });
-        try {
-          await rename(staging, directory(id));
-        } catch (error) {
-          if (['EEXIST', 'ENOTEMPTY', 'EPERM'].includes((error as NodeJS.ErrnoException).code ?? '')) {
-            try {
-              await exists(id);
-            } catch {
-              throw error;
-            }
-            throw new ApiError(409, 'User already exists');
-          }
-          throw error;
-        }
-      } finally {
-        await rm(staging, { recursive: true, force: true });
-      }
+      safeId.parse(id);
+      db.transaction(() => {
+        const now = new Date().toISOString();
+        if (!insertUser(db, id, now)) throw new ApiError(409, 'User already exists');
+        for (const section of sections) writeSection(db, id, section, profile[section], now);
+      });
       return profile;
     },
     async write(id: string, section: Section, input: unknown) {
       const value = documentSchema.parse(input);
       if (section === 'details' && value.id !== id) throw new ApiError(400, 'details.id must match user ID');
-      await exists(id);
-      const target = join(directory(id), `${section}.json`);
-      const temporary = `${target}.${randomUUID()}.tmp`;
-      try {
-        await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-        await rename(temporary, target);
-      } finally {
-        await rm(temporary, { force: true });
-      }
+      db.transaction(() => {
+        requireUser(db, id);
+        writeSection(db, id, section, value, new Date().toISOString());
+      });
       return value;
     },
   };
 }
 
-export async function seedRuntime(source: string, target: string) {
-  await mkdir(target, { recursive: true });
+/**
+ * Copy the committed fixtures in `source` (one folder per user with the three section files) into
+ * the database. A user that already exists is left alone, so runtime edits are never overwritten.
+ * A fixture that cannot be read or does not fit the profile schema is skipped and reported.
+ */
+export async function seedRuntime(source: string, db: Database) {
+  const candidates: { id: string; profile: Profile }[] = [];
+  const skipped: { id: string; reason: string }[] = [];
   for (const entry of await readdir(source, { withFileTypes: true })) {
     if (!entry.isDirectory() || !safeId.safeParse(entry.name).success) continue;
-    // Never overwrite an existing runtime user's edits.
+    if (userExists(db, entry.name)) continue;
     try {
-      await mkdir(join(target, entry.name));
+      const documents = await Promise.all(
+        sections.map(async section => [
+          section,
+          JSON.parse(await readFile(join(source, entry.name, `${section}.json`), 'utf8')),
+        ]),
+      );
+      const profile = profileSchema.parse(Object.fromEntries(documents));
+      if (profile.details.id !== entry.name) throw new Error('details.id does not match the folder name');
+      candidates.push({ id: entry.name, profile });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue;
-      throw error;
+      skipped.push({ id: entry.name, reason: error instanceof z.ZodError ? 'invalid profile' : String(error) });
     }
-    await cp(join(source, entry.name), join(target, entry.name), { recursive: true });
   }
+  const seeded = db.transaction(() => {
+    const now = new Date().toISOString();
+    const added: string[] = [];
+    for (const { id, profile } of candidates) {
+      // Checked again inside the transaction: another process may have created the user meanwhile.
+      if (!insertUser(db, id, now)) continue;
+      for (const section of sections) writeSection(db, id, section, profile[section], now);
+      added.push(id);
+    }
+    return added;
+  });
+  return { seeded, skipped };
 }

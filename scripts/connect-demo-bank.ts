@@ -42,6 +42,7 @@ try {
     result.webhook.created ? 'registered' : 'already registered',
     result.webhookUrl,
   );
+  if (result.webhook.secretReplaced) console.log('The webhook now signs with BANK_DEMO_BANK_WEBHOOK_SECRET');
   console.log(
     'Connection %s: %s is bank customer %s (%s)',
     result.connection.created ? 'created' : 'already there',

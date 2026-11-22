@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { createProfileApi } from '../apps/profile-api/server.ts';
-import { seedRuntime } from '../packages/profiles/store.ts';
+import { open } from '../packages/db/database.ts';
+import { createStore, seedRuntime } from '../packages/profiles/store.ts';
 
 test('API authorizes requests, persists sections and rejects unsafe or malformed writes', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'relocat-api-'));
-  const server = createProfileApi(root, 'test-token');
+  const db = open(':memory:');
+  const server = createProfileApi(db, 'test-token');
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
@@ -37,7 +38,7 @@ test('API authorizes requests, persists sections and rejects unsafe or malformed
         .status,
       200,
     );
-    assert.deepEqual(JSON.parse(await readFile(join(root, 'demo-1/preferences.json'), 'utf8')), replacement);
+    assert.deepEqual(await createStore(db).read('demo-1', 'preferences'), replacement);
     assert.deepEqual(
       await (await fetch(`${base}/users/demo-1/bank-account`, { headers })).json(),
       profile['bank-account'],
@@ -92,27 +93,36 @@ test('API authorizes requests, persists sections and rejects unsafe or malformed
     assert.deepEqual(await (await fetch(`${base}/users/demo-1/preferences`, { headers })).json(), replacement);
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
-    await rm(root, { recursive: true, force: true });
+    db.close();
   }
 });
 
-test('runtime seeding preserves existing user edits', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'relocat-seed-'));
-  const source = join(root, 'source');
-  const target = join(root, 'target');
-  const { createStore } = await import('../packages/profiles/store.ts');
+test('runtime seeding preserves existing user edits and skips broken fixtures', async () => {
+  const source = await mkdtemp(join(tmpdir(), 'relocat-seed-'));
+  const db = open(':memory:');
   const document = { schemaVersion: 1 as const, synthetic: true as const };
+  const fixture = async (id: string, details: unknown) => {
+    await mkdir(join(source, id));
+    await writeFile(join(source, id, 'details.json'), JSON.stringify(details));
+    await writeFile(join(source, id, 'preferences.json'), JSON.stringify(document));
+    await writeFile(join(source, id, 'bank-account.json'), JSON.stringify(document));
+  };
   try {
-    await createStore(source).create('demo', {
-      details: { ...document, id: 'demo' },
-      preferences: document,
-      'bank-account': document,
-    });
-    await seedRuntime(source, target);
-    await createStore(target).write('demo', 'preferences', { ...document, edited: true });
-    await seedRuntime(source, target);
-    assert.equal((await createStore(target).read('demo', 'preferences')).edited, true);
+    await fixture('demo', { ...document, id: 'demo' });
+    await fixture('broken', { ...document, id: 'someone-else' });
+    const first = await seedRuntime(source, db);
+    assert.deepEqual(first.seeded, ['demo']);
+    assert.deepEqual(
+      first.skipped.map(item => item.id),
+      ['broken'],
+    );
+    const store = createStore(db);
+    assert.deepEqual(await store.list(), ['demo']);
+    await store.write('demo', 'preferences', { ...document, edited: true });
+    assert.deepEqual((await seedRuntime(source, db)).seeded, []);
+    assert.equal((await store.read('demo', 'preferences')).edited, true);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    db.close();
+    await rm(source, { recursive: true, force: true });
   }
 });

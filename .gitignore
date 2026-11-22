@@ -5,6 +5,10 @@ apps/*/dist/
 !.env.example
 data/runtime-users/
 data/runtime-habits/
+# The runtime database with its write-ahead log, and the folder Docker keeps it in.
+data/relocat.db*
+data/db/
 *.tmp
 artifacts/team-plugin/
 data/cache/
+data/runtime-users.bak-*/

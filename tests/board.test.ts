@@ -113,7 +113,7 @@ test('MCP transport serves the widget and supports each of the four scenarios', 
 
   const home = await update('answer_batch', { answers: { town: 'Manresa', bedrooms: 2, household: 3 } });
   const live = await fetch(`${origin}/preview/state`);
-  assert.equal(live.headers.get('Access-Control-Allow-Origin'), '*');
+  assert.equal(live.headers.get('Access-Control-Allow-Origin'), null, 'the board state is same-origin only');
   const synced = await live.json();
   assert.deepEqual(synced.answers, home.answers);
   assert.equal(synced.revision, home.revision);

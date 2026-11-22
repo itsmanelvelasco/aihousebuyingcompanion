@@ -3,23 +3,26 @@ import { RESOURCE_MIME_TYPE, registerAppResource, registerAppTool } from '@model
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { widgetUri } from '../../packages/config/product.ts';
-import { safeId } from '../../packages/contracts/ids.ts';
 import { municipalityCode } from '../../packages/contracts/places.ts';
 import { inlineUi } from '../../packages/ui/inline.ts';
+import type { Caller } from './identity.ts';
+import { anonymous, security } from './identity.ts';
 
 /** MCP App resource of the React workspace, `ui://relocat/workspace-v1.html`. */
 export const workspaceUri = widgetUri('workspace-v1.html');
 
-export const workspaceInput = z
-  .object({
-    userId: safeId.optional().describe('Stored person to plan for, for example user-001'),
-    municipalityCodes: z.array(municipalityCode).max(8).optional().describe('Places to compare, at most eight'),
-  })
-  .strict();
-
-/** What the widget receives. `apps/web/launch.ts` parses the same shape in the browser. */
+/**
+ * What the widget receives. `apps/web/launch.ts` parses the same shape in the browser.
+ * `subject` says whose figures the workspace shows: the signed-in person (`me`), a fictional demo
+ * persona (`demo`, read-only) or nobody yet (`none`: inline what-if planning only).
+ */
 export const workspaceResult = z.object({
-  userId: safeId.nullable(),
+  subject: z.enum(['me', 'demo', 'none']),
+  demoId: z.string().nullable(),
+  /** Whether the caller is signed in, whatever the workspace is showing. */
+  signedIn: z.boolean(),
+  /** The fictional personas this server offers, empty when the public demo is off. */
+  demoIds: z.array(z.string()),
   municipalityCodes: z.array(municipalityCode).max(8),
 });
 export type WorkspaceResult = z.infer<typeof workspaceResult>;
@@ -47,10 +50,22 @@ export function loadWorkspacePage() {
 
 /**
  * Registers the workspace widget and `show_workspace`, the tool that opens it. The tool only hands
- * over who is planning and where; the widget reads `plan_home_savings`, the bank tools and
- * `list_catalonia_municipalities` itself, so rendering and data stay separate.
+ * over whose plan to show and where; the widget reads `plan_home_savings`, the bank tools and
+ * `list_catalonia_municipalities` itself, so rendering and data stay separate. There is no user id:
+ * the widget shows the caller's own person, or a demo persona named from the allowlist.
  */
-export function registerWorkspace(server: McpServer, page: string) {
+export function registerWorkspace(server: McpServer, page: string, caller: Caller = anonymous) {
+  const demoIds = caller.demo?.ids ?? [];
+  const workspaceInput = z
+    .object({
+      demoId: z
+        .enum((demoIds.length ? demoIds : ['none']) as [string, ...string[]])
+        .optional()
+        .describe('Show a fictional demo persona instead of the signed-in person'),
+      municipalityCodes: z.array(municipalityCode).max(8).optional().describe('Places to compare, at most eight'),
+    })
+    .strict();
+
   registerAppResource(server, 'ReloCat Workspace', workspaceUri, {}, async () => ({
     contents: [
       {
@@ -68,23 +83,32 @@ export function registerWorkspace(server: McpServer, page: string) {
     {
       title: 'Show ReloCat workspace',
       description:
-        'Open the ReloCat workspace: the person who is planning with their finances and habits, the places compared by how long until the upfront cash is ready (baseline, with habits, with each place’s benefits), and the synthetic live bank feed. Pass the stored userId and up to eight municipality codes; resolve names with list_catalonia_municipalities first. This tool only opens the view. The widget loads figures through plan_home_savings and the bank tools; call those directly when the numbers are needed in chat.',
+        'Open the ReloCat workspace: who is planning with their finances and habits, the places compared by how long until the upfront cash is ready (baseline, with habits, with each place’s benefits), and the bank feed. With no demoId it shows the signed-in person, or an empty what-if workspace when nobody is signed in. Pass demoId to show a fictional demo persona, and up to eight municipality codes; resolve names with list_catalonia_municipalities first. There is no user id argument. This tool only opens the view. The widget loads figures through plan_home_savings and the bank tools; call those directly when the numbers are needed in chat.',
       inputSchema: workspaceInput,
       outputSchema: workspaceResult,
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false, idempotentHint: true },
-      _meta: { ui: { resourceUri: workspaceUri, visibility: ['model'] } },
+      _meta: { ui: { resourceUri: workspaceUri, visibility: ['model'] }, ...security('either') },
     },
-    ({ userId, municipalityCodes }) => {
+    ({ demoId, municipalityCodes }) => {
+      const demo = demoId !== undefined && caller.demo?.open(demoId) ? demoId : null;
       const structuredContent: WorkspaceResult = {
-        userId: userId ?? null,
+        subject: demo ? 'demo' : caller.me ? 'me' : 'none',
+        demoId: demo,
+        signedIn: caller.me !== null,
+        demoIds,
         municipalityCodes: [...new Set(municipalityCodes ?? [])],
       };
       const places = structuredContent.municipalityCodes.length;
+      const who = {
+        me: ' for the signed-in person',
+        demo: ` for the fictional demo persona ${demo}`,
+        none: ' without a person (sign in, or pick a demo persona)',
+      }[structuredContent.subject];
       return {
         content: [
           {
             type: 'text',
-            text: `Opened the ReloCat workspace${userId ? ` for ${userId}` : ' without a person selected'}${
+            text: `Opened the ReloCat workspace${who}${
               places ? `, comparing ${places} ${places === 1 ? 'place' : 'places'}` : ', with no places yet'
             }. The view loads its own figures; it has not returned any to this chat.`,
           },

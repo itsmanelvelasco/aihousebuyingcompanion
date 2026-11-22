@@ -1,11 +1,34 @@
-import { randomUUID } from 'node:crypto';
-import { readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { z } from 'zod';
 import { safeId } from '../../packages/contracts/ids.ts';
-import { allSynthetic, dateSchema, transactionSchema } from '../../packages/finance/cashflow.ts';
+import type { Database } from '../../packages/db/database.ts';
+import type { TransactionFilter } from '../../packages/db/ledger.ts';
+import {
+  appendRevision,
+  bookedTotals,
+  countAccounts,
+  countTransactions,
+  deleteTransaction,
+  earliestMovementDate,
+  getAccount,
+  getTransaction,
+  insertAccount,
+  insertTransaction,
+  ledgerHead,
+  ledgerIsSynthetic,
+  listAccounts,
+  listEvents,
+  listTransactions,
+  oldestEventSequence,
+  pageTransactions,
+  transactionsAreSynthetic,
+  transactionsThrough,
+  updateAccount,
+  updateTransaction,
+} from '../../packages/db/ledger.ts';
+import type { Transaction } from '../../packages/finance/cashflow.ts';
+import { dateSchema, transactionSchema } from '../../packages/finance/cashflow.ts';
 import { ApiError } from '../../packages/http/server.ts';
-import { createStore } from '../../packages/profiles/store.ts';
+import { createStore, requireUser } from '../../packages/profiles/store.ts';
 
 export { dateSchema } from '../../packages/finance/cashflow.ts';
 
@@ -21,46 +44,68 @@ export const accountSchema = z
     synthetic: z.boolean(),
   })
   .strict();
-const ledgerSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    /** Derived on every read and write: true only when every account and movement is synthetic. */
-    synthetic: z.boolean(),
-    updatedAt: z.string(),
-    accounts: z.array(accountSchema).max(20),
-    transactions: z.array(transactionSchema).max(10000),
-    revision: z.number().int().nonnegative().default(0),
-    events: z
-      .array(
-        z.object({
-          sequence: z.number().int().positive(),
-          occurredAt: z.string(),
-          type: z.literal('bank.updated'),
-          accountCount: z.number().int().nonnegative(),
-          transactionCount: z.number().int().nonnegative(),
-          /** Whether the whole ledger was synthetic at this revision. */
-          synthetic: z.boolean(),
-        }),
-      )
-      .max(500)
-      .default([]),
-  })
-  .strict();
-export type Ledger = z.infer<typeof ledgerSchema>;
-export type LedgerEvent = Ledger['events'][number];
-/** Fired after a ledger revision has been written to disk. */
-export type LedgerListener = (change: { userId: string; event: LedgerEvent }) => void;
-const importSchema = z.object({ transactions: z.array(transactionSchema).min(1).max(500) }).strict();
-/** True only when every account and movement of the ledger is labelled synthetic. */
-function ledgerIsSynthetic(ledger: Pick<Ledger, 'accounts' | 'transactions'>) {
-  return allSynthetic(ledger.accounts) && allSynthetic(ledger.transactions);
+export type Account = z.infer<typeof accountSchema>;
+const maxAccounts = 20;
+/**
+ * Most movements kept per user. The cap was 10,000 when a ledger was one JSON file rewritten on
+ * every change; with one SQLite row per movement and indexed, selective reads it only has to stop
+ * a runaway feed from growing the database without end, so it is 100,000 (Banc Demo at its default
+ * pace takes about three weeks to produce that for one customer). The cap stays rather than going
+ * away because a period analysis still loads the movements up to its end date.
+ */
+export const defaultMaxTransactions = 100_000;
+
+/**
+ * Thrown when a write would take a ledger past its cap. Nothing of the batch is stored. Trying the
+ * same batch again cannot succeed until movements are deleted, so `retryable` is false: the sync
+ * engine records the message on the connection and stops retrying on its own.
+ */
+export class LedgerFullError extends ApiError {
+  readonly retryable = false;
+  constructor(limit: number) {
+    super(
+      400,
+      `Movement limit reached: the ledger holds its maximum of ${limit} movements, so new ones are not imported. Delete older movements, then sync again.`,
+    );
+  }
 }
 
-export function createBankStore(root: string) {
-  const profiles = createStore(root);
-  const locks = new Map<string, Promise<unknown>>();
+/** One ledger revision. The newest 500 per user are kept. */
+export type LedgerEvent = {
+  sequence: number;
+  occurredAt: string;
+  type: 'bank.updated';
+  accountCount: number;
+  transactionCount: number;
+  /** Whether the whole ledger was synthetic at this revision. */
+  synthetic: boolean;
+};
+/** Revision, freshness and provenance of a ledger, without its records. */
+export type LedgerHead = {
+  schemaVersion: 1;
+  /** Derived on every read: true only when every account and movement is synthetic. */
+  synthetic: boolean;
+  /** ISO time of the last change; empty before the first one. */
+  updatedAt: string;
+  revision: number;
+};
+/** A whole ledger. Reading it loads every movement; the routes use the narrower store methods. */
+export type Ledger = LedgerHead & { accounts: Account[]; transactions: Transaction[]; events: LedgerEvent[] };
+/** Fired after a ledger revision has been committed. */
+export type LedgerListener = (change: { userId: string; event: LedgerEvent }) => void;
+const importSchema = z.object({ transactions: z.array(transactionSchema).min(1).max(500) }).strict();
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * The bank ledger of each user in the runtime database. Every change runs in one transaction with
+ * its revision bump and its event, so a failed or interrupted change leaves the previous ledger,
+ * and an import of N movements writes N rows instead of rewriting the whole ledger.
+ */
+export function createBankStore(db: Database, options: { maxTransactions?: number } = {}) {
+  const maxTransactions = options.maxTransactions ?? defaultMaxTransactions;
+  const profiles = createStore(db);
   const listeners = new Set<LedgerListener>();
-  /** Tell in-process listeners about a persisted revision. A failing listener never breaks a write. */
+  /** Tell in-process listeners about a committed revision. A failing listener never breaks a write. */
   function announce(userId: string, event: LedgerEvent) {
     for (const listener of listeners) {
       try {
@@ -70,81 +115,50 @@ export function createBankStore(root: string) {
       }
     }
   }
+  function headOf(id: string): LedgerHead {
+    // The provenance flag is not stored; the records decide.
+    return { schemaVersion: 1, synthetic: ledgerIsSynthetic(db, id), ...ledgerHead(db, id) };
+  }
+  /** Revision, freshness and accounts of a ledger: what most callers need, without its movements. */
+  async function head(id: string) {
+    requireUser(db, id);
+    return db.transaction(() => ({ ...headOf(id), accounts: listAccounts(db, id) as Account[] }));
+  }
   async function read(id: string): Promise<Ledger> {
-    await profiles.read(id, 'details');
-    try {
-      const ledger = ledgerSchema.parse(
-        JSON.parse(await readFile(join(root, safeId.parse(id), 'bank-ledger.json'), 'utf8')),
-      );
-      // The stored flag is a cache; the records decide.
-      ledger.synthetic = ledgerIsSynthetic(ledger);
-      return ledger;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      return {
-        schemaVersion: 1,
-        synthetic: true,
-        updatedAt: '',
-        accounts: [],
-        transactions: [],
-        revision: 0,
-        events: [],
-      };
-    }
+    requireUser(db, id);
+    return db.transaction(() => ({
+      ...headOf(id),
+      accounts: listAccounts(db, id) as Account[],
+      transactions: listTransactions(db, id) as Transaction[],
+      events: listEvents(db, id) as LedgerEvent[],
+    }));
   }
-  function validate(ledger: Ledger) {
-    ledgerSchema.parse(ledger);
-    for (const tx of ledger.transactions) {
-      const account = ledger.accounts.find(a => a.id === tx.accountId);
-      if (!account) throw new ApiError(400, `Unknown account: ${tx.accountId}`);
-      if (tx.date < account.openingDate) throw new ApiError(400, 'Movement precedes account opening balance date');
-    }
+  /** Reject a movement whose account is unknown or that precedes the account's opening date. */
+  function checkMovement(id: string, tx: Transaction, accounts: Map<string, Account | undefined>) {
+    if (!accounts.has(tx.accountId))
+      accounts.set(tx.accountId, getAccount(db, id, tx.accountId) as Account | undefined);
+    const account = accounts.get(tx.accountId);
+    if (!account) throw new ApiError(400, `Unknown account: ${tx.accountId}`);
+    if (tx.date < account.openingDate) throw new ApiError(400, 'Movement precedes account opening balance date');
   }
-  async function mutate<T>(id: string, change: (ledger: Ledger) => T) {
-    safeId.parse(id);
-    const previous = locks.get(id) ?? Promise.resolve();
-    const operation = previous
-      .catch(() => {})
-      .then(async () => {
-        const ledger = await read(id);
-        const previousContent = JSON.stringify([ledger.accounts, ledger.transactions]);
-        const result = change(ledger);
-        if (previousContent === JSON.stringify([ledger.accounts, ledger.transactions])) return { result, ledger };
-        ledger.updatedAt = new Date().toISOString();
-        ledger.synthetic = ledgerIsSynthetic(ledger);
-        ledger.revision++;
-        const event: LedgerEvent = {
-          sequence: ledger.revision,
-          occurredAt: ledger.updatedAt,
-          type: 'bank.updated',
-          accountCount: ledger.accounts.length,
-          transactionCount: ledger.transactions.length,
-          synthetic: ledger.synthetic,
-        };
-        ledger.events.push(event);
-        ledger.events = ledger.events.slice(-500);
-        validate(ledger);
-        const target = join(root, id, 'bank-ledger.json');
-        const temporary = `${target}.${randomUUID()}.tmp`;
-        try {
-          await writeFile(temporary, `${JSON.stringify(ledger, null, 2)}\n`, { mode: 0o600 });
-          await rename(temporary, target);
-        } finally {
-          await rm(temporary, { force: true });
-        }
-        announce(id, event);
-        return { result, ledger };
-      });
-    locks.set(id, operation);
-    try {
-      return await operation;
-    } finally {
-      if (locks.get(id) === operation) locks.delete(id);
-    }
+  /**
+   * Run one change of a user's ledger in a transaction. `change` reports whether records changed;
+   * only then is the revision bumped and its event appended, in that same transaction.
+   */
+  async function mutate<T>(id: string, change: () => { result: T; changed: boolean }) {
+    const outcome = db.transaction(() => {
+      requireUser(db, id);
+      const { result, changed } = change();
+      const event = changed ? (appendRevision(db, id, new Date().toISOString()) as LedgerEvent) : undefined;
+      return { result, event, ledger: headOf(id) };
+    });
+    if (outcome.event) announce(id, outcome.event);
+    return { result: outcome.result, ledger: outcome.ledger };
   }
   return {
     read,
-    /** Subscribe to persisted revisions of this store instance. Returns the function that unsubscribes. */
+    head,
+    /** Subscribe to committed revisions of this store instance. Returns the function that unsubscribes. */
     onEvent(listener: LedgerListener) {
       listeners.add(listener);
       return () => {
@@ -152,58 +166,101 @@ export function createBankStore(root: string) {
       };
     },
     async events(id: string, after: number, limit: number) {
-      const ledger = await read(id);
-      const oldest = ledger.events[0]?.sequence ?? ledger.revision + 1;
-      const requiresRefresh = after > ledger.revision || after < oldest - 1;
-      const selected = ledger.events.filter(event => event.sequence > after).slice(0, limit);
-      const nextCursor =
-        requiresRefresh && after > ledger.revision ? ledger.revision : (selected.at(-1)?.sequence ?? after);
-      return {
-        synthetic: ledger.synthetic,
-        events: selected,
-        latestRevision: ledger.revision,
-        nextCursor,
-        requiresRefresh,
-        hasMore: nextCursor < ledger.revision,
-      };
+      requireUser(db, id);
+      return db.transaction(() => {
+        const ledger = headOf(id);
+        const oldest = oldestEventSequence(db, id) ?? ledger.revision + 1;
+        const requiresRefresh = after > ledger.revision || after < oldest - 1;
+        const selected = listEvents(db, id, after, limit) as LedgerEvent[];
+        const nextCursor =
+          requiresRefresh && after > ledger.revision ? ledger.revision : (selected.at(-1)?.sequence ?? after);
+        return {
+          synthetic: ledger.synthetic,
+          events: selected,
+          latestRevision: ledger.revision,
+          nextCursor,
+          requiresRefresh,
+          hasMore: nextCursor < ledger.revision,
+        };
+      });
+    },
+    /** The ledger head and every event still kept, read together for the replay of an event stream. */
+    async eventLog(id: string) {
+      requireUser(db, id);
+      return db.transaction(() => ({ ...headOf(id), events: listEvents(db, id) as LedgerEvent[] }));
+    },
+    /** Accounts with their booked balance on `asOf`, summed by the database. */
+    async balances(id: string, asOf: string) {
+      requireUser(db, id);
+      return db.transaction(() => ({
+        ...headOf(id),
+        accounts: accountBalances(listAccounts(db, id) as Account[], bookedTotals(db, id, asOf), asOf),
+      }));
+    },
+    /** One page of movements by date then ID. Filtering by an unknown account is a 404. */
+    async transactions(id: string, filter: TransactionFilter, page: { limit: number; offset: number }) {
+      requireUser(db, id);
+      return db.transaction(() => {
+        if (filter.accountId && !getAccount(db, id, filter.accountId)) throw new ApiError(404, 'Account not found');
+        const selected = pageTransactions(db, id, filter, page);
+        return { ...headOf(id), total: selected.total, transactions: selected.transactions as Transaction[] };
+      });
+    },
+    /**
+     * What a period analysis needs and no more: the movements dated up to `to` (recurring expenses
+     * are recognised from earlier months too) and whether any movement at all is real bank data.
+     */
+    async history(id: string, to: string) {
+      requireUser(db, id);
+      return db.transaction(() => ({
+        ...headOf(id),
+        transactions: transactionsThrough(db, id, to) as Transaction[],
+        transactionsSynthetic: transactionsAreSynthetic(db, id),
+      }));
     },
     async createAccount(id: string, input: unknown) {
       const account = accountSchema.parse(input);
-      return mutate(id, ledger => {
-        if (ledger.accounts.some(a => a.id === account.id)) throw new ApiError(409, 'Account already exists');
-        if (ledger.accounts.length >= 20) throw new ApiError(400, 'Account limit reached');
-        ledger.accounts.push(account);
-        return account;
+      return mutate(id, () => {
+        if (getAccount(db, id, account.id)) throw new ApiError(409, 'Account already exists');
+        if (countAccounts(db, id) >= maxAccounts) throw new ApiError(400, 'Account limit reached');
+        insertAccount(db, id, account);
+        return { result: account, changed: true };
       });
     },
     async updateAccount(id: string, accountId: string, input: unknown) {
       const account = accountSchema.parse(input);
       if (account.id !== accountId) throw new ApiError(400, 'Account ID must match route');
-      return mutate(id, ledger => {
-        const index = ledger.accounts.findIndex(a => a.id === accountId);
-        if (index < 0) throw new ApiError(404, 'Account not found');
-        ledger.accounts[index] = account;
-        return account;
+      return mutate(id, () => {
+        const existing = getAccount(db, id, accountId);
+        if (!existing) throw new ApiError(404, 'Account not found');
+        if (same(existing, account)) return { result: account, changed: false };
+        const earliest = earliestMovementDate(db, id, accountId);
+        if (earliest !== undefined && earliest < account.openingDate)
+          throw new ApiError(400, 'Movement precedes account opening balance date');
+        updateAccount(db, id, account);
+        return { result: account, changed: true };
       });
     },
+    /** Add movements. A repeated identical movement is counted as a duplicate; a different one with a known ID is a conflict. */
     async importTransactions(id: string, input: unknown) {
       const { transactions } = importSchema.parse(input);
-      return mutate(id, ledger => {
+      return mutate(id, () => {
+        const accounts = new Map<string, Account | undefined>();
         let inserted = 0,
           duplicates = 0;
         for (const tx of transactions) {
-          const existing = ledger.transactions.find(item => item.id === tx.id);
+          const existing = getTransaction(db, id, tx.id);
           if (existing) {
-            if (JSON.stringify(existing) !== JSON.stringify(tx))
-              throw new ApiError(409, `Movement ID conflict: ${tx.id}`);
+            if (!same(existing, tx)) throw new ApiError(409, `Movement ID conflict: ${tx.id}`);
             duplicates++;
             continue;
           }
-          ledger.transactions.push(tx);
+          checkMovement(id, tx, accounts);
+          insertTransaction(db, id, tx);
           inserted++;
         }
-        if (ledger.transactions.length > 10000) throw new ApiError(400, 'Movement limit reached');
-        return { inserted, duplicates };
+        if (inserted && countTransactions(db, id) > maxTransactions) throw new LedgerFullError(maxTransactions);
+        return { result: { inserted, duplicates }, changed: inserted > 0 };
       });
     },
     /**
@@ -212,22 +269,26 @@ export function createBankStore(root: string) {
      */
     async upsertTransactions(id: string, input: unknown) {
       const { transactions } = importSchema.parse(input);
-      return mutate(id, ledger => {
+      return mutate(id, () => {
+        const accounts = new Map<string, Account | undefined>();
         const counts = { inserted: 0, updated: 0, duplicates: 0 };
         for (const tx of transactions) {
-          const index = ledger.transactions.findIndex(item => item.id === tx.id);
-          if (index < 0) {
-            ledger.transactions.push(tx);
-            counts.inserted++;
-          } else if (JSON.stringify(ledger.transactions[index]) === JSON.stringify(tx)) {
+          const existing = getTransaction(db, id, tx.id);
+          if (existing && same(existing, tx)) {
             counts.duplicates++;
-          } else {
-            ledger.transactions[index] = tx;
+            continue;
+          }
+          checkMovement(id, tx, accounts);
+          if (existing) {
+            updateTransaction(db, id, tx);
             counts.updated++;
+          } else {
+            insertTransaction(db, id, tx);
+            counts.inserted++;
           }
         }
-        if (ledger.transactions.length > 10000) throw new ApiError(400, 'Movement limit reached');
-        return counts;
+        if (counts.inserted && countTransactions(db, id) > maxTransactions) throw new LedgerFullError(maxTransactions);
+        return { result: counts, changed: counts.inserted + counts.updated > 0 };
       });
     },
     /**
@@ -236,28 +297,28 @@ export function createBankStore(root: string) {
      */
     async removeTransactions(id: string, transactionIds: string[]) {
       const ids = new Set(z.array(safeId).max(500).parse(transactionIds));
-      return mutate(id, ledger => {
-        const before = ledger.transactions.length;
-        ledger.transactions = ledger.transactions.filter(tx => !ids.has(tx.id));
-        return { removed: before - ledger.transactions.length };
+      return mutate(id, () => {
+        let removed = 0;
+        for (const transactionId of ids) if (deleteTransaction(db, id, transactionId)) removed++;
+        return { result: { removed }, changed: removed > 0 };
       });
     },
     async updateTransaction(id: string, transactionId: string, input: unknown) {
       const tx = transactionSchema.parse(input);
       if (tx.id !== transactionId) throw new ApiError(400, 'Movement ID must match route');
-      return mutate(id, ledger => {
-        const index = ledger.transactions.findIndex(item => item.id === transactionId);
-        if (index < 0) throw new ApiError(404, 'Movement not found');
-        ledger.transactions[index] = tx;
-        return tx;
+      return mutate(id, () => {
+        const existing = getTransaction(db, id, transactionId);
+        if (!existing) throw new ApiError(404, 'Movement not found');
+        if (same(existing, tx)) return { result: tx, changed: false };
+        checkMovement(id, tx, new Map());
+        updateTransaction(db, id, tx);
+        return { result: tx, changed: true };
       });
     },
     async deleteTransaction(id: string, transactionId: string) {
-      return mutate(id, ledger => {
-        const index = ledger.transactions.findIndex(item => item.id === transactionId);
-        if (index < 0) throw new ApiError(404, 'Movement not found');
-        ledger.transactions.splice(index, 1);
-        return { deleted: transactionId };
+      return mutate(id, () => {
+        if (!deleteTransaction(db, id, transactionId)) throw new ApiError(404, 'Movement not found');
+        return { result: { deleted: transactionId }, changed: true };
       });
     },
     async seedDemo(id: string) {
@@ -272,12 +333,12 @@ export function createBankStore(root: string) {
         })
         .parse(snapshot);
       const snapshotDate = new Date(`${data.snapshotDate}T00:00:00Z`);
-      return mutate(id, ledger => {
-        if (ledger.accounts.length || ledger.transactions.length)
+      return mutate(id, () => {
+        if (countAccounts(db, id) || countTransactions(db, id))
           throw new ApiError(409, 'Demo seeding requires an empty ledger');
         const first = new Date(Date.UTC(snapshotDate.getUTCFullYear(), snapshotDate.getUTCMonth() - 3, 1));
         const cashflow = data.monthlyIncomeCents - data.monthlyExpensesCents - data.debtPaymentsCents;
-        ledger.accounts.push({
+        const account = accountSchema.parse({
           id: 'demo-current',
           name: 'Fictional current account',
           currency: 'EUR',
@@ -285,6 +346,7 @@ export function createBankStore(root: string) {
           openingDate: first.toISOString().slice(0, 10),
           openingBalanceCents: data.balanceCents - cashflow * 3,
         });
+        insertAccount(db, id, account);
         for (let index = 0; index < 3; index++) {
           const month = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + index, 1))
             .toISOString()
@@ -301,7 +363,9 @@ export function createBankStore(root: string) {
           ] as const;
           for (const [key, category, amount, description, day] of rows) {
             if (!amount) continue;
-            ledger.transactions.push(
+            insertTransaction(
+              db,
+              id,
               transactionSchema.parse({
                 id: `${key}-${month}`,
                 accountId: 'demo-current',
@@ -316,7 +380,7 @@ export function createBankStore(root: string) {
             );
           }
         }
-        return {
+        const result = {
           seeded: true,
           from: first.toISOString().slice(0, 10),
           to: new Date(Date.UTC(snapshotDate.getUTCFullYear(), snapshotDate.getUTCMonth(), 0))
@@ -324,17 +388,17 @@ export function createBankStore(root: string) {
             .slice(0, 10),
           note: 'Three scripted months, derived from the profile snapshot; not actual transaction history.',
         };
+        return { result, changed: true };
       });
     },
   };
 }
 
-export function accountBalances(ledger: Ledger, asOf: string) {
-  return ledger.accounts.map(account => {
+/** Each account with its balance on `asOf`: opening balance plus the booked movements up to that day. */
+export function accountBalances(accounts: Account[], bookedTotalsByAccount: Map<string, number>, asOf: string) {
+  return accounts.map(account => {
     if (asOf < account.openingDate) return { ...account, balanceCents: null, asOf, status: 'before_opening_date' };
-    const balance = ledger.transactions
-      .filter(tx => tx.accountId === account.id && tx.status === 'booked' && tx.date <= asOf)
-      .reduce((sum, tx) => sum + tx.amountCents, account.openingBalanceCents);
+    const balance = account.openingBalanceCents + (bookedTotalsByAccount.get(account.id) ?? 0);
     if (!Number.isSafeInteger(balance)) throw new ApiError(400, 'Balance exceeds safe integer range');
     return { ...account, balanceCents: balance, asOf, status: 'calculated' };
   });

@@ -1,61 +1,19 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { createProfileApi } from '../apps/profile-api/server.ts';
 import { profileResult } from '../packages/contracts/places.ts';
-import { createStore } from '../packages/profiles/store.ts';
+import { startApp } from './support/app.ts';
 
-test('connected board persists interview inputs, reads runtime bank data and serves municipality tools together', async t => {
-  const root = await mkdtemp(join(tmpdir(), 'relocat-plugin-'));
-  const doc = { schemaVersion: 1, synthetic: true };
-  for (let n = 1; n <= 4; n++) {
-    const id = `user-00${n}`;
-    await createStore(root).create(id, {
-      details: { ...doc, id, householdSize: 3 },
-      preferences: {
-        ...doc,
-        goal: 'buy_primary_home',
-        housingBudgetCents: 13000000,
-        minimumBedrooms: 2,
-        schoolStages: ['eso'],
-        maxCommuteMinutes: 120,
-      },
-      'bank-account': {
-        ...doc,
-        snapshotDate: '2026-11-21',
-        balanceCents: 1840000,
-        monthlyIncomeCents: 290000,
-        monthlyExpensesCents: 208000,
-        debtPaymentsCents: 10000,
-      },
-    });
-  }
-  const api = createProfileApi(root, 'test-token');
-  api.listen(0, '127.0.0.1');
-  await once(api, 'listening');
-  const address = api.address();
-  assert(address && typeof address !== 'string');
-  const apiUrl = `http://127.0.0.1:${address.port}`;
-  const proc = spawn(process.execPath, ['apps/board/server.ts'], {
-    env: { ...process.env, HOST: '127.0.0.1', PORT: '0', PROFILE_API_URL: apiUrl, PROFILE_API_TOKEN: 'test-token' },
-  });
+test('the public demo board shows the fictional persona’s bank feed read-only, next to the municipality tools', async t => {
+  const server = await startApp();
+  const { origin, db } = server;
+  const client = new Client({ name: 'demo-board-test', version: '1' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${origin}/mcp`)));
   t.after(async () => {
-    proc.kill();
-    await new Promise<void>(resolve => api.close(() => resolve()));
-    await rm(root, { recursive: true, force: true });
+    await client.close();
+    await server.close();
   });
-  const [line] = await once(proc.stdout, 'data');
-  const port = /localhost:(\d+)\/preview/.exec(String(line))?.[1];
-  assert(port);
-  const client = new Client({ name: 'connected-test', version: '1' });
-  await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)));
-  t.after(() => client.close());
   const toolNames = (await client.listTools()).tools.map(tool => tool.name);
   for (const name of [
     'recommend_towns',
@@ -64,6 +22,8 @@ test('connected board persists interview inputs, reads runtime bank data and ser
     'open_demo',
     'update_demo',
     'get_bank_updates',
+    'get_demo_bank_updates',
+    'get_demo_person',
   ])
     assert(toolNames.includes(name), name);
   const town = await client.callTool({ name: 'get_town_profile', arguments: { municipalityCode: '252206' } });
@@ -71,75 +31,66 @@ test('connected board persists interview inputs, reads runtime bank data and ser
   const profile = profileResult.parse(town.structuredContent);
   assert.equal(profile.travelEstimates.length, 6);
   assert(profile.travelEstimates.some(estimate => estimate.destinationId === 'lleida' && estimate.publicTransport));
+
+  // The operator's demo feed gives user-001 a ledger; the board only ever reads it.
+  const admin = { Authorization: 'Bearer admin-test-token', 'Content-Type': 'application/json' };
+  const seeded = await fetch(`${origin}/api/users/user-001/bank/demo`, { method: 'POST', headers: admin, body: '{}' });
+  assert.equal(seeded.status, 201);
+
   const open = await client.callTool({ name: 'open_demo', arguments: {} });
   assert(!open.isError, JSON.stringify(open.content));
   const first = open.structuredContent as Record<string, unknown>;
   const runId = first.runId;
-  assert.equal((first.connection as Record<string, unknown>).userId, 'user-001');
+  const connection = first.connection as Record<string, unknown>;
+  assert.deepEqual(
+    [connection.mode, connection.readOnly, connection.userId, connection.synthetic],
+    ['public_demo', true, 'user-001', true],
+  );
+  assert(Number(connection.ledgerRevision) >= 1);
+  assert.ok(connection.summary);
+  assert.equal((first.townScreening as Record<string, unknown>).completeHomeMatch, false);
+
+  const inputsBefore = db.all('SELECT * FROM input_records');
   const update = await client.callTool({
     name: 'update_demo',
     arguments: {
       runId,
       action: 'answer_batch',
-      answers: {
-        budget: 130000,
-        floorArea: 85,
-        destinationCode: '251207',
-        maxCommuteMinutes: 120,
-        schoolStages: ['eso'],
-        schoolMode: 'rail',
-        allowComarcaEstimate: true,
-        upfrontTarget: 54000,
-        spending: 2180,
-        spendingIncludesDebt: true,
-      },
+      answers: { town: 'Manresa', bedrooms: 2, household: 3, income: 2900, spending: 2180, savings: 18400 },
     },
   });
   assert(!update.isError, JSON.stringify(update.content));
-  const context = await (
-    await fetch(`${apiUrl}/users/user-001/context`, { headers: { Authorization: 'Bearer test-token' } })
-  ).json();
-  assert.equal(context.resolved.data.housing.homeSizeM2, 85);
-  assert.equal(context.resolved.data.finance.monthlyExpensesCents, 218000);
-  assert.equal(context.resolved.data.finance.debtPaymentsCents, 0);
-  const refined = await client.callTool({
-    name: 'update_demo',
-    arguments: {
-      runId,
-      action: 'answer_batch',
-      answers: {
-        homeSize: 86,
-        currentTown: 'Barcelona',
-        dependants: 1,
-        commuteTo: 'Lleida',
-        commuteTime: 90,
-        schoolStages: 'Primary and ESO',
-        transport: 'Train, no car',
-        spending: 2000,
-        debtPayments: 100,
-        reserve: 5000,
-        cashTarget: 55000,
-      },
-    },
-  });
-  assert(!refined.isError, JSON.stringify(refined.content));
-  const refinedContext = await (
-    await fetch(`${apiUrl}/users/user-001/context`, { headers: { Authorization: 'Bearer test-token' } })
-  ).json();
-  assert.equal(refinedContext.resolved.data.housing.homeSizeM2, 86);
-  assert.equal(refinedContext.resolved.data.finance.monthlyExpensesCents, 200000);
-  assert.equal(refinedContext.resolved.data.finance.debtPaymentsCents, 10000);
-  assert.equal(refinedContext.resolved.data.finance.emergencyReserveCents, 500000);
-  assert.equal(refinedContext.resolved.data.transport.destinationCode, '251207');
-  assert.deepEqual(refinedContext.resolved.data.school.stages, ['eso', 'primary']);
+  assert.equal(((update.structuredContent as Record<string, unknown>).answers as Record<string, unknown>).income, 2900);
+  // The answers live in the run only: the stored persona is exactly as it was.
+  assert.deepEqual(db.all('SELECT * FROM input_records'), inputsBefore);
+  const context = await (await fetch(`${origin}/api/users/user-001/context`, { headers: admin })).json();
+  assert.equal(context.inputCount, 0);
+  assert.equal(context.resolved.data.finance.monthlyIncomeCents, 290_000, 'the fixture value, not the typed one');
+
+  // New movements from the feed reach the board without anybody writing through it.
+  const revision = Number(connection.ledgerRevision);
+  await server.app.profiles.bankRuntime.tick('user-001');
+  const refreshed = await client.callTool({ name: 'update_demo', arguments: { runId, action: 'refresh_data' } });
+  const later = (refreshed.structuredContent as Record<string, unknown>).connection as Record<string, unknown>;
+  assert(Number(later.ledgerRevision) > revision);
+  for (const action of ['start_bank_runtime', 'stop_bank_runtime'])
+    assert((await client.callTool({ name: 'update_demo', arguments: { runId, action } })).isError, action);
+
   const bank = await client.callTool({ name: 'update_demo', arguments: { runId, action: 'sample_bank' } });
   assert(!bank.isError, JSON.stringify(bank.content));
-  const bankView = bank.structuredContent as Record<string, unknown>;
-  assert.equal((bankView.bank as Record<string, unknown>).savings, 18400);
-  assert.ok((bankView.connection as Record<string, unknown>).summary);
-  assert.equal((bankView.townScreening as Record<string, unknown>).completeHomeMatch, false);
-  const response = await fetch(`http://127.0.0.1:${port}/preview/state?run=${runId}`);
+  assert.equal(((bank.structuredContent as Record<string, unknown>).bank as Record<string, unknown>).savings, 18400);
+
+  const response = await fetch(`${origin}/preview/state?run=${runId}`);
   const serialized = await response.text();
-  assert(!serialized.includes('test-token'));
+  assert.equal(response.headers.get('access-control-allow-origin'), null);
+  assert(!serialized.includes('admin-test-token'));
   assert(!serialized.includes('"transactions":'));
+  assert(!serialized.includes('profileContext'));
+
+  // The other personas map to their own fictional person.
+  const marc = await client.callTool({ name: 'open_demo', arguments: { runId, persona: 'progress' } });
+  assert.equal(
+    ((marc.structuredContent as Record<string, unknown>).connection as Record<string, unknown>).userId,
+    'user-002',
+  );
 });

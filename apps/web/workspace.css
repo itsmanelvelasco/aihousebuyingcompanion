@@ -844,3 +844,25 @@ h4 {
   aspect-ratio: 1;
   background-image: var(--rc-art-workspace-empty);
 }
+
+/* Whose figures are on screen, and the small forms of the signed-in and the what-if states. */
+.subject-banner {
+  margin-bottom: var(--rc-space-4);
+}
+.no-person {
+  display: grid;
+  gap: var(--rc-space-3);
+}
+.no-person p {
+  margin: 0;
+}
+.figures-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--rc-space-3);
+  align-items: end;
+  margin-top: var(--rc-space-3);
+}
+.save-details {
+  margin-top: var(--rc-space-4);
+}

@@ -1,8 +1,24 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { safeId } from '../contracts/ids.ts';
+import {
+  allConnections,
+  clearWebhooks,
+  connectionByRef,
+  countConnections,
+  countPendingWebhooks,
+  deleteConnection,
+  enqueueWebhook,
+  getConnection,
+  insertConnection,
+  lastWebhookSeq,
+  listConnections,
+  pendingWebhooks,
+  updateConnection,
+} from '../db/bank-sync.ts';
+import type { Database } from '../db/database.ts';
+import { open } from '../db/database.ts';
+import { insertUser } from '../db/profiles.ts';
 import { transactionSchema } from '../finance/cashflow.ts';
 import { ApiError } from '../http/server.ts';
 import type { BankConnection, BankProvider, ProviderContext, WebhookSignal } from './provider.ts';
@@ -13,14 +29,15 @@ import type { BankRegistry, RegisteredProvider } from './registry.ts';
  * The bank sync engine: which user is connected to which provider, pulling movements from providers
  * into the ledger, polling providers that cannot call us, and telling listeners about new revisions.
  *
- * It is built to survive a real peer. A verified webhook is written to a small persistent queue
- * before it is acknowledged, so a notification that arrives during a sync or just before a restart
- * is still processed; repeated notification IDs are ignored. A sync that fails is retried with
+ * It is built to survive a real peer. A verified webhook is written to a persistent queue (a table
+ * of the runtime database) before it is acknowledged, so a notification that arrives during a sync
+ * or just before a restart is still processed; repeated notification IDs are ignored. A sync that fails is retried with
  * exponential backoff and its state is kept on the connection. A provider with webhooks is still
  * pulled when it has been silent for a while, so a lost notification only delays a movement.
  *
- * The engine never writes ledger files itself. It goes through the `SyncLedger` it is given, so the
- * profile API's ledger store stays the single writer and imports stay idempotent.
+ * The engine never writes the ledger itself. It goes through the `SyncLedger` it is given, so the
+ * profile API's ledger store stays the single writer and imports stay idempotent. Its own state
+ * (connections, the webhook queue and the notification IDs already seen) lives in the database.
  */
 
 /** One persisted ledger revision, as returned by `GET /users/:id/bank/events`. */
@@ -44,8 +61,14 @@ type Revision = { ledger: { revision: number } };
 export type SyncLedger = {
   /** Must reject (404) for an unknown user. */
   read(userId: string): Promise<{ revision: number; accounts: { id: string; openingDate: string }[] }>;
+  /** The same answer without loading the movements. Optional; the engine prefers it over `read`. */
+  head?(userId: string): Promise<{ revision: number; accounts: { id: string; openingDate: string }[] }>;
   createAccount(userId: string, account: unknown): Promise<Revision>;
-  /** Insert new movements, update changed ones, skip identical ones; one revision per changed batch. */
+  /**
+   * Insert new movements, update changed ones, skip identical ones; one revision per changed batch.
+   * An error with `retryable: false` (a full ledger) means the same batch can never succeed as
+   * things are: the engine stops its automatic syncs of that connection until a caller syncs it.
+   */
   upsertTransactions(
     userId: string,
     input: { transactions: unknown[] },
@@ -73,33 +96,10 @@ const connectionSchema = z
     consecutiveFailures: z.number().int().nonnegative().default(0),
   })
   .strict();
-const connectionFileSchema = z
-  .object({ schemaVersion: z.literal(1), connections: z.array(connectionSchema).max(10) })
-  .strict();
 type StoredConnection = z.infer<typeof connectionSchema>;
 
-/** One verified webhook waiting for its sync. There is at most one per connection reference. */
-const queueItemSchema = z
-  .object({
-    /** Position in the order of arrival; a sync clears the notifications that arrived before it started. */
-    seq: z.number().int().positive(),
-    providerId: safeId,
-    ref: refSchema,
-    receivedAt: z.string(),
-  })
-  .strict();
-const queueFileSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    lastSeq: z.number().int().nonnegative(),
-    pending: z.array(queueItemSchema).max(5000),
-    /** `<providerId>:<eventId>` of recently accepted notifications, oldest first. */
-    seen: z.array(z.string().max(300)).max(2000),
-  })
-  .strict();
-type WebhookQueueFile = z.infer<typeof queueFileSchema>;
 const eventIdSchema = z.string().min(1).max(200);
-const maxSeenEvents = 2000;
+const maxConnections = 10;
 
 /** Body of `POST /users/:id/bank/connections`. */
 export const connectInputSchema = z
@@ -130,8 +130,11 @@ export type BankSyncOptions = {
   ledger: SyncLedger;
   /** A promise is accepted because provider discovery is asynchronous. */
   registry: BankRegistry | Promise<BankRegistry>;
-  /** Directory with one folder per user. Connections persist there; without it they live in memory. */
-  root?: string;
+  /**
+   * The runtime database. Connections, the webhook queue and seen notification IDs persist there;
+   * without it the engine keeps them in a private in-memory database that ends with the process.
+   */
+  db?: Database;
   clock?: () => Date;
   /** Runs before each provider call, for example to seed an empty demo ledger for the synthetic feed. */
   beforeSync?: (userId: string, provider: BankProvider) => Promise<void>;
@@ -171,134 +174,92 @@ type Activity = {
   lastActivityAt: number;
   /** The provider has webhooks: failed syncs are retried and silence triggers a fallback pull. */
   fallback: boolean;
+  /**
+   * The last sync failed with an error that retrying cannot fix (the ledger is full). Timers,
+   * webhooks and fallback pulls skip the connection until a sync asked for by a caller succeeds.
+   */
+  blocked: boolean;
 };
 
-const connectionFile = 'bank-connections.json';
-const queueFile = 'bank-webhook-queue.json';
 const key = (userId: string, connectionId: string) => `${userId}/${connectionId}`;
 const refKey = (providerId: string, ref: string) => `${providerId}\n${ref}`;
 
-/** Persistence of connection records: JSON files under `root`, or a map when there is no root. */
-function createConnectionStore(root?: string) {
-  const memory = new Map<string, StoredConnection[]>();
-  async function read(userId: string): Promise<StoredConnection[]> {
-    if (!root) return memory.get(userId) ?? [];
-    try {
-      const text = await readFile(join(root, safeId.parse(userId), connectionFile), 'utf8');
-      return connectionFileSchema.parse(JSON.parse(text)).connections;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-      throw error;
-    }
-  }
-  async function write(userId: string, connections: StoredConnection[]) {
-    const file = connectionFileSchema.parse({ schemaVersion: 1, connections });
-    if (!root) return void memory.set(userId, file.connections);
-    const target = join(root, safeId.parse(userId), connectionFile);
-    const temporary = `${target}.${randomUUID()}.tmp`;
-    try {
-      await writeFile(temporary, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
-      await rename(temporary, target);
-    } finally {
-      await rm(temporary, { force: true });
-    }
-  }
-  /** Every user that has a readable connection file. Unreadable files are skipped, not fatal. */
-  async function scan() {
-    const found = new Map<string, StoredConnection[]>();
-    if (!root) return found;
-    const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
-    for (const entry of entries) {
-      if (!entry.isDirectory() || !safeId.safeParse(entry.name).success) continue;
-      const connections = await read(entry.name).catch(() => []);
-      if (connections.length) found.set(entry.name, connections);
-    }
-    return found;
-  }
-  return { read, write, scan };
+/**
+ * Persistence of connection records. Each change is one transaction, so two requests (or two
+ * processes) cannot both link a reference or lose each other's update.
+ */
+function createConnectionStore(db: Database, registerUsers: boolean) {
+  return {
+    read(userId: string): StoredConnection[] {
+      return listConnections(db, safeId.parse(userId));
+    },
+    find(userId: string, connectionId: string): StoredConnection | undefined {
+      return getConnection(db, userId, connectionId);
+    },
+    /** Link a connection: 409 when its ID or bank reference is taken, 400 beyond the per-user limit. */
+    add(userId: string, connection: StoredConnection) {
+      const record = connectionSchema.parse(connection);
+      db.transaction(() => {
+        // A private engine database has no profile store in front of it to create the user row.
+        if (registerUsers) insertUser(db, safeId.parse(userId), record.createdAt);
+        if (connectionByRef(db, record.providerId, record.ref))
+          throw new ApiError(409, 'This bank connection reference is already linked');
+        if (getConnection(db, userId, record.id)) throw new ApiError(409, 'Bank connection already exists');
+        if (countConnections(db, userId) >= maxConnections) throw new ApiError(400, 'Connection limit reached');
+        insertConnection(db, userId, record);
+      });
+    },
+    /** Change one stored connection and save it. Returns the saved record, or undefined when it is gone. */
+    update(userId: string, connectionId: string, change: (connection: StoredConnection) => void) {
+      return db.transaction(() => {
+        const target = getConnection(db, userId, connectionId);
+        if (!target) return undefined;
+        change(target);
+        const saved = connectionSchema.parse(target);
+        updateConnection(db, userId, saved);
+        return saved;
+      });
+    },
+    /** Delete a connection and return what was stored, or undefined when there was none. */
+    remove(userId: string, connectionId: string) {
+      return db.transaction(() => {
+        const target = getConnection(db, userId, connectionId);
+        if (target) deleteConnection(db, userId, connectionId);
+        return target;
+      });
+    },
+    /** Every stored connection, by user. */
+    scan() {
+      const found = new Map<string, StoredConnection[]>();
+      for (const { userId, ...connection } of allConnections(db))
+        found.set(userId, [...(found.get(userId) ?? []), connection]);
+      return found;
+    },
+  };
 }
 
 /**
- * The persistent webhook queue: one small JSON file under `root` (memory without a root), replaced
- * atomically on every change. Changes are serialized, so a write never overlaps another.
+ * The persistent webhook queue: two small tables. A notification is committed before `add`
+ * resolves, so "accepted" always means "will survive a restart".
  */
-function createWebhookQueue(root?: string) {
-  let state: WebhookQueueFile = { schemaVersion: 1, lastSeq: 0, pending: [], seen: [] };
-  let seen = new Set<string>();
-  let lock: Promise<unknown> = Promise.resolve();
-
-  async function persist() {
-    if (!root) return;
-    const target = join(root, queueFile);
-    const temporary = `${target}.${randomUUID()}.tmp`;
-    try {
-      await writeFile(temporary, `${JSON.stringify(state)}\n`, { mode: 0o600 });
-      await rename(temporary, target);
-    } finally {
-      await rm(temporary, { force: true });
-    }
-  }
-  /** Run one change after the previous one has been written. */
-  function serialized<T>(change: () => Promise<T>): Promise<T> {
-    const operation = lock.catch(() => {}).then(change);
-    lock = operation;
-    return operation;
-  }
-
+function createWebhookQueue(db: Database) {
   return {
-    /** Read the file left by a previous process. A missing or unreadable file starts an empty queue. */
-    async load() {
-      if (!root) return;
-      try {
-        state = queueFileSchema.parse(JSON.parse(await readFile(join(root, queueFile), 'utf8')));
-        seen = new Set(state.seen);
-      } catch {
-        // Losing the queue only delays movements until the next pull; it must not stop the engine.
-      }
-    },
-    pending: () => state.pending,
-    lastSeq: () => state.lastSeq,
+    pending: () => pendingWebhooks(db),
+    pendingCount: () => countPendingWebhooks(db),
+    /** The highest sequence handed out so far; a sync covers the notifications up to it. */
+    lastSeq: () => lastWebhookSeq(db),
     /**
      * Record a notification durably. Returns false, and stores nothing, when its event ID was
      * already accepted. Notifications for one connection collapse into a single pending item.
+     * A database failure rejects: not durable means not accepted, and the bank delivers again.
      */
-    add(providerId: string, ref: string, eventId: string | undefined, receivedAt: string) {
-      return serialized(async () => {
-        const dedupeKey = eventId === undefined ? undefined : `${providerId}:${eventId}`;
-        if (dedupeKey !== undefined && seen.has(dedupeKey)) return false;
-        const previous = structuredClone(state);
-        if (dedupeKey !== undefined) {
-          state.seen.push(dedupeKey);
-          seen.add(dedupeKey);
-          for (const dropped of state.seen.splice(0, Math.max(0, state.seen.length - maxSeenEvents)))
-            seen.delete(dropped);
-        }
-        state.pending = state.pending.filter(item => item.providerId !== providerId || item.ref !== ref);
-        state.pending.push({ seq: ++state.lastSeq, providerId, ref, receivedAt });
-        try {
-          await persist();
-        } catch (error) {
-          // Not durable means not accepted: the bank gets an error and delivers again.
-          state = previous;
-          seen = new Set(state.seen);
-          throw error;
-        }
-        return true;
-      });
+    async add(providerId: string, ref: string, eventId: string | undefined, receivedAt: string) {
+      return enqueueWebhook(db, { providerId, ref, eventId, receivedAt });
     },
     /** Drop the notifications of a connection that a sync started after `throughSeq` has covered. */
-    clear(providerId: string, ref: string, throughSeq: number) {
-      return serialized(async () => {
-        const kept = state.pending.filter(
-          item => item.providerId !== providerId || item.ref !== ref || item.seq > throughSeq,
-        );
-        if (kept.length === state.pending.length) return;
-        state.pending = kept;
-        await persist();
-      });
+    async clear(providerId: string, ref: string, throughSeq: number) {
+      clearWebhooks(db, providerId, ref, throughSeq);
     },
-    /** Wait for writes in flight. */
-    idle: () => lock.catch(() => {}),
   };
 }
 
@@ -311,6 +272,8 @@ function sanitizedError(error: unknown) {
 
 export function createBankSync(options: BankSyncOptions) {
   const { ledger } = options;
+  // The engine needs the revision and the accounts, never the movements.
+  const readLedger = ledger.head ?? ledger.read;
   const clock = options.clock ?? (() => new Date());
   const defaultPollIntervalMs = pollIntervalSchema.parse(options.defaultPollIntervalMs ?? 300_000);
   const overlapDays = options.overlapDays ?? 7;
@@ -319,12 +282,13 @@ export function createBankSync(options: BankSyncOptions) {
   const retryMaxMs = options.retryMaxMs ?? 300_000;
   const fallbackPollMs = options.fallbackPollMs === undefined ? 300_000 : options.fallbackPollMs;
   const housekeepingMs = options.housekeepingMs === undefined ? 1000 : options.housekeepingMs;
-  const store = createConnectionStore(options.root);
-  const queue = createWebhookQueue(options.root);
+  // Without a database the engine keeps its state in memory, as a private database of its own.
+  const db = options.db ?? open(':memory:');
+  const store = createConnectionStore(db, !options.db);
+  const queue = createWebhookQueue(db);
   const webhookCounts = { accepted: 0, duplicates: 0 };
   const activities = new Map<string, Activity>();
   const refs = new Map<string, { userId: string; connectionId: string }>();
-  const locks = new Map<string, Promise<unknown>>();
   const listeners = new Set<BankEventListener>();
   let closed = false;
 
@@ -349,6 +313,7 @@ export function createBankSync(options: BankSyncOptions) {
         syncCount: 0,
         lastActivityAt: clock().getTime(),
         fallback: false,
+        blocked: false,
       };
       activities.set(id, state);
     }
@@ -360,25 +325,6 @@ export function createBankSync(options: BankSyncOptions) {
     return Math.min(retryMaxMs, retryBaseMs * 2 ** Math.min(failures - 1, 30));
   }
 
-  /** Serialize changes to one user's connection file. */
-  async function mutate<T>(userId: string, change: (connections: StoredConnection[]) => T): Promise<T> {
-    const previous = locks.get(userId) ?? Promise.resolve();
-    const operation = previous
-      .catch(() => {})
-      .then(async () => {
-        const connections = await store.read(userId);
-        const result = change(connections);
-        await store.write(userId, connections);
-        return result;
-      });
-    locks.set(userId, operation);
-    try {
-      return await operation;
-    } finally {
-      if (locks.get(userId) === operation) locks.delete(userId);
-    }
-  }
-
   async function provider(providerId: string): Promise<RegisteredProvider> {
     const entry = (await options.registry).get(providerId);
     if (!entry) throw new ApiError(404, `Unknown bank provider: ${providerId}`);
@@ -388,7 +334,7 @@ export function createBankSync(options: BankSyncOptions) {
   }
 
   async function find(userId: string, connectionId: string) {
-    const connection = (await store.read(userId)).find(item => item.id === connectionId);
+    const connection = store.find(userId, connectionId);
     if (!connection) throw new ApiError(404, 'Bank connection not found');
     return connection;
   }
@@ -405,7 +351,10 @@ export function createBankSync(options: BankSyncOptions) {
       lastAttemptAt: connection.lastAttemptAt,
       /** Failed syncs since the last successful one; zero when the connection is healthy. */
       consecutiveFailures: connection.consecutiveFailures,
-      /** When the engine will retry on its own after a failure, or null when no retry is scheduled. */
+      /**
+       * When the engine will retry on its own after a failure, or null when no retry is scheduled.
+       * Null together with a `lastError` means the failure needs a person (for example a full ledger).
+       */
       nextRetryAt: state?.nextRetryAt === undefined ? null : new Date(state.nextRetryAt).toISOString(),
       pollIntervalMs: connection.pollIntervalMs,
       /** Whether a polling timer is active in this process. */
@@ -435,7 +384,7 @@ export function createBankSync(options: BankSyncOptions) {
       cursor: stored.cursor,
       pollIntervalMs: stored.pollIntervalMs,
     };
-    let current = await ledger.read(userId);
+    let current = await readLedger(userId);
     let revision = current.revision;
     const context = (): ProviderContext => ({
       env,
@@ -457,7 +406,7 @@ export function createBankSync(options: BankSyncOptions) {
       revision = created.ledger.revision;
       accountsCreated++;
     }
-    if (accountsCreated) current = await ledger.read(userId);
+    if (accountsCreated) current = await readLedger(userId);
 
     const fetched = await bank.fetchTransactions(connection, { ...context(), since: sinceDate(stored) });
     const transactions = z.array(transactionSchema).parse(
@@ -492,9 +441,7 @@ export function createBankSync(options: BankSyncOptions) {
     }
 
     const syncedAt = now.toISOString();
-    await mutate(userId, connections => {
-      const target = connections.find(item => item.id === stored.id);
-      if (!target) return;
+    store.update(userId, stored.id, target => {
       if (fetched.nextCursor !== undefined) target.cursor = fetched.nextCursor;
       target.lastSyncAt = syncedAt;
       target.lastAttemptAt = syncedAt;
@@ -504,12 +451,17 @@ export function createBankSync(options: BankSyncOptions) {
     return { connectionId: stored.id, providerId: stored.providerId, accountsCreated, ...counts, revision, syncedAt };
   }
 
-  /** Sync one connection. Concurrent calls for the same connection share one run. */
-  async function syncConnection(userId: string, connectionId: string): Promise<SyncResult> {
+  /**
+   * Sync one connection. Concurrent calls for the same connection share one run. `automatic` marks
+   * the engine's own triggers (timer, webhook, retry, fallback): those leave a blocked connection
+   * alone, while a sync a caller asks for always tries.
+   */
+  async function syncConnection(userId: string, connectionId: string, automatic = false): Promise<SyncResult> {
     safeId.parse(userId);
     if (closed) throw new ApiError(503, 'Bank sync is shutting down');
     const state = activity(userId, connectionId);
     if (state.running) return state.running;
+    if (automatic && state.blocked) throw new ApiError(409, 'Bank sync is waiting for a manual sync');
     const operation = (async () => {
       const stored = await find(userId, connectionId);
       // Notifications accepted up to here are covered by this pull; later ones need another.
@@ -518,6 +470,7 @@ export function createBankSync(options: BankSyncOptions) {
       state.nextRetryAt = undefined;
       try {
         const result = await pull(userId, stored);
+        state.blocked = false;
         state.failures = 0;
         state.syncCount++;
         await queue.clear(stored.providerId, stored.ref, coveredSeq).catch(() => {});
@@ -525,18 +478,24 @@ export function createBankSync(options: BankSyncOptions) {
       } catch (error) {
         state.failures++;
         const attemptedAt = clock();
+        // A failure that retrying cannot fix: no backoff and no further automatic syncs. The message
+        // stays on the connection as `lastError`, and the notifications stay queued for the sync
+        // that follows once a caller has made room and asked for one.
+        state.blocked = (error as { retryable?: unknown } | null)?.retryable === false;
         // Connections that are fed automatically retry with backoff; manual ones wait for the caller.
-        const automatic = state.fallback || Boolean(state.timer);
-        if (automatic && state.failures < state.stopAfterFailures && !closed)
+        const fed = state.fallback || Boolean(state.timer);
+        if (fed && !state.blocked && state.failures < state.stopAfterFailures && !closed)
           state.nextRetryAt = attemptedAt.getTime() + retryDelay(state.failures);
         const message = sanitizedError(error);
-        await mutate(userId, connections => {
-          const target = connections.find(item => item.id === connectionId);
-          if (!target) return;
-          target.lastError = message;
-          target.lastAttemptAt = attemptedAt.toISOString();
-          target.consecutiveFailures = state.failures;
-        }).catch(() => {});
+        try {
+          store.update(userId, connectionId, target => {
+            target.lastError = message;
+            target.lastAttemptAt = attemptedAt.toISOString();
+            target.consecutiveFailures = state.failures;
+          });
+        } catch {
+          // The sync failure is what the caller must see, not a failure to record it.
+        }
         throw error;
       }
     })();
@@ -547,7 +506,7 @@ export function createBankSync(options: BankSyncOptions) {
       state.running = undefined;
       if (state.queued && !closed) {
         state.queued = false;
-        void syncConnection(userId, connectionId).catch(() => {});
+        void syncConnection(userId, connectionId, true).catch(() => {});
       }
     }
   }
@@ -568,7 +527,8 @@ export function createBankSync(options: BankSyncOptions) {
     state.failures = 0;
     state.stopAfterFailures = stopAfterFailures;
     state.timer = setInterval(() => {
-      void syncConnection(userId, connectionId).catch(() => {
+      if (state.blocked) return;
+      void syncConnection(userId, connectionId, true).catch(() => {
         if (state.failures >= state.stopAfterFailures) stopTimer(userId, connectionId);
       });
     }, intervalMs);
@@ -587,7 +547,7 @@ export function createBankSync(options: BankSyncOptions) {
     const started: Promise<unknown>[] = [];
     for (const [index, target] of refs) {
       const state = activities.get(key(target.userId, target.connectionId));
-      if (!state || state.running) continue;
+      if (!state || state.running || state.blocked) continue;
       const retryDue = state.nextRetryAt !== undefined && state.nextRetryAt <= now;
       const idle = state.nextRetryAt === undefined;
       // A queued notification whose sync is neither running nor waiting for a retry (after a restart).
@@ -599,7 +559,7 @@ export function createBankSync(options: BankSyncOptions) {
         fallbackPollMs !== null &&
         now - state.lastActivityAt >= fallbackPollMs;
       if (retryDue || queuedDue || silentDue)
-        started.push(syncConnection(target.userId, target.connectionId).catch(() => {}));
+        started.push(syncConnection(target.userId, target.connectionId, true).catch(() => {}));
     }
     await Promise.all(started);
   }
@@ -607,8 +567,7 @@ export function createBankSync(options: BankSyncOptions) {
   /** Rebuild the webhook index and resume polling of real providers after a restart. */
   async function resume() {
     const registry = await options.registry;
-    await queue.load();
-    for (const [userId, connections] of await store.scan()) {
+    for (const [userId, connections] of store.scan()) {
       for (const connection of connections) {
         refs.set(refKey(connection.providerId, connection.ref), { userId, connectionId: connection.id });
         const entry = registry.get(connection.providerId);
@@ -634,7 +593,7 @@ export function createBankSync(options: BankSyncOptions) {
 
   /**
    * Accept a verified webhook: store it durably, then start the sync in the background. Resolves as
-   * soon as the notification is on disk, so the route can acknowledge it without waiting for the bank.
+   * soon as the notification is committed, so the route can acknowledge it without waiting for the bank.
    */
   async function acceptWebhook(providerId: string, signal: Pick<WebhookSignal, 'connectionRef' | 'eventId'>) {
     await ready;
@@ -650,7 +609,7 @@ export function createBankSync(options: BankSyncOptions) {
     webhookCounts.accepted++;
     const state = activity(target.userId, target.connectionId);
     if (state.running) state.queued = true;
-    else void syncConnection(target.userId, target.connectionId).catch(() => {});
+    else if (!state.blocked) void syncConnection(target.userId, target.connectionId, true).catch(() => {});
     return { known: true, duplicate: false };
   }
 
@@ -660,8 +619,8 @@ export function createBankSync(options: BankSyncOptions) {
 
     async listConnections(userId: string) {
       await ready;
-      await ledger.read(userId);
-      return (await store.read(userId)).map(connection => view(userId, connection));
+      await readLedger(userId);
+      return store.read(userId).map(connection => view(userId, connection));
     },
 
     /**
@@ -670,7 +629,7 @@ export function createBankSync(options: BankSyncOptions) {
      */
     async connect(userId: string, input: unknown, polling: { stopAfterFailures?: number } = {}) {
       await ready;
-      await ledger.read(userId);
+      await readLedger(userId);
       const request = connectInputSchema.parse(input);
       const { provider: bank } = await provider(request.providerId);
       const digest = createHash('sha256').update(request.ref).digest('hex').slice(0, 8);
@@ -699,11 +658,7 @@ export function createBankSync(options: BankSyncOptions) {
       refs.set(index, { userId, connectionId: id });
       let written = false;
       try {
-        await mutate(userId, connections => {
-          if (connections.some(item => item.id === id)) throw new ApiError(409, 'Bank connection already exists');
-          if (connections.length >= 10) throw new ApiError(400, 'Connection limit reached');
-          connections.push(connection);
-        });
+        store.add(userId, connection);
         written = true;
         const state = activity(userId, id);
         state.fallback = supportsWebhooks(bank);
@@ -712,11 +667,13 @@ export function createBankSync(options: BankSyncOptions) {
       } catch (error) {
         refs.delete(index);
         // Only undo a record this call wrote (the polling limit was hit after the write).
-        if (written)
-          await mutate(userId, connections => {
-            const position = connections.findIndex(item => item.id === id);
-            if (position >= 0) connections.splice(position, 1);
-          }).catch(() => {});
+        if (written) {
+          try {
+            store.remove(userId, id);
+          } catch {
+            // The original error is the one to report.
+          }
+        }
         throw error;
       }
       return view(userId, connection);
@@ -725,14 +682,11 @@ export function createBankSync(options: BankSyncOptions) {
     /** Remove a link and stop its polling. Movements already imported stay in the ledger. */
     async disconnect(userId: string, connectionId: string) {
       await ready;
-      await ledger.read(userId);
+      await readLedger(userId);
       const state = stopTimer(userId, connectionId);
       await state?.running?.catch(() => {});
-      const removed = await mutate(userId, connections => {
-        const position = connections.findIndex(item => item.id === connectionId);
-        if (position < 0) throw new ApiError(404, 'Bank connection not found');
-        return connections.splice(position, 1)[0];
-      });
+      const removed = store.remove(userId, connectionId);
+      if (!removed) throw new ApiError(404, 'Bank connection not found');
       refs.delete(refKey(removed.providerId, removed.ref));
       activities.delete(key(userId, connectionId));
       return { deleted: connectionId };
@@ -750,12 +704,10 @@ export function createBankSync(options: BankSyncOptions) {
       await find(userId, connectionId);
       if (pollIntervalMs) startTimer(userId, connectionId, pollIntervalMs, polling.stopAfterFailures);
       else stopTimer(userId, connectionId);
-      const connection = await mutate(userId, connections => {
-        const target = connections.find(item => item.id === connectionId);
-        if (!target) throw new ApiError(404, 'Bank connection not found');
+      const connection = store.update(userId, connectionId, target => {
         target.pollIntervalMs = pollIntervalMs;
-        return target;
       });
+      if (!connection) throw new ApiError(404, 'Bank connection not found');
       return view(userId, connection);
     },
 
@@ -768,7 +720,7 @@ export function createBankSync(options: BankSyncOptions) {
     /** Read one connection, or null when the user has no such connection. */
     async connection(userId: string, connectionId: string) {
       await ready;
-      const stored = (await store.read(userId)).find(item => item.id === connectionId);
+      const stored = store.find(safeId.parse(userId), connectionId);
       return stored ? view(userId, stored) : null;
     },
 
@@ -783,8 +735,8 @@ export function createBankSync(options: BankSyncOptions) {
      */
     async sync(userId: string, connectionId?: string) {
       await ready;
-      await ledger.read(userId);
-      const connections = await store.read(userId);
+      await readLedger(userId);
+      const connections = store.read(userId);
       if (connectionId && !connections.some(item => item.id === connectionId))
         throw new ApiError(404, 'Bank connection not found');
       const results = [];
@@ -833,7 +785,7 @@ export function createBankSync(options: BankSyncOptions) {
 
     /** Counters of this process and the notifications still waiting for a successful sync. */
     webhookStatus() {
-      return { ...webhookCounts, pending: queue.pending().length };
+      return { ...webhookCounts, pending: queue.pendingCount() };
     },
 
     /** Listen for every persisted ledger revision of every user. Returns the function that unsubscribes. */
@@ -855,8 +807,7 @@ export function createBankSync(options: BankSyncOptions) {
         state.nextRetryAt = undefined;
       }
       await Promise.allSettled([...activities.values()].map(state => state.running));
-      // Notifications that were not processed stay in the queue file for the next start.
-      await queue.idle();
+      // Notifications that were not processed stay in the queue table for the next start.
       unsubscribe();
       listeners.clear();
     },

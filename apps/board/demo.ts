@@ -1,5 +1,14 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import {
+  boardRunIdByPairCode,
+  getBoardRun,
+  insertBoardRun,
+  pairCodeTaken,
+  sharedBoardRunId,
+  updateBoardRun,
+} from '../../packages/db/board.ts';
+import type { Database } from '../../packages/db/database.ts';
 import { monthsToTarget } from '../../packages/finance/savings.ts';
 import type { Answers } from './intake.ts';
 import { answersSchema, answerValue, basicGroups, extraGroups, questionId, validateAnswers } from './intake.ts';
@@ -195,8 +204,84 @@ function seed() {
   };
 }
 type Run = { persona: Persona; state: ReturnType<typeof seed>; revision: number; pairCode: string };
-const runs = new Map<string, Run>();
-let stageId: string | undefined;
+
+/** Where runs are kept: this process's memory, or the runtime database so a restart keeps them. */
+type RunStore = {
+  get(id: string): Run | undefined;
+  idByPairCode(pairCode: string): string | undefined;
+  pairCodeTaken(pairCode: string): boolean;
+  /** The shared board everybody follows, when one exists. */
+  stageId(): string | undefined;
+  add(id: string, run: Run, shared: boolean): void;
+  /** Keep the changes an action made to a run. */
+  save(id: string, run: Run): void;
+};
+
+/** Runs kept at once; the oldest rehearsal makes room, so a public tunnel cannot grow the store forever. */
+const maxRuns = 2000;
+/** A rehearsal nobody touched for this long expires. The shared board does not. */
+const runTtlMs = 30 * 24 * 60 * 60 * 1000;
+
+/** Demo-only memory: runs end with the process. Used when no database is configured. */
+function memoryRuns(): RunStore {
+  const runs = new Map<string, Run>();
+  let stage: string | undefined;
+  return {
+    get: id => runs.get(id),
+    idByPairCode: pairCode => [...runs].find(([, run]) => run.pairCode === pairCode)?.[0],
+    pairCodeTaken: pairCode => [...runs.values()].some(run => run.pairCode === pairCode),
+    stageId: () => stage,
+    add(id, run, shared) {
+      if (runs.size >= maxRuns) {
+        const oldest = [...runs.keys()].find(key => key !== stage);
+        if (oldest) runs.delete(oldest);
+      }
+      runs.set(id, run);
+      if (shared) stage = id;
+    },
+    save(id, run) {
+      runs.set(id, run);
+    },
+  };
+}
+
+/** Runs in the `board_runs` table. Every read returns a fresh copy; `save` writes it back. */
+function databaseRuns(db: Database, clock: () => Date): RunStore {
+  const times = () => {
+    const now = clock();
+    return { now: now.toISOString(), expiresAt: new Date(now.getTime() + runTtlMs).toISOString() };
+  };
+  return {
+    get(id) {
+      const stored = getBoardRun(db, id, clock().toISOString());
+      const persona = personaSchema.safeParse(stored?.persona);
+      if (!stored || !persona.success) return undefined;
+      // Fields added to the scene state since the run was stored take their initial value.
+      const state = { ...seed(), ...(stored.state as Partial<ReturnType<typeof seed>>) };
+      return { persona: persona.data, state, revision: stored.revision, pairCode: stored.pairCode };
+    },
+    idByPairCode: pairCode => boardRunIdByPairCode(db, pairCode, clock().toISOString()),
+    pairCodeTaken: pairCode => pairCodeTaken(db, pairCode),
+    stageId: () => sharedBoardRunId(db),
+    add(id, run, shared) {
+      insertBoardRun(db, { id, ...run, shared }, times(), maxRuns);
+    },
+    save(id, run) {
+      updateBoardRun(db, { id, ...run }, times());
+    },
+  };
+}
+
+let runs: RunStore = memoryRuns();
+
+/**
+ * Keep board runs in the runtime database, so a restart keeps the shared board and its rehearsals.
+ * Pass null to return to a fresh in-memory store, which is also the default: the scripted board
+ * needs no database.
+ */
+export function persistDemoRuns(db: Database | null, clock: () => Date = () => new Date()) {
+  runs = db ? databaseRuns(db, clock) : memoryRuns();
+}
 
 function getRun(id: string) {
   const run = runs.get(id);
@@ -218,7 +303,7 @@ export function getView(runId: string, message?: string) {
     runId,
     revision,
     pairCode,
-    sharedBoard: runId === stageId,
+    sharedBoard: runId === runs.stageId(),
     persona,
     person,
     choices,
@@ -387,33 +472,41 @@ export function getView(runId: string, message?: string) {
 }
 export type DemoView = ReturnType<typeof getView>;
 
-export function openDemo({ runId, pairCode, persona, newRun }: z.infer<typeof openSchema>) {
+/** Whether a shared board exists right now, so a caller can tell if opening without a run creates one. */
+export function hasSharedBoard() {
+  return runs.stageId() !== undefined;
+}
+
+/**
+ * Open a run. With `shared` (a local convenience) a call without a run joins the one board everybody
+ * follows; without it every such call starts a private run that only its holder can address.
+ */
+export function openDemo(
+  { runId, pairCode, persona, newRun }: z.infer<typeof openSchema>,
+  { shared = true }: { shared?: boolean } = {},
+) {
   if (pairCode) {
-    runId = [...runs].find(([, run]) => run.pairCode === pairCode)?.[0];
+    runId = runs.idByPairCode(pairCode);
     if (!runId) throw new Error('That board code expired. Say ‘ReloCat, start’ to open the live board without a code.');
   }
-  const existing = runId ?? (newRun ? undefined : stageId);
+  const existing = runId ?? (newRun || !shared ? undefined : runs.stageId());
   if (existing) {
     const run = getRun(existing);
     if (persona && persona !== run.persona) {
       run.persona = persona;
       run.revision += 1;
+      runs.save(existing, run);
     }
     return getView(existing);
   }
 
-  // Demo-only memory, bounded so a publicly reachable tunnel cannot grow it indefinitely.
-  if (runs.size >= 200) {
-    const oldest = [...runs.keys()].find(id => id !== stageId);
-    if (oldest) runs.delete(oldest);
-  }
   const id = randomUUID();
   let code: string;
   do {
     code = randomBytes(4).toString('hex').toUpperCase();
-  } while ([...runs.values()].some(run => run.pairCode === code));
-  runs.set(id, { persona: persona ?? 'onboarding', state: seed(), revision: 0, pairCode: code });
-  if (!newRun) stageId = id;
+  } while (runs.pairCodeTaken(code));
+  // With sharing on, a run opened without `newRun` becomes the shared board; the store keeps itself bounded.
+  runs.add(id, { persona: persona ?? 'onboarding', state: seed(), revision: 0, pairCode: code }, shared && !newRun);
   return getView(id);
 }
 
@@ -530,5 +623,6 @@ export function updateDemo({
       break;
   }
   run.revision += 1;
+  runs.save(runId, run);
   return getView(runId, message);
 }

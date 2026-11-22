@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { IncentivesInput } from '../packages/contracts/places.ts';
 import { eligibility, policyEffect, policyId } from '../packages/contracts/places.ts';
+import type { Person } from '../packages/contracts/planner.ts';
+import { buildPlace } from '../packages/model/place.ts';
 import { getTown, loadData } from '../packages/places/data.ts';
-import { evaluateIncentives } from '../packages/places/eligibility.ts';
+import { callStatusOn, evaluateIncentives } from '../packages/places/eligibility.ts';
+import { planForPlaces } from '../packages/planner/plan.ts';
 
 const { snapshot, policies } = loadData();
 const today = '2026-11-22';
@@ -43,56 +46,151 @@ test('every policy has a parsed effect and a dated official source', () => {
   }
 });
 
-test('effects carry only the figures stated in each verified policy', () => {
-  const effect = (id: string) => policies.find(entry => entry.id === id)?.effect;
-  assert.deepEqual(effect('irpf_move'), {
-    kind: 'one_off_eur',
-    amount: { rural: 750, special_attention: 1000, other: 0 },
-  });
-  for (const [id, cost] of [
-    ['irpf_buy', 'purchase_payments'],
-    ['irpf_renovate', 'renovation'],
-  ]) {
-    assert.deepEqual(effect(id), {
-      kind: 'annual_rate_of_cost',
-      cost,
-      rate: { rural: 0.15, special_attention: 0.2, other: 0 },
-      maxBaseEur: 6000,
+/** A buyer with the cash in hand, so every purchase below happens on the plan date. */
+function buyer(budgetEur: number, household: Household): Person {
+  return {
+    id: 'buyer',
+    synthetic: true,
+    household,
+    householdSize: 3,
+    currentMunicipalityCode: null,
+    finances: {
+      monthlyIncomeCents: 300_000,
+      monthlyExpensesCents: 200_000,
+      currentSavingsCents: 100_000_000,
+      emergencyReserveCents: 0,
+      basis: 'declared',
+      asOf: today,
+    },
+    home: { floorAreaM2: null, budgetCents: budgetEur * 100, depositRate: 0.2 },
+    habits: [],
+  };
+}
+function planned(code: string, budgetEur: number, household: Household) {
+  const [plan] = planForPlaces(buyer(budgetEur, household), [buildPlace(snapshot, code)], policies, {}, today).plans;
+  const benefit = (id: string) => {
+    const found = plan.benefits.find(entry => entry.policyId === id);
+    assert(found, `${id} is listed`);
+    return found;
+  };
+  return { plan, benefit };
+}
+const family: Household = {
+  primaryResidence: true,
+  age: 45,
+  children: [{ age: 5, meetsItpSchooling: true, inDesignatedSchool: true }],
+  itpFamilyNetTaxBaseEur: 30_000,
+  itpBuyerNetTaxBaseEur: 20_000,
+  itpTransaction: true,
+  satisfiesItpOccupancyRules: true,
+  largeFamily: false,
+  singleParent: false,
+  disability65: false,
+};
+
+test('the verified transfer-tax figures give the tax a real purchase pays', () => {
+  // €150,000: 10% is €15,000. Rural 4% is €6,000 (€9,000 less); special attention 3% is €4,500 (€10,500 less).
+  for (const [code, saving, upfront] of [
+    [talarn, 900_000, 3_900_000],
+    [termens, 1_050_000, 3_750_000],
+  ] as const) {
+    const { plan, benefit } = planned(code, 150_000, family);
+    assert.deepEqual(plan.transferTax, {
+      standardCents: 1_500_000,
+      baselineCents: 1_500_000,
+      baselinePolicyId: null,
+      couldBeLower: false,
     });
+    assert.deepEqual([benefit('itp_buy').amountCents, benefit('itp_buy').counted], [saving, true]);
+    assert.equal(plan.withPlaceBenefits?.upfrontCashCents, upfront);
+    // The rehabilitation rate is the same rate for a different purchase; its facts are unknown here.
+    assert.deepEqual([benefit('itp_rehab_buy').amountCents, benefit('itp_rehab_buy').counted], [saving, false]);
   }
+  // Outside the rural list the general rate stays and nothing is saved.
+  const city = planned(balaguer, 150_000, family);
+  assert.deepEqual([city.benefit('itp_buy').amountCents, city.benefit('itp_buy').counted], [0, false]);
+  assert.equal(city.plan.withPlaceBenefits?.upfrontCashCents, 4_800_000);
+
+  // The general tariff by value: €700,000 pays 10% of €600,000 and 11% of the rest, €71,000.
+  // €1,600,000 pays €60,000 + €33,000 + €72,000 + 13% of €100,000 = €178,000.
+  assert.equal(planned(balaguer, 700_000, family).plan.transferTax?.standardCents, 7_100_000);
+  assert.equal(planned(balaguer, 1_600_000, family).plan.transferTax?.standardCents, 17_800_000);
+
+  // Each 5% rate for the whole of Catalonia halves the tax in a town that is not rural, and never adds up.
+  for (const [id, facts] of [
+    ['itp_young_buyer', { age: 30 }],
+    ['itp_large_family', { largeFamily: true }],
+    ['itp_single_parent', { singleParent: true }],
+    ['itp_disability', { disability65: true }],
+  ] as const) {
+    const { plan, benefit } = planned(balaguer, 150_000, { ...family, ...facts });
+    assert.deepEqual(
+      [plan.transferTax?.baselineCents, plan.transferTax?.baselinePolicyId, benefit(id).amountCents],
+      [750_000, id, 750_000],
+    );
+    assert.equal(plan.baseline?.upfrontCashCents, 4_050_000);
+  }
+});
+
+test('the verified deduction and aid figures give the amounts a household is shown', () => {
+  const mover: Household = {
+    primaryResidence: true,
+    age: 30,
+    filing: 'individual',
+    irpfNetTaxBaseEur: 20_000,
+    firstRuralMove: true,
+  };
+  // The relocation deduction: €750 rural, €1,000 special attention, doubled for a single-parent family.
+  for (const [code, singleParent, amount] of [
+    [talarn, false, 750],
+    [talarn, true, 1500],
+    [termens, false, 1000],
+    [termens, true, 2000],
+  ] as const) {
+    const move = check('irpf_move', code, { eventDate: '2026-12-01', household: { ...mover, singleParent } });
+    assert.deepEqual([move.eligibilityStatus, move.screenedAmountEur], ['eligible', amount]);
+  }
+  assert.equal(
+    check('irpf_move', balaguer, { eventDate: '2026-12-01', household: mover }).eligibilityStatus,
+    'ineligible',
+  );
+  // Without the single-parent fact the plan shows the plain amount for the category.
+  assert.equal(planned(termens, 150_000, { ...family, ...mover }).benefit('irpf_move').amountCents, 100_000);
+
+  // Yearly deductions: the rate by category and the cap the law states, never an amount the plan cannot know.
+  const rural = planned(talarn, 150_000, family);
+  const special = planned(termens, 150_000, family);
+  assert.match(
+    rural.benefit('irpf_buy').explanation,
+    /^15% a year of home-purchase payments, on at most €6,000 a year\./,
+  );
+  assert.match(
+    special.benefit('irpf_buy').explanation,
+    /^20% a year of home-purchase payments, on at most €6,000 a year\./,
+  );
   // The law caps the rent deduction by amount (€600, €1,200 joint), not the rent it applies to.
-  assert.deepEqual(effect('irpf_rent'), {
-    kind: 'annual_rate_of_cost',
-    cost: 'rent',
-    rate: { rural: 0.15, special_attention: 0.2, other: 0 },
-    maxAmountEur: { individual: 600, joint: 1200 },
-  });
-  for (const id of ['itp_buy', 'itp_rehab_buy']) {
-    // A municipality outside the measure keeps the general rate, so it never shows a saving.
-    assert.deepEqual(effect(id), {
-      kind: 'transfer_tax_rate',
-      standardRate: 0.1,
-      standardTariff: generalTariff,
-      reducedRate: { rural: 0.04, special_attention: 0.03, other: 0.1 },
-    });
-  }
-  for (const id of ['itp_young_buyer', 'itp_large_family', 'itp_single_parent', 'itp_disability']) {
-    // The same 5% in every municipality, against the same general tariff.
-    assert.deepEqual(effect(id), {
-      kind: 'transfer_tax_rate',
-      standardRate: 0.1,
-      standardTariff: generalTariff,
-      reducedRate: { rural: 0.05, special_attention: 0.05, other: 0.05 },
-    });
-    assert.equal(policies.find(entry => entry.id === id)?.territory, 'catalonia');
-  }
-  assert.equal(effect('renovation_grant_2026')?.kind, 'unquantified');
+  assert.match(
+    rural.benefit('irpf_rent').explanation,
+    /^15% a year of rent paid, capped at €600 a year \(€1,200 on a joint return\)\./,
+  );
+  assert.match(special.benefit('irpf_rent').explanation, /^20% a year of rent paid, capped at €600 a year/);
+  for (const id of ['irpf_buy', 'irpf_rent'])
+    assert.deepEqual([rural.benefit(id).amountCents, rural.benefit(id).counted], [null, false]);
+
   // "€15,000 or less, limited to 20% of the cost": the lower of the two.
-  assert.deepEqual(effect('youth_purchase_small_town'), {
-    kind: 'one_off_rate_of_price',
-    rate: 0.2,
-    maxAmountEur: 15_000,
-  });
+  for (const [budgetEur, amount] of [
+    [50_000, 1_000_000],
+    [75_000, 1_500_000],
+    [150_000, 1_500_000],
+  ]) {
+    assert.equal(planned(termens, budgetEur, family).benefit('youth_purchase_small_town').amountCents, amount);
+  }
+  // The renovation grant is real but depends on works the purchase plan does not model: it is not listed there.
+  assert.equal(policies.find(entry => entry.id === 'renovation_grant_2026')?.effect?.kind, 'unquantified');
+  assert.equal(
+    rural.plan.benefits.some(entry => entry.policyId === 'renovation_grant_2026'),
+    false,
+  );
 });
 
 test('the new effect shapes parse and reject malformed figures', () => {
@@ -374,8 +472,24 @@ test('scopes the youth purchase aid by resident population, not by rural status'
 test('keeps the closed 2026 renovation call and the catalogue by intent unchanged', () => {
   const grant = check('renovation_grant_2026', termens);
   assert.equal(grant.callStatus, 'closed');
-  assert.equal(check('renovation_grant_2026', termens, {}, '2026-09-10').callStatus, 'open');
   assert.equal(check('renovation_grant_2026', termens, {}, '2026-05-17').callStatus, 'upcoming');
+  assert.equal(check('renovation_grant_2026', termens, {}, '2026-05-18').callStatus, 'open');
+  assert.equal(check('renovation_grant_2026', termens, {}, '2026-09-09').callStatus, 'open');
+  // The call closed at 14:00 on 10 September. A date has no time of day, so the closing day reads closed.
+  const grantPolicy = policies.find(entry => entry.id === 'renovation_grant_2026');
+  assert(grantPolicy);
+  assert.deepEqual(grantPolicy.callWindow, {
+    opensOn: '2026-05-18',
+    closesOn: '2026-09-10',
+    closesAtLocalTime: '14:00',
+  });
+  assert.equal(check('renovation_grant_2026', termens, {}, '2026-09-10').callStatus, 'closed');
+  // A call with no stated closing time stays open through its last day, and a grant's own dates are its window.
+  const wholeDay = { ...grantPolicy, callWindow: { opensOn: '2026-05-18', closesOn: '2026-09-10' } };
+  assert.equal(callStatusOn(wholeDay, '2026-09-10'), 'open');
+  assert.equal(callStatusOn(wholeDay, '2026-09-11'), 'closed');
+  assert.equal(callStatusOn({ ...grantPolicy, callWindow: undefined }, '2026-09-10'), 'open');
+  assert.equal(callStatusOn({ ...grantPolicy, callWindow: null }, '2026-09-10'), 'unknown');
 
   const town = getTown(snapshot, termens);
   const ids = (intent: IncentivesInput['intent']) =>

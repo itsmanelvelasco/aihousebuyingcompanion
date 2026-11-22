@@ -5,5 +5,7 @@ apps/*/dist/
 *.tmp
 data/runtime-users/
 data/runtime-habits/
+data/relocat.db*
+data/db/
 data/cache/
 data/synthetic-users.*

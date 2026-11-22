@@ -38,13 +38,34 @@ export function envList(name: string, env: Env = process.env) {
     .filter(Boolean);
 }
 
-/** Two variables that only make sense together, such as a service URL and its token. */
-export function envPair(first: string, second: string, purpose: string, env: Env = process.env) {
-  const a = env[first];
-  const b = env[second];
-  if (!a && !b) return null;
-  if (!a || !b) throw new Error(`Set both ${first} and ${second} ${purpose}`);
-  return [a, b] as const;
+/** Which header, if any, states the address of the client behind a proxy. See `packages/http/rate-limit.ts`. */
+export type ClientAddressSource =
+  | { kind: 'auto' }
+  | { kind: 'none' }
+  | { kind: 'x-forwarded-for'; trustedHops: number }
+  | { kind: 'header'; name: string };
+
+/**
+ * How the rate limiters learn a client's address. `CLIENT_IP_HEADER` is `auto` (default: headers are
+ * believed only from a proxy on this machine), `none`, `x-forwarded-for` (with `TRUSTED_PROXY_HOPS`
+ * proxies of yours in front, default 1) or the name of a single-value header your proxy overwrites,
+ * such as `cf-connecting-ip`. The older `TRUST_PROXY=on` means `x-forwarded-for`.
+ */
+export function clientAddressConfig(env: Env = process.env): ClientAddressSource {
+  const name = (env.CLIENT_IP_HEADER ?? '').trim().toLowerCase();
+  const trustedHops = z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .parse(env.TRUSTED_PROXY_HOPS || 1);
+  if (name === 'none') return { kind: 'none' };
+  if (name === 'x-forwarded-for' || ((name === '' || name === 'auto') && env.TRUST_PROXY === 'on'))
+    return { kind: 'x-forwarded-for', trustedHops };
+  if (name === '' || name === 'auto') return { kind: 'auto' };
+  if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(name))
+    throw new Error('CLIENT_IP_HEADER must be auto, none, x-forwarded-for or the name of a header');
+  return { kind: 'header', name };
 }
 
 /** Default OpenAI model IDs. Each can be overridden without touching code. */
@@ -61,7 +82,38 @@ export function listingSearchConfig(env: Env = process.env) {
   return { token: env.TREG_TOKEN, org: env.TREG_ORG };
 }
 
-export const defaultPorts = { app: 8787, profileApi: 3001, habits: 3002, interviewer: 3000, demoBank: 3003 } as const;
+/**
+ * Spending guard of the paid listing search (`packages/listings/budget.ts`): paid searches allowed
+ * per UTC day and per minute, and how long an identical search is answered from the cache.
+ */
+export function listingBudgetConfig(env: Env = process.env) {
+  const count = (name: string, fallback: number) =>
+    z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000)
+      .parse(env[name] || fallback);
+  return {
+    dailyLimit: count('LISTINGS_DAILY_LIMIT', 200),
+    perMinuteLimit: count('LISTINGS_PER_MINUTE_LIMIT', 12),
+    cacheTtlMs: count('LISTINGS_CACHE_SECONDS', 600) * 1000,
+  };
+}
+
+/**
+ * Where runtime state lives. `DATABASE_FILE` is the SQLite database; the two directories are read
+ * only once, to import the JSON files that earlier versions wrote there (they are never modified).
+ */
+export function storageConfig(env: Env = process.env) {
+  return {
+    databaseFile: envString('DATABASE_FILE', env) ?? 'data/relocat.db',
+    legacyProfileDir: envString('PROFILE_DATA_DIR', env) ?? 'data/runtime-users',
+    legacyHabitsDir: envString('HABITS_DATA_DIR', env) ?? 'data/runtime-habits',
+  };
+}
+
+export const defaultPorts = { app: 8787, interviewer: 3000, demoBank: 3003 } as const;
 
 /**
  * Settings of the fictional bank service in `apps/demo-bank` (its own process). Its API key and
@@ -71,13 +123,17 @@ export const defaultPorts = { app: 8787, profileApi: 3001, habits: 3002, intervi
 export function demoBankConfig(env: Env = process.env) {
   return {
     port: envPort('DEMO_BANK_PORT', defaultPorts.demoBank, env),
-    /** Milliseconds between simulated movements. */
+    /**
+     * Milliseconds between simulated movements. `DEMO_BANK_TICK_MS` is the bank's own variable;
+     * `DEMO_BANK_INTERVAL_MS`, which also paces ReloCat's in-process synthetic feed, is read when
+     * it is unset so that older `.env` files keep working.
+     */
     intervalMs: z.coerce
       .number()
       .int()
       .min(100)
       .max(3_600_000)
-      .parse(env.DEMO_BANK_INTERVAL_MS || 5000),
+      .parse(env.DEMO_BANK_TICK_MS || env.DEMO_BANK_INTERVAL_MS || 5000),
     seed: envString('DEMO_BANK_SEED', env),
     /** First simulated day, `YYYY-MM-DD`. Unset: three months before today. */
     startDate: envString('DEMO_BANK_START_DATE', env),
@@ -89,5 +145,49 @@ export function demoBankConfig(env: Env = process.env) {
     webhookSecret: envString('DEMO_BANK_WEBHOOK_SECRET', env) ?? envString('BANK_DEMO_BANK_WEBHOOK_SECRET', env),
     snapshotFile: envString('DEMO_BANK_SNAPSHOT_FILE', env),
     allowRemoteWebhooks: envFlag('DEMO_BANK_ALLOW_REMOTE_WEBHOOKS', env),
+  };
+}
+
+/** Text with a default. Unset and empty both take the default, so `HOST=` does not bind every interface. */
+export function envText(name: string, fallback: string, env: Env = process.env) {
+  return env[name]?.trim() || fallback;
+}
+
+/** `PUBLIC_ORIGIN` as an origin without a trailing slash, or null when unset or empty. A bad URL throws. */
+export function publicOriginConfig(env: Env = process.env) {
+  const value = envString('PUBLIC_ORIGIN', env);
+  if (!value) return null;
+  const url = new URL(value);
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('PUBLIC_ORIGIN must be an http(s) URL');
+  return url.origin;
+}
+
+const demoPersonaIds = ['user-001', 'user-002', 'user-003', 'user-004'];
+
+/**
+ * Accounts, the public demo and the surfaces a deployment exposes.
+ *
+ * - `PUBLIC_DEMO`: the four fictional personas are readable without an account. On by default
+ *   outside production; in production only when set to `on`.
+ * - `DEMO_USER_IDS`: the only ids the demo may ever read. Default: the four personas.
+ * - `SHARED_BOARD`: one journey board everybody follows. A local convenience: on by default only
+ *   outside production and without a `PUBLIC_ORIGIN`.
+ * - `ALLOWED_HOSTS`: extra `Host` values accepted besides the public origin and localhost.
+ * - `OAUTH_REDIRECT_SCHEMES`: private-use redirect schemes accepted from OAuth clients (for example `cursor`).
+ */
+export function accessConfig(env: Env = process.env) {
+  const production = env.NODE_ENV === 'production';
+  const explicit = (name: string) => {
+    const value = (env[name] ?? '').trim().toLowerCase();
+    return value === '' ? undefined : ['on', 'true', '1'].includes(value);
+  };
+  return {
+    production,
+    publicDemo: explicit('PUBLIC_DEMO') ?? !production,
+    demoUserIds: envList('DEMO_USER_IDS', env).length ? envList('DEMO_USER_IDS', env) : demoPersonaIds,
+    sharedBoard: explicit('SHARED_BOARD') ?? (!production && !envString('PUBLIC_ORIGIN', env)),
+    allowedHosts: envList('ALLOWED_HOSTS', env).map(host => host.toLowerCase()),
+    signUps: explicit('SIGNUPS') ?? true,
+    oauthRedirectSchemes: envList('OAUTH_REDIRECT_SCHEMES', env),
   };
 }

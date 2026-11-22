@@ -1,15 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { test } from 'node:test';
 import { createBankStore } from '../apps/profile-api/bank.ts';
 import { createProfileApi } from '../apps/profile-api/server.ts';
+import { open } from '../packages/db/database.ts';
 import { createStore } from '../packages/profiles/store.ts';
 
 test('bank API persists movements, validates atomic imports and calculates isolated household plans', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'relocat-bank-api-'));
-  const profiles = createStore(root);
+  const db = open(':memory:');
+  const profiles = createStore(db);
   const document = { schemaVersion: 1 as const, synthetic: true as const };
   for (const id of ['alice', 'bob']) {
     await profiles.create(id, {
@@ -25,7 +23,7 @@ test('bank API persists movements, validates atomic imports and calculates isola
       },
     });
   }
-  const server = createProfileApi(root, 'bank-test-token');
+  const server = createProfileApi(db, 'bank-test-token');
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
@@ -173,7 +171,7 @@ test('bank API persists movements, validates atomic imports and calculates isola
       'insufficient_data',
     );
     assert.equal((await request('/missing/bank/accounts')).status, 404);
-    const persisted = await createBankStore(root).read('alice');
+    const persisted = await createBankStore(db).read('alice');
     assert.equal(persisted.transactions.length, 3);
     assert.equal(persisted.transactions.find(tx => tx.id === 'tx-a')?.amountCents, -3000);
     assert.equal(persisted.accounts[0].name, updatedAccount.name);
@@ -199,6 +197,6 @@ test('bank API persists movements, validates atomic imports and calculates isola
     );
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
-    await rm(root, { recursive: true, force: true });
+    db.close();
   }
 });

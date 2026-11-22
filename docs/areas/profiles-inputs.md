@@ -12,13 +12,13 @@
 
 ## Inputs and outputs
 
-Each user has `details.json`, `preferences.json` and `bank-account.json`. Runtime copies live under ignored `data/runtime-users/`; writes do not modify committed fixtures or aggregate exports. Source records live in `app-inputs.json` and produce a context containing normalized fields, provenance, conflicts and a prepared recommendation request.
+Each user has three documents: `details`, `preferences` and `bank-account`. The fixtures are JSON files; runtime copies are rows of the SQLite database `DATABASE_FILE` (default `data/relocat.db`, ignored by Git), one JSON document per section because their fields are intentionally open. Writes do not modify committed fixtures or aggregate exports. Source records are rows of `input_records` (at most 500 per user; beyond that only superseded records are pruned, see the retention rule in INPUTS.md) and produce a context containing normalized fields, provenance, conflicts and a prepared recommendation request.
 
 Use `POST /users/:id/inputs` for partial records and `GET /users/:id/context` for a combined view. The exact conflict/recency rules and route examples are in [INPUTS.md](../../apps/profile-api/INPUTS.md). Snapshots are not live ledger summaries. Invalid/unknown facts must remain visible rather than becoming zero or confirmed eligibility.
 
 ## Run and verify
 
-Set `PROFILE_API_TOKEN`, then run `npm start` (served under `/api` on port 8787). `PROFILE_DATA_DIR` changes the runtime directory. `npm run typecheck` and `npm test` cover storage, input merging, authorization and fixture consistency.
+Run `npm start` (served under `/api` on port 8787); set `PROFILE_API_TOKEN` first when a client outside the server must call it, otherwise a token is invented for that run. `DATABASE_FILE` changes where runtime state is stored; `PROFILE_DATA_DIR` is only where JSON files of an earlier version are imported from, once, into an empty database. `npm run typecheck` and `npm test` cover storage, input merging, authorization and fixture consistency.
 
 ## Handoff
 

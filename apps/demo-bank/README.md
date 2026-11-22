@@ -4,9 +4,13 @@ Banc Demo (`demo-bank`) is a stand-in for the business API of a modern bank. It 
 
 It exists so that webhooks, signatures, cursors, retries and state changes run against a real peer instead of an in-process fake.
 
-**It is a demo.** Every customer, account and transaction is fabricated: every resource carries `"synthetic": true` and every response the header `X-Demo-Bank: fictional`. It is one process with its state in memory, no database, no real money and no relation to any real bank. Do not put real data in it.
+**It is a demo.** Every customer, account and transaction is fabricated: every resource carries `"synthetic": true` and every response the header `X-Demo-Bank: fictional`. It is one process with its state in memory (a rolling window of the newest transactions), no database, no real money and no relation to any real bank. Do not put real data in it.
 
 ## Run it
+
+**With ReloCat, nothing to do.** Outside production (`NODE_ENV` other than `production`) `npm run dev` and `npm start` start the bank on port 3003 inside the server process, invent its API key and signing secret for that run when they are not configured, register ReloCat's webhook, link `user-001` to `cust-001` and pull the history. The bank's state is kept in `data/cache/demo-bank.json`. When the server restarts with a new signing secret, the webhook already stored in that file is given the new secret, so deliveries keep being accepted. `DEMO_BANK=off` switches all of this off.
+
+**As its own process**, the way a real bank would be, set `DEMO_BANK=off` and:
 
 ```powershell
 # .env (any long random strings for the two secrets)
@@ -20,9 +24,9 @@ npm run dev                  # terminal 2: ReloCat, http://127.0.0.1:8787
 npm run demo-bank:connect    # once: register the webhook, link user-001 to cust-001, first pull
 ```
 
-`demo-bank:connect` is idempotent and accepts `-- --user user-002 --customer cust-002`. It registers `http://127.0.0.1:8787/api/webhooks/bank/demo-bank` at the bank, creates the user's `demo-bank` connection in ReloCat and pulls the history. From then on each simulated movement arrives by webhook.
+`demo-bank:connect` is idempotent and accepts `-- --user user-002 --customer cust-002`. It registers `http://127.0.0.1:8787/api/webhooks/bank/demo-bank` at the bank, creates the user's `demo-bank` connection in ReloCat and pulls the history. From then on each simulated movement arrives by webhook. If the webhook already exists but signs with a secret other than `BANK_DEMO_BANK_WEBHOOK_SECRET` (ReloCat was restarted with a new one), the command sets the current secret on it instead of leaving every delivery to be rejected with 401.
 
-Set `DEMO_BANK_USERS=` (empty) when you link `user-001`, otherwise the older in-process synthetic feed keeps adding its own fictional movements to the same ledger and the two histories are summed.
+Leave `DEMO_BANK_USERS` unset or empty for a user you link here. It starts the older in-process synthetic feed for the users it lists; a user fed by both gets two fictional histories summed in one ledger.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -30,11 +34,11 @@ Set `DEMO_BANK_USERS=` (empty) when you link `user-001`, otherwise the older in-
 | `DEMO_BANK_API_KEY` | value of `BANK_DEMO_BANK_API_KEY` | Bearer key of the pull and webhook routes. Required. |
 | `DEMO_BANK_ADMIN_KEY` | the API key | Bearer key of the `/simulate` routes. |
 | `DEMO_BANK_WEBHOOK_SECRET` | value of `BANK_DEMO_BANK_WEBHOOK_SECRET` | Signing secret given to every webhook subscription. Unset: a random secret per subscription. |
-| `DEMO_BANK_INTERVAL_MS` | `5000` | Pause between simulated movements (100 ms to 1 hour). |
+| `DEMO_BANK_TICK_MS` | `5000` | Pause between simulated movements (100 ms to 1 hour). When unset, `DEMO_BANK_INTERVAL_MS` is read instead: that older name also paces ReloCat's in-process synthetic feed, which is why the bank has its own. |
 | `DEMO_BANK_SEED` | `banc-demo` | Same seed, start date and customer count give the same history. |
-| `DEMO_BANK_START_DATE` | first day of the month three months ago | First simulated day, `YYYY-MM-DD`. |
+| `DEMO_BANK_START_DATE` | first day of the month three months ago | First simulated day, `YYYY-MM-DD`. The default is decided when the bank first starts and then kept in the snapshot. |
 | `DEMO_BANK_CUSTOMERS` | `4` | Customers `cust-001` ... |
-| `DEMO_BANK_SNAPSHOT_FILE` | none | JSON file that keeps the state across restarts. |
+| `DEMO_BANK_SNAPSHOT_FILE` | none (`data/cache/demo-bank.json` when started by the ReloCat server) | JSON file that keeps the state across restarts. |
 | `DEMO_BANK_ALLOW_REMOTE_WEBHOOKS` | off | Allow webhook URLs that are not on this machine. |
 
 The fallbacks to `BANK_DEMO_BANK_*` let one `.env` configure both ends. A real bank issues the signing secret when the webhook is registered; fixing it in the environment is a demo convenience so ReloCat can be started before the webhook exists.
@@ -50,7 +54,7 @@ Each customer has a current account and a savings account in EUR and lives a scr
 
 The plan is a pure function of the seed, the customer and the calendar day ([`simulation.ts`](simulation.ts)). The bank walks it one movement per tick. **The calendar is simulated**: at start the bank silently replays the plan from the start date up to the present, so there is history to pull; after that every tick jumps to the next planned movement, so a month goes by in a few minutes and transaction dates run ahead of the wall clock. Event timestamps, signatures and retry delays use the real clock.
 
-The simulation pauses at 5000 transactions (`paused_reason` in `/simulate/status`); restart without a snapshot to begin again.
+The bank never stops producing movements. It keeps a **rolling window** of the 5000 transactions that changed most recently (about seven hours of history at the default pace). When a new one arrives the oldest leaves: its amount, if it completed, stays in the account's balance, and the account's `opening_balance` and `opened_on` move forward to the start of the window, so opening balance plus the listed completed transactions always equals `balance`. A reader whose cursor is older than the window gets `410` and starts again without a cursor, receiving the window; what it had already imported stays in its own ledger. `/simulate/status` reports `transactions`, `max_transactions` and `dropped_transactions`; `paused_reason` is kept for older readers and is always `null`.
 
 ## Pull API
 
@@ -84,18 +88,19 @@ The simulation pauses at 5000 transactions (`paused_reason` in `/simulate/status
 }
 ```
 
-- **Amounts** are signed decimal strings with a currency: negative is money out. `balance` is the opening balance plus completed transactions.
+- **Amounts** are signed decimal strings with a currency: negative is money out. `balance` is the opening balance plus completed transactions. `opening_balance` is the balance just before the oldest transaction the bank still lists and `opened_on` the day of that transaction; both start at the first simulated day and move forward with the rolling window.
 - **States**: `pending` → `completed` | `declined` | `reverted`. A transaction can also be born `completed` or `declined`. Only `completed` moves money.
 - **Types**: `card_payment`, `direct_debit`, `transfer`, `salary`. **Merchant categories**: `salary`, `rent`, `utilities`, `groceries`, `restaurants`, `transport`, `subscriptions`, `health`, `education`, `shopping`, `loan`, `transfer`, `other`.
 - **Own-account transfers** are two transactions, one per account, with opposite amounts, the same `transfer_id` and `counterparty.own_account: true`.
-- **Pagination and ordering**: the list is in *change order*, oldest change first; a transaction that changes state moves to the end. The answer is `{ transactions, next_cursor, has_more, synthetic }`. Pass `next_cursor` back as `cursor` to read on; store the last one and the next read returns only what was created or changed since. `limit` is 1 to 200 (default 100). `from` (`YYYY-MM-DD` or a UTC timestamp with milliseconds) keeps transactions created at or after it. A cursor issued before the bank lost its state is refused with `410`: start again without a cursor.
+- **Pagination and ordering**: the list is in *change order*, oldest change first; a transaction that changes state moves to the end. The answer is `{ transactions, next_cursor, has_more, synthetic }`. Pass `next_cursor` back as `cursor` to read on; store the last one and the next read returns only what was created or changed since. `limit` is 1 to 200 (default 100). `from` (`YYYY-MM-DD` or a UTC timestamp with milliseconds) keeps transactions created at or after it. A cursor issued before the bank lost its state, or one so old that changes after it have left the rolling window, is refused with `410`: start again without a cursor.
 
 ## Push: webhooks
 
 | Method | Route | Purpose |
 | --- | --- | --- |
 | POST | `/webhooks` | Body `{ "url": "http://127.0.0.1:8787/api/webhooks/bank/demo-bank", "events"?: [...] }`. Returns 201 with the subscription, `signing_secret` (shown only here) and `signature_tolerance_seconds`. At most 10; loopback URLs only unless remote ones are allowed. |
-| GET | `/webhooks` | Subscriptions, without secrets. |
+| GET | `/webhooks` | Subscriptions, without secrets. Each has a `secret_fingerprint`, a short hash that changes when the secret changes, so the owner can tell whether the bank still signs with the secret the receiver verifies with. |
+| PUT | `/webhooks/:id/secret` | Rotate the signing secret. Body `{ "signing_secret"?: "…" }` (16 to 200 characters); without it the bank invents one. Returns the subscription with the new `signing_secret`. Deliveries still waiting are signed with the new secret on their next attempt. |
 | DELETE | `/webhooks/:id` | Remove one. |
 | GET | `/webhooks/deliveries?state=&limit=` | The delivery log, newest first (the last 500). |
 
@@ -151,18 +156,18 @@ Invoke-RestMethod "$bank/simulate/transactions/$($tx.id)/state" -Method Post -He
 | POST | `/simulate/transaction` | `{ customer_id, amount, description, account_id?, category?, type?, state?, to_account_id? }`. `state` is `completed` (default), `pending` or `declined`. `to_account_id` (another account of the customer, negative amount) makes an own-account transfer with two legs. Returns 201 with the created transactions. |
 | POST | `/simulate/transactions/:id/state` | `{ "state": "completed" | "declined" | "reverted" }` for a pending transaction; 409 otherwise. |
 | POST | `/simulate/step` | `{ "count"?: 1-500 }`: run that many scripted ticks now. |
-| GET | `/simulate/status` | Simulation time, counters, delivery totals, `paused_reason`. |
+| GET | `/simulate/status` | Simulation time, counters, the size of the rolling window and how many transactions have left it, delivery totals. |
 
 ## State and limits
 
-State lives in memory. With `DEMO_BANK_SNAPSHOT_FILE` the bank writes its whole state (transactions, webhooks with their secrets, pending deliveries, simulation position) to that file shortly after every change, through a temporary file and a rename, and restores it at start; the file is refused if it was made with another seed, start date or customer count. Without it a restart begins a new life: the history is regenerated from the seed with the same IDs, webhooks must be registered again and old cursors are refused.
+State lives in memory. With `DEMO_BANK_SNAPSHOT_FILE` the bank writes its whole state (the seed and start date it was made with, the window of transactions and the balances carried from older ones, webhooks with their secrets, pending deliveries, simulation position) to that file shortly after every change, through a temporary file and a rename, and restores it at start. A restored bank keeps the seed and start date of its snapshot when none is configured, so the default start date ("three months ago") does not move when the month changes. The file is refused only if `DEMO_BANK_SEED` or `DEMO_BANK_START_DATE` is set to a value that differs from the snapshot's, or the customer count (`DEMO_BANK_CUSTOMERS`, default 4) differs: delete the file or restore the setting. Without it a restart begins a new life: the history is regenerated from the seed with the same IDs, webhooks must be registered again and old cursors are refused.
 
 Run one process per snapshot file. There is no rate limiting, no per-customer authorization (one key reads every customer) and no consent flow: those belong to a real bank, not to this stand-in.
 
 ## Code
 
 - [`simulation.ts`](simulation.ts): the deterministic plan of a customer's day.
-- [`bank.ts`](bank.ts): state, the simulation loop, events, deliveries with retries, the snapshot.
+- [`bank.ts`](bank.ts): state, the simulation loop, the rolling window, events, deliveries with retries, the snapshot.
 - [`server.ts`](server.ts): `createDemoBank(options)` (request handler and lifecycle, with injectable `clock`, `seed` and `fetch`), `startDemoBank`, and the standalone entry point.
 - [`connect.ts`](connect.ts): `connectDemoBank`, the HTTP wiring behind `npm run demo-bank:connect`.
 - [`tests/demo-bank.test.ts`](../../tests/demo-bank.test.ts): both services in one process with stepped clocks.

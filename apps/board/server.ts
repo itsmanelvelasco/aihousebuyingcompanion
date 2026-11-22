@@ -3,31 +3,32 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createServer } from 'node:http';
 import { RESOURCE_MIME_TYPE, registerAppResource, registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { defaultPorts, envPort } from '../../packages/config/env.ts';
+import { defaultPorts, envPort, envText, publicOriginConfig } from '../../packages/config/env.ts';
 import { product, widgetUri as productWidgetUri } from '../../packages/config/product.ts';
-import { readJson, sendText as send, sendJson } from '../../packages/http/server.ts';
+import type { Database } from '../../packages/db/database.ts';
+import { ApiError, readJson, sendText as send, sendJson } from '../../packages/http/server.ts';
+import type { ListingSearchConfig } from '../../packages/listings/search.ts';
 import { loadData } from '../../packages/places/data.ts';
 import { inlineUi } from '../../packages/ui/inline.ts';
 import { handleConnectPage } from '../mcp-server/connect-page.ts';
+import type { Caller } from '../mcp-server/identity.ts';
+import { anonymous, authRequired, requiredScopes } from '../mcp-server/identity.ts';
 import { handleTestUi } from '../mcp-server/test-ui.ts';
 import { createMcpServer as createRelocatMcpServer } from '../mcp-server/tools.ts';
 import { loadTownExplorerPage } from '../mcp-server/town-explorer.ts';
 import { loadWorkspacePage } from '../mcp-server/workspace.ts';
-import { getView, openDemo, openSchema, updateDemo, updateSchema } from './demo.ts';
-import { validateAnswers } from './intake.ts';
-import type { Connection } from './profiles.ts';
-import { connectedAnswers, ProfileBridge, profileConnection } from './profiles.ts';
-
-const connectedUpdateSchema = updateSchema.extend({ answers: connectedAnswers.optional() });
+import { getView, hasSharedBoard, openDemo, openSchema, persistDemoRuns, updateDemo, updateSchema } from './demo.ts';
+import { decorateDemo, demoPersonaIds } from './profiles.ts';
 
 const widgetUri = productWidgetUri('journey-board-v1.html');
 const baseline = loadData();
 const townExplorerPage = loadTownExplorerPage();
 const workspacePage = loadWorkspacePage();
 
+/** Who a `/mcp` request is for, or the challenge to answer with when its credential is not valid. */
+export type CallerResolution = { caller: Caller } | { unauthorized: string };
+
 export type BoardOptions = {
-  /** Profile API connection. Null runs the board from scripted in-memory scenes only. */
-  connection: Connection | null;
   /** Public HTTPS origin used to build shareable board links. */
   publicOrigin: string | null;
   /** Extra browser origins allowed to call /mcp. Same-origin pages and non-browser agents always may. */
@@ -36,21 +37,48 @@ export type BoardOptions = {
   data?: () => ReturnType<typeof loadData>;
   /** Freshness of the live sources, exposed as a tool when present. */
   dataStatus?: () => unknown[];
+  /** Runtime database for board runs, so a restart keeps them. Omitted: runs stay in memory. */
+  db?: Database;
+  /**
+   * Resolves the caller of each `/mcp` request: an OAuth access token or a same-origin session.
+   * Omitted: every caller is anonymous and there is no demo, so the board is purely scripted.
+   */
+  resolveCaller?: (request: IncomingMessage) => CallerResolution;
+  /** The read-only public demo behind the board's bank panel. Null or omitted: scripted scenes only. */
+  demo?: Caller['demo'];
+  /**
+   * One board that every visitor without a run id joins and may restart. A convenience for a local
+   * demo; on a public origin leave it off, so each visitor gets a private run nobody else can address.
+   */
+  sharedBoard?: boolean;
+  /** Paid listing search configuration, including its spending budget. Defaults to the environment. */
+  listings?: ListingSearchConfig;
+  /** Counts new runs per client so one visitor cannot fill the store and push other runs out. */
+  newRuns?: { check(request: IncomingMessage): { allowed: boolean } };
 };
+
+/** Board actions that would change stored data. The board never does: it only reads the public demo. */
+const storedDataActions = new Set(['start_bank_runtime', 'stop_bank_runtime']);
 
 /** The journey board and its MCP endpoint as a request handler. */
 export function createBoardApp({
-  connection,
   publicOrigin,
   allowedOrigins,
   data = () => baseline,
   dataStatus,
+  db,
+  resolveCaller,
+  demo = null,
+  sharedBoard = true,
+  newRuns,
+  listings,
 }: BoardOptions) {
-  const bridge = connection ? new ProfileBridge(connection) : null;
+  if (db) persistDemoRuns(db);
 
   function withBoardLink(view: ReturnType<typeof getView>) {
-    const path = view.sharedBoard ? '/preview' : `/preview?run=${view.runId}`;
-    return { ...view, boardUrl: publicOrigin ? publicOrigin + path : null };
+    const shared = sharedBoard && view.sharedBoard;
+    const path = shared ? '/preview' : `/preview?run=${view.runId}`;
+    return { ...view, sharedBoard: shared, boardUrl: publicOrigin ? publicOrigin + path : null };
   }
   const template = inlineUi(readFileSync(new URL('./widget.html', import.meta.url), 'utf8'));
   const bundle = readFileSync(new URL('./dist/widget.js', import.meta.url), 'utf8');
@@ -59,73 +87,40 @@ export function createBoardApp({
     () => `<script>${bundle.replace(/<\/script/gi, '<\\/script')}</script>`,
   );
 
-  async function reply(name: string, input: unknown) {
+  /** A scripted view with its link and, when the public demo is on, the persona's read-only facts. */
+  async function present(view: ReturnType<typeof getView>) {
+    const linked = withBoardLink(view);
+    return {
+      ...(await decorateDemo(linked, demo?.open(demoPersonaIds[view.persona]) ?? null)),
+      boardUrl: linked.boardUrl,
+    };
+  }
+
+  /**
+   * Run a board tool. Every action changes only the run's own scripted state; answers typed into
+   * the board are never written to a stored person.
+   */
+  async function reply(name: string, input: unknown, request?: IncomingMessage) {
     try {
       let view: ReturnType<typeof getView> | null = null;
-      if (name === 'open_demo') view = openDemo(openSchema.parse(input));
-      else if (name === 'update_demo') {
-        if (!bridge) view = updateDemo(updateSchema.parse(input));
-        else {
-          const parsed = connectedUpdateSchema.parse(input);
-          const before = getView(parsed.runId);
-          if (parsed.action === 'sample_bank') {
-            await bridge.connectBank(before);
-            view = updateDemo({ runId: parsed.runId, action: 'refresh_data' });
-          } else if (parsed.action === 'start_bank_runtime' || parsed.action === 'stop_bank_runtime') {
-            await bridge.runtime(before, parsed.action === 'start_bank_runtime');
-            view = updateDemo({ runId: parsed.runId, action: 'refresh_data' });
-          } else if (parsed.action === 'answer_batch') {
-            if (!parsed.answers || !Object.keys(parsed.answers).length) throw new Error('Supply interview answers.');
-            if (before.persona !== 'onboarding') throw new Error('Open Laia’s onboarding before recording answers.');
-            const legacy = Object.fromEntries(
-              Object.entries(parsed.answers).filter(
-                ([key]) =>
-                  [
-                    'town',
-                    'bedrooms',
-                    'household',
-                    'employment',
-                    'income',
-                    'spending',
-                    'savings',
-                    'currentTown',
-                    'budget',
-                    'homeSize',
-                    'dependants',
-                    'rural',
-                    'commuteTo',
-                    'commuteTime',
-                    'transport',
-                    'schoolStages',
-                    'debtPayments',
-                    'reserve',
-                    'cashTarget',
-                  ].includes(key) && !Array.isArray(parsed.answers![key as keyof typeof parsed.answers]),
-              ),
-            );
-            validateAnswers(legacy);
-            // Validate first, then persist before changing the visible board.
-            await bridge.save({ ...before, revision: before.revision + 1 }, parsed.answers);
-            view = Object.keys(legacy).length
-              ? updateDemo(updateSchema.parse({ ...parsed, answers: legacy }))
-              : updateDemo({ runId: parsed.runId, action: 'refresh_data' });
-          } else if (parsed.action === 'answer') {
-            if (!parsed.question || parsed.answer === undefined) throw new Error('Supply a question and answer.');
-            if (before.persona !== 'onboarding') throw new Error('Open Laia’s onboarding before recording answers.');
-            validateAnswers({ [parsed.question]: parsed.answer });
-            const answers = connectedAnswers.parse({ [parsed.question]: parsed.answer });
-            await bridge.save({ ...before, revision: before.revision + 1 }, answers);
-            view = updateDemo(updateSchema.parse(parsed));
-          } else view = updateDemo(updateSchema.parse({ ...parsed, answers: undefined }));
-        }
+      if (name === 'open_demo') {
+        const parsed = openSchema.parse(input);
+        const joins = parsed.runId || parsed.pairCode || (sharedBoard && !parsed.newRun && hasSharedBoard());
+        if (!joins && request && newRuns && !newRuns.check(request).allowed)
+          throw new Error('Too many new boards from this address. Reopen the board you already have.');
+        view = openDemo(parsed, { shared: sharedBoard });
+      } else if (name === 'update_demo') {
+        const parsed = updateSchema.parse(input);
+        if (storedDataActions.has(parsed.action))
+          throw new Error('The demo bank feed is read-only here: it cannot be started or stopped from the board.');
+        view = updateDemo(parsed);
       }
       if (!view) throw new Error('Unknown demo tool.');
-      const decorated = bridge ? await bridge.decorate(view) : { ...view, connection: { mode: 'scripted_demo' } };
-      const snapshot = { ...decorated, boardUrl: withBoardLink(view).boardUrl };
+      const snapshot = await present(view);
       const text =
         name === 'open_demo' && snapshot.boardUrl
-          ? `${decorated.message} Live board for this same run: ${snapshot.boardUrl}`
-          : decorated.message;
+          ? `${snapshot.message} Live board for this same run: ${snapshot.boardUrl}`
+          : snapshot.message;
       return { content: [{ type: 'text' as const, text }], structuredContent: snapshot };
     } catch (error) {
       return {
@@ -155,14 +150,15 @@ export function createBoardApp({
     'Always separate the upfront milestone from owning outright; the comparison assumes 20 years of repayments after purchase readiness.'
   ).trim();
 
-  function createMcpServer() {
-    // Same tools as the public server, plus the board. The profile API only adds the bank bridge.
+  function createMcpServer(caller: Caller, request: IncomingMessage) {
+    // Same tools as the public server, plus the board. The caller decides what the personal tools reach.
     const server = createRelocatMcpServer({
       ...data(),
       dataStatus,
       townExplorerPage,
       workspacePage,
-      bankApi: connection ? { baseUrl: connection.baseUrl, token: connection.token } : undefined,
+      caller,
+      listings,
       extraInstructions: boardInstructions,
     });
 
@@ -193,7 +189,7 @@ export function createBoardApp({
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
         _meta: { ui: { resourceUri: widgetUri }, 'openai/outputTemplate': widgetUri },
       },
-      input => reply('open_demo', input),
+      input => reply('open_demo', input, request),
     );
 
     server.registerTool(
@@ -201,18 +197,42 @@ export function createBoardApp({
       {
         title: 'Update ReloCat demo',
         description:
-          'Update by runId. Save all provided fields in answer_batch; connected mode accepts canonical and board intake aliases. Living spending excludes separate debt by default; spendingIncludesDebt:true normalizes inclusive legacy totals. Ask only for missing fields. Use adopt_habit/complete_habit for accepted scripted habits. ' +
+          'Update by runId. Record all provided fields in answer_batch. Ask only for missing fields. Use adopt_habit/complete_habit for accepted scripted habits. ' +
           'Use preview_shortcut to highlight A (rule), B (listing), C (job), D (rural), or E (friends) via opportunity ID without changing the active route. ' +
           'After confirmation use choose_shortcut, or keep_route to dismiss the preview. Use show_credits on yes to Jordi’s credits and hide_credits to close. ' +
           'Also supports sample_bank, switch_persona, join_quest, read_inbox, replay_payment, final_payment, restart_persona and restart_all. ' +
-          'Connected-only actions start_bank_runtime/stop_bank_runtime explicitly control the simulated background feed; refresh_data reads the latest ledger. Returns the updated board, profile context and provisional sourced town screen.',
-        inputSchema: (bridge ? connectedUpdateSchema : updateSchema).shape,
+          'refresh_data re-reads the fictional persona’s read-only bank feed. Everything typed here stays in this rehearsal: nothing is saved to a stored person. Returns the updated board and a provisional sourced town screen.',
+        inputSchema: updateSchema.shape,
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         _meta: { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccessible': true },
       },
-      (input: unknown) => reply('update_demo', input),
+      (input: unknown) => reply('update_demo', input, request),
     );
     return server;
+  }
+
+  /**
+   * A `tools/call` for a personal tool without the authority it needs is answered here, before any
+   * tool runs: HTTP 401 (or 403 for a missing scope) with `WWW-Authenticate`, which is what MCP
+   * clients act on, and in the body the tool error with `mcp/www_authenticate`, which ChatGPT reads.
+   * Returns true when the request was refused.
+   */
+  function refuseUnauthorized(res: ServerResponse, body: unknown, caller: Caller) {
+    if (!caller.challenge) return false;
+    for (const message of Array.isArray(body) ? body : [body]) {
+      const call = message as { id?: unknown; method?: unknown; params?: { name?: unknown; arguments?: unknown } };
+      if (!call || typeof call !== 'object' || call.method !== 'tools/call') continue;
+      const needed = requiredScopes(call.params?.name, call.params?.arguments);
+      if (!needed) continue;
+      const missing = caller.me ? needed.find(scope => !caller.scopes.includes(scope)) : undefined;
+      if (caller.me && !missing) continue;
+      const result = authRequired(caller, missing);
+      const challenges = (result._meta?.['mcp/www_authenticate'] ?? []) as string[];
+      if (challenges[0]) res.setHeader('WWW-Authenticate', challenges[0]);
+      sendJson(res, caller.me ? 403 : 401, { jsonrpc: '2.0', id: call.id ?? null, result });
+      return true;
+    }
+    return false;
   }
 
   const handle = async (req: IncomingMessage, res: ServerResponse) => {
@@ -231,7 +251,30 @@ export function createBoardApp({
           sendJson(res, 403, { jsonrpc: '2.0', error: { code: -32000, message: 'Origin is not allowed' }, id: null });
           return;
         }
-        const mcp = createMcpServer();
+        const resolution = resolveCaller?.(req) ?? { caller: anonymous };
+        if ('unauthorized' in resolution) {
+          // A credential was presented and is not valid: never fall back to anonymous.
+          res.setHeader('WWW-Authenticate', resolution.unauthorized);
+          sendJson(res, 401, {
+            jsonrpc: '2.0',
+            error: { code: -32001, message: 'Invalid or expired token' },
+            id: null,
+          });
+          return;
+        }
+        const { caller } = resolution;
+        let body: unknown;
+        if (req.method === 'POST') {
+          try {
+            body = await readJson(req, 1_048_576, 'MCP request is too large');
+          } catch (error) {
+            const status = error instanceof ApiError ? error.status : 400;
+            sendJson(res, status, { jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' }, id: null });
+            return;
+          }
+          if (refuseUnauthorized(res, body, caller)) return;
+        }
+        const mcp = createMcpServer(caller, req);
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
           enableJsonResponse: true,
@@ -240,7 +283,7 @@ export function createBoardApp({
           void mcp.close();
         });
         await mcp.connect(transport);
-        await transport.handleRequest(req, res);
+        await transport.handleRequest(req, res, body);
         return;
       }
       if (req.method === 'GET' && (path === '/' || path === '/preview')) {
@@ -253,17 +296,16 @@ export function createBoardApp({
         return;
       }
       if (req.method === 'GET' && path === '/preview/state') {
-        // No run parameter means the shared demo board; separate rehearsals use their UUID.
-        res.setHeader('Access-Control-Allow-Origin', '*');
+        // Same-origin only: no CORS header. A run is addressed by its unguessable id; without one
+        // only the shared board of a local demo answers.
         const run = openSchema.shape.runId.safeParse(url.searchParams.get('run') ?? undefined);
-        if (!run.success) {
+        if (!run.success || (!run.data && !sharedBoard)) {
           send(res, 400, 'A valid run ID is required.');
           return;
         }
         try {
-          const view = run.data ? getView(run.data) : openDemo({});
-          const decorated = bridge ? await bridge.decorate(view) : view;
-          send(res, 200, JSON.stringify({ ...decorated, boardUrl: withBoardLink(view).boardUrl }), 'application/json');
+          const view = run.data ? getView(run.data) : openDemo({}, { shared: true });
+          send(res, 200, JSON.stringify(await present(view)), 'application/json');
         } catch {
           send(res, 404, 'This rehearsal expired. Open the shared live board.');
         }
@@ -282,7 +324,7 @@ export function createBoardApp({
           name: string;
           args: unknown;
         };
-        send(res, 200, JSON.stringify(await reply(name, args)), 'application/json');
+        send(res, 200, JSON.stringify(await reply(name, args, req)), 'application/json');
         return;
       }
       send(res, 404, 'Not found');
@@ -296,9 +338,10 @@ export function createBoardApp({
 
 if (import.meta.main) {
   const port = envPort('PORT', defaultPorts.app);
-  const host = process.env.HOST ?? '127.0.0.1';
-  const publicOrigin = process.env.PUBLIC_ORIGIN ? new URL(process.env.PUBLIC_ORIGIN).origin : null;
-  const server = createServer(createBoardApp({ connection: profileConnection(), publicOrigin }).handle);
+  const host = envText('HOST', '127.0.0.1');
+  const publicOrigin = publicOriginConfig();
+  // On its own the board is the scripted demo: no accounts, no stored people, runs in memory.
+  const server = createServer(createBoardApp({ publicOrigin }).handle);
   server.listen(port, host, () => {
     const address = server.address();
     const boundPort = address && typeof address === 'object' ? address.port : port;

@@ -218,14 +218,24 @@ function householdChecks(id: Policy['id'], facts: Household): Check[] {
   }
 }
 
-/** A call window that is `null` means no call could be verified, which is unknown rather than closed. */
-function callStatusOn(policy: Policy, asOf: string): Eligibility['callStatus'] {
+/**
+ * The status of a policy's application call on a date.
+ *
+ * A call window that is `null` means no call could be verified, which is unknown rather than closed.
+ * The date carries no time of day. A call that closes at a stated time before midnight is reported
+ * `closed` for the whole of its closing day: saying `open` after the closing time would be wrong, and
+ * the morning of that day is the smaller error. A call without a closing time stays open through its
+ * last day.
+ */
+export function callStatusOn(policy: Policy, asOf: string): Eligibility['callStatus'] {
   if (policy.callWindow === null) return 'unknown';
   const window =
     policy.callWindow ??
     (policy.mechanism === 'grant' ? { opensOn: policy.effectiveFrom, closesOn: policy.effectiveThrough } : undefined);
   if (!window) return 'unknown';
-  return asOf < window.opensOn ? 'upcoming' : asOf > window.closesOn ? 'closed' : 'open';
+  if (asOf < window.opensOn) return 'upcoming';
+  const closingTime = 'closesAtLocalTime' in window ? window.closesAtLocalTime : undefined;
+  return asOf > window.closesOn || (asOf === window.closesOn && closingTime !== undefined) ? 'closed' : 'open';
 }
 
 function geographicCheck(policy: Policy, town: Municipality, date: string, nucleus?: string): Check {

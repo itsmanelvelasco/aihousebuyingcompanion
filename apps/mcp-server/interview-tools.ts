@@ -15,7 +15,15 @@ const widgetPath = new URL('./cash-flow-widget.html', import.meta.url);
 const demoPath = new URL('../../data/demo-bank.csv', import.meta.url);
 const readOnly = { readOnlyHint: true, openWorldHint: false, destructiveHint: false, idempotentHint: true };
 const cashSummary = z.object({
+  /** Every month with at least one row. The monthly figures average `completeMonths` only. */
   observedMonths: z.array(z.string()),
+  completeMonths: z.array(z.string()),
+  partialMonths: z.array(z.string()),
+  /** `partial_months_only`: no month is fully covered, so the figures are a rough indication. */
+  averageBasis: z.enum(['complete_months', 'partial_months_only']),
+  averagingNote: z.string(),
+  coveredFrom: z.string().nullable(),
+  coveredTo: z.string().nullable(),
   transactionCount: z.number().int().nonnegative(),
   excludedTransfers: z.number().int().nonnegative(),
   estimatedMonthlySalary: z.number().nullable(),
@@ -142,7 +150,8 @@ export function registerInterviewerTools(server: McpServer) {
   server.registerTool(
     'sample_cash_flow',
     {
-      description: 'Summarize three months of fictional bank transactions for the homebuying demo.',
+      description:
+        'Summarize the fictional bank statement of the homebuying demo. Monthly figures average its complete calendar months only; completeMonths, partialMonths and averagingNote say which months were used and which were left out.',
       annotations: readOnly,
       inputSchema: z.object({}).strict(),
       outputSchema: cashSummary,
@@ -161,7 +170,7 @@ export function registerInterviewerTools(server: McpServer) {
     'summarize_bank_csv',
     {
       description:
-        'Summarize CSV text the user explicitly chooses to share with ChatGPT. Use date, description, amount headers, ISO dates and signed amounts. Remove identifiers before sharing. For browser-only CSV parsing, use the local voice demo.',
+        'Summarize CSV text the user explicitly chooses to share with ChatGPT. Use date, description, amount headers, ISO dates and signed amounts. Remove identifiers before sharing. Monthly figures average complete calendar months only; when averageBasis is partial_months_only no month is fully covered, so present the figures as a rough indication and relay averagingNote. For browser-only CSV parsing, use the local voice demo.',
       annotations: readOnly,
       inputSchema: { csv: z.string().min(1).max(100000) },
       outputSchema: cashSummary,

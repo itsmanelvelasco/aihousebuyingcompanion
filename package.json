@@ -11,7 +11,7 @@
     "build": "node scripts/build.ts",
     "dev": "npm run build && node --watch-path=apps --watch-path=packages --env-file-if-exists=.env apps/server/index.ts",
     "start": "npm run build && node --env-file-if-exists=.env apps/server/index.ts",
-    "start:board": "npm run build && node apps/board/server.ts",
+    "start:board": "npm run build && node --env-file-if-exists=.env apps/board/server.ts",
     "start:interviewer": "npm run build && node --env-file-if-exists=.env apps/interviewer/server.ts",
     "start:demo-bank": "node --env-file-if-exists=.env apps/demo-bank/server.ts",
     "demo-bank:connect": "node --env-file-if-exists=.env scripts/connect-demo-bank.ts",
@@ -22,9 +22,10 @@
     "format": "biome check --write .",
     "check": "npm run lint && npm run typecheck && npm test && npm run data:validate",
     "data:validate": "node scripts/validate-data.ts",
-    "data:refresh": "node scripts/refresh-data.ts",
+    "data:refresh": "node --env-file-if-exists=.env scripts/refresh-data.ts",
     "generate:users": "node scripts/generate-users.ts",
-    "package:team-plugin": "node scripts/package-team-plugin.ts",
+    "db:backup": "node --env-file-if-exists=.env scripts/backup-db.ts",
+    "package:team-plugin": "node --env-file-if-exists=.env scripts/package-team-plugin.ts",
     "images:generate": "node --env-file-if-exists=.env scripts/generate-images.ts"
   },
   "dependencies": {

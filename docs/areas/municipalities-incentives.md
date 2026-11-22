@@ -19,7 +19,7 @@
 
 Core tools are `recommend_towns`, `get_town_profile` and `get_applicable_incentives`. The backend also exposes school, transport, business and detailed eligibility tools. Pass official six-digit municipality codes, confirmed household criteria and explicit dates. Budget is expressed in euros in this tool interface; the profile adapter converts stored cents once.
 
-`search_homes` returns indexed examples with explicit unknown availability/location/filter verification; it cannot satisfy bedroom or live-inventory constraints. `TREG_TOKEN`/optional `TREG_ORG` stay server-side. Missing configuration returns an unavailable result with follow-up links. `npm run build` produces every browser bundle; the start scripts run it for you.
+`search_homes` returns indexed examples with explicit unknown availability/location/filter verification; it cannot satisfy bedroom or live-inventory constraints. `TREG_TOKEN`/optional `TREG_ORG` stay server-side. Missing configuration returns an unavailable result with follow-up links. Paid searches are capped per minute and per day by `packages/listings/budget.ts` (counters in the runtime database); past a cap the search answers `budget_exhausted` with the same follow-up links, and an identical search within ten minutes is answered from a cache. `npm run build` produces every browser bundle; the start scripts run it for you.
 
 Results retain source/observation dates, geography, match reasons, trade-offs and missing data. Separate policy call status from household eligibility. Never infer school vacancies, transport reliability, business health or tax facts from proxy indicators. Comarca price estimates require explicit user agreement. Bedroom availability remains a property-level check, not a town fact.
 
@@ -60,7 +60,7 @@ npm test
 npm start
 ```
 
-Standalone MCP defaults to port 8787. Do not run it on the same port as the integrated plugin; see [integration/deployment](integration-deployment.md). Refresh with `npm run data:refresh` only when deliberately updating evidence and reviewing its sources.
+`npm start` runs the one server on port 8787, with the MCP endpoint at `/mcp`; there is no separate municipality server to start. See [integration/deployment](integration-deployment.md). Refresh with `npm run data:refresh` only when deliberately updating evidence and reviewing its sources.
 
 ## Handoff
 

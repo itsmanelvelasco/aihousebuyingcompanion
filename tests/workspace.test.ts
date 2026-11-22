@@ -21,8 +21,9 @@ import {
   formatMonthsSaved,
   safeHref,
 } from '../apps/web/format.ts';
-import { launchFromQuery, parseLaunch, workspaceLaunch } from '../apps/web/launch.ts';
+import { emptyLaunch, launchRequestFromQuery, parseLaunch, subjectOf, workspaceLaunch } from '../apps/web/launch.ts';
 import {
+  addedTransactions,
   applyHabitOverrides,
   benefitSummary,
   benefitView,
@@ -38,9 +39,18 @@ import {
 } from '../apps/web/view-model.ts';
 import { planInput, planResult } from '../packages/contracts/planner.ts';
 
-function workspaceServer() {
+const demoIds = ['user-001', 'user-002'];
+const demoSubject = { kind: 'demo', demoId: 'user-001' } as const;
+
+/** The workspace tool for an anonymous caller of a server whose public demo offers two personas. */
+function workspaceServer(signedIn = false) {
   const server = new McpServer({ name: 'relocat-test', version: '1.0.0' });
-  registerWorkspace(server, loadWorkspacePage() ?? '<!doctype html><title>not built</title>');
+  const persona = { userId: 'x', synthetic: true } as never;
+  registerWorkspace(server, loadWorkspacePage() ?? '<!doctype html><title>not built</title>', {
+    me: signedIn ? persona : null,
+    scopes: signedIn ? ['person:read', 'person:write'] : [],
+    demo: { ids: demoIds, open: id => (demoIds.includes(id) ? persona : null) },
+  });
   return server;
 }
 
@@ -79,20 +89,54 @@ test('the workspace resource and show_workspace are discoverable and the launch 
     assert.equal((tool._meta as any).ui.resourceUri, workspaceUri);
     assert.equal(tool.annotations?.readOnlyHint, true);
 
+    assert.ok(!('userId' in ((tool.inputSchema.properties ?? {}) as object)), 'the tool takes no user id');
+
     const opened = await client.callTool({
       name: 'show_workspace',
-      arguments: { userId: 'user-001', municipalityCodes: ['250404', '080312', '250404'] },
+      arguments: { demoId: 'user-001', municipalityCodes: ['250404', '080312', '250404'] },
     });
     assert.ok(!opened.isError);
     const launch = workspaceLaunch.parse(opened.structuredContent);
-    assert.deepEqual(launch, { userId: 'user-001', municipalityCodes: ['250404', '080312'] });
+    assert.deepEqual(launch, {
+      subject: 'demo',
+      demoId: 'user-001',
+      signedIn: false,
+      demoIds,
+      municipalityCodes: ['250404', '080312'],
+    });
     assert.deepEqual(workspaceResult.parse(opened.structuredContent), launch);
+    assert.deepEqual(subjectOf(launch), demoSubject);
 
+    // Nobody signed in and no persona asked for: the workspace opens with no person.
     const bare = await client.callTool({ name: 'show_workspace', arguments: {} });
-    assert.deepEqual(workspaceLaunch.parse(bare.structuredContent), { userId: null, municipalityCodes: [] });
+    assert.deepEqual(workspaceLaunch.parse(bare.structuredContent), { ...emptyLaunch, demoIds });
+    // A user id, or a persona outside the allowlist, is not something the tool accepts.
+    for (const args of [{ userId: 'user-001' }, { demoId: 'user-003' }, { demoId: 'p-someone' }])
+      assert.equal((await client.callTool({ name: 'show_workspace', arguments: args })).isError, true);
 
     const invalid = await client.callTool({ name: 'show_workspace', arguments: { municipalityCodes: ['25'] } });
     assert.equal(invalid.isError, true);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+test('show_workspace answers "me" for a signed-in caller and never names who that is', async () => {
+  const server = workspaceServer(true);
+  const client = new Client({ name: 'workspace-test', version: '1.0.0' });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await server.connect(a);
+  await client.connect(b);
+  try {
+    const mine = await client.callTool({ name: 'show_workspace', arguments: {} });
+    const launch = workspaceLaunch.parse(mine.structuredContent);
+    assert.deepEqual([launch.subject, launch.demoId, launch.signedIn], ['me', null, true]);
+    assert.deepEqual(subjectOf(launch), { kind: 'me' });
+    assert.ok(!JSON.stringify(mine).includes('"x"'), 'the person id is not in the launch');
+    const demo = await client.callTool({ name: 'show_workspace', arguments: { demoId: 'user-002' } });
+    const asked = workspaceLaunch.parse(demo.structuredContent);
+    assert.deepEqual([asked.subject, asked.demoId, asked.signedIn], ['demo', 'user-002', true]);
   } finally {
     await client.close();
     await server.close();
@@ -111,11 +155,12 @@ test('the standalone client reaches tools with one stateless JSON-RPC call to /m
   await once(http, 'listening');
   const call = httpCallTool(`http://127.0.0.1:${(http.address() as AddressInfo).port}/mcp`);
   try {
-    const result = await call('show_workspace', { userId: 'user-002' });
-    assert.deepEqual(parseLaunch(result.structuredContent), { userId: 'user-002', municipalityCodes: [] });
+    const result = await call('show_workspace', { demoId: 'user-002' });
+    assert.deepEqual(parseLaunch(result.structuredContent).demoId, 'user-002');
+    assert.equal((await createToolClient(call).launch({ municipalityCodes: ['250404'] })).subject, 'none');
     // A tool the server does not have is an explicit, typed failure.
     await assert.rejects(
-      createToolClient(call).plan({ userId: 'user-002', municipalityCodes: ['250404'], assumptions }),
+      createToolClient(call).plan({ subject: demoSubject, municipalityCodes: ['250404'], assumptions }),
       {
         name: 'ToolError',
         kind: 'unavailable',
@@ -154,25 +199,42 @@ test('the tool client parses plans, sends valid inputs and never falls back to s
     return fixture(name, args);
   });
   const codes = fixturePlan.plans.map(plan => plan.place.municipalityCode);
-  const byUser = await client.plan({ userId: 'user-001', municipalityCodes: codes, assumptions });
+  const byUser = await client.plan({ subject: demoSubject, municipalityCodes: codes, assumptions });
   assert.equal(byUser.plans.length, 3);
   const edited = applyHabitOverrides(byUser.person, { 'monthly-rail-pass': true });
   const whatIf = await client.plan({ person: edited, municipalityCodes: codes, assumptions });
   assert.equal(whatIf.person.habits.find(habit => habit.id === 'monthly-rail-pass')?.status, 'active');
-  for (const { name, ...input } of sent) {
-    assert.equal(name, 'plan_home_savings');
-    planInput.parse(input);
-  }
+  await client.plan({ subject: { kind: 'me' }, municipalityCodes: codes, assumptions });
+  // A stored person is named by `me` or by a demo persona; a user id is never sent.
+  assert.deepEqual(
+    sent.map(({ name, userId, demoId, me, person }) => [name, userId, demoId, me, person !== undefined]),
+    [
+      ['plan_home_savings', undefined, 'user-001', undefined, false],
+      ['plan_home_savings', undefined, undefined, undefined, true],
+      ['plan_home_savings', undefined, undefined, true, false],
+    ],
+  );
 
-  const updates = await client.bankUpdates('user-001', 0);
+  sent.length = 0;
+  const updates = await client.bankUpdates(demoSubject, 0);
   assert.equal(updates.synthetic, true);
   assert.equal(updates.nextCursor, 2);
-  assert.equal((await client.bankSummary('user-001', lastCompleteMonths('2026-11-22', 3))).monthCount, 3);
+  assert.equal((await client.bankSummary(demoSubject, lastCompleteMonths('2026-11-22', 3))).monthCount, 3);
+  await client.bankRuntime({ kind: 'me' });
+  // The demo persona goes through the read-only demo tools, the signed-in person through the personal ones.
+  assert.deepEqual(
+    sent.map(({ name, demoId, userId }) => [name, demoId, userId]),
+    [
+      ['get_demo_bank_updates', 'user-001', undefined],
+      ['get_demo_bank_summary', 'user-001', undefined],
+      ['get_bank_runtime', undefined, undefined],
+    ],
+  );
   assert.equal((await client.municipalities()).length, 3);
 
   const missing = createToolClient(fixtureCallTool('plan-error', 0));
   await assert.rejects(
-    missing.plan({ userId: 'user-001', municipalityCodes: codes, assumptions }),
+    missing.plan({ subject: demoSubject, municipalityCodes: codes, assumptions }),
     (error: unknown) => {
       assert.ok(error instanceof ToolError);
       assert.equal(error.kind, 'unavailable');
@@ -181,27 +243,70 @@ test('the tool client parses plans, sends valid inputs and never falls back to s
     },
   );
   const wrongShape = createToolClient(async () => ({ structuredContent: { plans: 'soon' } }));
-  await assert.rejects(wrongShape.plan({ userId: 'user-001', municipalityCodes: codes, assumptions }), {
+  await assert.rejects(wrongShape.plan({ subject: demoSubject, municipalityCodes: codes, assumptions }), {
     kind: 'invalid',
   });
   const thrown = createToolClient(async () => {
     throw new Error('MCP error -32001: Request timed out');
   });
-  await assert.rejects(thrown.bankRuntime('user-001'), { kind: 'failed', message: 'Request timed out' });
+  await assert.rejects(thrown.bankRuntime(demoSubject), { kind: 'failed', message: 'Request timed out' });
+  // A personal tool without a session says "sign in", which the page turns into a sign-in prompt.
+  const anonymous = createToolClient(async () => ({
+    isError: true,
+    content: [{ type: 'text', text: 'Sign in to ReloCat to use your own profile.' }],
+    _meta: { 'mcp/www_authenticate': ['Bearer resource_metadata="https://relo.example/x"'] },
+  }));
+  await assert.rejects(anonymous.plan({ subject: { kind: 'me' }, municipalityCodes: codes, assumptions }), {
+    kind: 'signin',
+  });
   assert.equal(describeFailure('get_bank_updates', '').message, 'The get_bank_updates tool returned an error.');
 });
 
 test('launch arguments are read defensively', () => {
-  assert.deepEqual(parseLaunch(undefined), { userId: null, municipalityCodes: [] });
-  assert.deepEqual(parseLaunch({ userId: 'user-001', municipalityCodes: ['bad'] }), {
-    userId: null,
-    municipalityCodes: [],
-  });
-  assert.deepEqual(launchFromQuery('?user=user-003&towns=250404,x,250404,080312'), {
-    userId: 'user-003',
+  assert.deepEqual(parseLaunch(undefined), emptyLaunch);
+  // The shape of an older server (a user id) is not a launch: the workspace opens with nobody.
+  assert.deepEqual(parseLaunch({ userId: 'user-001', municipalityCodes: ['250404'] }), emptyLaunch);
+  assert.deepEqual(
+    parseLaunch({ ...emptyLaunch, subject: 'demo', demoId: 'user-001', municipalityCodes: ['bad'] }),
+    emptyLaunch,
+  );
+  assert.deepEqual(subjectOf({ ...emptyLaunch, subject: 'demo', demoId: null }), { kind: 'none' });
+  assert.deepEqual(launchRequestFromQuery('?demo=user-003&towns=250404,x,250404,080312'), {
+    demoId: 'user-003',
     municipalityCodes: ['250404', '080312'],
   });
-  assert.deepEqual(launchFromQuery(''), { userId: null, municipalityCodes: [] });
+  // The address cannot name a stored person: `user` is ignored, and so is a malformed demo id.
+  assert.deepEqual(launchRequestFromQuery('?user=p-123&towns=250404'), { municipalityCodes: ['250404'] });
+  assert.deepEqual(launchRequestFromQuery('?demo=../etc'), { municipalityCodes: [] });
+  assert.deepEqual(launchRequestFromQuery(''), { municipalityCodes: [] });
+});
+
+test('new transactions are the growth of the ledger, not the sum of its sizes', async () => {
+  // One new movement on a 15-movement ledger is one new transaction, not sixteen.
+  assert.equal(addedTransactions(15, [{ transactionCount: 16 }]), 1);
+  assert.equal(
+    addedTransactions(15, [{ transactionCount: 16 }, { transactionCount: 17 }, { transactionCount: 19 }]),
+    4,
+  );
+  assert.equal(addedTransactions(15, []), 0);
+  assert.equal(addedTransactions(15, [{ transactionCount: 15 }]), 0, 'an edit changes the ledger without adding');
+  assert.equal(addedTransactions(15, [{ transactionCount: 12 }]), 0, 'a deletion is not a negative number of new ones');
+  assert.equal(addedTransactions(null, [{ transactionCount: 16 }]), null, 'unknown before: say so, do not guess');
+
+  // The fixture speaks the same language as the real feed: sizes after each change.
+  const fixture = createToolClient(fixtureCallTool('1', 0));
+  const first = await fixture.bankUpdates(demoSubject, 0);
+  assert.deepEqual(
+    first.events.map(event => event.transactionCount),
+    [181, 184],
+  );
+  let later = first;
+  for (let poll = 0; poll < 4 && later.events.length !== 1; poll++) later = await fixture.bankUpdates(demoSubject, 2);
+  assert.deepEqual(
+    later.events.map(event => event.transactionCount),
+    [186],
+  );
+  assert.equal(addedTransactions(first.events.at(-1)?.transactionCount ?? null, later.events), 2);
 });
 
 test('durations read as years and months, and a null timeline is never a number', () => {
@@ -269,6 +374,15 @@ test('timeline steps keep finite, unbounded and missing timelines apart', () => 
     ['none', 'Not comparable'],
   );
 
+  // Saving something, but more than 600 months away: no number, and not the "saving nothing" wording.
+  const beyond = { ...fixtureNoSavings.plans[0], status: 'beyond_horizon' as const };
+  planResult.parse({ ...fixtureNoSavings, plans: [beyond] });
+  assert.deepEqual(
+    [planHeadline(beyond).tone, planHeadline(beyond).headline, planHeadline(beyond).statusText],
+    ['none', 'No finite timeline', 'No timeline: at this rate the upfront cash is more than 50 years away'],
+  );
+  assert.equal(timelineSteps(beyond, scale)[2].text, 'No finite timeline');
+
   // No estimate at all is a third state, not the same as an unbounded timeline.
   for (const step of timelineSteps(camarasa, scale)) {
     assert.equal(step.state, 'not_estimated');
@@ -330,6 +444,13 @@ test('habit switches produce the person sent to the planner', () => {
     ['paused', 'active', 'active', 'paused'],
   );
   assert.equal(person.habits[0].status, 'active', 'the stored person is not mutated');
+  // A habit switched on starts after the observed figures (as of 2026-11-01), so the planner adds it on top.
+  assert.deepEqual(
+    edited.habits.map(habit => habit.startedOn),
+    [undefined, undefined, '2026-11-02', undefined],
+  );
+  const kept = applyHabitOverrides(person, { [cook.id]: true }).habits[0];
+  assert.deepEqual([kept.status, kept.startedOn], ['active', undefined], 'an already active habit keeps its start');
   planInput.parse({ person: edited, municipalityCodes: ['250404'] });
 
   // Overrides that restate the stored status are dropped, so the plan is read by user id again.

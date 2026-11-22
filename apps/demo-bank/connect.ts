@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { secretFingerprint } from './bank.ts';
 
 /**
  * Wire a running Banc Demo to a running ReloCat, over HTTP only, the way an operator would with a
@@ -20,11 +21,17 @@ export type ConnectDemoBankOptions = {
   userId?: string;
   /** Bank customer behind the link. Default `cust-001`. */
   customerId?: string;
-  /** The secret ReloCat verifies with, when the caller knows it: a different one at the bank is reported. */
+  /**
+   * The secret ReloCat verifies with, when the caller knows it. A webhook at the bank that signs
+   * with another secret (ReloCat was restarted with a new one) gets this one set, so deliveries
+   * are accepted again.
+   */
   expectedSecret?: string;
 };
 
-const webhooksSchema = z.object({ webhooks: z.array(z.object({ id: z.string(), url: z.string() })) });
+const webhooksSchema = z.object({
+  webhooks: z.array(z.object({ id: z.string(), url: z.string(), secret_fingerprint: z.string().optional() })),
+});
 const createdWebhookSchema = z.object({ id: z.string(), signing_secret: z.string() });
 const providersSchema = z.object({
   providers: z.array(
@@ -92,17 +99,30 @@ export async function connectDemoBank(options: ConnectDemoBankOptions) {
     throw new Error(`ReloCat's demo-bank provider is not configured; set ${missing.join(', ')} and restart it`);
   }
 
-  // 2. The webhook subscription at the bank.
+  // 2. The webhook subscription at the bank, signing with the secret ReloCat verifies with.
   const existing = (await bank('/webhooks', webhooksSchema)).webhooks.find(webhook => webhook.url === webhookUrl);
-  let webhook = { id: existing?.id ?? '', created: false };
+  const webhook = { id: existing?.id ?? '', created: false, secretReplaced: false };
+  let secretMatches =
+    !options.expectedSecret || existing?.secret_fingerprint === secretFingerprint(options.expectedSecret);
   if (!existing) {
     const created = await bank('/webhooks', createdWebhookSchema, 'POST', { url: webhookUrl });
-    webhook = { id: created.id, created: true };
-    if (options.expectedSecret && created.signing_secret !== options.expectedSecret)
+    webhook.id = created.id;
+    webhook.created = true;
+    secretMatches = !options.expectedSecret || created.signing_secret === options.expectedSecret;
+  }
+  if (!secretMatches) {
+    try {
+      await bank(`/webhooks/${webhook.id}/secret`, createdWebhookSchema, 'PUT', {
+        signing_secret: options.expectedSecret,
+      });
+      webhook.secretReplaced = true;
+    } catch (error) {
       warnings.push(
-        'The bank issued a signing secret that differs from BANK_DEMO_BANK_WEBHOOK_SECRET: start the bank with ' +
-          'DEMO_BANK_WEBHOOK_SECRET set to the same value, or webhooks will be rejected and only pulls will work.',
+        `The bank signs with a secret that differs from BANK_DEMO_BANK_WEBHOOK_SECRET and it could not be replaced (${
+          error instanceof Error ? error.message : 'unknown error'
+        }): webhooks will be rejected and only pulls will work.`,
       );
+    }
   }
 
   // 3. The user's link to the bank customer.
