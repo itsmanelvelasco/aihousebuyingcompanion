@@ -618,6 +618,42 @@ details > summary::before {
 details[open] > summary::before {
   transform: rotate(45deg);
 }
+/* Language switcher: three short links or buttons; the current language is marked, not only coloured. */
+.rc-lang {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--rc-space-1);
+  font-size: var(--rc-text-sm);
+}
+.rc-lang a,
+.rc-lang button {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--rc-control);
+  padding: 0 var(--rc-space-2);
+  border: 0;
+  border-radius: var(--rc-radius-sm);
+  background: transparent;
+  color: var(--rc-muted);
+  font-weight: var(--rc-weight-regular);
+  text-decoration: none;
+}
+.rc-lang [aria-current="true"],
+.rc-lang [aria-pressed="true"] {
+  color: var(--rc-ink);
+  font-weight: var(--rc-weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 0.3em;
+  text-decoration-thickness: 2px;
+}
+@media (hover: hover) {
+  .rc-lang a:hover,
+  .rc-lang button:hover {
+    background: var(--rc-accent-soft);
+    color: var(--rc-accent);
+  }
+}
 .rc-sr-only {
   position: absolute;
   width: 1px;
