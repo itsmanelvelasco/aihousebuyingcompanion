@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -16,6 +17,14 @@ import { renderVoiceCard } from './voice-card.ts';
 
 const widgetUri = productWidgetUri('cash-flow.html');
 const voiceCardUri = productWidgetUri('start-talking.html');
+
+/**
+ * The address a host is given for the card: the plain one plus a fingerprint of the card's content.
+ * A chat host keeps the page it fetched for an address (ChatGPT went on showing an old card after
+ * "Refresh tools"), so a changed card must have a new address. The plain address stays readable.
+ */
+export const voiceCardAddress = (page: string) =>
+  productWidgetUri(`start-talking-${createHash('sha256').update(page).digest('hex').slice(0, 10)}.html`);
 const widgetType = 'text/html;profile=mcp-app';
 const demoPath = new URL('../../data/demo-bank.csv', import.meta.url);
 const readOnly = { readOnlyHint: true, openWorldHint: false, destructiveHint: false, idempotentHint: true };
@@ -101,34 +110,37 @@ export function registerInterviewerTools(server: McpServer, options: Interviewer
   const launchUrl = launchHref ? (URL.parse(launchHref) ?? undefined) : undefined;
   const signedIn = Boolean(options.caller?.me);
   const embedded = options.interviewCard;
-  server.registerResource(
-    'ReloCat Start talking',
-    voiceCardUri,
-    {
-      mimeType: widgetType,
-      description: 'Green voice interview card for starting the ReloCat homebuying interview.',
-    },
-    () => ({
-      contents: [
-        {
-          uri: voiceCardUri,
-          mimeType: widgetType,
-          text: embedded ? embedded.page : renderVoiceCard(launchHref),
-          _meta: {
-            ui: {
-              prefersBorder: true,
-              // The embedded card posts its WebRTC offer to ReloCat's own voice route and nothing else.
-              csp: { connectDomains: embedded ? [embedded.origin] : [], resourceDomains: [] },
-              // Asked for so that voice can run inside the card where a host grants it; a host may refuse.
-              permissions: { microphone: {} },
-            },
-            ...(embedded
-              ? { 'openai/widgetCSP': { connect_domains: [embedded.origin], resource_domains: [] } }
-              : launchUrl && { 'openai/widgetCSP': { redirect_domains: [launchUrl.origin] } }),
+  const cardPage = embedded ? embedded.page : renderVoiceCard(launchHref);
+  const cardAddress = voiceCardAddress(cardPage);
+  const cardResource = (uri: string) => ({
+    contents: [
+      {
+        uri,
+        mimeType: widgetType,
+        text: cardPage,
+        _meta: {
+          ui: {
+            prefersBorder: true,
+            // The embedded card posts its WebRTC offer to ReloCat's own voice route and nothing else.
+            csp: { connectDomains: embedded ? [embedded.origin] : [], resourceDomains: [] },
+            // Asked for so that voice can run inside the card where a host grants it; a host may refuse.
+            permissions: { microphone: {} },
           },
+          ...(embedded
+            ? { 'openai/widgetCSP': { connect_domains: [embedded.origin], resource_domains: [] } }
+            : launchUrl && { 'openai/widgetCSP': { redirect_domains: [launchUrl.origin] } }),
         },
-      ],
-    }),
+      },
+    ],
+  });
+  const cardDescription = {
+    mimeType: widgetType,
+    description: 'Green voice interview card for starting the ReloCat homebuying interview.',
+  };
+  // The fingerprinted address is the one the tool points at; the plain one is kept for clients that hold it.
+  server.registerResource('ReloCat Start talking', cardAddress, cardDescription, () => cardResource(cardAddress));
+  server.registerResource('ReloCat Start talking (plain address)', voiceCardUri, cardDescription, () =>
+    cardResource(voiceCardUri),
   );
 
   server.registerTool(
@@ -142,7 +154,7 @@ export function registerInterviewerTools(server: McpServer, options: Interviewer
           ? ' When voiceInCard is true, the card shown with this result holds the voice interview itself: say in one short sentence that they can press its button to talk there, or answer here in the chat, and do not repeat a question the card already asked aloud unless they answer here.'
           : ''),
       annotations: readOnly,
-      _meta: { ui: { resourceUri: voiceCardUri } },
+      _meta: { ui: { resourceUri: cardAddress } },
       inputSchema: z.object({ locale: localeArgument }).strict(),
       outputSchema: z.object({
         /** In the person's language: say it as it is. */

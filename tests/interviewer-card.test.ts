@@ -736,8 +736,14 @@ test('a conversation: the offer goes to ReloCat, the session gets the card’s f
   assert.deepEqual(browser.channel.sent, [sessionUpdate(context('es'))]);
   assert.equal(call.sayTyped('antes de tiempo'), false);
 
-  // The service accepts them: the greeting is requested, once.
+  // The service first acknowledges the defaults the call was created with: that is not the interview's
+  // settings, so nothing is greeted and nothing is asked for (it made the assistant open off script).
+  await browser.receive({ type: 'session.updated', session: { tools: [] } });
   await browser.receive({ type: 'session.updated' });
+  assert.deepEqual([seen.greeted, call.greeted], [0, false]);
+  assert.deepEqual(browser.channel.sent, [sessionUpdate(context('es'))]);
+  // The service accepts them: the greeting is requested, once.
+  await browser.receive({ type: 'session.updated', session: { tools: [{}] } });
   assert.deepEqual([seen.greeted, call.greeted], [1, true]);
   assert.deepEqual(browser.channel.sent.at(-1), { type: 'response.create' });
   assert.equal(seen.phases.at(-1), 'thinking');
@@ -837,7 +843,7 @@ test('settings the service refuses are sent once more without transcription; a l
   await browser.receive({ type: 'error' });
   assert.deepEqual(browser.channel.sent.at(-1), sessionUpdate(context('es'), { transcription: false }));
   assert.deepEqual(seen.ends, []);
-  await browser.receive({ type: 'session.updated' });
+  await browser.receive({ type: 'session.updated', session: { tools: [{}] } });
   assert.equal(call.greeted, true);
   await browser.receive({ type: 'error' });
   assert.deepEqual(seen.ends, [{ kind: 'error' }]);
@@ -918,7 +924,7 @@ test('without a microphone the assistant still speaks and the person types', asy
   assert.deepEqual(browser.peer.transceivers, [['audio', { direction: 'recvonly' }]]);
   assert.equal(browser.requests.length, 1);
   await browser.channel.onopen?.();
-  await browser.receive({ type: 'session.updated' });
+  await browser.receive({ type: 'session.updated', session: { tools: [{}] } });
   await browser.receive({ type: 'response.done' });
   assert.equal(call.sayTyped('Ingreso 3100'), true);
   // There is nothing to mute.
@@ -945,7 +951,7 @@ test('“I’m done” ends the person’s turn at once, and the settings that w
   });
   // Not live yet: there is no turn to end.
   assert.equal(call.endTurn(), false);
-  await browser.receive({ type: 'session.updated' });
+  await browser.receive({ type: 'session.updated', session: { tools: [{}] } });
   // ReloCat is answering: still nothing to end.
   assert.equal(call.endTurn(), false);
   await browser.receive({ type: 'response.done' });
@@ -988,7 +994,7 @@ test('“I’m done” ends the person’s turn at once, and the settings that w
   assert.equal('transcription' in fallback.session.audio.input, false);
   assert.deepEqual(second.seen.ends, []);
   // Without a microphone there is no audio to commit.
-  await refused.receive({ type: 'session.updated' });
+  await refused.receive({ type: 'session.updated', session: { tools: [{}] } });
   await refused.receive({ type: 'response.done' });
   assert.equal(second.call.endTurn(), true);
   second.call.close();
@@ -996,7 +1002,7 @@ test('“I’m done” ends the person’s turn at once, and the settings that w
   const third = fakeCall(typing, { microphone: false });
   await settle();
   await typing.channel.onopen?.();
-  await typing.receive({ type: 'session.updated' });
+  await typing.receive({ type: 'session.updated', session: { tools: [{}] } });
   await typing.receive({ type: 'response.done' });
   assert.equal(third.call.endTurn(), false);
   third.call.close();
@@ -1434,7 +1440,7 @@ async function runCard(
     await settle();
     await serve();
     await settle();
-    await browser.receive({ type: 'session.updated' });
+    await browser.receive({ type: 'session.updated', session: { tools: [{}] } });
     await serve();
   };
   /** ReloCat says something and its turn ends. */
@@ -1598,7 +1604,7 @@ test('the text budget: in every state and language the card reads in twelve word
     void card.browser.channel.onopen?.();
     await settle();
     await card.serve();
-    await card.browser.receive({ type: 'session.updated' });
+    await card.browser.receive({ type: 'session.updated', session: { tools: [{}] } });
     count.thinking = card.prose(notProse).length;
     await card.says('Tell me about your month. Are you listening?');
     count.listening = card.prose(notProse).length;
@@ -1671,7 +1677,7 @@ test('the orb starts the conversation, then mutes it; the state is a word; typed
   assert.deepEqual(update.session.audio.input.transcription, { model: 'gpt-4o-mini-transcribe', language: 'es' });
   assert.equal(update.session.audio.input.turn_detection.type, 'semantic_vad');
 
-  await browser.receive({ type: 'session.updated' });
+  await browser.receive({ type: 'session.updated', session: { tools: [{}] } });
   await browser.receive({ type: 'output_audio_buffer.started' });
   // Speaking: said in a word, and the orb is now the mute control.
   assert.deepEqual([card.node('card').dataset.voice, card.text('state')], ['speaking', 'Hablando']);
@@ -2242,7 +2248,7 @@ test('a refused microphone, a refused origin and a host without tools each leave
   void refused.browser.channel.onopen?.();
   await settle();
   await refused.serve();
-  await refused.browser.receive({ type: 'session.updated' });
+  await refused.browser.receive({ type: 'session.updated', session: { tools: [{}] } });
   await refused.browser.receive({ type: 'response.done' });
   // No microphone: the reply field is open, the orb mutes nothing, and there is no turn to end.
   assert.deepEqual([refused.text('state'), refused.node('card').dataset.mic], ['Escribe tu respuesta', 'off']);
@@ -2313,7 +2319,7 @@ test('a refused microphone, a refused origin and a host without tools each leave
   await settle();
   const update = bare.browser.channel.sent[0] as unknown as ReturnType<typeof sessionUpdate>;
   assert.match(update.session.instructions, /This card cannot reach the ReloCat tools/);
-  await bare.browser.receive({ type: 'session.updated' });
+  await bare.browser.receive({ type: 'session.updated', session: { tools: [{}] } });
   assert.equal(bare.text('notice-text'), cardCatalog.es.noTools);
   // No plan there either: the trail opens a line that says so.
   await bare.click('trail');
@@ -2368,7 +2374,10 @@ test('the MCP server hands out the embedded card with the microphone and a way t
   assert.deepEqual(embedded.meta['openai/widgetCSP'], { connect_domains: [relocat], resource_domains: [] });
   assert.deepEqual(embedded.meta.ui.permissions, { microphone: {} });
   assert.equal(embedded.meta.ui.prefersBorder, true);
-  assert.deepEqual(embedded.toolMeta?.ui, { resourceUri: 'ui://relocat/start-talking.html' });
+  assert.match(
+    String((embedded.toolMeta?.ui as { resourceUri?: string } | undefined)?.resourceUri),
+    /^ui:\/\/relocat\/start-talking-[0-9a-f]{10}\.html$/,
+  );
   assert.equal(embedded.started.voiceInCard, true);
   assert.match(
     embedded.description,

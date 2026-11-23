@@ -30,7 +30,6 @@ type RealtimeClientEvent =
 type RealtimeServerEvent =
   | {
       type:
-        | 'session.updated'
         | 'input_audio_buffer.speech_started'
         | 'input_audio_buffer.speech_stopped'
         | 'response.created'
@@ -40,6 +39,11 @@ type RealtimeServerEvent =
         | 'response.done'
         | 'error';
     }
+  /**
+   * `ours` is true when the settings acknowledged are this interview's (they carry its functions).
+   * The service also acknowledges the defaults the call was created with; that one is not ours.
+   */
+  | { type: 'session.updated'; ours: boolean }
   | { type: 'response.output_audio_transcript.done'; transcript: string }
   | { type: 'response.function_call_arguments.done'; name: string; arguments: string; call_id: string };
 
@@ -136,6 +140,10 @@ export function readServerEvent(raw: unknown): RealtimeServerEvent | null {
   }
   if (!isRecord(data) || typeof data.type !== 'string') return null;
   const { type } = data;
+  if (type === 'session.updated') {
+    const tools = isRecord(data.session) ? data.session.tools : undefined;
+    return { type, ours: Array.isArray(tools) && tools.length > 0 };
+  }
   if (plainServerEvents.has(type)) return data as RealtimeServerEvent;
   if (type === 'response.output_audio_transcript.done') {
     return typeof data.transcript === 'string' && data.transcript ? { type, transcript: data.transcript } : null;
@@ -178,6 +186,19 @@ export function startVoiceCall(options: VoiceCallOptions) {
   let configured = false;
   /** The service accepted the settings and the first reply was requested. */
   let greeted = false;
+  /**
+   * The microphone is sent only once the session is configured and its opening has been spoken.
+   * Before that the service still runs with its defaults: room noise on an open microphone made it
+   * answer on its own, in English and off script, ahead of the interview's instructions.
+   */
+  let micOpen = false;
+  let micTimer: ReturnType<typeof setTimeout> | undefined;
+  function openMic() {
+    if (micOpen || ended) return;
+    micOpen = true;
+    clearTimeout(micTimer);
+    for (const track of stream?.getAudioTracks() ?? []) track.enabled = !muted;
+  }
   /** The service refused the settings once and they were sent again without transcription. */
   let plain = false;
   /** New settings were sent after a language change and are not acknowledged yet. */
@@ -203,6 +224,7 @@ export function startVoiceCall(options: VoiceCallOptions) {
     ended = true;
     abort.abort();
     clearTimeout(timer);
+    clearTimeout(micTimer);
     peer.close();
     for (const track of stream?.getTracks() ?? []) track.stop();
   }
@@ -256,11 +278,16 @@ export function startVoiceCall(options: VoiceCallOptions) {
     if (ended) return;
     const data = readServerEvent(raw);
     if (!data) return;
+    // The acknowledgement of the call's default settings arrives first. Greeting on it made the
+    // assistant open on its own, in English and off script, before the interview's instructions.
+    if (data.type === 'session.updated' && !data.ours) return;
     if (data.type === 'session.updated') updating = false;
     if (data.type === 'session.updated' && !greeted) {
       clearTimeout(timer);
       greeted = true;
       options.onGreeted();
+      // If no opening is heard (no audio output, a refused reply), the microphone opens anyway.
+      micTimer = setTimeout(openMic, 8000);
       if (!shareNoteWhenReady()) requestReply();
     }
     if (data.type === 'input_audio_buffer.speech_started') {
@@ -284,6 +311,7 @@ export function startVoiceCall(options: VoiceCallOptions) {
     }
     if (data.type === 'output_audio_buffer.stopped' || data.type === 'output_audio_buffer.cleared') {
       playing = false;
+      if (greeted) openMic();
       render();
       finishTurn();
     }
@@ -344,6 +372,8 @@ export function startVoiceCall(options: VoiceCallOptions) {
           return;
         }
         stream = media;
+        // Closed until the opening has been spoken; see `micOpen`.
+        for (const track of media.getAudioTracks()) track.enabled = false;
         options.onLocalStream?.(media);
         peer.addTrack(media.getAudioTracks()[0], media);
       } else {
@@ -420,7 +450,7 @@ export function startVoiceCall(options: VoiceCallOptions) {
     setMuted(value: boolean) {
       if (!stream || ended) return false;
       muted = value;
-      for (const track of stream.getAudioTracks()) track.enabled = !muted;
+      for (const track of stream.getAudioTracks()) track.enabled = !muted && micOpen;
       render();
       return true;
     },

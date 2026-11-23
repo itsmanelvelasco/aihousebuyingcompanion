@@ -106,9 +106,13 @@ test('serves the fictional interviewer cash-flow card and compares a savings hab
   const launcher = (await client.listTools()).tools.find(entry => entry.name === 'start_homebuying_interview');
   assert.match(launcher?.description ?? '', /I want to buy a new home/);
   assert.match(client.getInstructions() ?? '', /call start_homebuying_interview before asking/);
+  // The tool points at the card by an address that carries a fingerprint of its content; the plain address still answers.
   const voiceUri = 'ui://relocat/start-talking.html';
-  assert.deepEqual(launcher?._meta?.ui, { resourceUri: voiceUri });
+  const linked = (launcher?._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri ?? '';
+  assert.match(linked, /^ui:\/\/relocat\/start-talking-[0-9a-f]{10}\.html$/);
+  const fingerprinted = (await client.readResource({ uri: linked })).contents[0];
   const voiceCard = (await client.readResource({ uri: voiceUri })).contents[0];
+  assert.equal('text' in fingerprinted && fingerprinted.text, 'text' in voiceCard && voiceCard.text);
   assert.equal(voiceCard.mimeType, 'text/html;profile=mcp-app');
   assert('text' in voiceCard);
   assert.match(voiceCard.text, /Start talking/);

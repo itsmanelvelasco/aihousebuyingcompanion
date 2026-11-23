@@ -21,6 +21,9 @@
     --veil: rgb(255 255 255 / 0.08);
     --question-line: calc(var(--rc-text-lg) * 1.3);
   }
+  /* The card is a night panel whatever theme the host states: a light host set data-theme="light", the
+     tokens took their light values and pale fields and chips appeared on the dark panel. */
+  :root[data-theme="light"], :root[data-theme="dark"] { color-scheme: dark; }
   html { background: var(--rc-night); }
   body { background: linear-gradient(135deg, var(--rc-night), var(--rc-night-2)); text-align: center; }
   main { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 26rem; margin: auto; padding: 20px 16px 8px; }
@@ -82,7 +85,9 @@
   .topic::after, .mini::after { content: ""; position: absolute; inset: -4px 0; }
   .topic .rc-icon { width: 16px; height: 16px; }
   .topic b { color: var(--rc-ink); font-weight: var(--rc-weight-semibold); font-variant-numeric: tabular-nums; }
-  .topic[data-state="filled"] { border-style: solid; border-color: var(--rc-gold-line); background: var(--rc-gold-soft); color: var(--rc-on-night-muted); }
+  /* A filled chip keeps the night panel's own colours in both themes: the soft gold token turns pale in a light host and hid the text. */
+  .topic[data-state="filled"] { border-style: solid; border-color: var(--rc-gold); background: color-mix(in srgb, var(--rc-gold) 16%, transparent); color: var(--rc-on-night); }
+  .topic[data-state="filled"] b { color: var(--rc-gold); }
   .topic[data-state="asks"] { border-style: solid; border-color: var(--rc-gold); color: var(--rc-ink); }
   .topic[aria-pressed="true"] { background: none; color: var(--rc-ink); box-shadow: 0 0 0 2px var(--rc-gold); }
   .pair { display: inline-flex; align-items: center; gap: 6px; }
@@ -112,7 +117,8 @@
   .round:disabled { opacity: 0.4; }
   .round[aria-expanded="true"] { border-color: var(--rc-gold); color: var(--rc-gold); }
   .round--gold { border-color: var(--rc-gold-line); background: var(--rc-gold); color: var(--rc-gold-ink); }
-  .round--stop { border-color: var(--rc-danger); color: var(--rc-danger); }
+  /* The danger token of the dark scheme: the card is a night panel in both themes, and the light red disappears on it. */
+  .round--stop { color-scheme: dark; border-color: var(--rc-danger); color: var(--rc-danger); }
   .mini { width: 36px; height: 36px; }
   .mini .rc-icon { width: 18px; height: 18px; }
 
