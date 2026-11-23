@@ -23,7 +23,8 @@
   }
   /* The card is a night panel whatever theme the host states: a light host set data-theme="light", the
      tokens took their light values and pale fields and chips appeared on the dark panel. */
-  :root[data-theme="light"], :root[data-theme="dark"] { color-scheme: dark; }
+  /* A host also writes its theme inline on <html> (style="color-scheme: light"); only !important outranks that. */
+  :root, :root[data-theme="light"], :root[data-theme="dark"] { color-scheme: dark !important; }
   html { background: var(--rc-night); }
   body { background: linear-gradient(135deg, var(--rc-night), var(--rc-night-2)); text-align: center; }
   main { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 26rem; margin: auto; padding: 20px 16px 8px; }
