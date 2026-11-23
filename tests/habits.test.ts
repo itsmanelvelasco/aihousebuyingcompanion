@@ -1,13 +1,20 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createOpenAIHabits } from '../apps/habits-agent/agent.ts';
-import { createHabitsApi } from '../apps/habits-agent/server.ts';
+import { createHabitsApi, createHabitsHandler } from '../apps/habits-agent/server.ts';
 import { createHabitStore } from '../apps/habits-agent/store.ts';
+import type { Caller, PersonScope } from '../apps/mcp-server/identity.ts';
+import { registerPlannerTools } from '../apps/mcp-server/planner-tools.ts';
 import { goalSchema, stateSchema, summarySchema } from '../packages/contracts/habits.ts';
 import type { Place } from '../packages/contracts/planner.ts';
+import { planResult } from '../packages/contracts/planner.ts';
 import { open } from '../packages/db/database.ts';
 import { suggestHabits } from '../packages/finance/habits.ts';
 import { buildPerson } from '../packages/model/person.ts';
+import { loadData } from '../packages/places/data.ts';
 import { planForPlaces } from '../packages/planner/plan.ts';
 import { createStore } from '../packages/profiles/store.ts';
 
@@ -354,6 +361,175 @@ test('habits HTTP API enforces auth, explicit AI requests and validated persiste
     assert.equal((await (await fetch(`${base}/users/p-real/habits`, { headers })).json()).synthetic, false);
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
+    db.close();
+  }
+});
+
+test('save_my_habit and list_my_habits: the caller’s own habits, and the bank rule about the start day holds', async () => {
+  const db = open(':memory:');
+  const doc = { schemaVersion: 1, synthetic: false };
+  for (const id of ['p-1', 'p-2'])
+    await createStore(db).create(id, { details: { ...doc, id }, preferences: doc, 'bank-account': doc });
+  // The real habit handler, as the server mounts it; its HTTP routes are untouched by `save`.
+  const habits = createHabitsHandler({ token: 'habits-test-token', db });
+  const today = new Date().toISOString().slice(0, 10);
+  const { snapshot, policies } = loadData();
+  /** A signed-in person whose monthly figures were observed in bank movements up to 31 October. */
+  const callerOf = (userId: string, scopes: PersonScope[], withStore = true): Caller => ({
+    scopes,
+    demo: null,
+    challenge: () => 'Bearer resource_metadata="https://relocat.test/.well-known/oauth-protected-resource"',
+    me: {
+      userId,
+      synthetic: false,
+      context: async () => ({
+        resolved: {
+          data: { finance: { currentSavingsCents: 1_000_000 }, housing: { budgetCents: 10_000_000 } },
+          provenance: { 'finance.currentSavingsCents': [{ confirmed: true, observedAt: '2026-11-01T00:00:00Z' }] },
+        },
+      }),
+      inputs: async () => ({ inputs: [] }),
+      saveInputs: async () => ({ inserted: 0, duplicates: 0 }),
+      bankSummary: async () => ({
+        from: '2026-08-01',
+        to: '2026-10-31',
+        monthCount: 3,
+        dataStatus: 'observed',
+        incomeCents: 750_000,
+        expenseCents: 600_000,
+        synthetic: true,
+      }),
+      bankUpdates: async () => ({}),
+      bankRuntime: async () => ({}),
+      bankBalanceCents: async () => null,
+      habits: () => habits.read(userId),
+      ...(withStore ? { saveHabit: (goal: unknown, replace = false) => habits.save(userId, goal, replace) } : {}),
+    },
+  });
+  const connect = async (caller: Caller) => {
+    const server = new McpServer({ name: 'habit-tools-test', version: '1' });
+    registerPlannerTools(server, { snapshot, policies, today: () => '2026-11-22', caller });
+    const client = new Client({ name: 'test', version: '1' });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(a), client.connect(b)]);
+    return client;
+  };
+  const one = await connect(callerOf('p-1', ['person:read', 'person:write']));
+  const two = await connect(callerOf('p-2', ['person:read', 'person:write']));
+  const reader = await connect(callerOf('p-1', ['person:read']));
+  const storeless = await connect(callerOf('p-1', ['person:read', 'person:write'], false));
+  const habit = (response: unknown) =>
+    (response as { structuredContent: { created: boolean; habit: Record<string, unknown> } }).structuredContent;
+  const text = (response: unknown) => (response as { content: { text: string }[] }).content.map(item => item.text);
+  try {
+    const tools = (await one.listTools()).tools;
+    const [list, save] = ['list_my_habits', 'save_my_habit'].map(name => tools.find(tool => tool.name === name));
+    assert.deepEqual([list?.annotations?.readOnlyHint, save?.annotations?.readOnlyHint], [true, false]);
+    for (const tool of [list, save]) assert(!('userId' in (tool?.inputSchema.properties ?? {})));
+    assert.match(save?.description ?? '', /only when it started after the observed period/);
+
+    // A new habit starts today; today is after the observed months, so it counts on top of them.
+    const created = await one.callTool({
+      name: 'save_my_habit',
+      arguments: { id: 'cook', title: 'Cook at home', category: 'food', monthlySavingCents: 10_000 },
+    });
+    assert(!created.isError, JSON.stringify(created.content));
+    assert.deepEqual(
+      [
+        habit(created).created,
+        habit(created).habit.startedOn,
+        habit(created).habit.status,
+        habit(created).habit.action,
+      ],
+      [true, today, 'active', 'Cook at home'],
+    );
+    // A habit the person says they already had in October is stored with that day, and is not added on top.
+    const earlier = await one.callTool({
+      name: 'save_my_habit',
+      arguments: {
+        id: 'bus',
+        title: 'Bus pass',
+        category: 'transport',
+        monthlySavingCents: 8_000,
+        startedOn: '2026-10-10',
+      },
+    });
+    assert.equal(habit(earlier).habit.startedOn, '2026-10-10');
+    const planned = await one.callTool({
+      name: 'plan_home_savings',
+      arguments: { me: true, municipalityCodes: ['250404'] },
+    });
+    const plan = planResult.parse(planned.structuredContent);
+    assert.deepEqual(
+      plan.habits?.map(effect => [effect.habitId, effect.counted, effect.reason, effect.countedMonthlyCents]),
+      [
+        ['cook', true, 'counted', 10_000],
+        ['bus', false, 'inside_bank_figures', 0],
+      ],
+    );
+    assert.deepEqual(
+      [
+        plan.person.finances.expensesBasis,
+        plan.plans[0].baseline?.monthlySavingsCents,
+        plan.plans[0].withHabits?.monthlySavingsCents,
+      ],
+      ['bank_observed', 50_000, 60_000],
+    );
+    assert.match(text(planned)[0], /1 active habit\(s\) are shown but not counted/);
+
+    // An update keeps what is left out, including the start day; pausing takes the habit out of the plan.
+    const paused = await one.callTool({
+      name: 'save_my_habit',
+      arguments: { id: 'cook', title: 'Cook at home more', category: 'food', active: false },
+    });
+    assert.deepEqual(
+      [
+        habit(paused).created,
+        habit(paused).habit.status,
+        habit(paused).habit.monthlySavingCents,
+        habit(paused).habit.startedOn,
+      ],
+      [false, 'paused', 10_000, today],
+    );
+    // No amount is never turned into one.
+    const bare = await one.callTool({
+      name: 'save_my_habit',
+      arguments: { id: 'walk', title: 'Walk', category: 'transport' },
+    });
+    assert.equal(habit(bare).habit.monthlySavingCents, null);
+    // A habit cannot start in the future, and the refusal is in the person's language.
+    const future = await one.callTool({
+      name: 'save_my_habit',
+      arguments: { id: 'later', title: 'Later', category: 'other', startedOn: '2999-01-01', locale: 'es' },
+    });
+    assert.equal(future.isError, true);
+    assert.deepEqual(text(future), ['Un hábito no puede empezar en el futuro: indica hoy o un día anterior.']);
+
+    // Each person lists their own habits and nobody else's.
+    const mine = (await one.callTool({ name: 'list_my_habits', arguments: {} })).structuredContent as {
+      habits: { id: string }[];
+    };
+    const theirs = (await two.callTool({ name: 'list_my_habits', arguments: {} })).structuredContent as {
+      habits: unknown[];
+    };
+    assert.deepEqual([mine.habits.map(item => item.id), theirs.habits], [['cook', 'bus', 'walk'], []]);
+    // Reading does not allow writing; a server without a habit store says so plainly.
+    const refused = await reader.callTool({
+      name: 'save_my_habit',
+      arguments: { id: 'tea', title: 'Tea', category: 'food' },
+    });
+    assert.equal(refused.isError, true);
+    assert.match(text(refused)[0], /allow "person:write"/);
+    assert.match(text(refused)[1], /^Your ReloCat connection does not allow this yet/);
+    assert.equal((await reader.callTool({ name: 'list_my_habits', arguments: {} })).isError, undefined);
+    const noStore = await storeless.callTool({
+      name: 'save_my_habit',
+      arguments: { id: 'tea', title: 'Tea', category: 'food' },
+    });
+    assert.deepEqual([noStore.isError, text(noStore)], [true, ['Habits cannot be saved on this server.']]);
+    assert.equal((await habits.read('p-1')).goals.length, 3);
+  } finally {
+    await Promise.all([one, two, reader, storeless].map(client => client.close()));
     db.close();
   }
 });

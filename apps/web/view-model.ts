@@ -463,7 +463,8 @@ export function effectiveOverrides(person: Person, overrides: HabitOverrides, in
  * rate of the first place that has both. Null when no place has both.
  */
 export function habitMonthlyEffectCents(result: PlanResult) {
-  for (const plan of result.plans) {
+  // With no place chosen the plan anywhere in Catalonia carries the same two rates.
+  for (const plan of [...result.plans, ...(result.withoutPlace ? [result.withoutPlace] : [])]) {
     if (plan.baseline && plan.withHabits)
       return plan.withHabits.monthlySavingsCents - plan.baseline.monthlySavingsCents;
   }
@@ -472,7 +473,11 @@ export function habitMonthlyEffectCents(result: PlanResult) {
 
 /** The planner's baseline monthly saving, from the first place that has one. */
 export function baselineMonthlySavingsCents(result: PlanResult) {
-  return result.plans.find(plan => plan.baseline)?.baseline?.monthlySavingsCents ?? null;
+  return (
+    result.plans.find(plan => plan.baseline)?.baseline?.monthlySavingsCents ??
+    result.withoutPlace?.baseline?.monthlySavingsCents ??
+    null
+  );
 }
 
 // -------------------------------------------------------------------- notes

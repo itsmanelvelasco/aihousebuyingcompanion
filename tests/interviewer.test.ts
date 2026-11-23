@@ -12,19 +12,21 @@ import type { FactAnswers } from '../apps/interviewer/facts.ts';
 import {
   answeredFacts,
   applySpokenFacts,
-  coveredByInterview,
   factInstructions,
   factQuestionsToAsk,
   factToolParameters,
   profileAccess,
   profileData,
   saveToProfile,
+  toolCaller,
   voiceFactContext,
   voiceLanguageChange,
   voiceLanguageInstruction,
 } from '../apps/interviewer/facts.ts';
 import { interview } from '../apps/interviewer/messages.ts';
 import { createInterviewerHandler, type InterviewerOptions, interviewerEnv } from '../apps/interviewer/server.ts';
+import { createInterview, emptyJourney } from '../apps/interviewer/session.ts';
+import { voiceInstructions } from '../apps/interviewer/voice.ts';
 import { registerInterviewerTools } from '../apps/mcp-server/interview-tools.ts';
 import { inputSchema } from '../packages/contracts/inputs.ts';
 import { planResult } from '../packages/contracts/planner.ts';
@@ -104,7 +106,10 @@ test('the page, its bundle and the demo statement are served under the prefix wi
   const bundle = await send('GET', '/interview/app.js');
   assert.equal(bundle.status, 200);
   assert.match(String(bundle.headers['content-type']), /text\/javascript/);
-  assert.match(bundle.text, /fetch\("scenario"/);
+  assert.match(bundle.text, /fetch\("classify"/);
+  // The page's plan is plan_home_savings over /mcp: it no longer asks the what-if route for a timeline.
+  assert.doesNotMatch(bundle.text, /fetch\("scenario"/);
+  assert.match(bundle.text, /plan_home_savings/);
   assert.doesNotMatch(bundle.text, /fetch\(\s*["'`]\//);
 
   const csv = await send('GET', '/interview/demo.csv');
@@ -353,25 +358,34 @@ test('a statement of a single day is never presented as a monthly figure, by the
   assert.match(page, /cashFlowStatements\(state\.cash, money\)\.spendingQuestion/);
   assert.match(page, /cashFlowStatements\(state\.cash, money\)\.guidance/);
   assert.doesNotMatch(page, /Average spending was/);
-  assert.match(page, /period_too_short[^`]*say the period is too short for a monthly figure/);
+  const said = voiceInstructions({
+    locale: 'en',
+    access: 'standalone',
+    cash: null,
+    statementCurrency: 'EUR',
+    bankSource: null,
+    cashGuidance: '',
+    answeredIds: [],
+    places: [],
+    nextQuestion: null,
+  });
+  assert.match(said, /period_too_short[^`]*say the period is too short for a monthly figure/);
 });
 
 // ------------------------------------------------------------ plan facts
 
 const day = '2026-11-22';
 
-test('the guided interview asks the shared question set after the money questions, in its order', () => {
+test('without a planner to rank them, the interview asks the shared question set in its own order', () => {
   const ids = (answers: FactAnswers) => factQuestionsToAsk(answers, day).map(question => question.id);
-  // The interview already asked how much is set aside, so that figure is not asked twice.
-  assert.deepEqual(coveredByInterview, ['purchaseSavings']);
+  // One question set: income, spending and savings are the shared questions, each asked once.
   assert.deepEqual(ids({}).slice(0, 5), [
     'monthlyIncome',
     'monthlyExpenses',
+    'purchaseSavings',
     'homeBudget',
     'floorArea',
-    'primaryResidence',
   ]);
-  assert(!ids({}).includes('purchaseSavings'));
   // The same applicability as everywhere else: no schooling question without a child of that age.
   assert(!ids({}).includes('childrenItpSchooling'));
   assert(!ids({ children: [] }).includes('childrenIrpfSchooling'));
@@ -394,7 +408,7 @@ test('spoken answers are captured into the same typed state, validated, and “I
   assert.equal(parameters.additionalProperties, false);
   assert.deepEqual(
     Object.keys(parameters.properties),
-    questions.filter(question => question.id !== 'purchaseSavings').map(question => question.id),
+    questions.map(question => question.id),
   );
   assert.deepEqual(parameters.properties.disability65.type, ['boolean', 'null']);
   assert.deepEqual(parameters.properties.itpBuyerNetTaxBase.type, ['number', 'null']);
@@ -453,14 +467,15 @@ test('spoken answers are captured into the same typed state, validated, and “I
     applySpokenFacts({ childrenItpSchooling: [true] }, {}, day).rejected[0].reason,
     /no child aged 16 or younger/,
   );
-  // The amount already saved is the interview's own question; the voice tool cannot write it as a fact.
-  assert.deepEqual(applySpokenFacts({ purchaseSavings: 5000 }, {}, day).updated, []);
+  // The amount already saved is a shared question like the others: euros as spoken, kept as cents.
+  assert.deepEqual(applySpokenFacts({ purchaseSavings: 5000 }, {}, day).answers, { purchaseSavings: 500_000 });
 });
 
 test('the voice session is told which facts are answered and what to ask next, never the answers', () => {
   const answers: FactAnswers = {
     monthlyIncome: 320_000,
     monthlyExpenses: 230_000,
+    purchaseSavings: 1_875_000,
     homeBudget: 15_000_000,
     disability65: true,
     itpBuyerNetTaxBase: 21_500,
@@ -472,6 +487,7 @@ test('the voice session is told which facts are answered and what to ask next, n
   assert.deepEqual(context.answeredFactIds, [
     'monthlyIncome',
     'monthlyExpenses',
+    'purchaseSavings',
     'homeBudget',
     'birthDate',
     'largeFamily',
@@ -482,7 +498,7 @@ test('the voice session is told which facts are answered and what to ask next, n
   assert.equal(context.nextFactQuestion?.id, 'primaryResidence');
   assert.match(context.nextFactQuestion?.why ?? '', /home you live in/);
   const sent = JSON.stringify(context);
-  for (const value of ['21500', '47250', '1994-03-02', '15000000', '320000'])
+  for (const value of ['21500', '47250', '1994-03-02', '15000000', '320000', '1875000'])
     assert(!sent.includes(value), `${value} is not sent`);
   assert.doesNotMatch(sent, /"disability65":\s*true|"largeFamily":\s*true/);
   assert.equal(voiceFactContext({ ...answers, primaryResidence: true }, day).nextFactQuestion?.id, 'children');
@@ -500,7 +516,8 @@ test('the page offers to save only through a relative link and a button that sta
   assert.match(page, /<button id="save-profile" class="rc-btn rc-btn--gold" hidden>/);
   assert.match(page, /<a id="profile-signin" class="rc-btn" href="\.\.\/login\?next=%2Finterview%2F" hidden>/);
   const script = (await send('GET', '/interview/app.js')).text;
-  assert.match(script, /save_plan_facts/);
+  assert.match(script, /save_interview_answers/);
+  assert.doesNotMatch(script, /save_plan_facts/);
   assert.match(script, /save_my_inputs/);
 });
 
@@ -538,10 +555,15 @@ test('saving to the profile is one same-origin save_my_inputs call with the sess
     itpBuyerNetTaxBase: null,
     disability65: false,
     depositRate: 0.25,
+    purchaseSavings: 1_000_000,
   };
-  const data = profileData(answers, { currency: 'EUR', saved: 10_000, target: 30_000.5, householdSize: 3 }, day);
+  const data = profileData(
+    answers,
+    { targetCashCents: 3_000_050, householdSize: 3, selectedMunicipalityCode: '252154' },
+    day,
+  );
   assert.deepEqual(data, {
-    finance: { currentSavingsCents: 1_000_000, targetCashCents: 3_000_050, monthlyIncomeCents: 320_000 },
+    finance: { monthlyIncomeCents: 320_000, currentSavingsCents: 1_000_000, targetCashCents: 3_000_050 },
     eligibility: {
       birthDate: '1994-03-02',
       children: [{ birthDate: '2019-04-02', meetsItpSchooling: true, inDesignatedSchool: null }],
@@ -550,6 +572,7 @@ test('saving to the profile is one same-origin save_my_inputs call with the sess
     },
     housing: { depositRate: 0.25 },
     household: { size: 3 },
+    location: { selectedMunicipalityCode: '252154' },
   });
   // The record is valid for the profile as it is.
   inputSchema.parse({
@@ -560,11 +583,11 @@ test('saving to the profile is one same-origin save_my_inputs call with the sess
     synthetic: false,
     data,
   });
-  // Savings in another currency are not converted and not saved; with nothing answered there is nothing to save.
-  assert.deepEqual(profileData({ birthDate: '1994-03-02' }, { currency: 'USD', saved: 10_000 }, day), {
+  // Only what was answered is written; with nothing answered there is nothing to save.
+  assert.deepEqual(profileData({ birthDate: '1994-03-02' }, {}, day), {
     eligibility: { birthDate: '1994-03-02' },
   });
-  assert.equal(profileData({}, { currency: 'USD', saved: 10_000 }, day), null);
+  assert.equal(profileData({}, {}, day), null);
 
   type Sent = { url: string; init: RequestInit };
   const record = (answer: () => Response) => {
@@ -659,9 +682,10 @@ test('on the main server, the interview answers of a signed-in person reach thei
     childrenItpSchooling: [true],
     itpFamilyNetTaxBase: 28_000,
     itpBuyerNetTaxBase: null,
+    purchaseSavings: 1_000_000,
   };
   const today = new Date().toISOString().slice(0, 10);
-  const data = profileData(answers, { currency: 'EUR', saved: 10_000 }, today);
+  const data = profileData(answers, {}, today);
 
   // Signed out: the page is told so, and a save stores nothing.
   assert.equal(await profileAccess(pageFetch, endpoint), 'signed_out');
@@ -690,6 +714,53 @@ test('on the main server, the interview answers of a signed-in person reach thei
   const rate = plan.plans[0].benefits.find(benefit => benefit.policyId === 'itp_buy');
   assert.deepEqual([rate?.eligibilityStatus, rate?.counted], ['eligible', true]);
   assert.equal(plan.knownFacts?.find(fact => fact.id === 'children')?.source, 'interview');
+
+  // The same page, by voice: a confirmed answer goes to the profile with no click, a town is chosen only on
+  // an exact match, and the plan shown is the planner's.
+  const interview = createInterview({
+    call: toolCaller(pageFetch, endpoint),
+    today: () => today,
+    locale: () => 'es',
+    journey: emptyJourney(),
+  });
+  assert.equal((await interview.start()).access, 'signed_in');
+  const before = db.get<{ n: number }>('SELECT COUNT(*) AS n FROM input_records')?.n ?? 0;
+  const spoken = await interview.saveSpoken({ monthlyIncome: 3100, monthlyExpenses: 2050 });
+  assert.deepEqual(
+    [spoken.updated, 'stored' in spoken && spoken.stored],
+    [['monthlyIncome', 'monthlyExpenses'], 'profile'],
+  );
+  const latest = db.all<{ source: string; confirmed: number; data: string }>(
+    'SELECT source, confirmed, data FROM input_records ORDER BY rowid',
+  );
+  assert.equal(latest.length, before + 1);
+  assert.deepEqual(
+    [latest.at(-1)?.source, latest.at(-1)?.confirmed, JSON.parse(latest.at(-1)?.data ?? '{}')],
+    ['interview', 1, { finance: { monthlyIncomeCents: 310_000, monthlyExpensesCents: 205_000 } }],
+  );
+  assert.deepEqual(interview.journey.unsaved, []);
+  const towns = (await interview.pilotTowns()) ?? [];
+  const town = towns.find(item => item.code === '252154');
+  assert(town, 'the pilot lists the town');
+  const near = await interview.savePlace(town.name.slice(0, -1), true);
+  assert.deepEqual([near.saved, near.saved ? '' : near.reason], [false, 'no_exact_match']);
+  const chosen = await interview.savePlace(town.name.toUpperCase(), true);
+  assert.deepEqual([chosen.saved, chosen.saved && chosen.stored], [true, 'profile']);
+  assert.equal(
+    JSON.parse(db.all<{ data: string }>('SELECT data FROM input_records ORDER BY rowid').at(-1)?.data ?? '{}').location
+      .selectedMunicipalityCode,
+    '252154',
+  );
+  const shown = await interview.plan();
+  assert.equal(shown.status, 'ok');
+  if (shown.status === 'ok') {
+    assert.equal(shown.result.plans[0].place.municipalityCode, '252154');
+    assert.equal(shown.result.person.finances.monthlyIncomeCents, 310_000, 'the plan reads the answer just saved');
+  }
+  assert.equal(interview.workspaceUrl(), '../workspace?towns=252154&lang=es');
+  // The next question comes from the planner, worded in the language of the page.
+  const next = await interview.nextQuestion();
+  assert(next && next.id !== 'monthlyIncome' && next.id !== 'monthlyExpenses');
 });
 
 // ------------------------------------------------------------ languages
@@ -710,7 +781,8 @@ test('the voice session speaks the language chosen on the page, with its instruc
   }
   // The page builds the session instructions around that line and tells a live session about a change.
   const page = await readFile(new URL('../apps/interviewer/app.ts', import.meta.url), 'utf8');
-  assert.match(page, /\$\{voiceLanguageInstruction\(locale\)\} Ask one question, then stop and listen\./);
+  const voice = await readFile(new URL('../apps/interviewer/voice.ts', import.meta.url), 'utf8');
+  assert.match(voice, /\$\{voiceLanguageInstruction\(context\.locale\)\} Ask one question, then stop and listen\./);
   assert.match(page, /voiceLanguageChange\(chosen\)/);
   // The next question reaches the model in the reviewed wording of that language; ids and values do not change.
   const answers: FactAnswers = { monthlyIncome: 320_000, itpBuyerNetTaxBase: null };
@@ -735,7 +807,7 @@ test('the review list and the save messages are in the page language, with “I 
   assert.deepEqual(unknown('ca'), ['La teva base imposable', 'No ho sé']);
   assert.deepEqual(unknown('es'), ['Tu base imponible', 'No lo sé']);
   // What is stored is the same whatever the language: ids and typed values.
-  assert.deepEqual(profileData(answers, { currency: 'EUR' }, day), profileData(answers, { currency: 'EUR' }, day));
+  assert.deepEqual(profileData(answers, {}, day), profileData(answers, {}, day));
   for (const locale of ['ca', 'es'] as const)
     assert.equal(answeredFacts(answers, day, locale).length, answeredFacts(answers, day).length);
 });

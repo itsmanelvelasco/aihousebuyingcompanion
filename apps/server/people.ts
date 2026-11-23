@@ -17,6 +17,8 @@ export type PeopleSource = {
   bankRuntime(id: string): Promise<unknown>;
   bankBalanceCents(id: string): Promise<number | null>;
   habits(id: string): Promise<unknown>;
+  /** Creates or replaces one habit of a person. */
+  saveHabit(id: string, habit: unknown, replace: boolean): Promise<unknown>;
   connectableBanks(): Promise<unknown>;
   bankConnections(id: string): Promise<unknown>;
   bankAccounts(id: string): Promise<unknown>;
@@ -58,6 +60,7 @@ export function createPeople(source: PeopleSource, options: { origin?: () => str
       return {
         ...reader(userId, false),
         saveInputs: inputs => source.addInputs(userId, { inputs }),
+        saveHabit: (habit, replace = false) => source.saveHabit(userId, habit, replace),
         // The person's own bank data. Every method is bound to `userId`; none takes another id.
         bank: {
           connectable: () => source.connectableBanks(),

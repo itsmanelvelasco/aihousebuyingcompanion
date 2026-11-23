@@ -8,9 +8,11 @@
   "targetPurchasePriceCents": 10800000,
   "housingBudgetCents": 10800000,
   "purchaseSavingsCents": 1574600,
-  "minimumBedrooms": 1,
+  "minimumBedrooms": 2,
   "preferredPropertyType": "flat",
-  "schoolStages": [],
+  "schoolStages": [
+    "infantil"
+  ],
   "hasCar": false,
   "requiresPublicTransport": true,
   "maxCommuteMinutes": 40,

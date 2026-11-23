@@ -11,6 +11,8 @@ import {
   dataEncryptionKey,
   defaultPorts,
   demoBankConfig,
+  demoBankEnabled,
+  demoBankMountPath,
   envInteger,
   envList,
   envPort,
@@ -24,6 +26,7 @@ import {
 import { product } from '../../packages/config/product.ts';
 import { open, readMeta, writeMeta } from '../../packages/db/database.ts';
 import { importLegacyJson } from '../../packages/db/legacy.ts';
+import { seedDemoStories } from '../../packages/profiles/demo-stories.ts';
 import { seedRuntime } from '../../packages/profiles/store.ts';
 import { createLiveData } from '../../packages/sources/live.ts';
 import { connectDemoBank } from '../demo-bank/connect.ts';
@@ -39,6 +42,7 @@ import { createApp } from './app.ts';
  *   /preview        journey board         /connect   homepage and agent setup
  *   /workspace      the React workspace   /interview/  voice and guided interview
  *   /api/...        profiles, inputs, bank ledger, bank events and habits (admin token or own credential)
+ *   /banc-demo/...  the consent page of Banc Demo, the fictional bank, while it runs (DEMO_BANK)
  *   /health         readiness
  *
  * Runtime state (accounts, profiles, inputs, ledgers, bank connections, habits, board runs) lives in
@@ -76,9 +80,12 @@ const clientAddressMode =
 const storage = storageConfig();
 const db = open(storage.databaseFile);
 
-// Banc Demo: a separate fictional bank on its own port that pushes signed webhooks to /api.
-// On by default outside production; DEMO_BANK=off returns to the in-process synthetic feed.
-const demoBankOn = !access.production && process.env.DEMO_BANK !== 'off';
+// Banc Demo: a fictional bank that pushes signed webhooks to /api. Its keyed API (pull, webhook
+// registry, simulation) listens on a loopback port of its own; the one page a person opens, the
+// consent page, is mounted on this origin under /banc-demo so it is reachable wherever ReloCat is.
+// On by default outside production; DEMO_BANK=off returns to the in-process synthetic feed. In
+// production it is off unless DEMO_BANK=on says so: a public demo that shows the live fictional bank.
+const demoBankOn = demoBankEnabled();
 /** The ReloCat user Banc Demo feeds (the default of `connectDemoBank`). */
 const demoBankUser = 'user-001';
 if (demoBankOn) {
@@ -92,6 +99,13 @@ if (demoBankOn) {
   if (process.env.BANK_DEMO_BANK_WEBHOOK_SECRET !== storedSecret)
     writeMeta(db, 'demo-bank.webhook-secret', process.env.BANK_DEMO_BANK_WEBHOOK_SECRET);
   process.env.DEMO_BANK_SNAPSHOT_FILE ||= 'data/cache/demo-bank.json';
+  // The person consents on this origin, and the bank sends them back to it: localhost always, and
+  // the public origin and extra hosts this server answers to. Nowhere else.
+  process.env.BANK_DEMO_BANK_PUBLIC_PATH ||= demoBankMountPath;
+  process.env.DEMO_BANK_RETURN_ORIGINS ||= [
+    ...(publicOrigin ? [publicOrigin] : []),
+    ...access.allowedHosts.flatMap(name => [`https://${name}`, `http://${name}`]),
+  ].join(',');
 }
 let demoBank: Awaited<ReturnType<typeof startDemoBankFromEnv>> | undefined;
 
@@ -146,6 +160,9 @@ const fixtures = resolve('data/users');
 if (existsSync(fixtures)) {
   const { skipped } = await seedRuntime(fixtures, db);
   for (const { id, reason } of skipped) console.warn('Fixture %s was not seeded: %s', id, reason);
+  // The demo personas also get their story (confirmed answers and habits); a person with an account is never written.
+  const stories = await seedDemoStories(db, { fixtures, ids: access.demoUserIds });
+  for (const { id, reason } of stories.skipped) console.warn('Demo story of %s was not seeded: %s', id, reason);
 }
 
 // Official data: the committed snapshot is the baseline; fresher cached values are overlaid on it.
@@ -164,6 +181,17 @@ const app = createApp({
   dataStatus: () => live.status(),
   // Voice and guided interview. Its paid OpenAI routes stay local-only unless explicitly enabled.
   interviewer: createInterviewerHandler({ prefix: '/interview', publicOrigin, ...interviewerEnv() }),
+  // The bank starts after this server listens, so its handler is looked up per request.
+  demoBank: demoBankOn
+    ? {
+        path: demoBankMountPath,
+        handle: (request, response, basePath) => {
+          if (demoBank) return demoBank.bank.handleCustomer(request, response, basePath);
+          response.writeHead(503, { 'Content-Type': 'application/json', 'Retry-After': '5' });
+          response.end(JSON.stringify({ error: 'Banc Demo (fictional bank) is not running' }));
+        },
+      }
+    : undefined,
   health: () => ({
     product: product.name,
     version: product.version,
@@ -238,6 +266,18 @@ server.listen(port, host, async () => {
         local,
         apiPrefix,
       );
+      console.log(
+        '  Banc Demo consent page %s%s/consent/<id> (a person never needs port %d)',
+        publicOrigin ?? local,
+        demoBankMountPath,
+        demoBankConfig().port,
+      );
+      if (access.production)
+        console.warn(
+          '  DEMO_BANK=on in production: Banc Demo is a FICTIONAL bank with synthetic data only. It feeds %s and anyone ' +
+            'signed in can link one of its invented customers; every page and record says it is fictional.',
+          demoBankUser,
+        );
     } catch (error) {
       console.warn('Banc Demo did not start: %s', error instanceof Error ? error.message : 'unknown error');
     }

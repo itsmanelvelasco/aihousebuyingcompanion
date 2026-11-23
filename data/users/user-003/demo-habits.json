@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "userId": "user-003",
+  "goals": [
+    {
+      "id": "weekly-market",
+      "title": "One weekly shop with a list",
+      "action": "Buy the food of the week at the Saturday market with a written list.",
+      "category": "food",
+      "targetDaysPerWeek": 1,
+      "plannedMonthlySavingCents": 18000,
+      "active": true,
+      "startedOn": "2026-11-07"
+    }
+  ],
+  "checkins": []
+}

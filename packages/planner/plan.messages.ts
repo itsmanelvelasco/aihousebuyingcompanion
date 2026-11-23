@@ -128,6 +128,35 @@ export const planMessages = defineMessages(
     notAppliedAnother: 'Not applied: another reduced rate is already your baseline, and reduced rates do not add up.',
     notAppliedNotLower: 'Not applied: it is not lower than the general transfer tax on this price.',
 
+    anywhereName: 'Catalonia',
+
+    placeLabel: 'Where to live',
+
+    placeQuestion: 'Where in Catalonia would you like to live? If you are not sure, I can suggest towns that fit you.',
+
+    placeWhy:
+      'The price of a home, the transfer tax and the aid on offer all depend on the municipality, so the plan needs at least one place to compare.',
+
+    missingBudgetNoPlace: 'person.home.budgetCents (no place is chosen, so only a budget can price the home)',
+
+    assumeNoPlace:
+      'No place is chosen yet, so this is what you would need anywhere in Catalonia: the benefits of a particular place are not looked at, and none is counted.',
+
+    assumeScreeningNoPlace:
+      'Transfer-tax rates tied to the purchase are screened on the day you could buy, with ages advanced to that day, not on the plan date: {baseline}. Tax bases, family status and the rules themselves are assumed to stay as they are on {asOf}.',
+
+    targetHigher:
+      'You said you are aiming for {target} of upfront cash. This plan computes {computed} for {place} before any benefit of a place (deposit, transfer tax and fees), which is {difference} less than your target. The timelines use the computed figure; your target is shown for comparison and replaces nothing.',
+
+    targetLower:
+      'You said you are aiming for {target} of upfront cash. This plan computes {computed} for {place} before any benefit of a place (deposit, transfer tax and fees), which is {difference} more than your target. The timelines use the computed figure, so they are longer than your target alone would suggest; your target is shown for comparison and replaces nothing.',
+
+    targetEqual:
+      'You said you are aiming for {target} of upfront cash, and this plan computes the same amount for {place} before any benefit of a place ({computed}: deposit, transfer tax and fees). The timelines use the computed figure.',
+
+    targetNoComputed:
+      'You said you are aiming for {target} of upfront cash. No upfront cash could be computed for {place} to compare it with, and your target is not used in its place, so no timeline is given.',
+
     assumeBudget: 'The price is your stated budget of {amount}.',
     missingBudgetPositive: 'person.home.budgetCents (must be greater than zero)',
     missingAreaOrBudget: 'person.home.floorAreaM2 or person.home.budgetCents',
@@ -323,6 +352,37 @@ export const planMessages = defineMessages(
       notAppliedNotLower:
         'No s’aplica: no és inferior a l’impost de transmissions patrimonials general per a aquest preu.',
 
+      anywhereName: 'Catalunya',
+
+      placeLabel: 'On viure',
+
+      placeQuestion:
+        'A quin lloc de Catalunya t’agradaria viure? Si no ho tens clar, et puc proposar pobles que encaixin amb tu.',
+
+      placeWhy:
+        'El preu d’un habitatge, l’impost de transmissions patrimonials i els ajuts disponibles depenen del municipi, de manera que el pla necessita almenys un lloc per comparar.',
+
+      missingBudgetNoPlace:
+        'person.home.budgetCents (no s’ha triat cap lloc, de manera que només un pressupost pot posar preu a l’habitatge)',
+
+      assumeNoPlace:
+        'Encara no s’ha triat cap lloc, de manera que això és el que necessitaries a qualsevol municipi de Catalunya: no es miren els beneficis de cap lloc concret i no se’n compta cap.',
+
+      assumeScreeningNoPlace:
+        'Els tipus de l’impost de transmissions patrimonials vinculats a la compra es comproven per al dia en què podries comprar, amb les edats avançades fins a aquell dia, no en la data del pla: {baseline}. Se suposa que les bases imposables, la situació familiar i les mateixes regles es mantenen com el {asOf}.',
+
+      targetHigher:
+        'Has dit que vols reunir {target} de diners inicials. Aquest pla calcula {computed} per a {place} abans de cap benefici d’un lloc (entrada, impost de transmissions patrimonials i despeses), que són {difference} menys que el teu objectiu. Els terminis fan servir la xifra calculada; el teu objectiu es mostra per comparar i no substitueix res.',
+
+      targetLower:
+        'Has dit que vols reunir {target} de diners inicials. Aquest pla calcula {computed} per a {place} abans de cap benefici d’un lloc (entrada, impost de transmissions patrimonials i despeses), que són {difference} més que el teu objectiu. Els terminis fan servir la xifra calculada, de manera que són més llargs del que el teu objectiu faria pensar; el teu objectiu es mostra per comparar i no substitueix res.',
+
+      targetEqual:
+        'Has dit que vols reunir {target} de diners inicials, i aquest pla calcula el mateix import per a {place} abans de cap benefici d’un lloc ({computed}: entrada, impost de transmissions patrimonials i despeses). Els terminis fan servir la xifra calculada.',
+
+      targetNoComputed:
+        'Has dit que vols reunir {target} de diners inicials. No s’han pogut calcular els diners inicials per a {place} per comparar-los-hi, i el teu objectiu no es fa servir en el seu lloc, de manera que no es dona cap termini.',
+
       assumeBudget: 'El preu és el pressupost que has indicat, de {amount}.',
       missingBudgetPositive: 'person.home.budgetCents (ha de ser superior a zero)',
       missingAreaOrBudget: 'person.home.floorAreaM2 o person.home.budgetCents',
@@ -516,6 +576,37 @@ export const planMessages = defineMessages(
       notAppliedAnother: 'No se aplica: otro tipo reducido ya es tu referencia, y los tipos reducidos no se acumulan.',
       notAppliedNotLower:
         'No se aplica: no es inferior al impuesto de transmisiones patrimoniales general para este precio.',
+
+      anywhereName: 'Cataluña',
+
+      placeLabel: 'Dónde vivir',
+
+      placeQuestion:
+        '¿En qué lugar de Cataluña te gustaría vivir? Si no lo tienes claro, puedo proponerte pueblos que encajen contigo.',
+
+      placeWhy:
+        'El precio de una vivienda, el impuesto de transmisiones patrimoniales y las ayudas disponibles dependen del municipio, así que el plan necesita al menos un lugar para comparar.',
+
+      missingBudgetNoPlace:
+        'person.home.budgetCents (no se ha elegido ningún lugar, así que solo un presupuesto puede poner precio a la vivienda)',
+
+      assumeNoPlace:
+        'Todavía no se ha elegido ningún lugar, así que esto es lo que necesitarías en cualquier municipio de Cataluña: no se miran los beneficios de ningún lugar concreto y no se cuenta ninguno.',
+
+      assumeScreeningNoPlace:
+        'Los tipos del impuesto de transmisiones patrimoniales vinculados a la compra se comprueban para el día en que podrías comprar, con las edades avanzadas hasta ese día, no en la fecha del plan: {baseline}. Se supone que las bases imponibles, la situación familiar y las propias reglas se mantienen como el {asOf}.',
+
+      targetHigher:
+        'Has dicho que quieres reunir {target} de dinero inicial. Este plan calcula {computed} para {place} antes de ningún beneficio de un lugar (entrada, impuesto de transmisiones patrimoniales y gastos), que son {difference} menos que tu objetivo. Los plazos usan la cifra calculada; tu objetivo se muestra para comparar y no sustituye nada.',
+
+      targetLower:
+        'Has dicho que quieres reunir {target} de dinero inicial. Este plan calcula {computed} para {place} antes de ningún beneficio de un lugar (entrada, impuesto de transmisiones patrimoniales y gastos), que son {difference} más que tu objetivo. Los plazos usan la cifra calculada, así que son más largos de lo que tu objetivo haría pensar; tu objetivo se muestra para comparar y no sustituye nada.',
+
+      targetEqual:
+        'Has dicho que quieres reunir {target} de dinero inicial, y este plan calcula el mismo importe para {place} antes de ningún beneficio de un lugar ({computed}: entrada, impuesto de transmisiones patrimoniales y gastos). Los plazos usan la cifra calculada.',
+
+      targetNoComputed:
+        'Has dicho que quieres reunir {target} de dinero inicial. No se ha podido calcular el dinero inicial para {place} para compararlo, y tu objetivo no se usa en su lugar, así que no se da ningún plazo.',
 
       assumeBudget: 'El precio es el presupuesto que has indicado, de {amount}.',
       missingBudgetPositive: 'person.home.budgetCents (debe ser superior a cero)',

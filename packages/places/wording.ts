@@ -1,5 +1,5 @@
 import { createFormat } from '../i18n/format.ts';
-import { defaultLocale, formatTags, type Locale } from '../i18n/locales.ts';
+import { defaultLocale, type Locale } from '../i18n/locales.ts';
 
 /**
  * Values written into the sentences of the domain packages (places, planner, model).
@@ -12,24 +12,20 @@ import { defaultLocale, formatTags, type Locale } from '../i18n/locales.ts';
 function build(locale: Locale) {
   const english = locale === defaultLocale;
   const format = createFormat(locale);
-  const percent = new Intl.NumberFormat(formatTags[locale], { style: 'percent', maximumFractionDigits: 2 });
-  const number = new Intl.NumberFormat(formatTags[locale], { maximumFractionDigits: 2 });
-  const list = english ? null : new Intl.ListFormat(formatTags[locale], { style: 'long', type: 'conjunction' });
   return {
     locale,
     english,
     format,
     /** Integer cents: the English text as given, else whole euros, with cents only when there are some. */
-    euros: (cents: number, englishText: string) =>
-      english ? englishText : cents % 100 === 0 ? format.euros(cents) : format.eurosExact(cents),
+    euros: (cents: number, englishText: string) => (english ? englishText : format.eurosAuto(cents)),
     /** A 0–1 share with up to two decimals: `5%`, `5 %`. */
-    percent: (rate: number) => (english ? `${Math.round(rate * 10_000) / 100}%` : percent.format(rate)),
+    percent: (rate: number) => (english ? `${Math.round(rate * 10_000) / 100}%` : format.percent(rate)),
     /** A plain number: the English text as given, else grouped and with the decimal comma. */
-    number: (value: number, englishText: string = String(value)) => (english ? englishText : number.format(value)),
+    number: (value: number, englishText: string = String(value)) => (english ? englishText : format.number(value)),
     /** An ISO day: unchanged in English, a written date otherwise. Text that is not a date stays as it is. */
     date: (iso: string) => (english || !/^\d{4}-\d{2}-\d{2}/.test(iso) ? iso : format.date(iso.slice(0, 10))),
     /** "a, b and c" as the language writes it; English joins with the separator the sentence always used. */
-    list: (items: string[], englishSeparator: string) => (list ? list.format(items) : items.join(englishSeparator)),
+    list: (items: string[], englishSeparator: string) => (english ? items.join(englishSeparator) : format.list(items)),
   };
 }
 

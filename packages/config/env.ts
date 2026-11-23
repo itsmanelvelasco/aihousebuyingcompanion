@@ -191,7 +191,26 @@ export function demoBankConfig(env: Env = process.env) {
     webhookSecret: envString('DEMO_BANK_WEBHOOK_SECRET', env) ?? envString('BANK_DEMO_BANK_WEBHOOK_SECRET', env),
     snapshotFile: envString('DEMO_BANK_SNAPSHOT_FILE', env),
     allowRemoteWebhooks: envFlag('DEMO_BANK_ALLOW_REMOTE_WEBHOOKS', env),
+    /**
+     * Origins, besides this machine, the bank may send a customer back to after a consent. The
+     * server fills it with its own `PUBLIC_ORIGIN` (and `ALLOWED_HOSTS`) when it mounts the bank.
+     */
+    returnOrigins: envList('DEMO_BANK_RETURN_ORIGINS', env),
   };
+}
+
+/** Where `apps/server` serves Banc Demo's consent page on its own origin. */
+export const demoBankMountPath = '/banc-demo';
+
+/**
+ * Whether the server starts Banc Demo next to itself (`DEMO_BANK`). Outside production it runs
+ * unless `DEMO_BANK=off`. In production it never runs by default: a deployment that wants to show
+ * the live fictional bank says `DEMO_BANK=on` explicitly.
+ */
+export function demoBankEnabled(env: Env = process.env) {
+  const value = (env.DEMO_BANK ?? '').trim().toLowerCase();
+  if (value === 'off') return false;
+  return env.NODE_ENV === 'production' ? value === 'on' : true;
 }
 
 /** Text with a default. Unset and empty both take the default, so `HOST=` does not bind every interface. */
@@ -206,6 +225,33 @@ export function publicOriginConfig(env: Env = process.env) {
   const url = new URL(value);
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('PUBLIC_ORIGIN must be an http(s) URL');
   return url.origin;
+}
+
+/**
+ * Where the "Start talking" card and `voiceUrl` of `start_homebuying_interview` send a person to
+ * talk. `RELOCAT_VOICE_URL` when it is set: an https URL without credentials, query or fragment;
+ * anything else is ignored. Otherwise the product's own voice page, `<PUBLIC_ORIGIN>/interview/`.
+ * Null when neither exists (a local server without a public origin), and the card then shows the
+ * steps for ChatGPT's own voice mode only.
+ */
+export function voiceUrlConfig(env: Env = process.env): string | null {
+  const explicit = envString('RELOCAT_VOICE_URL', env);
+  const candidate = explicit ? URL.parse(explicit) : null;
+  if (
+    candidate?.protocol === 'https:' &&
+    !candidate.username &&
+    !candidate.password &&
+    !candidate.search &&
+    !candidate.hash
+  )
+    return candidate.href;
+  try {
+    const origin = publicOriginConfig(env);
+    return origin ? `${origin}/interview/` : null;
+  } catch {
+    // A malformed PUBLIC_ORIGIN is reported where the server starts; here it only means no link.
+    return null;
+  }
 }
 
 const demoPersonaIds = ['user-001', 'user-002', 'user-003', 'user-004'];

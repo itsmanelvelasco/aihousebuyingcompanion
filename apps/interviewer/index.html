@@ -8,6 +8,7 @@
 <!-- FAVICON -->
 <style>
   /* THEME */
+  /* ART */
   /* The interview is a night scene. The page pins the dark scheme, so every --rc-* token takes its dark value,
      and points the surface tokens at the theme's fixed night panel. Gold is the one accent: the primary action,
      a pressed toggle and the focus ring. */
@@ -116,10 +117,35 @@
   #csv { position: absolute; width: 1px; height: 1px; opacity: 0; }
   #csv:focus-visible + label { outline: 3px solid var(--rc-focus); outline-offset: 2px; }
   dl { margin: 12px 0; }
-  dl div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--rc-line); padding: 8px 0; }
+  dl div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; border-bottom: 1px solid var(--rc-line); padding: 8px 0; }
   dd { font-variant-numeric: tabular-nums; text-align: right; }
-  #fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 20px 16px; margin: 12px 0 24px; }
+  dl .row-action { flex: none; align-self: center; margin-left: auto; }
+  dl dt { flex: 1 1 96px; }
   #plan { margin: 0 0 16px; padding: 12px; border-radius: var(--rc-radius-md); background: var(--veil); }
+  #plan > :last-child { margin-bottom: 0; }
+  #plan h3 { margin-top: 12px; font-size: var(--rc-text-sm); color: var(--rc-muted); }
+  #plan ul { margin: 0 0 8px; padding-left: 20px; }
+  #plan details { margin: 8px 0; }
+  #plan summary { min-height: var(--rc-control); display: flex; align-items: center; cursor: pointer; color: var(--rc-muted); font-size: var(--rc-text-sm); font-weight: var(--rc-weight-semibold); }
+  #plan .plan-headline { font-weight: var(--rc-weight-semibold); }
+  .signin-note { margin: 12px 0 0; }
+  .signin-note a { color: var(--rc-gold); }
+  /* The trail of checkpoints: the one to work on, with its illustration, and how many are reached. */
+  .trail { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 16px auto 0; text-align: left; }
+  .trail-art { flex: none; width: 56px; height: 56px; border-radius: var(--rc-radius-md); background: var(--veil) center / cover no-repeat; }
+  .trail-art[data-step="step-profile"] { background-image: var(--rc-art-step-profile); }
+  .trail-art[data-step="step-money"] { background-image: var(--rc-art-step-money); }
+  .trail-art[data-step="step-bank"] { background-image: var(--rc-art-step-bank); }
+  .trail-art[data-step="step-places"] { background-image: var(--rc-art-step-places); }
+  .trail-art[data-step="step-aid"] { background-image: var(--rc-art-step-aid); }
+  .trail-art[data-step="step-habits"] { background-image: var(--rc-art-step-habits); }
+  .trail-art[data-step="step-ready"] { background-image: var(--rc-art-step-ready); }
+  .trail p { margin: 0; display: grid; gap: 2px; }
+  .trail ol { display: flex; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; }
+  .trail li { width: 16px; height: 4px; border-radius: 2px; background: var(--rc-line-strong); }
+  .trail li[data-state="done"] { background: var(--rc-gold); }
+  .trail li[data-state="current"] { background: var(--rc-on-night); }
+  .trail li[data-state="unknown"] { opacity: 0.5; }
   @media (max-width: 560px) {
     .top { padding: 12px 20px; }
     .brand { flex-direction: column; align-items: start; gap: 4px; font-size: var(--rc-text-sm); }
@@ -146,6 +172,10 @@
   <section id="conversation" class="conversation" data-voice="idle" aria-labelledby="title">
     <h1 id="title" data-i18n="heading">Let’s talk about your first home</h1>
     <p class="intro" data-i18n="intro">Start with your bank transactions, then talk through your first-home goals.</p>
+    <div id="trail" class="trail" role="group" aria-label="Your journey" data-i18n-aria-label="trail.label" hidden>
+      <span id="trail-art" class="trail-art" aria-hidden="true"></span>
+      <div><p><strong id="trail-title"></strong><span id="trail-count" class="hint"></span></p><ol id="trail-steps" aria-hidden="true"></ol></div>
+    </div>
     <div class="voice-graphic" aria-hidden="true">
       <div class="wave"><i style="--height:10px"></i><i style="--height:21px"></i><i style="--height:34px"></i><i style="--height:25px"></i><i style="--height:13px"></i></div>
     </div>
@@ -170,6 +200,7 @@
     </form>
     <div class="more"><button class="rc-btn rc-btn--quiet" data-open="options-panel" data-i18n="options">Conversation options</button>
       <div class="rc-lang" id="languages" role="group" aria-label="Language"><button type="button" data-lang="en" lang="en" aria-pressed="true">English</button><button type="button" data-lang="ca" lang="ca" aria-pressed="false">Català</button><button type="button" data-lang="es" lang="es" aria-pressed="false">Castellano</button></div></div>
+    <p id="signin-note" class="hint signin-note" hidden><span data-i18n="signedOutNote">You are not signed in: your answers stay on this device.</span> <a href="../login?next=%2Finterview%2F" data-i18n="signInToSave">Sign in to save them</a></p>
     <audio id="audio" autoplay></audio>
   </section>
 </main>
@@ -202,23 +233,18 @@
 <dialog id="plan-panel" aria-labelledby="plan-heading">
   <div class="panel-head"><h2 id="plan-heading" data-i18n="planHeading">Your home and savings plan</h2><button class="rc-btn rc-btn--sm" data-close data-i18n="close">Close</button></div>
   <div id="plan" aria-live="polite"></div>
-  <details>
-    <summary data-i18n="reviewAnswers">Review or edit answers</summary>
-    <form id="profile">
-      <div id="fields"></div>
-      <div class="actions"><button class="rc-btn rc-btn--gold" data-i18n="saveAnswers">Save answers</button><button id="clear" class="rc-btn" type="button" data-i18n="clearSaved">Clear saved data</button></div>
-    </form>
-    <p class="hint" id="save-status" role="status">Your summary and answers are saved in this browser.</p>
-  </details>
+  <div class="actions"><a id="workspace-link" class="rc-btn rc-btn--gold" href="../workspace" data-i18n="openWorkspace" hidden>Open the workspace</a></div>
   <section class="facts" aria-labelledby="facts-heading">
-    <h3 id="facts-heading" data-i18n="factsHeading">Details that decide your plan</h3>
-    <p class="hint" data-i18n="factsHint">Asked after the money questions: they decide which tax measures and aids can be counted.</p>
+    <h3 id="facts-heading" data-i18n="answersHeading">Your answers</h3>
+    <p class="hint" data-i18n="answersHint">Everything you have answered here. These answers decide the timeline and which tax measures and aids can be counted.</p>
     <dl id="facts"></dl>
     <p id="profile-status" class="hint" role="status">These answers are only on this device.</p>
     <div class="actions">
       <button id="save-profile" class="rc-btn rc-btn--gold" hidden>Save my answers to my ReloCat profile</button>
       <a id="profile-signin" class="rc-btn" href="../login?next=%2Finterview%2F" hidden>Sign in to save them</a>
+      <button id="clear" class="rc-btn" type="button" data-i18n="clearSaved">Clear saved data</button>
     </div>
+    <p class="hint" id="save-status" role="status">Your summary and answers are saved in this browser.</p>
   </section>
 </dialog>
 <dialog id="options-panel" aria-labelledby="options-heading">

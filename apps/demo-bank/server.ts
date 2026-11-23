@@ -19,14 +19,18 @@ import { createDemoBankCore } from './bank.ts';
 import { createConsentDesk } from './consent.ts';
 
 /**
- * Banc Demo, a fictional neobank with a business-style API. It runs as its own process on its own
- * port and knows nothing about ReloCat: ReloCat reaches it over HTTP through the one provider file
+ * Banc Demo, a fictional neobank with a business-style API. It listens on its own port and knows
+ * nothing about ReloCat: ReloCat reaches it over HTTP through the one provider file
  * `packages/banks/providers/demo-bank.ts`, exactly as it would reach a real bank.
  *
  *   Pull   GET /customers, /customers/:id/accounts, /customers/:id/transactions[/:transactionId]
  *   Push   POST|GET /webhooks, DELETE /webhooks/:id, PUT /webhooks/:id/secret, GET /webhooks/deliveries
  *   Consent  POST /consents, POST /consents/token   (API key)
  *            GET|POST /consent/:id                  (the customer's browser; see consent.ts)
+ *
+ * The customer's browser cannot always reach this port (a tunnel, a deployed site). `handleCustomer`
+ * is the consent page alone, for another server to mount on its own origin under a path
+ * (`apps/server` serves it as `/banc-demo/consent/:id`). Nothing that takes a key is served there.
  *   Demo   GET /simulate/status, POST /simulate/step, /simulate/transaction,
  *          /simulate/transactions/:id/state            (admin key)
  *
@@ -42,6 +46,8 @@ export type DemoBankOptions = DemoBankCoreOptions & {
   adminKey?: string;
   /** Days an approved consent lasts. Default 90. */
   consentDays?: number;
+  /** Origins besides this machine a customer may be sent back to after a consent; see `ConsentDeskOptions`. */
+  returnOrigins?: readonly string[];
 };
 
 const listQuery = z
@@ -78,7 +84,34 @@ export function createDemoBank(options: DemoBankOptions) {
     customers: () => bank.listCustomers(),
     allowRemote: options.allowRemoteWebhooks,
     consentDays: options.consentDays,
+    returnOrigins: options.returnOrigins,
   });
+
+  /**
+   * `GET|POST /consent/:id`, the customer's own browser: no API key. The unguessable consent id is
+   * what admits them. `basePath` is where the page is mounted when another origin serves it.
+   */
+  async function consentRoute(request: IncomingMessage, response: ServerResponse, parts: string[], basePath: string) {
+    const method = request.method ?? 'GET';
+    const consentId = z
+      .string()
+      .regex(/^consent-[0-9a-f]{32}$/, 'Invalid identifier')
+      .parse(parts[1]);
+    if (method === 'GET') {
+      // The language of the customer's browser, or the one the page's own links ask for (`?lang=`).
+      const { locale } = requestLocale(request);
+      const page = consents.page(consentId, locale, true, basePath);
+      return void response
+        .writeHead(200, {
+          ...pageHeaders([page.formAction]),
+          'Content-Language': locale,
+          Vary: 'Accept-Language, Cookie',
+        })
+        .end(page.html);
+    }
+    if (method === 'POST') return redirect(response, consents.decide(consentId, await readForm(request)));
+    throw new ApiError(405, 'Method not allowed');
+  }
 
   async function route(request: IncomingMessage, response: ServerResponse) {
     const parts = pathParts(request);
@@ -111,27 +144,7 @@ export function createDemoBank(options: DemoBankOptions) {
       throw new ApiError(404, 'Route not found');
     }
 
-    // The customer's own browser: no API key. The unguessable consent id is what admits them.
-    if (parts[0] === 'consent' && parts.length === 2) {
-      const consentId = z
-        .string()
-        .regex(/^consent-[0-9a-f]{32}$/, 'Invalid identifier')
-        .parse(parts[1]);
-      if (method === 'GET') {
-        // The language of the customer's browser, or the one the page's own links ask for (`?lang=`).
-        const { locale } = requestLocale(request);
-        const page = consents.page(consentId, locale, true);
-        return void response
-          .writeHead(200, {
-            ...pageHeaders([page.formAction]),
-            'Content-Language': locale,
-            Vary: 'Accept-Language, Cookie',
-          })
-          .end(page.html);
-      }
-      if (method === 'POST') return redirect(response, consents.decide(consentId, await readForm(request)));
-      throw new ApiError(405, 'Method not allowed');
-    }
+    if (parts[0] === 'consent' && parts.length === 2) return consentRoute(request, response, parts, '');
 
     requireBearer(request, options.apiKey);
     if (parts[0] === 'consents') {
@@ -172,11 +185,21 @@ export function createDemoBank(options: DemoBankOptions) {
     throw new ApiError(404, 'Route not found');
   }
 
-  /** Answer one request. Errors become JSON; nothing thrown here can stop the process. */
-  async function handle(request: IncomingMessage, response: ServerResponse) {
+  /** The part of the bank a customer's browser needs: its health and the consent page. */
+  async function customerRoute(request: IncomingMessage, response: ServerResponse, basePath: string) {
+    const parts = pathParts(request);
+    if (parts.length === 1 && parts[0] === 'health' && request.method === 'GET')
+      return sendJson(response, 200, { status: 'ok', service: 'demo-bank', synthetic: true });
+    await bank.ready;
+    if (parts[0] === 'consent' && parts.length === 2) return consentRoute(request, response, parts, basePath);
+    throw new ApiError(404, 'Route not found');
+  }
+
+  /** Errors become JSON; nothing thrown here can stop the process. */
+  async function answer(response: ServerResponse, run: () => Promise<unknown>) {
     response.setHeader('X-Demo-Bank', 'fictional');
     try {
-      await route(request, response);
+      await run();
     } catch (error) {
       if (response.headersSent) return void response.destroy();
       if (error instanceof ApiError) return sendJson(response, error.status, { error: error.message });
@@ -186,8 +209,24 @@ export function createDemoBank(options: DemoBankOptions) {
     }
   }
 
+  /** Answer one request on the bank's own port. */
+  const handle = (request: IncomingMessage, response: ServerResponse) =>
+    answer(response, () => route(request, response));
+
+  /**
+   * Answer one request of a customer's browser on another server's origin: the consent page and
+   * nothing else. The caller has removed its mount path from `request.url` and passes it as
+   * `basePath` (`/banc-demo`), so the page's form and links point back into the mount. The pull
+   * API, the webhook registry and `/simulate` are not reachable this way, with or without a key.
+   */
+  const handleCustomer = (request: IncomingMessage, response: ServerResponse, basePath = '') => {
+    if (!/^(\/[a-z0-9-]{1,40})?$/.test(basePath)) throw new Error('Invalid mount path for Banc Demo');
+    return answer(response, () => customerRoute(request, response, basePath));
+  };
+
   return {
     handle,
+    handleCustomer,
     ready: bank.ready,
     start: bank.start,
     close: bank.close,
@@ -251,6 +290,7 @@ export function startDemoBankFromEnv(env: Record<string, string | undefined> = p
     intervalMs: config.intervalMs,
     snapshotFile: config.snapshotFile && resolve(config.snapshotFile),
     allowRemoteWebhooks: config.allowRemoteWebhooks,
+    returnOrigins: config.returnOrigins,
   });
 }
 

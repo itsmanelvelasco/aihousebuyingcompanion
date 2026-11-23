@@ -75,6 +75,13 @@ function start(directory: string, port: number, env: Record<string, string | und
     BANK_DEMO_BANK_BASE_URL: undefined,
     BANK_DEMO_BANK_API_KEY: undefined,
     BANK_DEMO_BANK_WEBHOOK_SECRET: undefined,
+    BANK_DEMO_BANK_PUBLIC_PATH: undefined,
+    DEMO_BANK: undefined,
+    DEMO_BANK_USERS: undefined,
+    DEMO_BANK_RETURN_ORIGINS: undefined,
+    DEMO_BANK_API_KEY: undefined,
+    DEMO_BANK_WEBHOOK_SECRET: undefined,
+    DEMO_BANK_SNAPSHOT_FILE: undefined,
     NODE_TEST_CONTEXT: undefined,
     ...env,
   };
@@ -382,6 +389,75 @@ test('in production a bank people connect by consent does not run without DATA_E
   assert.match(server.output(), /bank credentials sealed with DATA_ENCRYPTION_KEY/);
   assert.doesNotMatch(server.output(), new RegExp(key));
   assert.doesNotMatch(server.output(), /development key/);
+});
+
+test('Banc Demo in production: off by default, and with DEMO_BANK=on a person consents on the public origin alone', async t => {
+  const { directory, remove } = await scratch();
+  let running: Started | undefined;
+  t.after(async () => {
+    await running?.stop();
+    await remove();
+  });
+
+  // Default: production starts no fictional bank and nothing answers under /banc-demo.
+  running = start(directory, await sparePort());
+  await ready(running);
+  assert.equal((await call(running.port, '/banc-demo/health')).status, 404);
+  assert.doesNotMatch(running.output(), /Banc Demo/);
+  await running.stop();
+
+  // Opt-in: the bank runs, says loudly that it is fictional, and its consent page is on the public origin.
+  const bankPort = await sparePort();
+  const server = start(directory, await sparePort(), {
+    DEMO_BANK: 'on',
+    DEMO_BANK_PORT: String(bankPort),
+    DEMO_BANK_SNAPSHOT_FILE: join(directory, 'cache', 'demo-bank.json'),
+    DATA_ENCRYPTION_KEY: 'k'.repeat(43),
+  });
+  running = server;
+  await ready(server);
+  for (
+    let attempt = 0;
+    attempt < 300 && !/Banc Demo consent page|Banc Demo did not start/.test(server.output());
+    attempt++
+  )
+    await new Promise(resolve => setTimeout(resolve, 100));
+  const { port } = server;
+  assert.match(server.output(), /Banc Demo consent page https:\/\/relocat\.test\/banc-demo\/consent\/<id>/);
+  assert.match(server.output(), /DEMO_BANK=on in production: Banc Demo is a FICTIONAL bank with synthetic data only/);
+  assert.equal((await call(port, '/banc-demo/health')).status, 200);
+  assert.equal((await call(port, '/banc-demo/customers')).status, 404, 'the keyed API is not on the public origin');
+
+  const page = await call(port, '/signup');
+  const jar = cookies(page);
+  const created = await call(port, '/signup', {
+    headers: cookieHeader(jar),
+    form: { csrf: csrfOf(page), email: 'ada@example.com', password },
+  });
+  assert.equal(created.status, 303, created.body);
+  cookies(created, jar);
+  const account = await call(port, '/account', { headers: cookieHeader(jar) });
+  assert.match(account.body, /Banc Demo \(fictional bank\)/);
+  const leave = await call(port, '/account/bank/connect', {
+    headers: cookieHeader(jar),
+    form: { csrf: csrfOf(account), provider: 'demo-bank' },
+  });
+  assert.equal(leave.status, 200, leave.body);
+  const link = /href="https:\/\/relocat\.test(\/banc-demo\/consent\/consent-[0-9a-f]{32})"/.exec(leave.body);
+  assert(link, 'the person is sent to the public origin, never to a loopback port');
+  assert.doesNotMatch(leave.body, new RegExp(`127\\.0\\.0\\.1:${bankPort}`));
+  const consent = await call(port, link[1]);
+  assert.equal(consent.status, 200);
+  assert.match(consent.body, /Fictional bank/);
+  assert.match(consent.body, new RegExp(`action="${link[1]}"`));
+  const approved = await call(port, link[1], { form: { decision: 'approve', customer_id: 'cust-002' } });
+  assert.equal(approved.status, 303);
+  const back = new URL(String(approved.headers.location));
+  assert.equal(`${back.origin}${back.pathname}`, `${site}/bank/consent/callback`);
+  const done = await call(port, back.pathname + back.search, { headers: cookieHeader(jar) });
+  assert.deepEqual([done.status, done.headers.location], [302, '/account?done=bank-connected#bank']);
+  const connected = await call(port, '/account', { headers: cookieHeader(jar) });
+  assert.match(connected.body, /consent until \d{4}-\d{2}-\d{2}/);
 });
 
 test('the request limit defaults to 300 a minute on a public deployment and 3000 on a developer’s machine', () => {

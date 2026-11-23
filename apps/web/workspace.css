@@ -1154,3 +1154,137 @@ h4,
     grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   }
 }
+
+/* Suggest places for me: the short form, then the ranked answer with the server's reasons. */
+.suggest,
+.add-habit {
+  width: 100%;
+  min-width: 0;
+}
+.suggest > summary,
+.add-habit > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--rc-space-2);
+}
+.suggest-form,
+.suggest-results {
+  display: grid;
+  gap: var(--rc-space-3);
+  justify-items: start;
+  margin-top: var(--rc-space-3);
+}
+.suggest-form > .rc-field,
+.suggest-form > .choice-set {
+  width: 100%;
+  max-width: 28rem;
+}
+.suggest-form .hint,
+.suggest-results .hint {
+  margin: 0;
+}
+.suggest-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--rc-space-2) var(--rc-space-3);
+  width: 100%;
+}
+.suggest-head h3 {
+  min-width: 0;
+}
+.suggest-list {
+  display: grid;
+  gap: var(--rc-space-3);
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.suggestion {
+  display: grid;
+  gap: var(--rc-space-2);
+  min-width: 0;
+  padding: var(--rc-space-3);
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-radius-md);
+  background: var(--rc-surface);
+}
+.suggestion-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--rc-space-2) var(--rc-space-3);
+}
+.suggestion-head > div {
+  min-width: 0;
+}
+.suggestion h4,
+.suggestion h5,
+.suggest-results > h5 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.suggestion h5,
+.suggest-results > h5 {
+  color: var(--rc-muted);
+  font-size: var(--rc-text-sm);
+  font-weight: var(--rc-weight-semibold);
+}
+.suggestion p {
+  margin: 0;
+}
+.suggest-excluded {
+  width: 100%;
+}
+.suggest .plain-list li {
+  overflow-wrap: anywhere;
+}
+/* No place chosen: what the plan knows anywhere in Catalonia, and the way to the suggestions. */
+.no-places {
+  gap: var(--rc-space-3);
+}
+.no-places p {
+  margin: 0;
+}
+.anywhere {
+  width: 100%;
+  margin: 0;
+}
+
+/* Add a habit, and the habits that exist only in the estimate on screen. */
+.add-habit {
+  margin-top: var(--rc-space-3);
+}
+.add-habit > .rc-note,
+.add-habit > .hint {
+  margin-top: var(--rc-space-3);
+}
+.habit-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--rc-space-3);
+  align-items: start;
+  margin-top: var(--rc-space-3);
+}
+.habit-form-wide {
+  grid-column: 1 / -1;
+}
+.habit-form button.habit-form-wide {
+  justify-self: start;
+}
+.habit-form .hint {
+  margin: 0;
+  font-weight: var(--rc-weight-regular);
+}
+.habit-list-what-if {
+  margin-top: var(--rc-space-2);
+}
+.habit-what-if {
+  display: grid;
+  gap: var(--rc-space-2);
+  justify-items: start;
+  min-width: 0;
+}

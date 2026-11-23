@@ -9,6 +9,8 @@ Owner: habits development; coordinate shared contracts with integration. This is
 - Verification: `tests/habits.test.ts`; mock API tests make no paid calls.
 - Setup, routes and cost limits: [service README](../../apps/habits-agent/README.md).
 
-Handoff: bank analysis supplies category totals and recurring-category counts with source period and completeness. Never forward raw movements, descriptions, bank IDs, check-in notes or identity. The app shows suggestions for review, then explicitly creates goals/check-ins via this API. Monetary targets are user assumptions. There are no automatic financial actions, reminders, credit decisions or guaranteed savings. Production auth and frontend/MCP integration are later work.
+Handoff: bank analysis supplies category totals and recurring-category counts with source period and completeness. Never forward raw movements, descriptions, bank IDs, check-in notes or identity. The app shows suggestions for review, then explicitly creates goals/check-ins via this API. Monetary targets are user assumptions. There are no automatic financial actions, reminders, credit decisions or guaranteed savings.
+
+Access: `/api/users/<id>/habits` answers the admin token, or the person's own session or OAuth token for their own id (`person:read` to read, `person:write` to write). The planner reads a person's habits when it builds their plan, and the workspace shows them. Agreed for this round, to be checked against `apps/mcp-server/planner-tools.ts` after integration: the personal MCP tools `list_my_habits` (`person:read`) and `save_my_habit` (`person:write`, creates or updates one habit of the signed-in person) over this same store.
 
 The [project Space](https://chatgpt.com/spaces/page_space_480ff4de354881918c3539e063a2e003) remains authoritative for scope; current hackathon priority is the municipality/incentive journey. Habits are complementary and must not block it.

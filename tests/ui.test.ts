@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
+import { voiceCard } from '../apps/mcp-server/voice-card.messages.ts';
 import { renderVoiceCard } from '../apps/mcp-server/voice-card.ts';
 import { fallbackArt } from '../packages/ui/art.ts';
 import { icon, iconNames, labelledIcon, markDataUrl, wordmark } from '../packages/ui/icons.ts';
@@ -136,6 +137,35 @@ test('the product is written ReloCat on every surface, with shared theme and no 
     const text = read(path).replace(/[©®™]/g, '');
     assert.doesNotMatch(text, glyphs, `${path} uses icons from packages/ui, not glyphs`);
   }
+});
+
+test('the retired name "ReloCat Team" appears nowhere a person or the model reads', () => {
+  // Identifiers keep `relocat-team` (the bundle's folder and archive); the display name is ReloCat.
+  const skipped = new Set(['node_modules', 'dist', '.git', 'cache', 'artifacts']);
+  const offenders: string[] = [];
+  const walk = (folder: string) => {
+    for (const entry of readdirSync(join(root, folder), { withFileTypes: true })) {
+      const path = `${folder}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (!skipped.has(entry.name)) walk(path);
+      } else if (/\.(ts|tsx|html|md|json|css)$/.test(entry.name) && /ReloCat\s+Team/.test(read(path)))
+        offenders.push(path);
+    }
+  };
+  for (const folder of ['apps', 'packages', 'plugins', 'docs', 'scripts']) walk(folder);
+  for (const file of ['README.md', 'PLAN.md', 'AGENTS.md', 'package.json'])
+    if (/ReloCat\s+Team/.test(read(file))) offenders.push(file);
+  assert.deepEqual(offenders, []);
+
+  const manifest = JSON.parse(read('plugins/relocat-team/plugin.json'));
+  assert.equal(manifest.extensions['com.openai'].interface.displayName, 'ReloCat');
+  // The sentence people are told to say names the product, in the three languages.
+  assert.match(voiceCard.en.instructions, /“Use ReloCat to start my homebuying interview\.”/);
+  assert.match(
+    voiceCard.ca.instructions,
+    /«Fes servir ReloCat per començar la meva entrevista de compra d’habitatge\.»/,
+  );
+  assert.match(voiceCard.es.instructions, /«Usa ReloCat para empezar mi entrevista de compra de vivienda\.»/);
 });
 
 test('page templates fail loudly on an unknown icon or image slot', () => {

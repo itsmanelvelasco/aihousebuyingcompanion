@@ -34,12 +34,29 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 - [x] Verify dataset/export consistency, API authorization, invalid inputs, persistence and runtime edit preservation with automated tests and TypeScript checks.
 - [x] Add synthetic bank accounts and movement import/correction/deletion with idempotent IDs and serialized atomic ledger persistence.
 - [x] Implement monthly cash-flow/category analysis, recurring-expense candidates and savings scenarios with explicit reserves, assumptions and unknown-data handling.
-- [x] Add versioned multi-source app inputs, normalized context, explicit conflict reporting and a municipality recommendation-input adapter; frontend wiring remains to be integrated.
-- [x] Build a complementary browser voice interviewer with demo bank and CSV intake, optional OpenAI Decisions classification, and a local savings plan. Shared profile API integration remains pending.
+- [x] Add versioned multi-source app inputs, normalized context, explicit conflict reporting and a municipality recommendation-input adapter. The workspace, the interview page and the MCP tool `save_my_inputs` write to them.
+- [x] Build a complementary browser voice interviewer with demo bank and CSV intake, optional OpenAI Decisions classification, and a local savings plan. Mounted at `/interview/`; a signed-in person saves the confirmed answers to their profile with one `save_my_inputs` call.
 - [ ] Project lead selects or customizes a canonical demo persona from the candidate profiles and confirms it with the interviewer team.
 - [ ] Teams agree stricter domain schemas; the API currently validates document provenance and IDs while allowing evolving fields.
 
-See [profile API instructions](apps/profile-api/README.md) and [dataset assumptions](data/users/README.md). No real bank connection or production per-user authorization is implemented.
+See [profile API instructions](apps/profile-api/README.md) and [dataset assumptions](data/users/README.md).
+
+## Delivered since the hackathon plan
+
+Checked items are in the code and covered by `npm run check`; unchecked ones are not established by it.
+
+- [x] One server (`apps/server/index.ts`) mounts `/mcp`, `/workspace`, `/preview`, `/interview/`, `/connect`, `/test`, `/api`, the account pages and `/health` on a single origin.
+- [x] Accounts: every stored person belongs to an account; MCP clients connect with OAuth 2.1; no tool takes a user id; the four fictional personas are a read-only public demo (`packages/auth`, `tests/auth.test.ts`).
+- [x] Official place data is live but pre-cached: 8 official sources in `packages/sources/definitions/` overlay the committed snapshot, which stays the baseline and the fallback.
+- [x] Person, place and planner (`packages/model`, `packages/planner`): `plan_home_savings` returns months of saving per place, counting a benefit only when its cash exists before the purchase and eligibility is verified.
+- [x] Bank providers as one-file plug-ins, with two fictional ones (`synthetic`, `demo-bank`) and Banc Demo (`apps/demo-bank`). A person connects, syncs and imports statements for their own ledger.
+- [x] Runtime state in one SQLite database (`packages/db`), with backup, legacy import and demo reseed scripts.
+- [x] English, Catalan and Spanish on every surface, with one formatter (`packages/i18n`).
+- [x] One design system (`packages/ui`): tokens, icons, Montserrat, generated illustrations with drawn fallbacks; the React workspace with its journey trail.
+- [x] Every widget reaches its host through `App` from `@modelcontextprotocol/ext-apps`; no hand-written handshake is left.
+- [ ] The same journey by text, by ChatGPT voice and on `/interview/`: planning before a place is chosen, habits read and saved through MCP tools, and one plan everywhere. In progress; see the planner and habits guides.
+- [ ] Run the OAuth connection, the widgets and voice mode against a real ChatGPT account; automated tests use a scripted client.
+- [ ] Integrate a real bank. Banc Demo is fictional, and no production financial records are stored.
 
 ## Current team ownership
 

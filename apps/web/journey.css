@@ -163,3 +163,13 @@
     width: 56px;
   }
 }
+
+/* The action of the checkpoint in focus: one button that opens the part of the workspace it names. */
+.journey-action {
+  margin: 0;
+}
+.journey-action .rc-btn {
+  max-width: 100%;
+  white-space: normal;
+  text-align: start;
+}

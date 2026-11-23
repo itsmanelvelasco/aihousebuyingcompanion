@@ -29,12 +29,20 @@ export type JourneyStepId = (typeof journeyStepIds)[number];
  */
 export type JourneyStepState = 'done' | 'current' | 'ahead' | 'unknown';
 
+/**
+ * Where a checkpoint's action takes the person: a part of the workspace (`components/Journey.tsx`
+ * opens it, scrolls to it and moves the focus there).
+ */
+export type JourneyTarget = 'person' | 'questions' | 'bank' | 'suggest-places' | 'add-habit' | 'places';
+
 export type JourneyStep = {
   id: JourneyStepId;
   title: string;
   state: JourneyStepState;
   /** What reaching it means, or what is still needed, in one sentence. */
   detail: string;
+  /** What to do about it, as the label of a button, and where that button goes. */
+  action: { label: string; target: JourneyTarget };
 };
 
 export type Journey = {
@@ -151,17 +159,36 @@ const titles = {
   'step-ready': 'titleReady',
 } as const;
 
+/** The action of each checkpoint: what its button says and the part of the workspace it opens. */
+const actions = {
+  'step-profile': { label: 'actionProfile', target: 'questions' },
+  'step-money': { label: 'actionMoney', target: 'questions' },
+  'step-bank': { label: 'actionBank', target: 'bank' },
+  'step-places': { label: 'actionPlaces', target: 'suggest-places' },
+  'step-aid': { label: 'actionAid', target: 'questions' },
+  'step-habits': { label: 'actionHabits', target: 'add-habit' },
+  'step-ready': { label: 'actionReady', target: 'places' },
+} as const satisfies Record<JourneyStepId, { label: string; target: JourneyTarget }>;
+
 /** The trail in one language; English when none is stated. */
 export function journey(input: JourneyInput, locale: Locale = defaultLocale): Journey {
   const t = translator(journeyMessages, locale);
   const verdict = verdicts(input, locale);
-  // The first checkpoint that is known not to be reached is the one to work on.
-  const currentId = journeyStepIds.find(id => verdict[id].reached === false) ?? null;
+  // The first checkpoint that is known not to be reached is the one to work on. With no place
+  // chosen that is always "Compare places": nothing else moves the plan until there is a place, and
+  // its action proposes some.
+  const currentId =
+    input.placeCount === 0 ? 'step-places' : (journeyStepIds.find(id => verdict[id].reached === false) ?? null);
   const steps = journeyStepIds.map(id => {
     const { reached, detail } = verdict[id];
     const state: JourneyStepState =
       reached === true ? 'done' : reached === null ? 'unknown' : id === currentId ? 'current' : 'ahead';
-    return { id, title: t(titles[id]), state, detail };
+    // With nobody on screen there is no question to answer yet: the person panel is where to start.
+    const action =
+      !input.result && actions[id].target === 'questions'
+        ? { label: t('actionChoose'), target: 'person' as const }
+        : { label: t(actions[id].label), target: actions[id].target };
+    return { id, title: t(titles[id]), state, detail, action };
   });
   return {
     steps,

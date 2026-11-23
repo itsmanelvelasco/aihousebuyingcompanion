@@ -1,7 +1,23 @@
 import { useMessages } from '../i18n.tsx';
-import type { Journey as JourneyModel, JourneyStepState } from '../journey.ts';
+import type { Journey as JourneyModel, JourneyStepState, JourneyTarget } from '../journey.ts';
 import { journeyMessages } from '../messages/journey.messages.ts';
+import { reveal } from '../reveal.ts';
+import { ADD_HABIT_ID } from './AddHabit.tsx';
 import { Icon } from './bits.tsx';
+import { SUGGEST_ID } from './SuggestPlaces.tsx';
+
+/**
+ * The part of the workspace behind each action, then where to go when that part is not on screen
+ * (the bank strip and the habit form exist only once a person is shown).
+ */
+const targets: Record<JourneyTarget, string[]> = {
+  person: ['person-title'],
+  questions: ['details-title', 'person-title'],
+  bank: ['bank-title', 'person-title'],
+  'suggest-places': [SUGGEST_ID, 'places-title'],
+  'add-habit': [ADD_HABIT_ID, 'person-title'],
+  places: ['places-title'],
+};
 
 const stateWord = {
   done: 'stateDone',
@@ -13,7 +29,8 @@ const stateWord = {
 /**
  * The trail: seven checkpoints from "about you" to "ready to buy", each with its illustration.
  * The checkpoint to work on is shown large with what it still needs; the rest are a strip below.
- * Every state is said in words; colour and the faded art only repeat it.
+ * Every state is said in words; colour and the faded art only repeat it. The checkpoint in focus
+ * carries its action as a button that opens the part of the workspace where it is done.
  */
 export function Journey({ journey }: { journey: JourneyModel }) {
   const t = useMessages(journeyMessages);
@@ -28,6 +45,18 @@ export function Journey({ journey }: { journey: JourneyModel }) {
           <p className="rc-label">{t('checkpointOf', { position, total })}</p>
           <h2 id="journey-title">{reached === total ? t('trailComplete') : focus.title}</h2>
           <p>{focus.detail}</p>
+          {reached === total ? null : (
+            <p className="journey-action">
+              <button
+                type="button"
+                className="rc-btn rc-btn--primary rc-btn--sm"
+                onClick={() => reveal(...targets[focus.action.target])}
+              >
+                {focus.action.label}
+                <Icon name="next" />
+              </button>
+            </p>
+          )}
           <div className="journey-progress">
             <progress max={total} value={reached} aria-label={t('checkpointsReached')} />
             <span>{t('reachedOf', { reached, total })}</span>

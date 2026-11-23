@@ -6,9 +6,21 @@ It exists so that webhooks, signatures, cursors, retries and state changes run a
 
 **It is a demo.** Every customer, account and transaction is fabricated: every resource carries `"synthetic": true` and every response the header `X-Demo-Bank: fictional`. It is one process with its state in memory (a rolling window of the newest transactions), no database, no real money and no relation to any real bank. Do not put real data in it.
 
+## Which fictional bank is this
+
+Three fictional banks exist in this repository. None is real, all are labelled, and they are not interchangeable:
+
+| Which | Where | What it is | Used by | Label a person sees |
+| --- | --- | --- | --- | --- |
+| **Banc Demo** | `apps/demo-bank`, provider `demo-bank` | A fictional bank service: pull API, signed webhooks, a consent page. The live bank. | The default feed of `user-001` while `DEMO_BANK` is on; any signed-in person who connects it on `/account`. | "Banc Demo (fictional bank)"; records `synthetic: true` |
+| **In-process synthetic feed** | `apps/profile-api/runtime.ts`, provider `synthetic` | A timer inside the server that appends fabricated movements to a ledger. No HTTP, no webhook, no consent. | Only the users named in `DEMO_BANK_USERS`, or `user-001` when `DEMO_BANK=off` outside production. | fictional bank / synthetic; records `synthetic: true` |
+| **Static sample statement** | `data/demo-bank.csv` | A fixed CSV of fabricated movements. It never changes and reaches no ledger. | The `/interview` page, the `sample_cash_flow` tool and `packages/finance/scenario.ts`: a worked example for somebody with no bank data. | fictional sample; results `synthetic: true` |
+
+Never feed one ledger from two of them: the histories would be summed. The server leaves a user Banc Demo feeds out of the in-process feed, also when `DEMO_BANK_USERS` lists them.
+
 ## Run it
 
-**With ReloCat, nothing to do.** Outside production (`NODE_ENV` other than `production`) `npm run dev` and `npm start` start the bank on port 3003 inside the server process, invent its API key and signing secret for that run when they are not configured, register ReloCat's webhook, link `user-001` to `cust-001` and pull the history. The bank's state is kept in `data/cache/demo-bank.json`. When the server restarts with a new signing secret, the webhook already stored in that file is given the new secret, so deliveries keep being accepted. `DEMO_BANK=off` switches all of this off.
+**With ReloCat, nothing to do.** Outside production (`NODE_ENV` other than `production`) `npm run dev` and `npm start` start the bank inside the server process: its keyed API on port 3003 of this machine, and its consent page on ReloCat's own origin under `/banc-demo` (see [One origin](#one-origin)). They invent its API key and signing secret for that run when they are not configured, register ReloCat's webhook, link `user-001` to `cust-001` and pull the history. The bank's state is kept in `data/cache/demo-bank.json`. When the server restarts with a new signing secret, the webhook already stored in that file is given the new secret, so deliveries keep being accepted. `DEMO_BANK=off` switches all of this off.
 
 **As its own process**, the way a real bank would be, set `DEMO_BANK=off` and:
 
@@ -42,6 +54,23 @@ Leave `DEMO_BANK_USERS` unset or empty for a user you link here. It starts the o
 | `DEMO_BANK_ALLOW_REMOTE_WEBHOOKS` | off | Allow webhook URLs that are not on this machine. |
 
 The fallbacks to `BANK_DEMO_BANK_*` let one `.env` configure both ends. A real bank issues the signing secret when the webhook is registered; fixing it in the environment is a demo convenience so ReloCat can be started before the webhook exists.
+
+## One origin
+
+A person's browser often cannot reach port 3003: ReloCat is behind a tunnel, or deployed. So the server that starts the bank also serves the one page a person opens, on its own origin:
+
+| Who calls | Address | Notes |
+| --- | --- | --- |
+| The person's browser | `<origin>/banc-demo/consent/<id>` (GET and POST) | `<origin>` is wherever they reached ReloCat: `PUBLIC_ORIGIN`, a host in `ALLOWED_HOSTS`, or localhost. The bank sends them back to `<origin>/bank/consent/callback`. |
+| Anyone | `<origin>/banc-demo/health` | `{ "status": "ok", "service": "demo-bank", "synthetic": true }` |
+| ReloCat, server to server | `http://127.0.0.1:3003/...` | Pull API, `/consents`, webhook registry, `/simulate`. Bearer keys. Not served under `/banc-demo`: with or without a key those paths answer 404 there. |
+| The bank, server to server | `http://127.0.0.1:<PORT>/api/webhooks/bank/demo-bank` | Signed webhooks, on loopback. |
+
+What makes it safe is unchanged: the consent id is 128 random bits and expires in ten minutes; the bank only redirects to the return address ReloCat registered with its API key, and only accepts return addresses on this machine or on the origins in `DEMO_BANK_RETURN_ORIGINS` (the server fills in its `PUBLIC_ORIGIN` and `ALLOWED_HOSTS`); ReloCat accepts the callback once, from the browser session that started it; the page has no script and a `default-src 'none'` policy, and says "Fictional bank" in every language.
+
+The provider builds the person's address from `BANK_DEMO_BANK_PUBLIC_PATH` (the server sets `/banc-demo`) and the origin of the callback address, so it follows the origin the person is actually on. Without that variable (a bank you run as its own process) the person is sent to `BANK_DEMO_BANK_BASE_URL`.
+
+**Production.** With `NODE_ENV=production` the bank does not start. `DEMO_BANK=on` starts it there too, for a public demo that shows the live bank. The trade-off: the site then offers a bank that is entirely fictional. It is labelled everywhere and touches no real account, but visitors can link its invented customers to their accounts and `user-001`'s public demo ledger keeps growing; leave it off on a site that connects real banks. `DATA_ENCRYPTION_KEY` is required, as for any bank with a consent.
 
 ## The simulation
 

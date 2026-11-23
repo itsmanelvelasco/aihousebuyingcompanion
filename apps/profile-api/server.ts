@@ -374,8 +374,12 @@ export function createProfileApiHandler(db: Database, token: string, options: Pr
           const route = parts[3];
           const itemId = parts[4] === undefined ? undefined : safeId.parse(parts[4]);
           if (route === 'events' && itemId === 'stream' && parts.length === 5 && req.method === 'GET') {
-            // A reconnecting EventSource sends the last event ID it saw.
-            const after = cursorSchema.parse(query.get('after') ?? req.headers['last-event-id'] ?? 0);
+            // A reconnecting EventSource repeats the address it was opened with and adds the last
+            // event ID it saw: the later of the two is where it is, so nothing is replayed twice.
+            const after = Math.max(
+              cursorSchema.parse(query.get('after') ?? 0),
+              cursorSchema.parse(req.headers['last-event-id'] ?? 0),
+            );
             return await streamEvents(req, res, id, after);
           }
           if (route === 'connections') {

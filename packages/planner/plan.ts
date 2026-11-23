@@ -1,10 +1,20 @@
 import type { z } from 'zod';
 import type { eligibility, Municipality, Policy } from '../contracts/places.ts';
-import type { HabitEffect, Person, Place, PlaceBenefit, PlacePlan, PlanResult } from '../contracts/planner.ts';
-import { person as personSchema, planAssumptions, planResult } from '../contracts/planner.ts';
+import type {
+  AnywherePlan,
+  HabitEffect,
+  Person,
+  PersonInput,
+  Place,
+  PlaceBenefit,
+  PlacePlan,
+  PlanResult,
+} from '../contracts/planner.ts';
+import { planAssumptions, planResult } from '../contracts/planner.ts';
 import { maxPlanningMonths, monthsToTarget } from '../finance/savings.ts';
 import { defaultLocale, type Locale } from '../i18n/locales.ts';
 import { type MessageValues, translator } from '../i18n/messages.ts';
+import { inlinePerson } from '../model/person.ts';
 import { ageOn, childAgeOn } from '../model/questions.ts';
 import { callStatusOn, evaluateIncentives } from '../places/eligibility.ts';
 import { wording } from '../places/wording.ts';
@@ -721,6 +731,8 @@ function planOne(
   standard: StandardTax | null,
   habits: HabitSavings,
   words: Words,
+  /** True for the plan without a place: `place` then stands for anywhere in Catalonia. */
+  noPlace = false,
 ): PlacePlan {
   const { t, euros, percent, date, number, locale } = words;
   const { finances, home } = person;
@@ -732,6 +744,7 @@ function planOne(
   if (price.priceBasis === 'budget') assumptions.push(t('assumeBudget', { amount: euros(priceCents ?? 0) }));
   else if (priceCents === null) {
     if (home.budgetCents !== null) dataMissing.push(t('missingBudgetPositive'));
+    else if (noPlace) dataMissing.push(t('missingBudgetNoPlace'));
     else {
       if (home.floorAreaM2 === null) dataMissing.push(t('missingAreaOrBudget'));
       if (!((place.indicators.resaleEurPerM2?.value ?? 0) > 0))
@@ -1068,7 +1081,35 @@ function planOne(
           baselinePolicyId: applied?.result.id ?? null,
           couldBeLower: possiblyLower.length > 0,
         };
-  const base = { place, ...price, benefits: placeOutcome.benefits, transferTax };
+  // An upfront target the person stated is shown beside the computed figure; it never replaces it.
+  const statedTarget = finances.targetCashCents ?? null;
+  const computedUpfront = baselineOutcome.upfrontCents;
+  const upfrontTarget =
+    statedTarget === null
+      ? {}
+      : {
+          upfrontTarget: {
+            statedCents: statedTarget,
+            computedCents: computedUpfront,
+            differenceCents: computedUpfront === null ? null : statedTarget - computedUpfront,
+            usedByTimeline: 'computed' as const,
+          },
+        };
+  if (statedTarget !== null) {
+    const figures = { target: euros(statedTarget), computed: euros(computedUpfront ?? 0), place: place.name };
+    const difference = computedUpfront === null ? 0 : statedTarget - computedUpfront;
+    assumptions.push(
+      computedUpfront === null
+        ? t('targetNoComputed', figures)
+        : difference > 0
+          ? t('targetHigher', { ...figures, difference: euros(difference) })
+          : difference < 0
+            ? t('targetLower', { ...figures, difference: euros(-difference) })
+            : t('targetEqual', figures),
+    );
+  }
+  if (noPlace) assumptions.push(t('assumeNoPlace'));
+  const base = { place, ...price, benefits: placeOutcome.benefits, transferTax, ...upfrontTarget };
   if (
     priceCents === null ||
     standard === null ||
@@ -1171,11 +1212,13 @@ function planOne(
       ? t('purchaseDayNone')
       : t('purchaseDayOn', { date: date(outcome.when.date), months: outcome.months, asOf: date(asOf) });
   assumptions.push(
-    t('assumeScreening', {
-      place: purchaseDay(placeOutcome),
-      baseline: purchaseDay(baselineOutcome),
-      asOf: date(asOf),
-    }),
+    noPlace
+      ? t('assumeScreeningNoPlace', { baseline: purchaseDay(baselineOutcome), asOf: date(asOf) })
+      : t('assumeScreening', {
+          place: purchaseDay(placeOutcome),
+          baseline: purchaseDay(baselineOutcome),
+          asOf: date(asOf),
+        }),
   );
   if (placeOutcome.applied?.result.id !== applied?.result.id)
     assumptions.push(t('assumeTaxDiffers', { baseline: tax.baselineLabel, place: placeOutcome.tax.baselineLabel }));
@@ -1203,10 +1246,11 @@ function planOne(
         : t('assumeBeyondBaseline', { ...horizon, amount: euros(baseline.monthlySavingsCents) }),
     );
   }
-  assumptions.push(
-    options.includeUnverifiedBenefits ? t('assumeUnverifiedCounted') : t('assumeOnlyVerified'),
-    t('assumeTiming'),
-  );
+  if (!noPlace)
+    assumptions.push(
+      options.includeUnverifiedBenefits ? t('assumeUnverifiedCounted') : t('assumeOnlyVerified'),
+      t('assumeTiming'),
+    );
 
   return {
     ...base,
@@ -1240,7 +1284,7 @@ function planOne(
  * is `insufficient_data`.
  */
 export function planForPlaces(
-  person: z.input<typeof personSchema>,
+  person: PersonInput,
   places: Place[],
   policies: Policy[],
   assumptions: z.input<typeof planAssumptions> | undefined,
@@ -1250,7 +1294,8 @@ export function planForPlaces(
   const options = planAssumptions.parse(assumptions ?? {});
   const date = options.asOf ?? asOf;
   // Ages are derived from dates of birth on the plan date, and the result states them.
-  const who = withDerivedAges(personSchema.parse(person), date);
+  const who = withDerivedAges(inlinePerson(person), date);
+  if (!places.length) return planWithoutPlace(who, policies, options, date, locale);
   const { plans: unsorted, habits } = planPlaces(who, places, policies, options, date, locale);
   // What is known, what disagrees and what is still worth asking, for the places compared.
   const facts = factsOf(who, places, policies, options, date, unsorted, locale);
@@ -1275,6 +1320,83 @@ export function planForPlaces(
   });
 }
 
+/** The code of the stand-in for "anywhere in Catalonia"; no municipality has it and no result carries it. */
+const anywhereCode = '000000';
+
+/**
+ * The plan when no place is chosen: valid, with no place plans. It says what the person would need
+ * anywhere in Catalonia (`withoutPlace`: priced from a budget only, no benefit of a place), which
+ * questions about the person are worth asking (what a timeline needs first, then the facts that
+ * decide a Catalonia-wide rate, then the assumed defaults) and that a place is still to be chosen
+ * (`placeQuestion`). The arithmetic is `planOne` on a stand-in that is in no rural category and
+ * publishes no price, so nothing here is a second rule.
+ */
+function planWithoutPlace(
+  who: Person,
+  policies: Policy[],
+  options: Assumptions,
+  date: string,
+  locale: Locale,
+): PlanResult {
+  const words = wordsFor(locale);
+  const { t } = words;
+  const name = t('anywhereName');
+  const anywhere: Place = {
+    municipalityCode: anywhereCode,
+    name,
+    comarca: name,
+    rural: 'not_listed',
+    centre: { latitude: 0, longitude: 0 },
+    indicators: {
+      population: null,
+      densityPerKm2: null,
+      foreignPopulationPercent: null,
+      resaleEurPerM2: null,
+      rentEurPerMonth: null,
+    },
+    services: [],
+    dataMissing: [],
+  };
+  const { plans, habits } = planPlaces(who, [anywhere], policies, options, date, locale, true);
+  const facts = factsOf(who, [anywhere], policies, options, date, plans, locale);
+  const {
+    place: _place,
+    withPlaceBenefits: _withPlace,
+    monthsSaved: _saved,
+    monthsSavedByPlace: _byPlace,
+    estimatedPurchaseDate: _day,
+    ...rest
+  } = plans[0];
+  const withoutPlace: AnywherePlan = {
+    ...rest,
+    // Only what applies wherever the person buys; a place's own measures are screened once one is chosen.
+    benefits: rest.benefits.filter(benefit => benefit.scope === 'anywhere'),
+    assumptions: facts.reliedOn ? [...rest.assumptions, facts.reliedOn] : rest.assumptions,
+  };
+  return planResult.parse({
+    person: who,
+    asOf: date,
+    // The stand-in is not a municipality: an effect names Catalonia and carries no code.
+    nextQuestions: facts.nextQuestions.map(question => ({
+      ...question,
+      effect: { ...question.effect, municipalityCode: null },
+    })),
+    knownFacts: facts.knownFacts,
+    conflicts: facts.conflicts,
+    habits: habits.effects,
+    plans: [],
+    withoutPlace,
+    placeQuestion: {
+      inputPath: 'location.selectedMunicipalityCode',
+      label: t('placeLabel'),
+      question: t('placeQuestion'),
+      why: t('placeWhy'),
+      suggestTool: 'recommend_towns',
+    },
+    limitations: planLimitationsIn(locale),
+  });
+}
+
 /**
  * The plans of one person for several places, in the order of `places`, without the questions.
  * `person` is already parsed and carries the ages of the plan date. `missingFacts` calls this to try
@@ -1287,6 +1409,7 @@ export function planPlaces(
   options: Assumptions,
   date: string,
   locale: Locale = defaultLocale,
+  noPlace = false,
 ): { plans: PlacePlan[]; habits: HabitSavings } {
   const words = wordsFor(locale);
   const taxEffects = policies.flatMap(policy => (policy.effect?.kind === 'transfer_tax_rate' ? [policy.effect] : []));
@@ -1298,7 +1421,7 @@ export function planPlaces(
   // What the habits add is the same for every place: it depends on the person only.
   const habits = habitSavings(who, options.includeProposedHabits, words);
   return {
-    plans: places.map(place => planOne(who, place, policies, options, date, standard, habits, words)),
+    plans: places.map(place => planOne(who, place, policies, options, date, standard, habits, words, noPlace)),
     habits,
   };
 }

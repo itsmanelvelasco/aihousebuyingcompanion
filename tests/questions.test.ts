@@ -897,6 +897,39 @@ test('get_next_questions returns the same list without the timelines, for an inl
       arguments: { person: who(everything), municipalityCodes: [talarn] },
     });
     assert.match((done.content as { text: string }[])[0].text, /^No further question would change this plan\./);
+    // No place and nobody: the questions about the person, in order, and a place still to choose.
+    const start = await client.callTool({ name: 'get_next_questions', arguments: {} });
+    const opening = nextQuestionsResult.parse(start.structuredContent);
+    assert.deepEqual(ids(opening.nextQuestions), [
+      'monthlyIncome',
+      'monthlyExpenses',
+      'purchaseSavings',
+      'homeBudget',
+      'floorArea',
+      'depositRate',
+      'emergencyReserve',
+    ]);
+    assert.deepEqual([opening.municipalityCodes, opening.stored], [[], false]);
+    assert.equal(opening.placeQuestion?.suggestTool, 'recommend_towns');
+    assert.match(
+      (start.content as { text: string }[])[0].text,
+      /^No place is chosen yet\. Ask next, one question at a time: “How much money/,
+    );
+    // The same list as the plan without a place, and the same as the planner gives for no places.
+    assert.deepEqual(opening.nextQuestions, planForPlaces({}, [], policies, undefined, asOf).nextQuestions);
+    // With the figures known the place comes next, and a partial person is enough to say so.
+    const figures = {
+      finances: { monthlyIncomeCents: 320_000, monthlyExpensesCents: 230_000, currentSavingsCents: 1_000_000 },
+      home: { budgetCents: 12_000_000 },
+    };
+    const placeNext = await client.callTool({ name: 'get_next_questions', arguments: { person: figures } });
+    assert.match(
+      (placeNext.content as { text: string }[])[0].text,
+      /^No place is chosen yet\. Ask next: ask where in Catalonia/,
+    );
+    const partial = nextQuestionsResult.parse(placeNext.structuredContent);
+    assert(partial.nextQuestions.every(question => question.effect.kind !== 'required'));
+    assert(partial.knownFacts.some(fact => fact.id === 'homeBudget'));
   } finally {
     await Promise.all([client.close(), server.close()]);
   }

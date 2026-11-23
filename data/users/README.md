@@ -10,7 +10,22 @@ The generator also writes `data/synthetic-users.json` containing all three compl
 
 Run `node scripts/generate-users.ts` with Node 24 or later from the repository root. The seed is fixed at `20261121`. `purchaseSavingsCents` is derived from the household's index and balance, not drawn from the seeded generator, so adding it changed no other field of any fixture. The script refuses to replace existing profile directories by default. To deliberately reset these demo fixtures, use `node scripts/generate-users.ts --overwrite`. This replaces the three named files for the 500 demo IDs and must not be used on live user storage.
 
-A running database keeps the fixtures it was seeded with: the server copies a fixture only for a persona that does not exist yet. After regenerating, `npm run db:reseed-demo` replaces the three profile documents of the demo personas (`DEMO_USER_IDS`, default `user-001` to `user-004`) in `DATABASE_FILE` with the committed ones; `-- --dry-run` shows what it would do. It touches nothing else of a persona (answers, ledger, connections, habits), never an id outside that list and never a person who belongs to an account. It can run while the server does.
+## The four demo personas
+
+`user-001` to `user-004` are the personas of the public demo (`DEMO_USER_IDS`). On top of the drawn household each carries a hand-written, fictional story (`demoStories` in `scripts/generate-users.ts`), so the demo shows a place benefit and a habit effect without a click. Their folders hold two more generated files, both `synthetic: true`: `demo-inputs.json` (answers the persona "confirmed"; the planner reads a household fact only from a confirmed input) and `demo-habits.json` (saving habits). The exports carry them as `demoInputs` and `demoHabits`.
+
+| Persona | Story | What the plan shows (Balaguer, Talarn, Térmens on 2026-11-23) |
+|---|---|---|
+| `user-001` | Nothing confirmed, no habit. In development Banc Demo feeds its ledger. | Every measure "needs verification", with the questions that would verify it. |
+| `user-002` | Two active habits and a paused one. | 233 months at the baseline, 118 with the habits; no place is credited. |
+| `user-003` | One active habit; saves very little each month. | No end at the baseline; 199 months with the habit. |
+| `user-004` | Couple with a five-year-old (the drawn couple, aged 40, with one child: the only household field a story changes), the facts of the reduced rural transfer tax confirmed, one habit. | 32 months at the baseline, 27 with the habit, 17 in Talarn and 15 in Térmens; Balaguer stays at 27. The state youth aid stays unverified. |
+
+`tests/demo-personas.test.ts` computes these with the real planner and fails if a fixture change flattens them. Because `user-004` gains a child, the quotas below are off by one for that household type (99 couples without children, 141 with). A benefit tied to the purchase is screened on the day the persona could buy, so the rural rate (in force until 2029-07-16) stops counting for `user-004` once that day passes it.
+
+The three profile documents are copied into a new database by the server; the two story files are written by `seedDemoStories` in `scripts/reseed-demo.ts` (also part of `npm run db:reseed-demo`), into the shared inputs and the habits store, by their own record ids.
+
+A running database keeps the fixtures it was seeded with: the server copies a fixture only for a persona that does not exist yet. After regenerating, `npm run db:reseed-demo` replaces the three profile documents of the demo personas (`DEMO_USER_IDS`, default `user-001` to `user-004`) in `DATABASE_FILE` with the committed ones and writes their story records; `-- --dry-run` shows what it would do. It touches nothing else of a persona (other answers and habits, ledger, connections), never an id outside that list and never a person who belongs to an account. It can run while the server does.
 
 ## Demographic grounding and limitations
 

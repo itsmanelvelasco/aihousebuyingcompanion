@@ -15,7 +15,11 @@ export const placesMessages = defineMessages(
     updateFailed: 'The plan could not be updated',
     chooseWho: 'Choose who is planning to compare places.',
     empty:
-      '<b>No places to compare yet.</b> Add a municipality below, or ask ReloCat in the chat for towns that fit and open them here.',
+      '<b>No places to compare yet.</b> Let ReloCat suggest places that fit, or add a municipality you already have in mind.',
+    anywhereBaseline: 'Anywhere in Catalonia, baseline',
+    anywhereHabits: 'Anywhere in Catalonia, with habits',
+    anywhereNote:
+      'This is the wait before any place is chosen: no benefit of a place is counted. A place can shorten it.',
     loadFailed: 'Could not load the plan',
     loading: 'Loading the plan…',
     noPlacesReturned:
@@ -131,7 +135,11 @@ export const placesMessages = defineMessages(
       updateFailed: 'No s’ha pogut actualitzar el pla',
       chooseWho: 'Tria qui planifica per comparar llocs.',
       empty:
-        '<b>Encara no hi ha llocs per comparar.</b> Afegeix un municipi aquí sota, o demana a ReloCat al xat pobles que encaixin i obre’ls aquí.',
+        '<b>Encara no hi ha llocs per comparar.</b> Deixa que ReloCat et suggereixi llocs que encaixin, o afegeix un municipi que ja tinguis al cap.',
+      anywhereBaseline: 'A qualsevol lloc de Catalunya, punt de partida',
+      anywhereHabits: 'A qualsevol lloc de Catalunya, amb els hàbits',
+      anywhereNote:
+        'Aquesta és l’espera abans de triar cap lloc: no es compta cap avantatge d’un lloc. Un lloc la pot escurçar.',
       loadFailed: 'No s’ha pogut carregar el pla',
       loading: 'Carregant el pla…',
       noPlacesReturned:
@@ -247,7 +255,11 @@ export const placesMessages = defineMessages(
       updateFailed: 'No se ha podido actualizar el plan',
       chooseWho: 'Elige quién planifica para comparar lugares.',
       empty:
-        '<b>Todavía no hay lugares que comparar.</b> Añade un municipio aquí abajo, o pide a ReloCat en el chat pueblos que encajen y ábrelos aquí.',
+        '<b>Todavía no hay lugares que comparar.</b> Deja que ReloCat te sugiera lugares que encajen, o añade un municipio que ya tengas en mente.',
+      anywhereBaseline: 'En cualquier lugar de Cataluña, punto de partida',
+      anywhereHabits: 'En cualquier lugar de Cataluña, con los hábitos',
+      anywhereNote:
+        'Esta es la espera antes de elegir ningún lugar: no se cuenta ninguna ventaja de un lugar. Un lugar puede acortarla.',
       loadFailed: 'No se ha podido cargar el plan',
       loading: 'Cargando el plan…',
       noPlacesReturned:

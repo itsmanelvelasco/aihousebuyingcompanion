@@ -1520,10 +1520,13 @@ test('MCP planner tools plan an inline person against the real snapshot', async 
       'get_my_inputs',
       'get_person',
       'get_place',
+      'list_my_habits',
       'plan_home_savings',
+      'save_my_habit',
       'save_my_inputs',
     ]);
-    assert(list.tools.every(tool => tool.name === 'save_my_inputs' || tool.annotations?.readOnlyHint));
+    const writers = ['save_my_inputs', 'save_my_habit'];
+    assert(list.tools.every(tool => writers.includes(tool.name) || tool.annotations?.readOnlyHint));
     const codes = snapshot.municipalities.slice(0, 4).map(town => town.code);
     const response = await client.callTool({
       name: 'plan_home_savings',
@@ -1587,11 +1590,20 @@ test('MCP planner tools plan an inline person against the real snapshot', async 
     });
     assert(outside.isError);
     for (const request of [
-      { name: 'plan_home_savings', arguments: { municipalityCodes: codes } },
       { name: 'plan_home_savings', arguments: { userId: 'user-001', municipalityCodes: codes } },
+      { name: 'plan_home_savings', arguments: { me: true, person: {}, municipalityCodes: codes } },
       { name: 'get_person', arguments: { userId: 'user-001' } },
     ])
-      assert((await client.callTool(request)).isError, 'no caller and no inline person is a tool error');
+      assert((await client.callTool(request)).isError, 'a user id, or two subjects at once, is a tool error');
+    // Nobody named: an empty what-if person, the start of a conversation. Nothing is known, nothing is zero.
+    const nobody = await client.callTool({ name: 'plan_home_savings', arguments: { municipalityCodes: codes } });
+    assert(!nobody.isError, JSON.stringify(nobody.content));
+    const blank = planResult.parse(nobody.structuredContent);
+    assert.deepEqual(
+      [blank.person.id, blank.person.synthetic, blank.person.finances.monthlyIncomeCents, blank.stored],
+      ['what-if', false, null, false],
+    );
+    assert(blank.plans.every(item => item.status === 'insufficient_data'));
   } finally {
     await close();
   }
@@ -1830,4 +1842,205 @@ test('the planner tools label the person and their bank data separately, and wha
   } finally {
     await close();
   }
+});
+
+// ------------------------------------------------- no place yet, partial persons, a stated target
+
+test('an inline person may be partial: what is left out is unknown, never zero', () => {
+  const empty = plan({} as Person, [ruralPlace], [reducedTax]);
+  assert.deepEqual(empty.person, {
+    id: 'what-if',
+    synthetic: false,
+    householdSize: null,
+    currentMunicipalityCode: null,
+    finances: {
+      monthlyIncomeCents: null,
+      monthlyExpensesCents: null,
+      currentSavingsCents: null,
+      emergencyReserveCents: 0,
+      basis: 'unknown',
+      asOf: null,
+    },
+    home: { floorAreaM2: null, budgetCents: null, depositRate: 0.2 },
+    habits: [],
+  });
+  assert.equal(only(empty).status, 'insufficient_data');
+  assert.equal(only(empty).baseline, null);
+  // Figures said in a conversation are declared; one figure alone still gives no timeline.
+  const some = planForPlaces(
+    { finances: { monthlyIncomeCents: 250_000 }, home: { budgetCents: 10_000_000 } },
+    [ruralPlace],
+    [reducedTax],
+    undefined,
+    asOf,
+  );
+  assert.deepEqual(
+    [some.person.finances.basis, some.person.finances.monthlyExpensesCents, some.plans[0].status],
+    ['declared', null, 'insufficient_data'],
+  );
+  assert(some.plans[0].dataMissing.includes('person.finances.monthlyExpensesCents'));
+  assert.equal(some.plans[0].purchasePriceCents, 10_000_000);
+});
+
+test('with no place the plan is valid: what is needed anywhere in Catalonia, and a place still to choose', () => {
+  const budget = personFixture({ home: { floorAreaM2: null, budgetCents: 10_000_000, depositRate: 0.2 } });
+  const result = plan(budget, [], [ruralRate, youngRate, moveDeduction]);
+  assert.deepEqual(result.plans, []);
+  assert.deepEqual(
+    [result.placeQuestion?.inputPath, result.placeQuestion?.suggestTool],
+    ['location.selectedMunicipalityCode', 'recommend_towns'],
+  );
+  assert.match(result.placeQuestion?.question ?? '', /Where in Catalonia would you like to live\?/);
+  const anywhere = result.withoutPlace;
+  assert(anywhere);
+  // EUR 100,000: 20% + the general 10% + 2% = EUR 32,000; EUR 10,000 available; EUR 500 a month -> 44 months.
+  assert.deepEqual(
+    [anywhere.status, anywhere.priceBasis, anywhere.baseline?.upfrontCashCents, anywhere.baseline?.months],
+    ['estimated', 'budget', 3_200_000, 44],
+  );
+  assert.equal('place' in anywhere, false);
+  assert.equal('withPlaceBenefits' in anywhere, false);
+  // Only what applies wherever the person buys is listed, and nothing of a place is counted.
+  assert.deepEqual(
+    anywhere.benefits.map(benefit => [benefit.policyId, benefit.scope, benefit.counted]),
+    [['itp_young_buyer', 'anywhere', false]],
+  );
+  assert(anywhere.assumptions.some(entry => /No place is chosen yet/.test(entry)));
+  assert(anywhere.assumptions.every(entry => !/benefits of this place/.test(entry)));
+
+  // Without a budget there is no price: a floor area alone cannot price a home nowhere.
+  const sized = plan(personFixture(), [], [ruralRate]);
+  assert.equal(sized.withoutPlace?.status, 'insufficient_data');
+  assert(
+    sized.withoutPlace?.dataMissing.some(entry =>
+      /no place is chosen, so only a budget can price the home/.test(entry),
+    ),
+  );
+  // With a place the two fields are absent: the place plans are the plan.
+  const placed = plan(budget, [ruralPlace], [ruralRate]);
+  assert.deepEqual([placed.withoutPlace, placed.placeQuestion], [undefined, undefined]);
+});
+
+test('with no place the questions are about the person: required figures first, then Catalonia-wide rates, then defaults', () => {
+  const result = plan({} as Person, [], [ruralRate, youngRate, moveDeduction]);
+  const kinds = (result.nextQuestions ?? []).map(question => [question.id, question.effect.kind]);
+  assert.deepEqual(kinds.slice(0, 5), [
+    ['monthlyIncome', 'required'],
+    ['monthlyExpenses', 'required'],
+    ['purchaseSavings', 'required'],
+    ['homeBudget', 'required'],
+    ['floorArea', 'required'],
+  ]);
+  assert.deepEqual(kinds.slice(-2), [
+    ['depositRate', 'assumption'],
+    ['emergencyReserve', 'assumption'],
+  ]);
+  assert((result.nextQuestions ?? []).every(question => question.effect.municipalityCode === null));
+
+  // Once a timeline exists, the facts of a rate that applies anywhere are worth asking; a rural fact is not.
+  const known = personFixture({
+    household: undefined,
+    home: { floorAreaM2: null, budgetCents: 10_000_000, depositRate: 0.2 },
+  });
+  const next = plan(known, [], [ruralRate, youngRate, moveDeduction]).nextQuestions ?? [];
+  const ids = next.map(question => question.id);
+  assert(ids.includes('birthDate'), ids.join());
+  assert(!ids.includes('firstRuralMove'), 'a fact that only a rural place reads waits for a place');
+  const birth = next.find(question => question.id === 'birthDate');
+  assert.deepEqual([birth?.effect.placeName, birth?.effect.municipalityCode], ['Catalonia', null]);
+  // In Catalan the stand-in is named as Catalans name it.
+  const catalan = planForPlaces(known, [], [ruralRate, youngRate], undefined, asOf, 'ca');
+  assert.match(catalan.placeQuestion?.question ?? '', /A quin lloc de Catalunya/);
+  assert.equal(catalan.nextQuestions?.find(question => question.id === 'birthDate')?.effect.placeName, 'Catalunya');
+});
+
+test('a stated upfront target is shown beside the computed upfront cash and never replaces it', () => {
+  const withTarget = (targetCashCents: number | null) =>
+    personFixture({}, targetCashCents === null ? {} : { targetCashCents });
+  const none = only(plan(withTarget(null), [cityPlace], [reducedTax]));
+  assert.equal(none.upfrontTarget, undefined);
+  assert(none.assumptions.every(entry => !/aiming for/.test(entry)));
+
+  // Computed: EUR 32,000 (44 months). A target of EUR 40,000 changes no figure of the plan.
+  const higher = only(plan(withTarget(4_000_000), [cityPlace], [reducedTax]));
+  assert.deepEqual(higher.upfrontTarget, {
+    statedCents: 4_000_000,
+    computedCents: 3_200_000,
+    differenceCents: 800_000,
+    usedByTimeline: 'computed',
+  });
+  assert.deepEqual([higher.baseline, higher.withPlaceBenefits], [none.baseline, none.withPlaceBenefits]);
+  assert(
+    higher.assumptions.some(entry =>
+      /aiming for €40,000 of upfront cash\. This plan computes €32,000 for Town 250002 .* €8,000 less than your target\. The timelines use the computed figure/.test(
+        entry,
+      ),
+    ),
+  );
+  const lower = only(plan(withTarget(2_000_000), [cityPlace], [reducedTax]));
+  assert.equal(lower.upfrontTarget?.differenceCents, -1_200_000);
+  assert.equal(lower.baseline?.months, 44, 'a lower target does not shorten the timeline');
+  assert(
+    lower.assumptions.some(entry =>
+      /€12,000 more than your target.*longer than your target alone would suggest/.test(entry),
+    ),
+  );
+  const equal = only(plan(withTarget(3_200_000), [cityPlace], [reducedTax]));
+  assert(equal.assumptions.some(entry => /computes the same amount/.test(entry)));
+
+  // No price, so nothing to compare with: the target is stated, and it is not used as the upfront cash.
+  const unpriced = only(
+    plan(
+      personFixture(
+        { home: { floorAreaM2: null, budgetCents: null, depositRate: 0.2 } },
+        { targetCashCents: 4_000_000 },
+      ),
+      [cityPlace],
+      [reducedTax],
+    ),
+  );
+  assert.deepEqual(
+    [
+      unpriced.status,
+      unpriced.baseline,
+      unpriced.upfrontTarget?.computedCents,
+      unpriced.upfrontTarget?.differenceCents,
+    ],
+    ['insufficient_data', null, null, null],
+  );
+  assert(
+    unpriced.assumptions.some(entry => /your target is not used in its place, so no timeline is given/.test(entry)),
+  );
+  // The sentence exists in the three languages.
+  for (const [locale, pattern] of [
+    ['ca', /Els terminis fan servir la xifra calculada/],
+    ['es', /Los plazos usan la cifra calculada/],
+  ] as const)
+    assert(
+      planForPlaces(
+        withTarget(4_000_000),
+        [cityPlace],
+        [reducedTax],
+        undefined,
+        asOf,
+        locale,
+      ).plans[0].assumptions.some(entry => pattern.test(entry)),
+      locale,
+    );
+});
+
+test('buildPerson carries a stored upfront target, and leaves it out when none was stated', () => {
+  const context = (finance: Record<string, unknown>) => ({ resolved: { data: { finance }, provenance: {} } });
+  const withTarget = buildPerson({
+    userId: 'person-1',
+    synthetic: false,
+    context: context({ currentSavingsCents: 500_000, targetCashCents: 4_000_000 }),
+  });
+  assert.equal(withTarget.finances.targetCashCents, 4_000_000);
+  const without = buildPerson({
+    userId: 'person-1',
+    synthetic: false,
+    context: context({ currentSavingsCents: 500_000 }),
+  });
+  assert.equal('targetCashCents' in without.finances, false);
 });

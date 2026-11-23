@@ -1,14 +1,16 @@
 import { useEffect, useId, useState } from 'react';
-import type { PlaceBenefit, PlacePlan } from '../../../packages/contracts/planner.ts';
+import type { Person, PlaceBenefit, PlacePlan, PlanResult } from '../../../packages/contracts/planner.ts';
 import type { IconName } from '../../../packages/ui/icons.ts';
 import type { Municipality, ToolClient } from '../client.ts';
 import { ToolError } from '../client.ts';
-import { formatCount, formatEuros, formatMonthly } from '../format.ts';
+import { formatCount, formatDuration, formatEuros, formatMonthly } from '../format.ts';
 import type { PlanState } from '../hooks.ts';
 import { bold, rich, useLocale, useMessages } from '../i18n.tsx';
 import { errorMessages } from '../messages/errors.messages.ts';
 import { formatMessages } from '../messages/format.messages.ts';
 import { placesMessages } from '../messages/places.messages.ts';
+import { suggestMessages } from '../messages/suggest.messages.ts';
+import { reveal } from '../reveal.ts';
 import type { TimelineStep } from '../view-model.ts';
 import {
   benefitSummary,
@@ -21,8 +23,9 @@ import {
   timelineSteps,
 } from '../view-model.ts';
 import { Badge, ErrorNote, Icon, Skeleton, Source, Switch } from './bits.tsx';
+import { SUGGEST_ID, SuggestPlaces } from './SuggestPlaces.tsx';
 
-const MAX_PLACES = 8;
+export const MAX_PLACES = 8;
 
 const serviceIcons: Record<PlacePlan['place']['services'][number]['kind'], IconName> = {
   primary_care: 'health',
@@ -39,14 +42,53 @@ const serviceIcons: Record<PlacePlan['place']['services'][number]['kind'], IconN
 type Props = {
   client: ToolClient;
   userId: string | null;
+  /** The person on screen, for what the suggestions can use; null when there is none. */
+  person: Person | null;
   codes: string[];
   plan: PlanState;
   includeUnverified: boolean;
   onIncludeUnverified: (on: boolean) => void;
   onAdd: (code: string) => void;
+  /** Add several places at once, in the order given. */
+  onAddMany: (codes: string[]) => void;
   onRemove: (code: string) => void;
   onRetry: () => void;
 };
+
+/**
+ * No place is chosen: say what to do next, and show what the plan already knows without a place
+ * when the server sent it (the wait anywhere in Catalonia, at the baseline and with the habits).
+ */
+function NoPlaces({ result }: { result: PlanResult | null }) {
+  const locale = useLocale();
+  const t = useMessages(placesMessages);
+  const suggest = useMessages(suggestMessages);
+  const anywhere = result?.withoutPlace;
+  return (
+    <div className="rc-empty no-places">
+      <div className="rc-art empty-art" aria-hidden="true" />
+      <p>{rich(t('empty'), { b: bold })}</p>
+      {result?.placeQuestion ? <p className="muted">{result.placeQuestion.why}</p> : null}
+      {anywhere ? (
+        <dl className="saved anywhere">
+          <div>
+            <dt>{t('anywhereBaseline')}</dt>
+            <dd>{formatDuration(anywhere.baseline?.months, locale)}</dd>
+          </div>
+          <div className="saved-habits">
+            <dt>{t('anywhereHabits')}</dt>
+            <dd>{formatDuration(anywhere.withHabits?.months, locale)}</dd>
+          </div>
+        </dl>
+      ) : null}
+      {anywhere ? <p className="hint">{t('anywhereNote')}</p> : null}
+      <button type="button" className="rc-btn rc-btn--primary" onClick={() => reveal(SUGGEST_ID)}>
+        <Icon name="compare" />
+        {suggest('summary')}
+      </button>
+    </div>
+  );
+}
 
 export function PlacesPanel(props: Props) {
   const { plan, codes } = props;
@@ -88,10 +130,7 @@ export function PlacesPanel(props: Props) {
       {!props.userId ? (
         <p className="rc-note">{t('chooseWho')}</p>
       ) : codes.length === 0 ? (
-        <div className="rc-empty">
-          <div className="rc-art empty-art" aria-hidden="true" />
-          <p>{rich(t('empty'), { b: bold })}</p>
-        </div>
+        <NoPlaces result={plan.result} />
       ) : plan.phase === 'error' && plan.error ? (
         <ErrorNote title={t('loadFailed')} error={plan.error} onRetry={props.onRetry} />
       ) : plan.phase === 'loading' ? (
@@ -144,15 +183,24 @@ export function PlacesPanel(props: Props) {
         </p>
       ) : null}
 
-      {props.userId ? (
-        <div className="places-foot">
-          <AddPlace client={props.client} codes={codes} onAdd={props.onAdd} />
-          <Switch checked={props.includeUnverified} onChange={props.onIncludeUnverified}>
-            {t('countUnverified')}
-          </Switch>
-          {props.includeUnverified ? <p className="hint hint-warn">{t('unverifiedCounted')}</p> : null}
-        </div>
-      ) : null}
+      <div className="places-foot">
+        <SuggestPlaces
+          client={props.client}
+          person={props.person}
+          codes={codes}
+          maxPlaces={MAX_PLACES}
+          onAdd={props.onAddMany}
+        />
+        {props.userId ? (
+          <>
+            <AddPlace client={props.client} codes={codes} onAdd={props.onAdd} />
+            <Switch checked={props.includeUnverified} onChange={props.onIncludeUnverified}>
+              {t('countUnverified')}
+            </Switch>
+            {props.includeUnverified ? <p className="hint hint-warn">{t('unverifiedCounted')}</p> : null}
+          </>
+        ) : null}
+      </div>
     </section>
   );
 }

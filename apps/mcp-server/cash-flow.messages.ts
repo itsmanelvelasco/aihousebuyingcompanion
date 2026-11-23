@@ -1,11 +1,6 @@
 import { defineMessages } from '../../packages/i18n/messages.ts';
 
-/**
- * The sample cash-flow card. `cash-flow-widget.html` is a static file with no build step, so it
- * carries a copy of this catalog as JSON in its script (`const messages = …`);
- * `tests/i18n-pages.test.ts` fails when the copy and this file differ. After a change here, paste
- * `JSON.stringify(cashFlow)` over that line.
- */
+/** The sample cash-flow card: `cash-flow-widget.html` is written in English and `cash-flow-widget.ts` shows it in the person's language. */
 export const cashFlow = defineMessages(
   {
     title: 'Sample cash flow',

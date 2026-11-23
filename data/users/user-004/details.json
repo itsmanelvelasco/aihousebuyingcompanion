@@ -4,11 +4,13 @@
   "snapshotDate": "2026-11-21",
   "id": "user-004",
   "name": "Fictional household 004",
-  "age": 29,
-  "householdType": "couple",
-  "householdSize": 2,
-  "dependants": 0,
-  "dependantAges": [],
+  "age": 40,
+  "householdType": "couple_with_children",
+  "householdSize": 3,
+  "dependants": 1,
+  "dependantAges": [
+    5
+  ],
   "currentMunicipality": "Balaguer",
   "province": "Lleida",
   "employmentStatus": "temporary_employee",

@@ -15,6 +15,7 @@ You describe your needs in a conversation. ReloCat uses sourced local data and f
 - **Explore housing support.** Check relevant public measures and distinguish whether applications are open from whether your household meets the known criteria.
 - **Make a savings plan.** Explore how your savings, monthly contribution and cash target affect the time needed to prepare for a purchase.
 - **Talk through your needs.** Use the homebuying interview, with a guided option and optional voice.
+- **Use your language.** Every page, widget and tool answer is written in English, Catalan and Spanish.
 
 For example, you could ask:
 
@@ -31,15 +32,16 @@ There are several views of the project:
 | View | What it is for |
 | --- | --- |
 | Public website | Project introduction and agent connection guide. |
-| ChatGPT widgets | Interactive interview cards, town maps and comparisons returned during a conversation. |
-| React workspace | The person, the places and the savings plan, at `/workspace` and as a ChatGPT widget. |
+| ChatGPT widgets | The Town Explorer map, the workspace, the journey board and two cards (sample cash flow, Start talking) returned during a conversation. |
+| React workspace | The person, the places, the savings plan and a trail of seven checkpoints that shows where the person is, at `/workspace` and as a ChatGPT widget. |
+| Interview page | `/interview/`: a guided interview, and a voice interview when the server has an OpenAI key. |
 | Local journey board | A developer/demo view with fictional households and simulated financial activity. |
 
 The public deployment can lag behind the repository. The React workspace lives in [`apps/web`](apps/web/) and is served at `/workspace` by the same server, and as a widget through the MCP endpoint.
 
 ## What is real, and what is simulated?
 
-This is a working hackathon prototype. Its municipality pilot includes **18 town profiles, 238 education centres, 86 rail trips and six policy records**, drawn from dated datasets. Coverage is limited: one profile is the Lleida transport destination, and detailed relocation opportunity research currently covers three towns.
+This is a working hackathon prototype. Its municipality pilot includes **18 town profiles, 238 education centres, 86 rail trips and 12 policy records**. The town data is the committed snapshot in `data/towns.json`, kept current by 8 official sources that the server fetches and caches (see [How the pieces connect](#how-the-pieces-connect)); the policy records in `data/incentives.json` are versioned by hand against official texts. Coverage is limited: one profile is the Lleida transport destination, and detailed relocation opportunity research currently covers three towns.
 
 The **500 household profiles and demo bank movements are fictional**. They let the team test different needs and financial barriers without using anyone's real bank account. Live property searches are an optional integration; returned links are examples whose availability, location and details still need verification.
 
@@ -55,7 +57,7 @@ ReloCat connects a conversational interface to a set of small, specialised servi
 | **MCP — Model Context Protocol** | Gives ChatGPT a standard way to call ReloCat's tools, such as looking up a town or checking an incentive. The combined demo exposes one `/mcp` endpoint. |
 | **Interactive web widgets** | Present maps, cards and forms inside a supported chat client. The current implementation includes bundled TypeScript widgets and the React workspace in `apps/web`. |
 | **Zod validation** | Checks incoming data before the app uses or stores it, including municipality codes, money amounts and household criteria. |
-| **Official data snapshots** | Keep municipal facts, policy rules and evidence dates available for repeatable comparisons. They are not assumed to be live feeds. |
+| **Official data, live and pre-cached** | Idescat, Generalitat open data and the FGC timetable are fetched when the server starts, cached on disk and laid over the committed snapshot, which stays the baseline and the fallback. Every value keeps its source and date; `/health` and the `get_data_sources` tool report how fresh each source is. |
 | **OpenAI APIs, when enabled** | Support the optional voice interview, transaction classification and bounded AI habit suggestions. Keys stay on the server. |
 
 ### How an answer is produced
@@ -75,19 +77,44 @@ One server serves everything from a single origin: `http://127.0.0.1:8787` local
 | Path | What it is |
 | --- | --- |
 | `/mcp` | The MCP endpoint ChatGPT and other agents connect to. |
-| `/workspace` | React workspace: the person, the places and the savings plan. |
+| `/workspace` | React workspace: the person, the places, the savings plan and the journey trail. |
 | `/preview` | Journey board with the four demo stories. |
 | `/interview/` | Voice and guided interview. |
 | `/connect` | Homepage and agent setup guide. |
+| `/signup`, `/login`, `/account` | Accounts: a person's own profile, bank data and connected assistants. |
+| `/oauth/*`, `/.well-known/oauth-*` | OAuth 2.1 for MCP clients such as ChatGPT. |
+| `/test` | Local tool-testing page (this machine only). |
 | `/api` | Profiles, interview answers, bank ledger, bank events and habits. The operator's admin token, or a signed-in person for their own data only. |
 | `/health` | Readiness and the freshness of each data source. |
 
-Two entities sit at the centre. A **person** is a household with finances and habits. A **place** is a municipality with indicators (population, density, share of foreign residents, prices, services nearby) and benefits. The planner joins them: how many months until this person has the upfront cash to buy in this place, and how many fewer because of their habits and of what the place offers. A benefit is counted only when its money arrives before the purchase and eligibility is verified; everything else is shown, not counted.
+Two entities sit at the centre (`packages/model`). A **person** is a household with finances and habits. A **place** is a municipality with indicators (population, density, share of foreign residents, prices, services nearby) and benefits. The planner (`packages/planner`, the `plan_home_savings` tool) joins them: how many months until this person has the upfront cash to buy in this place, and how many fewer because of their habits and of what the place offers. A benefit is counted only when its money arrives before the purchase and eligibility is verified; everything else is shown, not counted.
 
 Information comes in through plug-ins, one file each:
 
-- **Official place data** is fetched when the server starts, cached on disk and refreshed in the background. The snapshot committed in `data/` remains the baseline and the fallback. A new source is one file in `packages/sources/definitions/`.
-- **Bank movements** come from providers. A new bank is one file in `packages/banks/providers/` implementing a handful of functions. Banks announce new movements at `/api/webhooks/bank/<provider>`, and clients receive them through a live event stream. Two providers ship, both fictional: the in-process `synthetic` feed and `demo-bank`, which talks HTTP to Banc Demo (`apps/demo-bank`), a fictional bank running as its own process.
+- **Official place data** is fetched when the server starts, cached on disk and refreshed in the background. The snapshot committed in `data/` remains the baseline and the fallback. A new source is one file in `packages/sources/definitions/`. The 8 official sources shipped today: `idescat-emex` (Idescat municipal profile), `gencat-equipaments` (facilities), `gencat-municipis-rurals` (rural municipalities), `gencat-centres-docents` (school directory), `gencat-cens-comercial` (retail census), `gencat-compravendes-habitatge` (registered home sales and prices), `gencat-serveis-socials` (social services register) and `fgc-gtfs` (FGC timetable). What each keeps live is in the [municipality guide](docs/areas/municipalities-incentives.md#data-sources).
+- **Bank movements** come from providers. A new bank is one file in `packages/banks/providers/` (copy `_template.ts`). Two providers ship, both fictional: the in-process `synthetic` feed and `demo-bank`, which talks HTTP to Banc Demo (`apps/demo-bank`), a fictional bank with a pull API and signed webhooks. No real bank is integrated. How movements arrive, are stored and reach clients is in the [bank guide](docs/areas/bank-runtime.md) and the [bank API](apps/profile-api/BANK_API.md).
+
+### Languages and design
+
+ReloCat is written in English (the source and fallback), Catalan and Spanish. Every text a person reads comes from a catalog next to the code that uses it; money, dates and durations go through one formatter, `createFormat(locale)`. Text written for the model stays in English and tells it to answer in the person's language. [`packages/i18n/README.md`](packages/i18n/README.md) is the contract.
+
+Every surface takes one theme from [`packages/ui`](packages/ui/README.md): the design tokens (`--rc-*`) and components (`.rc-*`) of `theme.css`, the icon set, and Montserrat as the one typeface, embedded so that a widget needs no network request. The illustrations (the homepage scenes and one per checkpoint of the journey trail) are listed with their prompts in `packages/ui/images.manifest.ts` and generated with `npm run images:generate`, a paid OpenAI call; a slot whose file does not exist shows a drawn SVG of the same id instead.
+
+## Use it in ChatGPT
+
+1. Run the server and make `/mcp` reachable over HTTPS: a deployment with `PUBLIC_ORIGIN` set, or a tunnel to your machine ([board guide](apps/board/README.md#connect-it-to-chatgpt)).
+2. In ChatGPT, open **Plugins**, choose **Add custom MCP server**, name it **ReloCat** and enter the `https://…/mcp` address. Choose **No authentication** for the public tools and the fictional demo, or **OAuth** to let ChatGPT act for your own account.
+3. The personal tools (your profile, your saved answers, your bank data and your own plan) work only with the account connected: create it at `/signup`, then allow the connection when ChatGPT opens the consent page. Without it they answer with a sign-in request and the assistant can still plan from figures given in the chat, which are not stored. The OAuth flow is tested with a scripted client; [`packages/auth/README.md`](packages/auth/README.md) lists what has not been confirmed against a real ChatGPT connection.
+4. ChatGPT keeps its own copy of the tool list and of each widget's page. After a deployment that changes a tool or a widget, open the plugin's settings in ChatGPT and choose **Refresh tools**, then start a new chat; until then ChatGPT shows the old widget.
+
+Every widget (Town Explorer, workspace, journey board, the cash-flow card and the Start talking card) is a single HTML document with its script bundled by `npm run build`, and reaches its host through `App` from `@modelcontextprotocol/ext-apps`. A widget whose bundle has not been built is not served.
+
+### Voice
+
+There are two ways to talk to ReloCat:
+
+- **ChatGPT's voice mode.** Select the Voice icon in ChatGPT and say “Use ReloCat to start my homebuying interview.” ChatGPT speaks and listens; ReloCat's tools answer as they do in text. It costs the server nothing.
+- **The product's own page, `/interview/`.** The guided interview is free and needs no key. The voice interview uses OpenAI Realtime and needs `OPENAI_API_KEY` on the server. By default the paid routes answer only a browser on the server's own machine; `INTERVIEWER_PUBLIC_AI=on` opens them to visitors of the public site, with an hourly limit per visitor, and spends the key owner's credits. See the [interviewer guide](apps/interviewer/README.md).
 
 ## Run the local demo
 
@@ -145,5 +172,22 @@ npm run check
 ```
 
 That runs the linter, type checks, tests and data validation. `npm run format` applies the shared code style.
+
+Every script in `package.json`:
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Builds the browser bundles and starts the one server, restarting when a file in `apps/` or `packages/` changes. |
+| `npm start` | The same without the file watcher. |
+| `npm run build` | Bundles the widgets, the interview page and the workspace into each app's `dist/`. |
+| `npm run start:board`, `npm run start:interviewer` | The journey board or the interview page alone, for a rehearsal without the API. |
+| `npm run start:demo-bank`, `npm run demo-bank:connect` | Banc Demo as its own process, and the link from a running ReloCat to it ([Banc Demo](apps/demo-bank/README.md)). |
+| `npm run check` | `npm run lint`, `npm run typecheck`, `npm test` and `npm run data:validate`, in that order. |
+| `npm run format` | Applies the Biome formatting and safe lint fixes. |
+| `npm run data:refresh` | Rebuilds the committed place snapshot from the official sources. |
+| `npm run generate:users` | Regenerates the fictional profiles; with `-- --overwrite` it resets the committed fixtures and exports. |
+| `npm run db:backup`, `npm run db:import-legacy`, `npm run db:reseed-demo` | Copies the runtime database while the server runs; imports JSON files of a version without a database; realigns the demo personas with the fixtures ([deployment guide](docs/areas/integration-deployment.md)). |
+| `npm run package:team-plugin` | Builds the team's skills bundle ([team setup](docs/team-plugin-setup.md)). |
+| `npm run images:generate` | Generates the missing illustrations with OpenAI (paid). |
 
 Keep calculations explicit, preserve source links and dates, and show uncertainty where the evidence does not support a conclusion.

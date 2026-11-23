@@ -2,11 +2,12 @@ import { type FormEvent, useId, useState } from 'react';
 import type { Habit, Person, PlanResult } from '../../../packages/contracts/planner.ts';
 import { common } from '../../../packages/i18n/common.ts';
 import { blankPerson } from '../../../packages/model/questions.ts';
-import type { ToolClient } from '../client.ts';
+import type { HabitDraft, ToolClient } from '../client.ts';
 import { formatDate, formatEuros, formatMonthly, formatShare } from '../format.ts';
 import type { PlanState } from '../hooks.ts';
 import { bold, rich, useLocale, useMessages } from '../i18n.tsx';
 import type { Subject, WorkspaceLaunch } from '../launch.ts';
+import { habitFormMessages } from '../messages/habit-form.messages.ts';
 import { personMessages } from '../messages/person.messages.ts';
 import type { HabitOverrides } from '../view-model.ts';
 import {
@@ -18,6 +19,7 @@ import {
   habitStatusLabel,
   habitSwitchedOn,
 } from '../view-model.ts';
+import { AddHabit } from './AddHabit.tsx';
 import { Badge, ErrorNote, Icon, Monthly, Skeleton, Switch } from './bits.tsx';
 
 type Props = {
@@ -32,8 +34,12 @@ type Props = {
   person: Person | null;
   hasPlaces: boolean;
   overrides: HabitOverrides;
+  /** Habits added as a what-if: they change the estimate on screen and are stored nowhere. */
+  extraHabits: Habit[];
   includeProposed: boolean;
   onToggleHabit: (habit: Habit, on: boolean) => void;
+  onAddWhatIfHabit: (habit: HabitDraft) => void;
+  onRemoveWhatIfHabit: (id: string) => void;
   onIncludeProposed: (on: boolean) => void;
   onReset: () => void;
   onSubject: (subject: Subject) => void;
@@ -242,7 +248,17 @@ export function PersonPanel(props: Props) {
       ) : !person && !props.hasPlaces ? (
         <>
           <p className="rc-note">{rich(t('showing'), { b: bold, who: props.userId })}</p>
-          {props.subject.kind === 'me' ? <SaveDetails {...props} /> : null}
+          {props.subject.kind === 'me' ? (
+            <>
+              <SaveDetails {...props} />
+              <AddHabit
+                client={props.client}
+                subject={props.subject}
+                onSaved={props.onSaved}
+                onWhatIf={props.onAddWhatIfHabit}
+              />
+            </>
+          ) : null}
         </>
       ) : !person ? (
         <>
@@ -262,14 +278,15 @@ export function PersonPanel(props: Props) {
 }
 
 function PersonDetails(props: Props & { person: Person; result: PlanResult | null }) {
-  const { person, result, overrides, includeProposed } = props;
+  const { person, result, overrides, includeProposed, extraHabits } = props;
   const { finances, home } = person;
   const locale = useLocale();
   const t = useMessages(personMessages);
+  const form = useMessages(habitFormMessages);
   const noteId = useId();
   const baselineSaving = result ? baselineMonthlySavingsCents(result) : null;
   const habitEffect = result ? habitMonthlyEffectCents(result) : null;
-  const edited = Object.keys(overrides).length > 0;
+  const edited = Object.keys(overrides).length > 0 || extraHabits.length > 0;
   const hasProposed = person.habits.some(habit => habit.status === 'proposed');
   const currentTown =
     result?.plans.find(plan => plan.place.municipalityCode === person.currentMunicipalityCode)?.place.name ??
@@ -343,7 +360,9 @@ function PersonDetails(props: Props & { person: Person; result: PlanResult | nul
           </span>
         </div>
         {person.habits.length === 0 ? (
-          <p className="rc-note">{t('noHabits')}</p>
+          extraHabits.length === 0 ? (
+            <p className="rc-note">{t('noHabits')}</p>
+          ) : null
         ) : (
           <ul className="habit-list">
             {person.habits.map(habit => {
@@ -395,6 +414,52 @@ function PersonDetails(props: Props & { person: Person; result: PlanResult | nul
             })}
           </ul>
         )}
+        {extraHabits.length > 0 ? (
+          <ul className="habit-list habit-list-what-if">
+            {extraHabits.map(habit => {
+              // What the plan did with it comes from the plan, as for a stored habit.
+              const verdict = habitPlanView(habit, result, habit.status === 'active', locale);
+              return (
+                <li key={habit.id} className={verdict.state === 'counted' ? 'habit habit-on' : 'habit'}>
+                  <div className="habit-what-if">
+                    <span className="habit-title">{habit.title}</span>
+                    <span className="habit-meta">
+                      <span className={habit.monthlySavingCents === null ? 'habit-saving unknown' : 'habit-saving'}>
+                        {habit.monthlySavingCents === null
+                          ? t('noSavingAssumed')
+                          : formatMonthly(habit.monthlySavingCents, locale)}
+                      </span>
+                      <Badge tone="violet">{form('whatIfBadge')}</Badge>
+                      <Badge tone={habit.status === 'active' ? 'ok' : 'off'}>
+                        {habitStatusLabel(habit.status, locale)}
+                      </Badge>
+                      {verdict.label ? (
+                        <Badge
+                          tone={verdict.state === 'counted' ? 'ok' : 'warn'}
+                          title={verdict.explanation ?? undefined}
+                        >
+                          {verdict.label}
+                        </Badge>
+                      ) : null}
+                    </span>
+                    {verdict.state === 'withheld' && verdict.explanation ? (
+                      <span className="habit-note">{verdict.explanation}</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="rc-btn rc-btn--quiet rc-btn--sm"
+                      aria-label={form('removeWhatIf', { title: habit.title })}
+                      onClick={() => props.onRemoveWhatIfHabit(habit.id)}
+                    >
+                      <Icon name="close" />
+                      {form('remove')}
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
         <div className="habit-controls">
           <Switch checked={includeProposed} onChange={props.onIncludeProposed} disabled={!hasProposed}>
             {t('includeProposed')}
@@ -408,6 +473,12 @@ function PersonDetails(props: Props & { person: Person; result: PlanResult | nul
         <p id={noteId} className="hint">
           {t('switchesNote')}
         </p>
+        <AddHabit
+          client={props.client}
+          subject={props.subject}
+          onSaved={props.onSaved}
+          onWhatIf={props.onAddWhatIfHabit}
+        />
       </div>
     </div>
   );

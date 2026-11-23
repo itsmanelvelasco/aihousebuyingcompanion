@@ -7,6 +7,7 @@ import { defaultPorts, envPort, envText, publicOriginConfig } from '../../packag
 import { product, widgetUri as productWidgetUri } from '../../packages/config/product.ts';
 import type { Database } from '../../packages/db/database.ts';
 import { ApiError, readJson, sendText as send, sendJson } from '../../packages/http/server.ts';
+import { toolLocale } from '../../packages/i18n/server.ts';
 import type { ListingSearchConfig } from '../../packages/listings/search.ts';
 import { loadData } from '../../packages/places/data.ts';
 import { inlineUi } from '../../packages/ui/inline.ts';
@@ -220,13 +221,18 @@ export function createBoardApp({
   function refuseUnauthorized(res: ServerResponse, body: unknown, caller: Caller) {
     if (!caller.challenge) return false;
     for (const message of Array.isArray(body) ? body : [body]) {
-      const call = message as { id?: unknown; method?: unknown; params?: { name?: unknown; arguments?: unknown } };
+      const call = message as {
+        id?: unknown;
+        method?: unknown;
+        params?: { name?: unknown; arguments?: { locale?: unknown }; _meta?: Record<string, unknown> };
+      };
       if (!call || typeof call !== 'object' || call.method !== 'tools/call') continue;
       const needed = requiredScopes(call.params?.name, call.params?.arguments);
       if (!needed) continue;
       const missing = caller.me ? needed.find(scope => !caller.scopes.includes(scope)) : undefined;
       if (caller.me && !missing) continue;
-      const result = authRequired(caller, missing);
+      // The sentence the assistant can say aloud comes in the language the call asked for.
+      const result = authRequired(caller, missing, toolLocale(call.params?.arguments?.locale, call.params?._meta));
       const challenges = (result._meta?.['mcp/www_authenticate'] ?? []) as string[];
       if (challenges[0]) res.setHeader('WWW-Authenticate', challenges[0]);
       sendJson(res, caller.me ? 403 : 401, { jsonrpc: '2.0', id: call.id ?? null, result });

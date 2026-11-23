@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { stateSchema } from '../contracts/habits.ts';
 import { childInput } from '../contracts/inputs.ts';
 import { household as householdFacts } from '../contracts/places.ts';
-import type { FactAnswer, Habit, Person } from '../contracts/planner.ts';
-import { person } from '../contracts/planner.ts';
+import type { FactAnswer, Habit, Person, PersonInput } from '../contracts/planner.ts';
+import { person, personInput } from '../contracts/planner.ts';
 import { questions } from './questions.ts';
 
 /**
@@ -309,6 +309,10 @@ export function buildPerson(input: BuildPersonInput): Person {
       incomeBasis: income.basis,
       expensesBasis: expenses.basis,
       bankSynthetic: usesBank ? (observed?.synthetic ?? null) : null,
+      // An explicit upfront target is kept as stated; the plan shows it beside its own figure.
+      ...(centsOrNull(finance.targetCashCents) === null
+        ? {}
+        : { targetCashCents: centsOrNull(finance.targetCashCents) }),
     },
     home: {
       floorAreaM2: positiveOrNull(data.housing?.homeSizeM2),
@@ -318,5 +322,20 @@ export function buildPerson(input: BuildPersonInput): Person {
       ...(typeof depositRate === 'number' && depositRate >= 0 && depositRate <= 1 ? { depositRate } : {}),
     },
     habits: habitsFromState(input.habitState),
+  });
+}
+
+/**
+ * A person sent inline with a request, completed: whatever was left out is unknown or empty (see
+ * `personInput`). Monthly figures that arrive without a `basis` were said in the conversation, so
+ * they are `declared`; with no monthly figure the basis is `unknown`.
+ */
+export function inlinePerson(input: PersonInput = {}): Person {
+  const parsed = personInput.parse(input);
+  const { monthlyIncomeCents, monthlyExpensesCents } = parsed.finances;
+  const stated = monthlyIncomeCents !== null || monthlyExpensesCents !== null;
+  return person.parse({
+    ...parsed,
+    finances: { ...parsed.finances, basis: parsed.finances.basis ?? (stated ? 'declared' : 'unknown') },
   });
 }

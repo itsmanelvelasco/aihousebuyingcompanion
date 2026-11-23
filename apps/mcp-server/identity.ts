@@ -1,4 +1,7 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { type Locale, locales } from '../../packages/i18n/locales.ts';
+import { translator } from '../../packages/i18n/messages.ts';
+import { toolMessages } from './tools.messages.ts';
 
 /**
  * Who a tool call is for. The identity rule of ReloCat: **a tool never takes a user id from the
@@ -52,6 +55,11 @@ export type OwnBank = {
 /** The caller's own person: everything a reader has, plus saving inputs and managing their own bank data. */
 export type PersonWriter = PersonReader & {
   saveInputs(inputs: unknown[]): Promise<{ inserted: number; duplicates: number }>;
+  /**
+   * Create one habit of this person or, with `replace`, replace the one with the same id; resolves
+   * to the stored habit. Absent when the server that made the handle has no habit store.
+   */
+  saveHabit?(habit: unknown, replace?: boolean): Promise<unknown>;
   /** Absent when the server that made the handle has no bank engine (a scripted rehearsal). */
   bank?: OwnBank;
 };
@@ -83,6 +91,8 @@ export const personalTools: Record<string, PersonScope[]> = {
   get_person: ['person:read'],
   get_my_inputs: ['person:read'],
   save_my_inputs: ['person:write'],
+  list_my_habits: ['person:read'],
+  save_my_habit: ['person:write'],
   get_bank_summary: ['person:read'],
   get_bank_updates: ['person:read'],
   get_bank_runtime: ['person:read'],
@@ -116,8 +126,28 @@ export function security(kind: 'public' | 'personal' | 'either', scopes: PersonS
   return { securitySchemes: kind === 'public' ? [none] : kind === 'personal' ? [oauth] : [none, oauth] };
 }
 
-/** The tool error for a personal tool called without (enough) authority. It carries the sign-in challenge. */
-export function authRequired(caller: Caller, missingScope?: PersonScope): CallToolResult {
+/** `_meta` key of a sign-in refusal: `{ say: { en, ca, es } }`, the sentence to say aloud in each language. */
+export const signInMeta = 'relocat/signIn';
+
+/**
+ * What the assistant can say aloud when a personal tool was called without (enough) authority: one
+ * short sentence on how to connect the account, in the three languages.
+ */
+export function signInSentences(caller: Caller, missingScope?: PersonScope): Record<Locale, string> {
+  const key = !caller.challenge ? 'sayNoAccounts' : missingScope ? 'sayReconnect' : 'saySignIn';
+  return Object.fromEntries(locales.map(locale => [locale, translator(toolMessages, locale)(key)])) as Record<
+    Locale,
+    string
+  >;
+}
+
+/**
+ * The tool error for a personal tool called without (enough) authority. It carries the sign-in
+ * challenge (`mcp/www_authenticate`), the explanation for the model in English, and a second text a
+ * voice assistant can say as it is: how to connect the account, in `locale` (English when the
+ * language of the call is not known; `_meta["relocat/signIn"].say` has the three languages).
+ */
+export function authRequired(caller: Caller, missingScope?: PersonScope, locale: Locale = 'en'): CallToolResult {
   const description = missingScope
     ? `This connection may not do that. Reconnect ReloCat and allow "${missingScope}".`
     : 'Sign in to ReloCat to use your own profile.';
@@ -126,6 +156,7 @@ export function authRequired(caller: Caller, missingScope?: PersonScope): CallTo
     // A missing scope is asked for on top of what the connection already has (a step-up).
     missingScope ? [...new Set([...caller.scopes, missingScope])] : undefined,
   );
+  const say = signInSentences(caller, missingScope);
   return {
     isError: true,
     content: [
@@ -135,14 +166,22 @@ export function authRequired(caller: Caller, missingScope?: PersonScope): CallTo
           ? `${description} Tools about places, incentives and the fictional demo personas work without signing in.`
           : 'This server has no accounts, so there is no stored person. Pass the person inline instead.',
       },
+      { type: 'text', text: say[locale] },
     ],
-    ...(challenge ? { _meta: { 'mcp/www_authenticate': [challenge] } } : {}),
+    _meta: { ...(challenge ? { 'mcp/www_authenticate': [challenge] } : {}), [signInMeta]: { say } },
   };
 }
 
-/** The caller's own person when the credential carries `scope`; otherwise the tool error to return. */
-export function ownPerson(caller: Caller, scope: PersonScope): { me: PersonWriter } | { error: CallToolResult } {
-  if (!caller.me) return { error: authRequired(caller) };
-  if (!caller.scopes.includes(scope)) return { error: authRequired(caller, scope) };
+/**
+ * The caller's own person when the credential carries `scope`; otherwise the tool error to return,
+ * with its sentence to say aloud in `locale`.
+ */
+export function ownPerson(
+  caller: Caller,
+  scope: PersonScope,
+  locale: Locale = 'en',
+): { me: PersonWriter } | { error: CallToolResult } {
+  if (!caller.me) return { error: authRequired(caller, undefined, locale) };
+  if (!caller.scopes.includes(scope)) return { error: authRequired(caller, scope, locale) };
   return { me: caller.me };
 }

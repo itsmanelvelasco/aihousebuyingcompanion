@@ -52,7 +52,7 @@ PUBLIC_ORIGIN=https://your-tunnel-host.trycloudflare.com npm run dev
 
 The tunnel runs on the same machine, so the rate limiter recognises it without further settings.
 
-In ChatGPT, open **Plugins**, choose **Add custom MCP server**, name it **ReloCat Demo**, enter the tunnel URL ending in `/mcp` and select **No authentication** for the demo and the public tools, or **OAuth** to let ChatGPT use your own account (see `docs/areas/integration-deployment.md`). Install it, start a new chat, select the plugin and say **“ReloCat, start.”** If the widget is hidden, open the board link the tool returns.
+In ChatGPT, open **Plugins**, choose **Add custom MCP server**, name it **ReloCat**, enter the tunnel URL ending in `/mcp` and select **No authentication** for the demo and the public tools, or **OAuth** to let ChatGPT use your own account (see `docs/areas/integration-deployment.md`). Install it, start a new chat, select the plugin and say **“ReloCat, start.”** If the widget is hidden, open the board link the tool returns. If ChatGPT shows an older version of a widget after you changed it, choose **Refresh tools** in the plugin's settings and start a new chat.
 
 The tunnel exposes the whole origin, including `/api`. `/api` answers only to the admin token, which stays on the server (random per start unless you set `PROFILE_API_TOKEN`), or to a signed-in person for their own data; never put the admin token in a page, a URL or a chat. A tunnel hostname other than `PUBLIC_ORIGIN` must be listed in `ALLOWED_HOSTS`.
 

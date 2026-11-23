@@ -1,8 +1,8 @@
 import { defineMessages } from '../../packages/i18n/messages.ts';
 
 /**
- * The interview page: its template, the guided money questions, the statement summary, the plan
- * line and every status it shows. The shared plan questions have their own catalog in
+ * The interview page: its template, the statement summary, the plan as the planner returned it, the
+ * trail of checkpoints and every status it shows. The shared plan questions have their own catalog in
  * `packages/model/questions.messages.ts`; what the voice model is told stays in English.
  */
 export const interview = defineMessages(
@@ -46,12 +46,8 @@ export const interview = defineMessages(
     connectDemo: 'Connect demo account',
     back: 'Back',
     planHeading: 'Your home and savings plan',
-    reviewAnswers: 'Review or edit answers',
-    saveAnswers: 'Save answers',
     clearSaved: 'Clear saved data',
     savedHere: 'Your summary and answers are saved in this browser.',
-    factsHeading: 'Details that decide your plan',
-    factsHint: 'Asked after the money questions: they decide which tax measures and aids can be counted.',
     saveToProfile: 'Save my answers to my ReloCat profile',
     signInToSave: 'Sign in to save them',
     captions: 'Captions',
@@ -60,32 +56,9 @@ export const interview = defineMessages(
     voiceHint:
       'Voice uses your microphone and sends your saved answers and financial summary to OpenAI. Uploaded CSV files are processed in this browser.',
 
-    'field.householdSize': 'Number of people who will live in the home',
-    'field.homeType': 'Home type',
-    'field.location': 'Preferred area',
-    'field.amenities': 'Amenities and must-haves',
-    'field.nearbyAreas': 'Openness to nearby areas',
-    'field.lifestyle': 'Lifestyle priorities',
-    'field.confirmedSalary': 'Confirmed monthly salary',
-    'field.cashFlowNotes': 'Irregular income or missing expenses',
-    'field.target': 'Cash savings target',
-    'field.saved': 'Already saved',
-    'field.monthly': 'Current monthly contribution',
-    'homeType.Flat': 'Flat',
-    'homeType.House': 'House',
-    'homeType.Either': 'Either',
-
     'ask.confirmedSalary': 'What is your typical monthly take-home pay?',
     'ask.cashFlowNotes': 'What are your main monthly expenses, such as rent, food and transport?',
     'ask.householdSize': 'How many people will live in the home, including you?',
-    'ask.homeType': 'What are you looking for, a flat or a house?',
-    'ask.location': 'Where would you like to live?',
-    'ask.amenities': 'What needs to be nearby? Think parks, supermarkets, cinemas or transit.',
-    'ask.nearbyAreas': 'Would you consider nearby areas? What would make the move work for you?',
-    'ask.lifestyle': 'Which parts of your lifestyle do you want to protect while you save?',
-    'ask.target': 'How much cash do you want to set aside for the purchase, in {currency}?',
-    'ask.saved': 'How much have you already set aside?',
-    'ask.monthly': 'How much do you usually put toward this goal each month?',
 
     salaryShortDays:
       'Your statement covers only {days} days ({from} to {to}), which is too short to work out a monthly figure. What is your typical monthly take-home pay?',
@@ -143,22 +116,10 @@ export const interview = defineMessages(
     'category.Entertainment': 'Entertainment',
     'category.Other': 'Other',
 
-    planEmpty:
-      'Add a cash savings target, the amount you’ve saved and your monthly contribution to estimate a timeline.',
-    planMonths:
-      'At your current pace: {count, plural, one {# month} other {# months}}. This estimate assumes steady contributions and a fixed savings target.',
-    planReached:
-      'At your current pace: goal reached. This estimate assumes steady contributions and a fixed savings target.',
-    planOutOfReach:
-      'At your current pace: goal is out of reach at this rate. This estimate assumes steady contributions and a fixed savings target.',
-    planNextStep: 'Optional next step: {action}',
-
     loadFailed: 'Saved answers could not be loaded.',
     storageUnavailable: 'Changes are available for this visit. Browser storage is unavailable.',
-    answersSaved: 'Answers saved in this browser.',
     cashSaved: 'Cash flow summary saved in this browser.',
     factsSaved: 'Plan details saved in this browser.',
-    interviewSaved: 'Interview answers saved in this browser.',
     factSaved: '{label} saved in this browser.',
     cleared: 'Saved data cleared.',
     confirmClear: 'Clear this browser’s saved answers and transaction summary?',
@@ -188,6 +149,66 @@ export const interview = defineMessages(
     'save.signed_out': 'Sign in to save. The answers are still on this device.',
     'save.failed': 'The answers could not be saved. They are still on this device.',
 
+    openWorkspace: 'Open the workspace',
+    answersHeading: 'Your answers',
+    answersHint:
+      'Everything you have answered here. These answers decide the timeline and which tax measures and aids can be counted.',
+    change: 'Change',
+    remove: 'Remove',
+    changeAnswer: 'Change: {label}',
+    removeTown: 'Remove {name}',
+    'review.householdSize': 'People in the home',
+    'review.targetCash': 'Your own cash target',
+    'review.place': 'Town',
+    'ask.place': 'Which town in Catalonia are you thinking of buying in?',
+    'why.place': 'The price of the home and the aid that can be counted depend on the town.',
+    'why.householdSize': 'It is kept in your profile with the rest of your household details.',
+    'unit.people': 'people',
+    placeNoMatch: 'No town covered by ReloCat has exactly that name. Similar names: {names}.',
+    placeNoMatchNone: 'No town covered by ReloCat has that name yet. Choose one from the list, or use Skip.',
+    placeUnavailable: 'The list of towns could not be read. Use Skip and try again later.',
+    signedOutNote: 'You are not signed in: your answers stay on this device.',
+    'voice.signedOutNotice':
+      'You are not signed in, so your answers stay on this device. To keep them in your ReloCat profile, use the “{link}” link on this page.',
+    'access.signed_in_saved': 'You are signed in: each answer you confirm is saved to your ReloCat profile.',
+    answerSavedProfile: '{label} saved to your ReloCat profile.',
+    'plan.loading': 'Working out your plan…',
+    'plan.unavailable': 'The plan could not be worked out right now. Your answers are kept.',
+    'plan.standalone':
+      'This page is running on its own, without the ReloCat planner, so it keeps your answers and shows no timeline.',
+    'plan.noPlace': 'No town chosen yet. Choose a town to see how long it takes to save the upfront cash there.',
+    'plan.anywhere':
+      'Without a town chosen: {duration} of saving for the upfront cash anywhere in Catalonia, before what any town offers.',
+    'plan.months': 'Shortest estimate: {duration} of saving to buy in {place}.',
+    'plan.monthsSooner':
+      'Shortest estimate: {duration} of saving to buy in {place}, {sooner} sooner thanks to what the town offers.',
+    'plan.reached': 'You already have the upfront cash to buy in {place}.',
+    'plan.noSavings': 'With these figures nothing is left to save each month, so there is no timeline for {place}.',
+    'plan.beyond': 'At this pace the upfront cash for {place} is more than 50 years away, so no timeline is given.',
+    'plan.insufficient': 'There is not enough information yet for a timeline in {place}.',
+    'plan.figures': 'Upfront cash needed: {cash}. Saved each month: {monthly}.',
+    'plan.assumes': 'What it assumes',
+    'plan.counted': 'Aid counted',
+    'plan.awaiting': 'Aid awaiting verification',
+    'plan.next': 'Next question',
+    'plan.limits': 'Limits of this estimate',
+    'plan.aidCounted': '{title}: {amount}, counted.',
+    'plan.aidCountedNoAmount': '{title}: counted.',
+    'plan.aidAwaiting': '{title}: not counted yet. This question would verify it: {question}',
+    'plan.aidAwaitingNoQuestion': '{title}: not counted yet. Its conditions still have to be verified.',
+    'plan.disclaimer':
+      'An arithmetic estimate on the figures given. It is not mortgage approval and no aid is guaranteed.',
+    'trail.label': 'Your journey',
+    'trail.count': '{reached} of {total} reached',
+    'trail.allReached': 'Every checkpoint reached',
+    'trail.step-profile': 'About you',
+    'trail.step-money': 'Your money',
+    'trail.step-bank': 'Your bank',
+    'trail.step-places': 'Compare places',
+    'trail.step-aid': 'Aid and tax',
+    'trail.step-habits': 'Saving habits',
+    'trail.step-ready': 'Ready to buy',
+
     choose: 'Choose…',
     yes: 'Yes',
     no: 'No',
@@ -197,12 +218,11 @@ export const interview = defineMessages(
     childBirthDate: 'Child {number}: date of birth',
     whyWeAsk: 'Why we ask: {why}',
     chooseOrSkip: 'Choose or enter an answer, or use Skip to leave this for later.',
+    peopleBetween: 'Enter a whole number of people, from 1 to 30.',
     notANumber: 'That does not read as a number. Use digits, such as 28000.',
 
-    guidedDoneReview: 'Guided interview complete. Open Your plan to review your answers.',
     guidedDoneResults: 'Guided interview complete. Open Your plan to see the results.',
     guidedFacts: 'Guided interview · Details that decide your plan · {where}',
-    guidedQuestion: 'Guided interview · Question {number} of {total}',
     hearing: 'Listening to you…',
     speaking: 'Speaking…',
     thinking: 'Thinking…',
@@ -262,13 +282,8 @@ export const interview = defineMessages(
       connectDemo: 'Connecta el compte de demostració',
       back: 'Enrere',
       planHeading: 'El teu pla d’habitatge i d’estalvi',
-      reviewAnswers: 'Revisa o edita les respostes',
-      saveAnswers: 'Desa les respostes',
       clearSaved: 'Esborra les dades desades',
       savedHere: 'El teu resum i les teves respostes es desen en aquest navegador.',
-      factsHeading: 'Detalls que decideixen el teu pla',
-      factsHint:
-        'Es pregunten després de les preguntes de diners: decideixen quines mesures fiscals i quins ajuts es poden comptar.',
       saveToProfile: 'Desa les meves respostes al meu perfil de ReloCat',
       signInToSave: 'Inicia la sessió per desar-les',
       captions: 'Subtítols',
@@ -277,32 +292,9 @@ export const interview = defineMessages(
       voiceHint:
         'La veu fa servir el teu micròfon i envia a OpenAI les respostes desades i el resum financer. Els fitxers CSV pujats es processen en aquest navegador.',
 
-      'field.householdSize': 'Nombre de persones que viuran a l’habitatge',
-      'field.homeType': 'Tipus d’habitatge',
-      'field.location': 'Zona preferida',
-      'field.amenities': 'Serveis i imprescindibles',
-      'field.nearbyAreas': 'Obertura a zones properes',
-      'field.lifestyle': 'Prioritats d’estil de vida',
-      'field.confirmedSalary': 'Sou mensual confirmat',
-      'field.cashFlowNotes': 'Ingressos irregulars o despeses que falten',
-      'field.target': 'Objectiu d’estalvi en diners',
-      'field.saved': 'Ja estalviat',
-      'field.monthly': 'Aportació mensual actual',
-      'homeType.Flat': 'Pis',
-      'homeType.House': 'Casa',
-      'homeType.Either': 'Tant és',
-
       'ask.confirmedSalary': 'Quin és el teu sou net habitual al mes?',
       'ask.cashFlowNotes': 'Quines són les teves despeses mensuals principals, com ara lloguer, menjar i transport?',
       'ask.householdSize': 'Quantes persones viuran a l’habitatge, comptant-te a tu?',
-      'ask.homeType': 'Què busques, un pis o una casa?',
-      'ask.location': 'On t’agradaria viure?',
-      'ask.amenities': 'Què has de tenir a prop? Pensa en parcs, supermercats, cinemes o transport públic.',
-      'ask.nearbyAreas': 'Et plantejaries zones properes? Què faria que el canvi et funcionés?',
-      'ask.lifestyle': 'Quines parts del teu estil de vida vols protegir mentre estalvies?',
-      'ask.target': 'Quants diners vols reservar per a la compra, en {currency}?',
-      'ask.saved': 'Quant has reservat fins ara?',
-      'ask.monthly': 'Quant hi sols destinar cada mes?',
 
       salaryShortDays:
         'El teu extracte només cobreix {days} dies (del {from} al {to}), i és massa curt per calcular una xifra mensual. Quin és el teu sou net habitual al mes?',
@@ -360,23 +352,11 @@ export const interview = defineMessages(
       'category.Entertainment': 'Oci',
       'category.Other': 'Altres',
 
-      planEmpty:
-        'Afegeix un objectiu d’estalvi en diners, l’import que ja has estalviat i la teva aportació mensual per estimar un termini.',
-      planMonths:
-        'Al teu ritme actual: {count, plural, one {# mes} other {# mesos}}. Aquesta estimació suposa aportacions constants i un objectiu d’estalvi fix.',
-      planReached:
-        'Al teu ritme actual: objectiu assolit. Aquesta estimació suposa aportacions constants i un objectiu d’estalvi fix.',
-      planOutOfReach:
-        'Al teu ritme actual: l’objectiu queda fora d’abast. Aquesta estimació suposa aportacions constants i un objectiu d’estalvi fix.',
-      planNextStep: 'Pas següent opcional: {action}',
-
       loadFailed: 'No s’han pogut carregar les respostes desades.',
       storageUnavailable:
         'Els canvis estan disponibles durant aquesta visita. L’emmagatzematge del navegador no està disponible.',
-      answersSaved: 'Respostes desades en aquest navegador.',
       cashSaved: 'Resum del flux de caixa desat en aquest navegador.',
       factsSaved: 'Detalls del pla desats en aquest navegador.',
-      interviewSaved: 'Respostes de l’entrevista desades en aquest navegador.',
       factSaved: '{label}: desat en aquest navegador.',
       cleared: 'S’han esborrat les dades desades.',
       confirmClear: 'Vols esborrar les respostes desades i el resum de moviments d’aquest navegador?',
@@ -407,6 +387,70 @@ export const interview = defineMessages(
       'save.signed_out': 'Inicia la sessió per desar. Les respostes continuen en aquest dispositiu.',
       'save.failed': 'No s’han pogut desar les respostes. Continuen en aquest dispositiu.',
 
+      openWorkspace: 'Obre l’espai de treball',
+      answersHeading: 'Les teves respostes',
+      answersHint:
+        'Tot el que has respost aquí. Aquestes respostes decideixen el termini i quines mesures fiscals i quins ajuts es poden comptar.',
+      change: 'Canvia',
+      remove: 'Treu',
+      changeAnswer: 'Canvia: {label}',
+      removeTown: 'Treu {name}',
+      'review.householdSize': 'Persones a l’habitatge',
+      'review.targetCash': 'El teu objectiu de diners',
+      'review.place': 'Municipi',
+      'ask.place': 'En quin municipi de Catalunya penses comprar?',
+      'why.place': 'El preu de l’habitatge i els ajuts que es poden comptar depenen del municipi.',
+      'why.householdSize': 'Es desa al teu perfil amb la resta de dades de la teva llar.',
+      'unit.people': 'persones',
+      placeNoMatch: 'Cap municipi cobert per ReloCat té exactament aquest nom. Noms semblants: {names}.',
+      placeNoMatchNone:
+        'Encara no hi ha cap municipi cobert per ReloCat amb aquest nom. Tria’n un de la llista o fes servir Salta.',
+      placeUnavailable: 'No s’ha pogut llegir la llista de municipis. Fes servir Salta i torna-ho a provar més tard.',
+      signedOutNote: 'No has iniciat la sessió: les teves respostes es queden en aquest dispositiu.',
+      'voice.signedOutNotice':
+        'No has iniciat la sessió, així que les teves respostes es queden en aquest dispositiu. Per desar-les al teu perfil de ReloCat, fes servir l’enllaç «{link}» d’aquesta pàgina.',
+      'access.signed_in_saved': 'Has iniciat la sessió: cada resposta que confirmes es desa al teu perfil de ReloCat.',
+      answerSavedProfile: '{label}: desat al teu perfil de ReloCat.',
+      'plan.loading': 'S’està calculant el teu pla…',
+      'plan.unavailable': 'Ara mateix no s’ha pogut calcular el pla. Les teves respostes es conserven.',
+      'plan.standalone':
+        'Aquesta pàgina funciona tota sola, sense el planificador de ReloCat, així que conserva les teves respostes i no mostra cap termini.',
+      'plan.noPlace':
+        'Encara no has triat cap municipi. Tria’n un per veure quant es triga a estalviar-hi els diners inicials.',
+      'plan.anywhere':
+        'Sense municipi triat: {duration} d’estalvi per als diners inicials a qualsevol lloc de Catalunya, abans del que ofereixi cada municipi.',
+      'plan.months': 'Estimació més curta: {duration} d’estalvi per comprar a {place}.',
+      'plan.monthsSooner':
+        'Estimació més curta: {duration} d’estalvi per comprar a {place}, {sooner} abans gràcies al que ofereix el municipi.',
+      'plan.reached': 'Ja tens els diners inicials per comprar a {place}.',
+      'plan.noSavings':
+        'Amb aquestes xifres no queda res per estalviar cada mes, així que no hi ha termini per a {place}.',
+      'plan.beyond':
+        'A aquest ritme, els diners inicials per a {place} queden a més de 50 anys, així que no es dona cap termini.',
+      'plan.insufficient': 'Encara no hi ha prou informació per a un termini a {place}.',
+      'plan.figures': 'Diners inicials necessaris: {cash}. Estalvi de cada mes: {monthly}.',
+      'plan.assumes': 'Què suposa',
+      'plan.counted': 'Ajuts comptats',
+      'plan.awaiting': 'Ajuts pendents de verificar',
+      'plan.next': 'Pregunta següent',
+      'plan.limits': 'Límits d’aquesta estimació',
+      'plan.aidCounted': '{title}: {amount}, comptat.',
+      'plan.aidCountedNoAmount': '{title}: comptat.',
+      'plan.aidAwaiting': '{title}: encara no es compta. Aquesta pregunta el verificaria: {question}',
+      'plan.aidAwaitingNoQuestion': '{title}: encara no es compta. Encara s’han de verificar les seves condicions.',
+      'plan.disclaimer':
+        'Una estimació aritmètica amb les xifres donades. No és l’aprovació d’una hipoteca i cap ajut està garantit.',
+      'trail.label': 'El teu camí',
+      'trail.count': '{reached} de {total} assolits',
+      'trail.allReached': 'Tots els punts assolits',
+      'trail.step-profile': 'Sobre tu',
+      'trail.step-money': 'Els teus diners',
+      'trail.step-bank': 'El teu banc',
+      'trail.step-places': 'Compara llocs',
+      'trail.step-aid': 'Ajuts i impostos',
+      'trail.step-habits': 'Hàbits d’estalvi',
+      'trail.step-ready': 'A punt per comprar',
+
       choose: 'Tria…',
       yes: 'Sí',
       no: 'No',
@@ -416,12 +460,11 @@ export const interview = defineMessages(
       childBirthDate: 'Fill {number}: data de naixement',
       whyWeAsk: 'Per què ho preguntem: {why}',
       chooseOrSkip: 'Tria o escriu una resposta, o fes servir Salta per deixar-ho per a més endavant.',
+      peopleBetween: 'Escriu un nombre enter de persones, de l’1 al 30.',
       notANumber: 'Això no es llegeix com un nombre. Fes servir xifres, com ara 28000.',
 
-      guidedDoneReview: 'Entrevista guiada completada. Obre El teu pla per revisar les respostes.',
       guidedDoneResults: 'Entrevista guiada completada. Obre El teu pla per veure els resultats.',
       guidedFacts: 'Entrevista guiada · Detalls que decideixen el teu pla · {where}',
-      guidedQuestion: 'Entrevista guiada · Pregunta {number} de {total}',
       hearing: 'T’estic escoltant…',
       speaking: 'Estic parlant…',
       thinking: 'Estic pensant…',
@@ -481,13 +524,8 @@ export const interview = defineMessages(
       connectDemo: 'Conecta la cuenta de demostración',
       back: 'Atrás',
       planHeading: 'Tu plan de vivienda y de ahorro',
-      reviewAnswers: 'Revisa o edita las respuestas',
-      saveAnswers: 'Guarda las respuestas',
       clearSaved: 'Borra los datos guardados',
       savedHere: 'Tu resumen y tus respuestas se guardan en este navegador.',
-      factsHeading: 'Detalles que deciden tu plan',
-      factsHint:
-        'Se preguntan después de las preguntas de dinero: deciden qué medidas fiscales y qué ayudas se pueden contar.',
       saveToProfile: 'Guarda mis respuestas en mi perfil de ReloCat',
       signInToSave: 'Inicia sesión para guardarlas',
       captions: 'Subtítulos',
@@ -496,32 +534,9 @@ export const interview = defineMessages(
       voiceHint:
         'La voz usa tu micrófono y envía a OpenAI tus respuestas guardadas y tu resumen financiero. Los archivos CSV subidos se procesan en este navegador.',
 
-      'field.householdSize': 'Número de personas que vivirán en la vivienda',
-      'field.homeType': 'Tipo de vivienda',
-      'field.location': 'Zona preferida',
-      'field.amenities': 'Servicios e imprescindibles',
-      'field.nearbyAreas': 'Apertura a zonas cercanas',
-      'field.lifestyle': 'Prioridades de estilo de vida',
-      'field.confirmedSalary': 'Sueldo mensual confirmado',
-      'field.cashFlowNotes': 'Ingresos irregulares o gastos que faltan',
-      'field.target': 'Objetivo de ahorro en dinero',
-      'field.saved': 'Ya ahorrado',
-      'field.monthly': 'Aportación mensual actual',
-      'homeType.Flat': 'Piso',
-      'homeType.House': 'Casa',
-      'homeType.Either': 'Me da igual',
-
       'ask.confirmedSalary': '¿Cuál es tu sueldo neto habitual al mes?',
       'ask.cashFlowNotes': '¿Cuáles son tus gastos mensuales principales, como alquiler, comida y transporte?',
       'ask.householdSize': '¿Cuántas personas vivirán en la vivienda, contándote a ti?',
-      'ask.homeType': '¿Qué buscas, un piso o una casa?',
-      'ask.location': '¿Dónde te gustaría vivir?',
-      'ask.amenities': '¿Qué necesitas tener cerca? Piensa en parques, supermercados, cines o transporte público.',
-      'ask.nearbyAreas': '¿Te plantearías zonas cercanas? ¿Qué haría que el cambio te funcionara?',
-      'ask.lifestyle': '¿Qué partes de tu estilo de vida quieres proteger mientras ahorras?',
-      'ask.target': '¿Cuánto dinero quieres reservar para la compra, en {currency}?',
-      'ask.saved': '¿Cuánto has reservado hasta ahora?',
-      'ask.monthly': '¿Cuánto sueles destinar cada mes a este objetivo?',
 
       salaryShortDays:
         'Tu extracto solo cubre {days} días (del {from} al {to}), y es demasiado corto para calcular una cifra mensual. ¿Cuál es tu sueldo neto habitual al mes?',
@@ -579,23 +594,11 @@ export const interview = defineMessages(
       'category.Entertainment': 'Ocio',
       'category.Other': 'Otros',
 
-      planEmpty:
-        'Añade un objetivo de ahorro en dinero, el importe que ya has ahorrado y tu aportación mensual para estimar un plazo.',
-      planMonths:
-        'A tu ritmo actual: {count, plural, one {# mes} other {# meses}}. Esta estimación supone aportaciones constantes y un objetivo de ahorro fijo.',
-      planReached:
-        'A tu ritmo actual: objetivo alcanzado. Esta estimación supone aportaciones constantes y un objetivo de ahorro fijo.',
-      planOutOfReach:
-        'A tu ritmo actual: el objetivo queda fuera de alcance. Esta estimación supone aportaciones constantes y un objetivo de ahorro fijo.',
-      planNextStep: 'Siguiente paso opcional: {action}',
-
       loadFailed: 'No se han podido cargar las respuestas guardadas.',
       storageUnavailable:
         'Los cambios están disponibles durante esta visita. El almacenamiento del navegador no está disponible.',
-      answersSaved: 'Respuestas guardadas en este navegador.',
       cashSaved: 'Resumen del flujo de caja guardado en este navegador.',
       factsSaved: 'Detalles del plan guardados en este navegador.',
-      interviewSaved: 'Respuestas de la entrevista guardadas en este navegador.',
       factSaved: '{label}: guardado en este navegador.',
       cleared: 'Se han borrado los datos guardados.',
       confirmClear: '¿Quieres borrar las respuestas guardadas y el resumen de movimientos de este navegador?',
@@ -626,6 +629,69 @@ export const interview = defineMessages(
       'save.signed_out': 'Inicia sesión para guardar. Las respuestas siguen en este dispositivo.',
       'save.failed': 'No se han podido guardar las respuestas. Siguen en este dispositivo.',
 
+      openWorkspace: 'Abre el espacio de trabajo',
+      answersHeading: 'Tus respuestas',
+      answersHint:
+        'Todo lo que has respondido aquí. Estas respuestas deciden el plazo y qué medidas fiscales y qué ayudas se pueden contar.',
+      change: 'Cambia',
+      remove: 'Quita',
+      changeAnswer: 'Cambia: {label}',
+      removeTown: 'Quita {name}',
+      'review.householdSize': 'Personas en la vivienda',
+      'review.targetCash': 'Tu objetivo de dinero',
+      'review.place': 'Municipio',
+      'ask.place': '¿En qué municipio de Cataluña piensas comprar?',
+      'why.place': 'El precio de la vivienda y las ayudas que se pueden contar dependen del municipio.',
+      'why.householdSize': 'Se guarda en tu perfil con el resto de datos de tu hogar.',
+      'unit.people': 'personas',
+      placeNoMatch: 'Ningún municipio cubierto por ReloCat tiene exactamente ese nombre. Nombres parecidos: {names}.',
+      placeNoMatchNone:
+        'Todavía no hay ningún municipio cubierto por ReloCat con ese nombre. Elige uno de la lista o usa Salta.',
+      placeUnavailable: 'No se ha podido leer la lista de municipios. Usa Salta e inténtalo de nuevo más tarde.',
+      signedOutNote: 'No has iniciado sesión: tus respuestas se quedan en este dispositivo.',
+      'voice.signedOutNotice':
+        'No has iniciado sesión, así que tus respuestas se quedan en este dispositivo. Para guardarlas en tu perfil de ReloCat, usa el enlace «{link}» de esta página.',
+      'access.signed_in_saved': 'Has iniciado sesión: cada respuesta que confirmas se guarda en tu perfil de ReloCat.',
+      answerSavedProfile: '{label}: guardado en tu perfil de ReloCat.',
+      'plan.loading': 'Calculando tu plan…',
+      'plan.unavailable': 'Ahora mismo no se ha podido calcular el plan. Tus respuestas se conservan.',
+      'plan.standalone':
+        'Esta página funciona sola, sin el planificador de ReloCat, así que conserva tus respuestas y no muestra ningún plazo.',
+      'plan.noPlace':
+        'Todavía no has elegido ningún municipio. Elige uno para ver cuánto se tarda en ahorrar allí el dinero inicial.',
+      'plan.anywhere':
+        'Sin municipio elegido: {duration} de ahorro para el dinero inicial en cualquier lugar de Cataluña, antes de lo que ofrezca cada municipio.',
+      'plan.months': 'Estimación más corta: {duration} de ahorro para comprar en {place}.',
+      'plan.monthsSooner':
+        'Estimación más corta: {duration} de ahorro para comprar en {place}, {sooner} antes gracias a lo que ofrece el municipio.',
+      'plan.reached': 'Ya tienes el dinero inicial para comprar en {place}.',
+      'plan.noSavings': 'Con estas cifras no queda nada que ahorrar cada mes, así que no hay plazo para {place}.',
+      'plan.beyond':
+        'A este ritmo, el dinero inicial para {place} queda a más de 50 años, así que no se da ningún plazo.',
+      'plan.insufficient': 'Todavía no hay información suficiente para un plazo en {place}.',
+      'plan.figures': 'Dinero inicial necesario: {cash}. Ahorro de cada mes: {monthly}.',
+      'plan.assumes': 'Qué supone',
+      'plan.counted': 'Ayudas contadas',
+      'plan.awaiting': 'Ayudas pendientes de verificar',
+      'plan.next': 'Siguiente pregunta',
+      'plan.limits': 'Límites de esta estimación',
+      'plan.aidCounted': '{title}: {amount}, contado.',
+      'plan.aidCountedNoAmount': '{title}: contado.',
+      'plan.aidAwaiting': '{title}: todavía no se cuenta. Esta pregunta lo verificaría: {question}',
+      'plan.aidAwaitingNoQuestion': '{title}: todavía no se cuenta. Aún hay que verificar sus condiciones.',
+      'plan.disclaimer':
+        'Una estimación aritmética con las cifras dadas. No es la aprobación de una hipoteca y ninguna ayuda está garantizada.',
+      'trail.label': 'Tu camino',
+      'trail.count': '{reached} de {total} alcanzados',
+      'trail.allReached': 'Todos los puntos alcanzados',
+      'trail.step-profile': 'Sobre ti',
+      'trail.step-money': 'Tu dinero',
+      'trail.step-bank': 'Tu banco',
+      'trail.step-places': 'Compara lugares',
+      'trail.step-aid': 'Ayudas e impuestos',
+      'trail.step-habits': 'Hábitos de ahorro',
+      'trail.step-ready': 'A punto para comprar',
+
       choose: 'Elige…',
       yes: 'Sí',
       no: 'No',
@@ -635,12 +701,11 @@ export const interview = defineMessages(
       childBirthDate: 'Hijo {number}: fecha de nacimiento',
       whyWeAsk: 'Por qué lo preguntamos: {why}',
       chooseOrSkip: 'Elige o escribe una respuesta, o usa Salta para dejarlo para más adelante.',
+      peopleBetween: 'Escribe un número entero de personas, del 1 al 30.',
       notANumber: 'Eso no se lee como un número. Usa cifras, como 28000.',
 
-      guidedDoneReview: 'Entrevista guiada completada. Abre Tu plan para revisar las respuestas.',
       guidedDoneResults: 'Entrevista guiada completada. Abre Tu plan para ver los resultados.',
       guidedFacts: 'Entrevista guiada · Detalles que deciden tu plan · {where}',
-      guidedQuestion: 'Entrevista guiada · Pregunta {number} de {total}',
       hearing: 'Te estoy escuchando…',
       speaking: 'Estoy hablando…',
       thinking: 'Estoy pensando…',

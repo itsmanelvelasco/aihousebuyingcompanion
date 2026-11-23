@@ -73,6 +73,8 @@ test('the widget client parses real tool answers for a demo persona, a signed-in
   assert.deepEqual(demo, { kind: 'demo', demoId: 'user-001' });
   const demoPlan = await anonymous.plan({ subject: demo, municipalityCodes: codes, assumptions });
   assert.equal(demoPlan.plans.length, 2);
+  // What the tool adds about where the answers live is part of the contract the widget parses.
+  assert.deepEqual([demoPlan.stored, demoPlan.sayNotStored], [false, null]);
   assert.deepEqual([demoPlan.person.id, demoPlan.person.synthetic], ['user-001', true]);
   const runtime = await anonymous.bankRuntime(demo);
   assert.equal(runtime.userId, 'user-001');

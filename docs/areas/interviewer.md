@@ -15,6 +15,13 @@
 - `packages/contracts/inputs.ts`: canonical partial facts and confirmation/provenance semantics.
 - [Shared input API](../../apps/profile-api/INPUTS.md): submit/read/correct persisted answers.
 
+## Two ways to speak
+
+- **ChatGPT's voice mode**: the person selects the Voice icon in ChatGPT and says “Use ReloCat to start my homebuying interview.” ChatGPT does the speech; `start_homebuying_interview` and the planner tools answer as in text, and the Start talking card (`apps/mcp-server/voice-card.ts`) shows that sentence in the person's language, or a button to the page below when `RELOCAT_VOICE_URL` is set.
+- **The product's own page**, `/interview/`: OpenAI Realtime over WebRTC, which needs `OPENAI_API_KEY` on the server. Its paid routes answer only this machine unless `INTERVIEWER_PUBLIC_AI=on`, which serves visitors of the public site at the key owner's expense, within an hourly limit per visitor.
+
+Agreed for this round, to be checked against `apps/mcp-server/planner-tools.ts` and `interview-tools.ts` after integration: both ways and the text chat follow one journey. The assistant asks the next most valuable question one at a time in the person's language (`packages/planner/next-questions.ts` over the one question set); each confirmed answer goes to the shared inputs of the signed-in person, or stays a what-if with a spoken hint on how to connect the account; and `plan_home_savings` is the plan everywhere, also before a place is chosen (`municipalityCodes: []`).
+
 ## Inputs and outputs
 
 Accept grouped answers, including household size, work, income/spending/savings and housing requirements. Persist canonical partial input records rather than replacing whole profile files. Budget/floor area, official commute destination, required school stages and transport mode are needed before a fully constrained town search. `null` is explicitly unknown; omission means no update.

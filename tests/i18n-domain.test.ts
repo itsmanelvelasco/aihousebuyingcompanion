@@ -476,6 +476,12 @@ test('incentive screening and town recommendations change words only', () => {
   assert.match(pueblos.limitations[0], /^Las recomendaciones cubren los municipios catalanes/);
 });
 
+/** The plan a tool returned, without what the tool adds about where the answers live. */
+function toolPlan(value: unknown) {
+  const { stored: _stored, sayNotStored: _say, ...plan } = planResult.parse(value);
+  return plan;
+}
+
 async function connect() {
   const server = createMcpServer({ snapshot, policies, today: () => asOf });
   const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
@@ -500,9 +506,13 @@ test('a tool answers in the language of its locale argument, else of the host, e
       'get_next_questions',
       'get_place',
       'get_town_profile',
+      'list_my_habits',
       'plan_home_savings',
       'recommend_towns',
       'recommend_towns_for_profile',
+      'save_my_habit',
+      'save_my_inputs',
+      'start_homebuying_interview',
     ]);
     for (const tool of listed.tools.filter(item => takesLocale.includes(item.name))) {
       assert.deepEqual((tool.inputSchema.properties as Record<string, { enum?: string[] }>).locale.enum, [
@@ -523,28 +533,44 @@ test('a tool answers in the language of its locale argument, else of the host, e
     };
 
     // The locale argument.
-    const english = planResult.parse((await call('plan_home_savings', plan)).structuredContent);
+    const english = toolPlan((await call('plan_home_savings', plan)).structuredContent);
     const catalanCall = await call('plan_home_savings', { ...plan, locale: 'ca' });
-    const catalan = planResult.parse(catalanCall.structuredContent);
+    const catalan = toolPlan(catalanCall.structuredContent);
     assert.deepEqual(catalan, planIn('ca'));
     assert.deepEqual(english, planIn('en'));
     assert.deepEqual(skeleton(catalan), skeleton(english));
     assert.match(catalan.limitations[0], /^Això és una estimació aritmètica/);
-    // The short summary is for the model and stays in English; the question it quotes is the person's.
+    // The short summary is for the model and is English from end to end: it quotes the question in
+    // its English wording, and the person's wording stays in nextQuestions.
     const summary = (catalanCall.content as { text: string }[])[0].text;
     assert.match(summary, /An arithmetic estimate, not mortgage approval or guaranteed aid\./);
+    const [askedEn, askedCa] = [english.nextQuestions?.[0], catalan.nextQuestions?.[0]];
+    assert(askedEn && askedCa && askedEn.question !== askedCa.question);
+    assert(summary.includes(`Ask next, one question at a time: “${askedEn.question}” Why: ${askedEn.why}`), summary);
+    for (const text of [askedCa.question, askedCa.why, askedCa.effect.text])
+      assert(!summary.includes(text), `the English summary carries Catalan text: ${text}`);
+    const spanishCall = await call('get_next_questions', { ...plan, locale: 'es' });
+    const spanishText = (spanishCall.content as { text: string }[])[0].text;
+    const askedEs = (spanishCall.structuredContent as { nextQuestions: { question: string; why: string }[] })
+      .nextQuestions[0];
+    assert(spanishText.includes(`“${askedEn.question}”`) && !spanishText.includes(askedEs.question), spanishText);
+    assert.doesNotMatch(spanishText, /¿|Podría|espera|dinero/);
+    // What the assistant says about answers that are not saved is in the person's language, apart from the summary.
+    assert.match(
+      String((catalanCall.structuredContent as { sayNotStored: string }).sayNotStored),
+      /^Guardo les teves respostes només en aquesta conversa/,
+    );
+    assert.equal((catalanCall.structuredContent as { stored: boolean }).stored, false);
 
     // Only the host's locale, as ChatGPT sends it.
-    const spanish = planResult.parse(
-      (await call('plan_home_savings', plan, { 'openai/locale': 'es-ES' })).structuredContent,
-    );
+    const spanish = toolPlan((await call('plan_home_savings', plan, { 'openai/locale': 'es-ES' })).structuredContent);
     assert.deepEqual(spanish, planIn('es'));
     assert.match(spanish.limitations[0], /^Esto es una estimación aritmética/);
     // The argument wins over the host, and a language that is not one of the three is English.
     const argumentWins = await call('plan_home_savings', { ...plan, locale: 'ca' }, { 'openai/locale': 'es-ES' });
-    assert.deepEqual(planResult.parse(argumentWins.structuredContent), catalan);
+    assert.deepEqual(toolPlan(argumentWins.structuredContent), catalan);
     const french = await call('plan_home_savings', plan, { 'openai/locale': 'fr-FR' });
-    assert.deepEqual(planResult.parse(french.structuredContent), english);
+    assert.deepEqual(toolPlan(french.structuredContent), english);
     const refused = await client.callTool({ name: 'plan_home_savings', arguments: { ...plan, locale: 'fr' } });
     assert(refused.isError, 'a locale outside the three languages is refused by the schema');
 

@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { municipalityListResult } from '../../packages/contracts/places.ts';
-import type { Person, PlanResult } from '../../packages/contracts/planner.ts';
+import type { RecommendationInput } from '../../packages/contracts/places.ts';
+import { municipalityListResult, recommendationResult } from '../../packages/contracts/places.ts';
+import type { Habit, Person, PlanResult } from '../../packages/contracts/planner.ts';
 import { planResult } from '../../packages/contracts/planner.ts';
 import { defaultLocale, type Locale } from '../../packages/i18n/locales.ts';
 import { translator } from '../../packages/i18n/messages.ts';
@@ -30,6 +31,14 @@ export class ToolError extends Error {
     this.kind = kind;
   }
 }
+
+/**
+ * A plan asked for with no place chosen that failed. A server from before plans without a place
+ * refuses the empty list; that is "nothing to plan yet", not a failure to show. Only a request to
+ * sign in is still passed on, because the person can act on it.
+ */
+export const isNoPlaceRefusal = (municipalityCodes: string[], error: ToolError) =>
+  municipalityCodes.length === 0 && error.kind !== 'signin';
 
 const count = z.number().int().nonnegative();
 const cents = z.number().int();
@@ -81,6 +90,48 @@ export type BankUpdates = z.infer<typeof bankUpdates>;
 export type BankRuntime = z.infer<typeof bankRuntime>;
 export type BankSummary = z.infer<typeof bankSummary>;
 export type Municipality = z.infer<typeof municipalityListResult>['municipalities'][number];
+export type Recommendation = z.infer<typeof recommendationResult>;
+/** What `recommend_towns` is asked: the screening criteria, without the language (the client states it). */
+export type RecommendationRequest = Omit<RecommendationInput, 'locale'>;
+/**
+ * One habit as the form holds it. A saving of `null` means no monthly saving is assumed. With an
+ * `id` the stored habit of that id is updated; without one `saveHabit` makes an id for a new habit.
+ */
+export type HabitDraft = Pick<Habit, 'title' | 'category' | 'monthlySavingCents'> & {
+  id?: string;
+  status: 'active' | 'paused';
+  startedOn?: string;
+};
+/** The tool answers with the habit it stored; the workspace re-reads the plan and needs none of it. */
+const savedHabit = z.looseObject({});
+
+/**
+ * The id of a new habit: the title in the characters an id may have, and a short suffix so that two
+ * habits with the same title stay two habits (the tool updates the habit that has the same id).
+ */
+export function newHabitId(title: string, suffix: string = Date.now().toString(36)) {
+  const slug = title
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/, '');
+  return `${slug || 'habit'}-${suffix}`;
+}
+
+/** The arguments of `save_my_habit` for a habit of the form: `active` is how the tool says active or paused. */
+export function saveHabitArguments(habit: HabitDraft, id = habit.id ?? newHabitId(habit.title)) {
+  return {
+    id,
+    title: habit.title,
+    category: habit.category,
+    monthlySavingCents: habit.monthlySavingCents,
+    active: habit.status === 'active',
+    ...(habit.startedOn ? { startedOn: habit.startedOn } : {}),
+  };
+}
 
 export type PlanAssumptionsInput = { includeProposedHabits: boolean; includeUnverifiedBenefits: boolean };
 /**
@@ -203,6 +254,15 @@ export function createToolClient(call: CallTool, locale?: Locale) {
       confirmed: boolean,
       source: 'manual' | 'interview' = 'manual',
     ) => ask('save_my_inputs', { data, confirmed, source }, savedInputs),
+    /** Create or update one habit of the signed-in person. Only `me` can be written. */
+    saveHabit: (habit: HabitDraft) =>
+      ask('save_my_habit', { ...saveHabitArguments(habit), ...(locale ? { locale } : {}) }, savedHabit),
+    /**
+     * Places screened and ranked by the server against what is asked. The hard filters run there;
+     * the reasons, compromises and exclusions come back worded in the language of this client.
+     */
+    recommend: (request: RecommendationRequest): Promise<Recommendation> =>
+      ask('recommend_towns', { ...request, ...(locale ? { locale } : {}) }, recommendationResult),
     municipalities: async () => (await ask('list_catalonia_municipalities', {}, municipalityListResult)).municipalities,
   };
 }

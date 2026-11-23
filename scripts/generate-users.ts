@@ -46,6 +46,153 @@ const creditCases = [
   'no_reported_credit_issue',
 ] as const;
 
+/**
+ * The four personas of the public demo (`DEMO_USER_IDS`) carry a hand-written story on top of the
+ * drawn household, so the demo shows what the product is about without a click. Everything here is
+ * fictional and labelled synthetic like the rest of the fixture.
+ *
+ * - `household` replaces drawn household fields. It is applied after every draw, so the seeded
+ *   sequence, and with it the other 496 households, stays exactly as it was.
+ * - `eligibility` are answers the persona "confirmed" (`demo-inputs.json`): the planner reads a
+ *   household fact only from a confirmed input, so these decide which measures are verified.
+ * - `goals` are saving habits (`demo-habits.json`).
+ *
+ * A fixture folder is copied into a new database without these two files; `seedDemoStories` in
+ * `scripts/reseed-demo.ts` writes them to the inputs and habits stores.
+ *
+ * The stories, checked by `tests/demo-personas.test.ts`:
+ * - user-001: nothing confirmed and no habit. Every measure stays "needs verification" and the
+ *   questions that would verify it are on screen. In development Banc Demo feeds its ledger.
+ * - user-002: two active habits and a paused one; no household fact confirmed.
+ * - user-003: one active habit; so little is saved each month that no timeline ends without it.
+ * - user-004: a couple with a five-year-old who confirmed the facts of the reduced transfer tax for
+ *   rural municipalities, plus one habit. Rural places shorten the wait; the state youth aid stays
+ *   unverified (the buyer is over 35 and no Catalan call exists).
+ */
+type DemoGoal = {
+  id: string;
+  title: string;
+  action: string;
+  category: string;
+  targetDaysPerWeek: number;
+  plannedMonthlySavingCents: number | null;
+  active: boolean;
+  startedOn: string | null;
+};
+type DemoStory = {
+  household?: { age: number; householdType: string; dependantAges: number[] };
+  eligibility?: Record<string, unknown>;
+  goals?: DemoGoal[];
+};
+/** When the personas "answered": the day of the fixture snapshot. */
+const storyObservedAt = '2026-11-21T09:00:00.000Z';
+export const demoStories: Record<string, DemoStory> = {
+  'user-001': {},
+  'user-002': {
+    goals: [
+      {
+        id: 'cook-at-home',
+        title: 'Cook at home on weekdays',
+        action: 'Plan five dinners on Sunday and skip weekday takeaways.',
+        category: 'food',
+        targetDaysPerWeek: 5,
+        plannedMonthlySavingCents: 12000,
+        active: true,
+        startedOn: '2026-11-10',
+      },
+      {
+        id: 'unused-subscriptions',
+        title: 'Cancel unused subscriptions',
+        action: 'Review the subscriptions on the first of the month and cancel the ones nobody used.',
+        category: 'subscriptions',
+        targetDaysPerWeek: 1,
+        plannedMonthlySavingCents: 3500,
+        active: true,
+        startedOn: '2026-11-03',
+      },
+      {
+        id: 'bike-to-work',
+        title: 'Cycle to work twice a week',
+        action: 'Leave the car at home on Tuesdays and Thursdays.',
+        category: 'transport',
+        targetDaysPerWeek: 2,
+        plannedMonthlySavingCents: 4000,
+        active: false,
+        startedOn: '2026-11-05',
+      },
+    ],
+  },
+  'user-003': {
+    goals: [
+      {
+        id: 'weekly-market',
+        title: 'One weekly shop with a list',
+        action: 'Buy the food of the week at the Saturday market with a written list.',
+        category: 'food',
+        targetDaysPerWeek: 1,
+        plannedMonthlySavingCents: 18000,
+        active: true,
+        startedOn: '2026-11-07',
+      },
+    ],
+  },
+  'user-004': {
+    household: { age: 40, householdType: 'couple_with_children', dependantAges: [5] },
+    eligibility: {
+      primaryResidence: true,
+      birthDate: '1986-03-14',
+      children: [{ birthDate: '2021-05-02', meetsItpSchooling: true, inDesignatedSchool: true }],
+      itpTransaction: true,
+      satisfiesItpOccupancyRules: true,
+      largeFamily: false,
+      singleParent: false,
+      disability65: false,
+      firstRuralMove: true,
+      ownsHomeInSpain: false,
+      incomeWithinFiveIprem: true,
+      filing: 'joint',
+      itpBuyerNetTaxBaseEur: 14000,
+      itpFamilyNetTaxBaseEur: 26000,
+      irpfNetTaxBaseEur: 26000,
+    },
+    goals: [
+      {
+        id: 'cook-at-home',
+        title: 'Cook at home on weekdays',
+        action: 'Plan five dinners on Sunday and skip weekday takeaways.',
+        category: 'food',
+        targetDaysPerWeek: 5,
+        plannedMonthlySavingCents: 12000,
+        active: true,
+        startedOn: '2026-11-10',
+      },
+    ],
+  },
+};
+
+/** The two extra documents of a demo persona, as `seedDemoStories` reads them. */
+function storyDocuments(id: string, story: DemoStory) {
+  const common = { schemaVersion: 1, synthetic: true, userId: id };
+  return {
+    'demo-inputs': {
+      ...common,
+      inputs: story.eligibility
+        ? [
+            {
+              id: `demo-${id}-eligibility`,
+              source: 'interview',
+              observedAt: storyObservedAt,
+              confirmed: true,
+              synthetic: true,
+              data: { eligibility: story.eligibility },
+            },
+          ]
+        : [],
+    },
+    'demo-habits': { ...common, goals: story.goals ?? [], checkins: [] },
+  };
+}
+
 export async function generateUsers(outputDirectory = resolve('data/users'), overwrite = false) {
   await mkdir(outputDirectory, { recursive: true });
   const existing = (await readdir(outputDirectory)).filter(name => /^user-\d+$/.test(name));
@@ -68,19 +215,26 @@ export async function generateUsers(outputDirectory = resolve('data/users'), ove
   }
   for (let index = 0; index < 500; index++) {
     const id = `user-${String(index + 1).padStart(3, '0')}`;
-    const householdType = households[index]!;
-    const dependants = ['couple_with_children', 'single_parent', 'multigenerational'].includes(householdType)
+    const story = demoStories[id];
+    const drawnHouseholdType = households[index]!;
+    const drawnDependants = ['couple_with_children', 'single_parent', 'multigenerational'].includes(drawnHouseholdType)
       ? integer(1, 3)
       : 0;
     const adults =
-      householdType === 'single' || householdType === 'single_parent'
+      drawnHouseholdType === 'single' || drawnHouseholdType === 'single_parent'
         ? 1
-        : householdType === 'multigenerational'
+        : drawnHouseholdType === 'multigenerational'
           ? 3
           : 2;
-    const householdSize = adults + dependants;
-    const age =
-      householdType === 'multigenerational' ? integer(40, 72) : index % 20 === 0 ? integer(60, 72) : integer(21, 59);
+    const drawnAge =
+      drawnHouseholdType === 'multigenerational'
+        ? integer(40, 72)
+        : index % 20 === 0
+          ? integer(60, 72)
+          : integer(21, 59);
+    // A demo story never changes the number of adults, so every later draw is the one it always was.
+    const householdType = story?.household?.householdType ?? drawnHouseholdType;
+    const age = story?.household?.age ?? drawnAge;
     const employmentStatus = age >= 67 ? 'retired' : pick(employment.filter(value => value !== 'retired'));
     const [currentMunicipality, province] = pick(towns);
     const creditStatus = creditCases[index % creditCases.length]!;
@@ -106,7 +260,10 @@ export async function generateUsers(outputDirectory = resolve('data/users'), ove
     if (['temporary_employee', 'seasonal_worker', 'self_employed', 'unemployed'].includes(employmentStatus))
       barriers.push('income_instability');
     if (income - monthlyExpenses - debtPayments <= 0) barriers.push('non_positive_monthly_cashflow');
-    const childAges = Array.from({ length: dependants }, () => integer(0, Math.min(17, age - 18)));
+    const drawnChildAges = Array.from({ length: drawnDependants }, () => integer(0, Math.min(17, drawnAge - 18)));
+    const childAges = story?.household?.dependantAges ?? drawnChildAges;
+    const dependants = childAges.length;
+    const householdSize = adults + dependants;
     const schoolStages = [
       ...new Set(
         childAges.map(value =>
@@ -171,7 +328,7 @@ export async function generateUsers(outputDirectory = resolve('data/users'), ove
       ruralPreference: pick(['open_to_rural', 'small_town', 'near_city', 'no_preference']),
       priorities: [
         pick(['lower_housing_cost', 'public_transport', 'healthcare_access', 'local_jobs']),
-        dependants ? 'school_access' : pick(['nature_access', 'community', 'shops_and_services']),
+        drawnDependants ? 'school_access' : pick(['nature_access', 'community', 'shops_and_services']),
       ],
       incentiveEligibility: 'needs_verification',
       relocationWithinMonths: integer(6, 36),
@@ -202,9 +359,21 @@ export async function generateUsers(outputDirectory = resolve('data/users'), ove
       credentialsStored: false,
     };
     const directory = join(outputDirectory, id);
-    records.push({ id, details, preferences, bankAccount });
+    const extra = story ? storyDocuments(id, story) : null;
+    records.push({
+      id,
+      details,
+      preferences,
+      bankAccount,
+      ...(extra ? { demoInputs: extra['demo-inputs'], demoHabits: extra['demo-habits'] } : {}),
+    });
     await mkdir(directory, { recursive: true });
-    for (const [file, content] of Object.entries({ details, preferences, 'bank-account': bankAccount })) {
+    for (const [file, content] of Object.entries({
+      details,
+      preferences,
+      'bank-account': bankAccount,
+      ...(extra ?? {}),
+    })) {
       await writeFile(join(directory, `${file}.json`), `${JSON.stringify(content, null, 2)}\n`, 'utf8');
     }
   }

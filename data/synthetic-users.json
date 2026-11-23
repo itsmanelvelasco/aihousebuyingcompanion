@@ -97,6 +97,19 @@
           }
         ],
         "credentialsStored": false
+      },
+      "demoInputs": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "userId": "user-001",
+        "inputs": []
+      },
+      "demoHabits": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "userId": "user-001",
+        "goals": [],
+        "checkins": []
       }
     },
     {
@@ -190,6 +203,50 @@
           }
         ],
         "credentialsStored": false
+      },
+      "demoInputs": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "userId": "user-002",
+        "inputs": []
+      },
+      "demoHabits": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "userId": "user-002",
+        "goals": [
+          {
+            "id": "cook-at-home",
+            "title": "Cook at home on weekdays",
+            "action": "Plan five dinners on Sunday and skip weekday takeaways.",
+            "category": "food",
+            "targetDaysPerWeek": 5,
+            "plannedMonthlySavingCents": 12000,
+            "active": true,
+            "startedOn": "2026-11-10"
+          },
+          {
+            "id": "unused-subscriptions",
+            "title": "Cancel unused subscriptions",
+            "action": "Review the subscriptions on the first of the month and cancel the ones nobody used.",
+            "category": "subscriptions",
+            "targetDaysPerWeek": 1,
+            "plannedMonthlySavingCents": 3500,
+            "active": true,
+            "startedOn": "2026-11-03"
+          },
+          {
+            "id": "bike-to-work",
+            "title": "Cycle to work twice a week",
+            "action": "Leave the car at home on Tuesdays and Thursdays.",
+            "category": "transport",
+            "targetDaysPerWeek": 2,
+            "plannedMonthlySavingCents": 4000,
+            "active": false,
+            "startedOn": "2026-11-05"
+          }
+        ],
+        "checkins": []
       }
     },
     {
@@ -290,6 +347,30 @@
           }
         ],
         "credentialsStored": false
+      },
+      "demoInputs": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "userId": "user-003",
+        "inputs": []
+      },
+      "demoHabits": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "userId": "user-003",
+        "goals": [
+          {
+            "id": "weekly-market",
+            "title": "One weekly shop with a list",
+            "action": "Buy the food of the week at the Saturday market with a written list.",
+            "category": "food",
+            "targetDaysPerWeek": 1,
+            "plannedMonthlySavingCents": 18000,
+            "active": true,
+            "startedOn": "2026-11-07"
+          }
+        ],
+        "checkins": []
       }
     },
     {
@@ -300,11 +381,13 @@
         "snapshotDate": "2026-11-21",
         "id": "user-004",
         "name": "Fictional household 004",
-        "age": 29,
-        "householdType": "couple",
-        "householdSize": 2,
-        "dependants": 0,
-        "dependantAges": [],
+        "age": 40,
+        "householdType": "couple_with_children",
+        "householdSize": 3,
+        "dependants": 1,
+        "dependantAges": [
+          5
+        ],
         "currentMunicipality": "Balaguer",
         "province": "Lleida",
         "employmentStatus": "temporary_employee",
@@ -342,9 +425,11 @@
         "targetPurchasePriceCents": 10800000,
         "housingBudgetCents": 10800000,
         "purchaseSavingsCents": 1574600,
-        "minimumBedrooms": 1,
+        "minimumBedrooms": 2,
         "preferredPropertyType": "flat",
-        "schoolStages": [],
+        "schoolStages": [
+          "infantil"
+        ],
         "hasCar": false,
         "requiresPublicTransport": true,
         "maxCommuteMinutes": 40,
@@ -383,6 +468,63 @@
           }
         ],
         "credentialsStored": false
+      },
+      "demoInputs": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "userId": "user-004",
+        "inputs": [
+          {
+            "id": "demo-user-004-eligibility",
+            "source": "interview",
+            "observedAt": "2026-11-21T09:00:00.000Z",
+            "confirmed": true,
+            "synthetic": true,
+            "data": {
+              "eligibility": {
+                "primaryResidence": true,
+                "birthDate": "1986-03-14",
+                "children": [
+                  {
+                    "birthDate": "2021-05-02",
+                    "meetsItpSchooling": true,
+                    "inDesignatedSchool": true
+                  }
+                ],
+                "itpTransaction": true,
+                "satisfiesItpOccupancyRules": true,
+                "largeFamily": false,
+                "singleParent": false,
+                "disability65": false,
+                "firstRuralMove": true,
+                "ownsHomeInSpain": false,
+                "incomeWithinFiveIprem": true,
+                "filing": "joint",
+                "itpBuyerNetTaxBaseEur": 14000,
+                "itpFamilyNetTaxBaseEur": 26000,
+                "irpfNetTaxBaseEur": 26000
+              }
+            }
+          }
+        ]
+      },
+      "demoHabits": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "userId": "user-004",
+        "goals": [
+          {
+            "id": "cook-at-home",
+            "title": "Cook at home on weekdays",
+            "action": "Plan five dinners on Sunday and skip weekday takeaways.",
+            "category": "food",
+            "targetDaysPerWeek": 5,
+            "plannedMonthlySavingCents": 12000,
+            "active": true,
+            "startedOn": "2026-11-10"
+          }
+        ],
+        "checkins": []
       }
     },
     {

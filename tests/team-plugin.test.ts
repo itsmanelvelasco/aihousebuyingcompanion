@@ -14,7 +14,11 @@ test('team bundle is reproducible and includes only portable skills with no runt
     assert.equal(first.sha256, second.sha256);
     assert.equal(first.installed, false);
     const files = unzipSync(await readFile(first.path));
-    assert.equal(JSON.parse(strFromU8(files['plugin.json'])).version, '1.2.1');
+    const manifest = JSON.parse(strFromU8(files['plugin.json']));
+    assert.equal(manifest.version, '1.2.2');
+    // The bundle keeps its identifier; what ChatGPT shows is the product name.
+    assert.equal(manifest.name, 'relocat-team');
+    assert.equal(manifest.extensions['com.openai'].interface.displayName, 'ReloCat');
     assert.equal(files['mcp.json'], undefined);
     assert.equal(Object.keys(files).filter(name => name.endsWith('/SKILL.md')).length, 3);
     for (const name of Object.keys(files))

@@ -14,8 +14,9 @@ ReloCat is written in English (`en`, the source and fallback), Catalan (`ca`) an
 - Messages are whole sentences with `{name}` placeholders and
   `{count, plural, one {…} other {…}}`. Never build a sentence by joining translated fragments:
   word order differs between the languages.
-- Money, counts, dates and durations are formatted with `createFormat(locale)` and passed in as
-  values. Unknown stays a word (`format.unknown`), never zero.
+- Money, counts, percentages, lists, dates and durations are formatted with `createFormat(locale)`
+  and passed in as values: no `Intl.NumberFormat`, `Intl.ListFormat` or `toLocaleString` elsewhere.
+  Unknown stays a word (`format.unknown`), never zero.
 - Not translated: the product name ReloCat, place names, official names of administrations and
   programmes, identifiers, codes, and what a person typed.
 - Text written for the model (tool descriptions, server instructions) stays in English. It tells
@@ -36,7 +37,12 @@ buttons inside a `.rc-lang` element in a widget (`rememberLocale` stores the cho
 
 - `locales.ts`: the three languages, `negotiateLocale`, `toLocale`.
 - `messages.ts`: `defineMessages`, `translator`, `formatMessage`, `catalogProblems`.
-- `format.ts`: `createFormat(locale)` for euros, counts, shares, dates and durations.
+- `format.ts`: `createFormat(locale)`, the one formatter: `euros`, `eurosExact`, `eurosAuto` (cents
+  only when there are some), `money(amount, currency)` for a statement in another currency,
+  `monthly`, `count`, `decimal`, `number`, `share` (whole percentage), `percent` (up to two
+  decimals), `list` (the language's conjunction), `date`, `clock`, `duration`, `durationShort`.
+  `packages/places/wording.ts` delegates to it for the sentences of the domain packages, where
+  English keeps the plain forms those sentences always printed.
 - `common.ts`: the words every surface shares.
 - `browser.ts`: `browserLocale`, `rememberLocale`.
 - `server.ts`: `requestLocale`, `localeCookie`, `toolLocale`, `localizeHtml`, `languageSwitcher`.

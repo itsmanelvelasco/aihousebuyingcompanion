@@ -1,20 +1,21 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { Habit, Person } from '../../packages/contracts/planner.ts';
 import { common } from '../../packages/i18n/common.ts';
-import type { ToolClient } from './client.ts';
+import type { HabitDraft, ToolClient } from './client.ts';
 import { BankStrip } from './components/BankStrip.tsx';
 import { Wordmark } from './components/bits.tsx';
 import { DetailsPanel } from './components/DetailsPanel.tsx';
 import { Journey } from './components/Journey.tsx';
 import { Notes } from './components/Notes.tsx';
 import { PersonPanel } from './components/PersonPanel.tsx';
-import { PlacesPanel } from './components/PlacesPanel.tsx';
+import { MAX_PLACES, PlacesPanel } from './components/PlacesPanel.tsx';
 import { formatDate } from './format.ts';
+import { whatIfHabit } from './habit-form.ts';
 import { useBankFeed, usePlan } from './hooks.ts';
 import { bold, LanguageSwitcher, rich, useLocale, useMessages } from './i18n.tsx';
 import { journey } from './journey.ts';
 import type { Subject, WorkspaceLaunch } from './launch.ts';
-import { subjectOf } from './launch.ts';
+import { openingPlaces, subjectOf } from './launch.ts';
 import { workspaceMessages } from './messages/workspace.messages.ts';
 import type { HabitOverrides } from './view-model.ts';
 
@@ -28,6 +29,7 @@ type Props = {
 };
 
 const noOverrides: HabitOverrides = {};
+const noExtraHabits: Habit[] = [];
 
 /**
  * Says plainly whose figures are on screen. There are three honest states: a fictional demo persona
@@ -86,8 +88,12 @@ export function Workspace({ client, launch, mode }: Props) {
   const t = useMessages(workspaceMessages);
   const shared = useMessages(common);
   const [subject, setSubjectState] = useState<Subject>(() => subjectOf(launch));
-  const [codes, setCodes] = useState(launch.municipalityCodes);
+  // A demo persona that came with no places opens on the ones where the difference is visible.
+  const [codes, setCodes] = useState(() => openingPlaces(subjectOf(launch), launch.municipalityCodes));
   const [overrides, setOverrides] = useState<HabitOverrides>(noOverrides);
+  /** Habits added as a what-if for a demo persona or a typed person: part of the estimate, stored nowhere. */
+  const [extraHabits, setExtraHabits] = useState<Habit[]>(noExtraHabits);
+  const habitCount = useRef(0);
   const [includeProposed, setIncludeProposed] = useState(false);
   const [includeUnverified, setIncludeUnverified] = useState(false);
   const assumptions = useMemo(
@@ -96,9 +102,19 @@ export function Workspace({ client, launch, mode }: Props) {
   );
   const setSubject = useCallback((next: Subject) => {
     setOverrides(noOverrides);
+    setExtraHabits(noExtraHabits);
+    setCodes(previous => openingPlaces(next, previous));
     setSubjectState(next);
   }, []);
-  const { state: plan, storedPerson, reload } = usePlan(client, subject, codes, assumptions, overrides);
+  const addWhatIfHabit = useCallback((draft: HabitDraft) => {
+    habitCount.current += 1;
+    const habit = whatIfHabit(draft, habitCount.current);
+    setExtraHabits(previous => [...previous, habit]);
+  }, []);
+  const addPlaces = useCallback((added: string[]) => {
+    setCodes(previous => [...new Set([...previous, ...added])].slice(0, MAX_PLACES));
+  }, []);
+  const { state: plan, storedPerson, reload } = usePlan(client, subject, codes, assumptions, overrides, extraHabits);
   const refreshFromBank = useCallback(() => {
     void reload(true);
   }, [reload]);
@@ -182,10 +198,16 @@ export function Workspace({ client, launch, mode }: Props) {
           person={person}
           hasPlaces={codes.length > 0}
           overrides={overrides}
+          extraHabits={extraHabits}
+          onAddWhatIfHabit={addWhatIfHabit}
+          onRemoveWhatIfHabit={id => setExtraHabits(previous => previous.filter(habit => habit.id !== id))}
           includeProposed={includeProposed}
           onToggleHabit={(habit: Habit, on: boolean) => setOverrides(previous => ({ ...previous, [habit.id]: on }))}
           onIncludeProposed={setIncludeProposed}
-          onReset={() => setOverrides(noOverrides)}
+          onReset={() => {
+            setOverrides(noOverrides);
+            setExtraHabits(noExtraHabits);
+          }}
           onSubject={setSubject}
           onInline={(inline: Person) => setSubject({ kind: 'inline', person: inline })}
           onSaved={refreshFromBank}
@@ -194,11 +216,13 @@ export function Workspace({ client, launch, mode }: Props) {
         <PlacesPanel
           client={client}
           userId={label}
+          person={person}
           codes={codes}
           plan={plan}
           includeUnverified={includeUnverified}
           onIncludeUnverified={setIncludeUnverified}
-          onAdd={code => setCodes(previous => (previous.includes(code) ? previous : [...previous, code]))}
+          onAdd={code => addPlaces([code])}
+          onAddMany={addPlaces}
           onRemove={code => setCodes(previous => previous.filter(item => item !== code))}
           onRetry={retryPlan}
         />

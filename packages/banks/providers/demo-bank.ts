@@ -18,6 +18,10 @@
  *   - A person connects it by consenting at the bank (`consent` below): ReloCat creates a consent
  *     request, the person approves on the bank's own page, and the one-time code the bank sends
  *     back is exchanged for the customer reference. The engine seals that reference at rest.
+ *   - The bank's API is reached at `BANK_DEMO_BANK_BASE_URL` (server to server). The person's
+ *     browser may not be able to reach that address (a loopback port behind a tunnel), so with
+ *     `BANK_DEMO_BANK_PUBLIC_PATH` the consent page is opened on ReloCat's own origin, where
+ *     `apps/server` mounts it: `<origin>/banc-demo/consent/<id>`.
  */
 import { z } from 'zod';
 import { ApiError } from '../../http/server.ts';
@@ -71,6 +75,9 @@ const eventSchema = z.object({
   type: z.string().min(1).max(60),
   data: z.object({ customer_id: z.string().min(1).max(200) }),
 });
+
+/** A single path segment, such as `/banc-demo`. */
+const publicPathPattern = /^\/[a-z0-9-]{1,40}$/;
 
 const consentRequestSchema = z.object({ consent_path: z.string().regex(/^\/consent\/consent-[0-9a-f]{32}$/) });
 const consentGrantSchema = z.object({
@@ -178,6 +185,12 @@ export default defineBankProvider({
       name: 'BANK_DEMO_BANK_WEBHOOK_SECRET',
       description: 'Signing secret the demo bank returned when the webhook was registered.',
     },
+    {
+      name: 'BANK_DEMO_BANK_PUBLIC_PATH',
+      description:
+        'Path on the origin of ReloCat where the consent page of the demo bank is mounted, for example /banc-demo. Unset: the person is sent to BANK_DEMO_BANK_BASE_URL.',
+      required: false,
+    },
   ],
 
   /**
@@ -188,7 +201,13 @@ export default defineBankProvider({
   consent: {
     async beginConsent({ returnUrl, state }, { env }) {
       const created = await callBank(env, '/consents', consentRequestSchema, { redirect_uri: returnUrl, state });
-      return { redirectUrl: `${env.BANK_DEMO_BANK_BASE_URL.replace(/\/+$/, '')}${created.consent_path}` };
+      // Mounted on ReloCat's origin: the page is on the origin the person is already on (the one
+      // the callback returns to), so it is reachable wherever ReloCat is. Otherwise the bank's own.
+      const mount = env.BANK_DEMO_BANK_PUBLIC_PATH;
+      if (mount !== undefined && !publicPathPattern.test(mount))
+        throw new ApiError(502, 'BANK_DEMO_BANK_PUBLIC_PATH must be one path segment, such as /banc-demo');
+      const base = mount ? `${new URL(returnUrl).origin}${mount}` : env.BANK_DEMO_BANK_BASE_URL.replace(/\/+$/, '');
+      return { redirectUrl: `${base}${created.consent_path}` };
     },
     async completeConsent(params, { env }) {
       if (typeof params.code !== 'string' || !params.code)

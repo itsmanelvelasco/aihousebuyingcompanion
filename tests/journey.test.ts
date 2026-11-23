@@ -159,3 +159,81 @@ test('a checkpoint that cannot be judged is unknown in every language, and a cou
     '1 resposta encara podria canviar els ajuts o l’impost. La següent: data de naixement.',
   );
 });
+
+test('with no place chosen the trail points to "Compare places" and its action suggests places', () => {
+  // Whatever else is missing, nothing moves the plan until there is a place.
+  const blank: PlanResult = {
+    ...fixturePlan,
+    plans: [],
+    knownFacts: [],
+    nextQuestions: [question('required', 'Monthly income')],
+    person: { ...fixturePlan.person, habits: [] },
+  };
+  for (const input of [
+    { result: null, placeCount: 0, bankMovements: null, bankSynthetic: null },
+    { result: blank, placeCount: 0, bankMovements: 0, bankSynthetic: null },
+    { result: fixturePlan, placeCount: 0, bankMovements: 184, bankSynthetic: true },
+  ]) {
+    const trail = journey(input);
+    assert.equal(trail.current?.id, 'step-places');
+    assert.deepEqual(trail.current?.action, { label: 'Suggest places for me', target: 'suggest-places' });
+    assert.match(trail.current?.detail ?? '', /No place chosen yet/);
+    // Only one checkpoint is the one to work on.
+    assert.equal(trail.steps.filter(step => step.state === 'current').length, 1);
+  }
+  assert.equal(
+    journey({ result: blank, placeCount: 0, bankMovements: 0, bankSynthetic: null }, 'ca').current?.action.label,
+    'Suggereix-me llocs',
+  );
+  assert.equal(
+    journey({ result: blank, placeCount: 0, bankMovements: 0, bankSynthetic: null }, 'es').current?.action.label,
+    'Sugiéreme lugares',
+  );
+  // With a place the first gap is the one to work on again.
+  assert.equal(
+    journey({ result: blank, placeCount: 1, bankMovements: null, bankSynthetic: null }).current?.id,
+    'step-profile',
+  );
+});
+
+test('every checkpoint carries an action that opens a part of the workspace, in the three languages', () => {
+  const noHabits: PlanResult = {
+    ...fixturePlan,
+    nextQuestions: [],
+    person: { ...fixturePlan.person, habits: [] },
+  };
+  const input = { result: noHabits, placeCount: 2, bankMovements: 12, bankSynthetic: true };
+  const trail = journey(input);
+  // "Saving habits" is the gap, and its action goes to the form that adds one.
+  assert.equal(trail.current?.id, 'step-habits');
+  assert.deepEqual(trail.current?.action, { label: 'Add a habit', target: 'add-habit' });
+  assert.match(trail.current?.detail ?? '', /Add one, or switch one on/);
+  assert.equal(journey(input, 'ca').current?.action.label, 'Afegeix un hàbit');
+  assert.equal(journey(input, 'es').current?.action.label, 'Añade un hábito');
+  assert.deepEqual(
+    trail.steps.map(step => [step.id, step.action.target]),
+    [
+      ['step-profile', 'questions'],
+      ['step-money', 'questions'],
+      ['step-bank', 'bank'],
+      ['step-places', 'suggest-places'],
+      ['step-aid', 'questions'],
+      ['step-habits', 'add-habit'],
+      ['step-ready', 'places'],
+    ],
+  );
+  for (const locale of ['en', 'ca', 'es'] as const) {
+    const steps = journey(input, locale).steps;
+    for (const step of steps) assert.ok(step.action.label.length > 5, `${locale} ${step.id}`);
+    // The language changes the words only, never where an action goes.
+    assert.deepEqual(
+      steps.map(step => step.action.target),
+      trail.steps.map(step => step.action.target),
+    );
+  }
+  // With nobody on screen there is no question to answer: those actions go to the person panel.
+  const nobody = journey({ result: null, placeCount: 2, bankMovements: null, bankSynthetic: null });
+  assert.deepEqual(nobody.steps[0].action, { label: 'Choose who is planning', target: 'person' });
+  assert.equal(nobody.steps[4].action.target, 'person');
+  assert.equal(nobody.steps[5].action.target, 'add-habit');
+});

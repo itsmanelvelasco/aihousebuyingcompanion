@@ -39,8 +39,14 @@ export type ConsentDeskOptions = {
   clock?: () => Date;
   /** The bank's fictional customers, to pick from on the consent page. */
   customers: () => { id: string; name: string }[];
-  /** Accept return addresses on any host. By default only this machine (loopback). */
+  /** Accept return addresses on any host. By default only this machine (loopback) and `returnOrigins`. */
   allowRemote?: boolean;
+  /**
+   * Origins, besides this machine, the bank may send a customer back to: the public origin of the
+   * application the bank is mounted on (`https://www.relo.cat`). Compared exactly, scheme and port
+   * included; anything that is not an http(s) origin is ignored.
+   */
+  returnOrigins?: readonly string[];
   /** How long the customer has to decide. Default 10 minutes. */
   requestTtlMs?: number;
   /** How long the one-time code can be exchanged. Default 2 minutes. */
@@ -57,6 +63,20 @@ const switcherCss = `  .rc-lang { display: flex; flex-wrap: wrap; gap: 4px 16px;
   .rc-lang a[aria-current="true"] { color: var(--bank-ink); font-weight: 600; text-decoration-thickness: 2px; }
 `;
 
+/** `https://host[:port]` of each entry that is an http(s) address; the rest is dropped. */
+export function normalizeOrigins(values: readonly string[] = []) {
+  const origins = new Set<string>();
+  for (const value of values) {
+    try {
+      const url = new URL(value);
+      if (url.protocol === 'https:' || url.protocol === 'http:') origins.add(url.origin);
+    } catch {
+      // Not an address: ignored, so a typo narrows what is accepted instead of widening it.
+    }
+  }
+  return origins;
+}
+
 function isLoopback(url: URL) {
   const host = url.hostname.toLowerCase();
   return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host.endsWith('.localhost');
@@ -68,6 +88,7 @@ export function createConsentDesk(options: ConsentDeskOptions) {
   const codeTtlMs = options.codeTtlMs ?? 2 * 60_000;
   const consentDays = options.consentDays ?? 90;
   const consentMs = consentDays * 86_400_000;
+  const returnOrigins = normalizeOrigins(options.returnOrigins);
   const requests = new Map<string, Request>();
   const codes = new Map<string, Code>();
 
@@ -94,8 +115,11 @@ export function createConsentDesk(options: ConsentDeskOptions) {
       const url = new URL(redirectUri);
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash)
         throw new ApiError(400, 'Use an http or https return address without credentials or fragment');
-      if (!options.allowRemote && !isLoopback(url))
-        throw new ApiError(400, 'This demo bank only sends customers back to this machine (localhost)');
+      if (!options.allowRemote && !isLoopback(url) && !returnOrigins.has(url.origin))
+        throw new ApiError(
+          400,
+          'This demo bank only sends customers back to this machine (localhost) or to the application it is mounted on',
+        );
       sweep();
       const request: Request = {
         id: `consent-${randomBytes(16).toString('hex')}`,
@@ -115,9 +139,11 @@ export function createConsentDesk(options: ConsentDeskOptions) {
 
     /**
      * Step 2: the page the customer sees, and the origin its form will redirect to. `switcher`
-     * adds the links that show this same page in another language.
+     * adds the links that show this same page in another language. `basePath` is the path the bank
+     * is mounted under when another server serves this page on its own origin (`/banc-demo`), so
+     * the form and the language links stay inside the mount.
      */
-    page(id: string, locale: Locale = defaultLocale, switcher = false) {
+    page(id: string, locale: Locale = defaultLocale, switcher = false, basePath = '') {
       const request = open(id);
       const t = translator(consentPageMessages, locale);
       const target = new URL(request.redirectUri);
@@ -169,12 +195,12 @@ ${switcher ? switcherCss : ''}</style>
 <main>${
         switcher
           ? `
-${languageSwitcher(locale, `/consent/${request.id}`)}`
+${languageSwitcher(locale, `${basePath}/consent/${request.id}`)}`
           : ''
       }
 <p><span class="tag">${t('fictionalBank')}</span></p>
 <h1>Banc Demo</h1>
-<form class="card" method="post" action="/consent/${e(request.id)}">
+<form class="card" method="post" action="${e(basePath)}/consent/${e(request.id)}">
   <p><strong>${t('question')}</strong></p>
   <p>${t('asks', { host: e(target.host) })}</p>
   <label>${t('youAre')}

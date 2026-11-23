@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "userId": "user-004",
+  "goals": [
+    {
+      "id": "cook-at-home",
+      "title": "Cook at home on weekdays",
+      "action": "Plan five dinners on Sunday and skip weekday takeaways.",
+      "category": "food",
+      "targetDaysPerWeek": 5,
+      "plannedMonthlySavingCents": 12000,
+      "active": true,
+      "startedOn": "2026-11-10"
+    }
+  ],
+  "checkins": []
+}

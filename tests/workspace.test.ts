@@ -8,8 +8,20 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { createHabitsHandler } from '../apps/habits-agent/server.ts';
+import type { Caller } from '../apps/mcp-server/identity.ts';
+import { registerPlannerTools } from '../apps/mcp-server/planner-tools.ts';
 import { loadWorkspacePage, registerWorkspace, workspaceResult, workspaceUri } from '../apps/mcp-server/workspace.ts';
-import { createToolClient, describeFailure, httpCallTool, ToolError } from '../apps/web/client.ts';
+import type { HabitDraft, ToolResult } from '../apps/web/client.ts';
+import {
+  createToolClient,
+  describeFailure,
+  httpCallTool,
+  isNoPlaceRefusal,
+  newHabitId,
+  saveHabitArguments,
+  ToolError,
+} from '../apps/web/client.ts';
 import { fixtureCallTool } from '../apps/web/fixtures/client.ts';
 import { fixtureNoSavings, fixturePlan } from '../apps/web/fixtures/plan.ts';
 import {
@@ -21,10 +33,31 @@ import {
   formatMonthsSaved,
   safeHref,
 } from '../apps/web/format.ts';
-import { emptyLaunch, launchRequestFromQuery, parseLaunch, subjectOf, workspaceLaunch } from '../apps/web/launch.ts';
+import {
+  habitCategories,
+  isWhatIfHabit,
+  readHabitForm,
+  whatIfHabit,
+  withWhatIfHabits,
+} from '../apps/web/habit-form.ts';
+import {
+  demoDefaultPlaces,
+  emptyLaunch,
+  launchRequestFromQuery,
+  openingPlaces,
+  parseLaunch,
+  subjectOf,
+  workspaceLaunch,
+} from '../apps/web/launch.ts';
+import { habitFormMessages } from '../apps/web/messages/habit-form.messages.ts';
+import { placesMessages } from '../apps/web/messages/places.messages.ts';
+import { suggestMessages } from '../apps/web/messages/suggest.messages.ts';
+import type { SchoolStage } from '../apps/web/suggest.ts';
+import { noChoices, parseFloorArea, suggestionView, suggestRequest } from '../apps/web/suggest.ts';
 import {
   addedTransactions,
   applyHabitOverrides,
+  baselineMonthlySavingsCents,
   benefitSummary,
   benefitView,
   conflictSources,
@@ -41,7 +74,17 @@ import {
   planNotes,
   timelineSteps,
 } from '../apps/web/view-model.ts';
-import { planInput, planResult } from '../packages/contracts/planner.ts';
+import { safeId } from '../packages/contracts/ids.ts';
+import { recommendationInput } from '../packages/contracts/places.ts';
+import type { Person } from '../packages/contracts/planner.ts';
+import { habitCategory, planInput, planResult } from '../packages/contracts/planner.ts';
+import { open } from '../packages/db/database.ts';
+import { translator } from '../packages/i18n/messages.ts';
+import { buildPlace } from '../packages/model/place.ts';
+import { loadData } from '../packages/places/data.ts';
+import { recommendTowns } from '../packages/places/recommend.ts';
+import { planForPlaces } from '../packages/planner/plan.ts';
+import { createStore } from '../packages/profiles/store.ts';
 
 const demoIds = ['user-001', 'user-002'];
 const demoSubject = { kind: 'demo', demoId: 'user-001' } as const;
@@ -829,4 +872,446 @@ test('the built page carries the three languages and the language switcher', t =
   assert.match(page, /\.rc-lang \[aria-pressed="true"\]/);
   assert.match(page, /className:\s*"rc-lang"/);
   assert.match(page, /"aria-pressed"/);
+});
+
+// ---------------------------------------------------------------- suggestions, habits, no place
+
+const typedPerson = (home: { budgetCents: number | null; floorAreaM2: number | null }): Person => ({
+  ...fixturePlan.person,
+  home: { ...fixturePlan.person.home, ...home },
+});
+
+test('the suggestions ask with what is known and never send a budget the server cannot price', () => {
+  const stages = { ...noChoices, schoolStages: ['primary', 'eso'] as SchoolStage[], ruralOnly: true };
+  // Budget and floor area known: cents become euros at this boundary and the server screens on price.
+  assert.deepEqual(suggestRequest(typedPerson({ budgetCents: 10_800_000, floorAreaM2: 80 }), stages), {
+    budget: 'used',
+    request: {
+      housing: { tenure: 'buy', maxBudgetEur: 108_000, homeSizeM2: 80 },
+      schoolStages: ['primary', 'eso'],
+      ruralOnly: true,
+      limit: 8,
+    },
+  });
+  // A budget without a floor area is left out and said to be, instead of guessing a size.
+  const noArea = suggestRequest(typedPerson({ budgetCents: 10_800_000, floorAreaM2: null }), noChoices);
+  assert.deepEqual(noArea, { budget: 'no_area', request: { limit: 8 } });
+  // The area typed into the form completes it; nothing typed keeps the one on record.
+  assert.equal(
+    suggestRequest(typedPerson({ budgetCents: 10_800_000, floorAreaM2: null }), { ...noChoices, floorAreaM2: 65 })
+      .request.housing?.homeSizeM2,
+    65,
+  );
+  assert.deepEqual(suggestRequest(typedPerson({ budgetCents: null, floorAreaM2: 80 }), noChoices), {
+    budget: 'no_budget',
+    request: { limit: 8 },
+  });
+  // Nobody on screen: the suggestions still work, with nothing personal in the request.
+  assert.deepEqual(suggestRequest(null, noChoices), { budget: 'no_budget', request: { limit: 8 } });
+  assert.deepEqual(['80', '72,5', ' 90 ', '', 'abc', '0', '-4', '99999'].map(parseFloorArea), [
+    80,
+    72.5,
+    90,
+    null,
+    null,
+    null,
+    null,
+    null,
+  ]);
+});
+
+test('the suggestions show the real tool’s answer as returned: ranked places, reasons, compromises and exclusions', async () => {
+  const { snapshot, policies } = loadData();
+  const sent: Record<string, unknown>[] = [];
+  // The real screening behind a fake transport: the client must parse what the server really answers.
+  const real = (locale: 'ca' | 'es' | undefined) =>
+    createToolClient(async (name, args) => {
+      sent.push({ name, ...args });
+      if (name !== 'recommend_towns') return { isError: true, content: [{ type: 'text', text: `${name} not found` }] };
+      const { locale: language, ...input } = recommendationInput.parse(args);
+      return {
+        structuredContent: recommendTowns(snapshot, policies, input, '2026-11-23', undefined, language ?? 'en'),
+      };
+    }, locale);
+  const { request } = suggestRequest(typedPerson({ budgetCents: 10_800_000, floorAreaM2: 80 }), {
+    schoolStages: ['primary'],
+    ruralOnly: true,
+    floorAreaM2: null,
+  });
+  const spanish = await real('es').recommend(request);
+  assert.deepEqual(sent[0], { name: 'recommend_towns', ...request, locale: 'es' });
+  const names = Object.fromEntries(snapshot.municipalities.map(town => [town.code, town.name]));
+  const view = suggestionView(spanish, ['252402'], 8, names);
+  assert.ok(view.places.length >= 1);
+  // The server's own sentences, in the language asked for, untouched.
+  assert.deepEqual(view.places[0].reasons, spanish.towns[0].matchReasons);
+  assert.deepEqual(view.places[0].compromises, spanish.towns[0].tradeoffs);
+  assert.match(view.places[0].reasons.join(' '), /Clasificación rural oficial/);
+  // Hard filters ran on the server; what they excluded is listed with its reason, never dropped.
+  assert.equal(view.excluded.length, spanish.excluded.length);
+  assert.ok(view.excluded.length > 0);
+  const calaf = view.excluded.find(item => item.code === '080312');
+  assert.equal(calaf?.name, 'Calaf');
+  assert.match(calaf?.reasons.join(' ') ?? '', /rural/);
+  assert.deepEqual(view.limitations, spanish.limitations);
+  // A place already compared is marked, and is not offered again.
+  const vallfogona = view.places.find(place => place.code === '252402');
+  assert.equal(vallfogona?.compared, true);
+  assert.ok(!view.addable.includes('252402'));
+
+  // With nothing asked every pilot place comes back unranked; only what fits under the limit is addable.
+  const open = await real(undefined).recommend({ limit: 8 });
+  assert.equal('locale' in sent[1], false, 'no language stated: nothing is added to the call');
+  const compared = open.towns.slice(0, 6).map(town => town.municipality.code);
+  const all = suggestionView(open, compared, 8);
+  assert.equal(all.places.length, 8);
+  assert.deepEqual(
+    all.addable,
+    open.towns.slice(6, 8).map(town => town.municipality.code),
+  );
+  assert.deepEqual(suggestionView(open, [], 0).addable, []);
+  assert.deepEqual(suggestionView(open, compared, 7).addable.length, 1, 'only what still fits under the limit');
+  assert.equal(
+    suggestionView(spanish, [], 8).excluded.every(item => item.name === null),
+    true,
+    'without the list a code stays a code',
+  );
+
+  // Empty, error and unavailable states come from the tool, never from sample data.
+  const none = suggestionView(
+    await createToolClient(fixtureCallTool('suggest-none', 0)).recommend({ limit: 8 }),
+    [],
+    8,
+  );
+  assert.deepEqual([none.places.length, none.addable.length, none.excluded.length > 0], [0, 0, true]);
+  await assert.rejects(createToolClient(fixtureCallTool('suggest-error', 0)).recommend({ limit: 8 }), {
+    kind: 'failed',
+    message: 'Provide homeSizeM2 (constructed floor area) with a purchase budget to estimate a resale price.',
+  });
+  const old = createToolClient(
+    async name => ({ isError: true, content: [{ type: 'text', text: `MCP error -32602: Tool ${name} not found` }] }),
+    'ca',
+  );
+  await assert.rejects(old.recommend({ limit: 8 }), {
+    kind: 'unavailable',
+    message: 'Aquest servidor encara no ofereix l’eina recommend_towns.',
+  });
+});
+
+test('the habit form reads a habit, refuses what it cannot use and assumes no saving that was not typed', () => {
+  const fields = { title: '  Cook at home ', category: 'food', monthlySaving: '120', status: 'active', startedOn: '' };
+  assert.deepEqual(readHabitForm(fields, '2026-11-23'), {
+    ok: true,
+    habit: { title: 'Cook at home', category: 'food', monthlySavingCents: 12_000, status: 'active' },
+  });
+  const read = (change: Partial<typeof fields>) => readHabitForm({ ...fields, ...change }, '2026-11-23');
+  const habitOf = (change: Partial<typeof fields>) => {
+    const outcome = read(change);
+    assert.ok(outcome.ok);
+    return outcome.habit;
+  };
+  // No figure typed: null, never zero. A decimal comma is an amount.
+  assert.equal(habitOf({ monthlySaving: '' }).monthlySavingCents, null);
+  assert.equal(habitOf({ monthlySaving: '35,50' }).monthlySavingCents, 3550);
+  assert.deepEqual(habitOf({ status: 'paused', startedOn: '2026-11-10', category: 'made-up' }), {
+    title: 'Cook at home',
+    category: 'other',
+    monthlySavingCents: 12_000,
+    status: 'paused',
+    startedOn: '2026-11-10',
+  });
+  assert.deepEqual(
+    [
+      read({ title: '   ' }),
+      read({ title: 'x'.repeat(81) }),
+      read({ monthlySaving: 'a lot' }),
+      read({ monthlySaving: '-5' }),
+      read({ startedOn: '2026-13-45' }),
+      read({ startedOn: '10/11/2026' }),
+      read({ startedOn: '2026-11-25' }),
+    ].map(outcome => (outcome.ok ? 'ok' : outcome.error)),
+    ['titleMissing', 'titleLong', 'savingInvalid', 'savingInvalid', 'startInvalid', 'startInvalid', 'startFuture'],
+  );
+  // One day of slack for the person's own calendar day.
+  assert.equal(read({ startedOn: '2026-11-24' }).ok, true);
+  // Every error has its sentence in the three languages.
+  for (const locale of ['en', 'ca', 'es'] as const) {
+    const t = translator(habitFormMessages, locale);
+    for (const key of ['titleMissing', 'titleLong', 'savingInvalid', 'startInvalid', 'startFuture'] as const)
+      assert.ok(t(key).length > 10, `${locale} ${key}`);
+  }
+  // The categories offered are exactly those of the contract.
+  assert.deepEqual([...habitCategories], habitCategory.options);
+});
+
+test('a saved habit goes to save_my_habit for the signed-in person; a server without the tool is an error state', async () => {
+  const sent: Record<string, unknown>[] = [];
+  const fixture = fixtureCallTool('signed-in', 0);
+  const client = createToolClient((name, args) => {
+    sent.push({ name, ...args });
+    return fixture(name, args);
+  });
+  const draft: HabitDraft = {
+    title: 'Cook at home',
+    category: 'food',
+    monthlySavingCents: 12_000,
+    status: 'active',
+    startedOn: '2026-11-23',
+  };
+  await client.saveHabit(draft);
+  // The tool's arguments and nothing else: an id made from the title, `active` for the status, no
+  // user id and no person.
+  const { id, ...rest } = sent[0];
+  assert.match(String(id), /^cook-at-home-[a-z0-9]+$/);
+  assert.deepEqual(rest, {
+    name: 'save_my_habit',
+    title: 'Cook at home',
+    category: 'food',
+    monthlySavingCents: 12_000,
+    active: true,
+    startedOn: '2026-11-23',
+  });
+  assert.deepEqual(saveHabitArguments({ ...draft, id: 'cook-at-home', status: 'paused', startedOn: undefined }), {
+    id: 'cook-at-home',
+    title: 'Cook at home',
+    category: 'food',
+    monthlySavingCents: 12_000,
+    active: false,
+  });
+  // Ids hold only what an id may hold, whatever was typed, and two habits of one title stay apart.
+  assert.equal(newHabitId('Cuinar a casa: dilluns i dimarts!', 'x1'), 'cuinar-a-casa-dilluns-i-dimarts-x1');
+  assert.equal(newHabitId('Añadir càlcul', 'x1'), 'anadir-calcul-x1');
+  assert.equal(newHabitId('¿¡…!?', 'x1'), 'habit-x1');
+  assert.match(newHabitId('x'.repeat(80), 'x1'), /^x{40}-x1$/);
+  for (const title of ['Cuinar a casa', '¿¡…!?', 'x'.repeat(80)])
+    assert.ok(safeId.safeParse(newHabitId(title)).success);
+  await assert.rejects(createToolClient(fixtureCallTool('habit-error', 0), 'es').saveHabit(draft), {
+    kind: 'unavailable',
+    message: 'Este servidor todavía no ofrece la herramienta save_my_habit.',
+  });
+  const anonymous = createToolClient(async () => ({
+    isError: true,
+    content: [{ type: 'text', text: 'Sign in to ReloCat to use your own profile.' }],
+    _meta: { 'mcp/www_authenticate': ['Bearer resource_metadata="https://relo.example/x"'] },
+  }));
+  await assert.rejects(anonymous.saveHabit(draft), { kind: 'signin' });
+});
+
+test('a what-if habit joins the person sent to the planner, is labelled by its id and changes the real plan', () => {
+  const draft: HabitDraft = {
+    title: 'Sell the second car',
+    category: 'transport',
+    monthlySavingCents: 15_000,
+    status: 'active',
+  };
+  const habit = whatIfHabit({ ...draft, startedOn: '2026-11-23' }, 1);
+  assert.deepEqual(habit, {
+    id: 'what-if-habit-1',
+    title: 'Sell the second car',
+    category: 'transport',
+    monthlySavingCents: 15_000,
+    status: 'active',
+    adherence: null,
+    startedOn: '2026-11-23',
+  });
+  assert.equal(isWhatIfHabit(habit), true);
+  assert.equal(fixturePlan.person.habits.some(isWhatIfHabit), false);
+  const person = withWhatIfHabits(fixturePlan.person, [habit]);
+  assert.equal(person.habits.length, fixturePlan.person.habits.length + 1);
+  assert.equal(fixturePlan.person.habits.includes(habit), false, 'the stored person is not changed');
+  assert.equal(withWhatIfHabits(fixturePlan.person, []), fixturePlan.person);
+  assert.ok(planInput.safeParse({ person, municipalityCodes: ['250404'] }).success);
+
+  // The real planner, on a person with declared figures: the what-if habit is counted and shortens the wait.
+  const { snapshot, policies } = loadData();
+  const declared: Person = {
+    id: 'what-if',
+    synthetic: false,
+    householdSize: null,
+    currentMunicipalityCode: null,
+    finances: {
+      monthlyIncomeCents: 229_000,
+      monthlyExpensesCents: 169_010,
+      currentSavingsCents: 1_574_600,
+      emergencyReserveCents: 0,
+      basis: 'declared',
+      asOf: null,
+    },
+    home: { floorAreaM2: null, budgetCents: 10_800_000, depositRate: 0.2 },
+    habits: [],
+  };
+  const places = [buildPlace(snapshot, '250404')];
+  const before = planForPlaces(declared, places, policies, undefined, '2026-11-23');
+  const after = planForPlaces(withWhatIfHabits(declared, [habit]), places, policies, undefined, '2026-11-23');
+  assert.equal(before.plans[0].monthsSavedByHabits, 0);
+  assert.ok((after.plans[0].monthsSavedByHabits ?? 0) > 0);
+  assert.deepEqual(
+    after.habits?.map(effect => [effect.habitId, effect.counted]),
+    [['what-if-habit-1', true]],
+  );
+  assert.equal(habitPlanView(habit, after, true).state, 'counted');
+  // A paused what-if habit is shown and not counted.
+  const paused = whatIfHabit({ ...draft, status: 'paused' }, 2);
+  const withPaused = planForPlaces(withWhatIfHabits(declared, [paused]), places, policies, undefined, '2026-11-23');
+  assert.equal(withPaused.plans[0].monthsSavedByHabits, 0);
+});
+
+test('a demo persona opens on the default places; with no place the plan is asked for and a refusal is not an error', async () => {
+  const demo = { kind: 'demo', demoId: 'user-004' } as const;
+  assert.deepEqual(openingPlaces(demo, []), demoDefaultPlaces);
+  assert.deepEqual(openingPlaces(demo, ['251207']), ['251207'], 'places that were asked for are kept');
+  assert.deepEqual(openingPlaces({ kind: 'me' }, []), []);
+  assert.deepEqual(openingPlaces({ kind: 'none' }, []), []);
+  assert.ok(demoDefaultPlaces.every(code => /^\d{6}$/.test(code)) && demoDefaultPlaces.length >= 2);
+
+  // A server that plans without a place: no plans and the person.
+  const client = createToolClient(fixtureCallTool('1', 0));
+  const noPlace = await client.plan({ subject: demoSubject, municipalityCodes: [], assumptions });
+  assert.deepEqual(noPlace.plans, []);
+  assert.equal(noPlace.person.id, fixturePlan.person.id);
+  assert.equal(baselineMonthlySavingsCents(noPlace), null, 'no place and no anywhere-plan: not estimated, not zero');
+  assert.equal(habitMonthlyEffectCents(noPlace), null);
+
+  // A server from before that refuses the empty list: nothing to plan yet. Sign-in is still passed on.
+  const refuses = createToolClient(async () => ({
+    isError: true,
+    content: [{ type: 'text', text: 'The request or the stored data did not match the contract.' }],
+  }));
+  const refusal = await refuses
+    .plan({ subject: demoSubject, municipalityCodes: [], assumptions })
+    .catch(error => error);
+  assert.ok(refusal instanceof ToolError);
+  assert.equal(isNoPlaceRefusal([], refusal), true);
+  assert.equal(isNoPlaceRefusal(['250404'], refusal), false, 'with a place a failure is a failure');
+  assert.equal(isNoPlaceRefusal([], new ToolError('plan_home_savings', 'signin', 'Sign in')), false);
+});
+
+test('the new catalogs say the same things in the three languages', () => {
+  for (const locale of ['en', 'ca', 'es'] as const) {
+    const suggest = translator(suggestMessages, locale);
+    const habit = translator(habitFormMessages, locale);
+    const places = translator(placesMessages, locale);
+    assert.match(suggest('resultsTitle', { count: 1 }), /1/);
+    assert.match(suggest('resultsTitle', { count: 3 }), /3/);
+    assert.match(suggest('excluded', { count: 16 }), /16/);
+    assert.match(suggest('addAll', { count: 3 }), /3/);
+    assert.match(suggest('budgetNoArea', { budget: '108.000 €' }), /108\.000 €/);
+    // The what-if version says, in every language, that nothing is saved.
+    for (const key of ['introWhatIf', 'introDemo', 'addedWhatIf'] as const) assert.ok(habit(key).length > 20);
+    assert.match(places('empty'), /<b>.*<\/b>/);
+  }
+  assert.equal(translator(suggestMessages, 'en')('summary'), 'Suggest places for me');
+  assert.equal(translator(suggestMessages, 'ca')('summary'), 'Suggereix-me llocs');
+  assert.equal(translator(suggestMessages, 'es')('summary'), 'Sugiéreme lugares');
+  assert.equal(translator(habitFormMessages, 'en')('summary'), 'Add a habit');
+  assert.match(translator(habitFormMessages, 'ca')('introDemo'), /persona fictícia.*no es desa/);
+  assert.match(translator(habitFormMessages, 'es')('introWhatIf'), /no se guarda/);
+});
+
+test('the habit form saves through the real save_my_habit tool and the real plan counts the new habit', async () => {
+  const db = open(':memory:');
+  const doc = { schemaVersion: 1, synthetic: false };
+  await createStore(db).create('p-1', { details: { ...doc, id: 'p-1' }, preferences: doc, 'bank-account': doc });
+  const habits = createHabitsHandler({ token: 'habits-test-token', db });
+  const { snapshot, policies } = loadData();
+  const today = new Date().toISOString().slice(0, 10);
+  // A signed-in person with declared figures; the habit store is the real one.
+  const caller: Caller = {
+    scopes: ['person:read', 'person:write'],
+    demo: null,
+    challenge: () => 'Bearer resource_metadata="https://relocat.test/.well-known/oauth-protected-resource"',
+    me: {
+      userId: 'p-1',
+      synthetic: false,
+      context: async () => ({
+        resolved: {
+          data: {
+            finance: { monthlyIncomeCents: 229_000, monthlyExpensesCents: 169_010, currentSavingsCents: 1_574_600 },
+            housing: { budgetCents: 10_800_000 },
+          },
+          provenance: Object.fromEntries(
+            ['monthlyIncomeCents', 'monthlyExpensesCents', 'currentSavingsCents'].map(field => [
+              `finance.${field}`,
+              [{ confirmed: true, observedAt: '2026-11-01T00:00:00Z' }],
+            ]),
+          ),
+        },
+      }),
+      inputs: async () => ({ inputs: [] }),
+      saveInputs: async () => ({ inserted: 0, duplicates: 0 }),
+      bankSummary: async () => {
+        throw new Error('no bank');
+      },
+      bankUpdates: async () => ({}),
+      bankRuntime: async () => ({}),
+      bankBalanceCents: async () => null,
+      habits: () => habits.read('p-1'),
+      saveHabit: (goal: unknown, replace = false) => habits.save('p-1', goal, replace),
+    },
+  };
+  const server = new McpServer({ name: 'habit-form-test', version: '1' });
+  registerPlannerTools(server, { snapshot, policies, today: () => today, caller });
+  const mcp = new Client({ name: 'test', version: '1' });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(a), mcp.connect(b)]);
+  try {
+    const client = createToolClient(
+      (name, args) => mcp.callTool({ name, arguments: args }) as Promise<ToolResult>,
+      'ca',
+    );
+    const me = { kind: 'me' } as const;
+    const before = await client.plan({ subject: me, municipalityCodes: ['250404'], assumptions });
+    assert.equal(before.person.habits.length, 0);
+    assert.equal(before.plans[0].monthsSavedByHabits, 0);
+
+    // What the form reads is what the tool accepts.
+    const read = readHabitForm(
+      {
+        title: 'Cuinar a casa entre setmana',
+        category: 'food',
+        monthlySaving: '120',
+        status: 'active',
+        startedOn: today,
+      },
+      today,
+    );
+    assert.ok(read.ok);
+    await client.saveHabit(read.habit);
+    const after = await client.plan({ subject: me, municipalityCodes: ['250404'], assumptions });
+    assert.deepEqual(
+      after.person.habits.map(habit => [
+        habit.title,
+        habit.category,
+        habit.monthlySavingCents,
+        habit.status,
+        habit.startedOn,
+      ]),
+      [['Cuinar a casa entre setmana', 'food', 12_000, 'active', today]],
+    );
+    assert.match(after.person.habits[0].id, /^cuinar-a-casa-entre-setmana-[a-z0-9]+$/);
+    assert.ok((after.plans[0].monthsSavedByHabits ?? 0) > 0, 'the new habit shortens the wait');
+    assert.equal(after.habits?.[0].counted, true);
+
+    // A paused habit with no figure is stored as such: no saving is invented and nothing is counted.
+    const paused = readHabitForm(
+      { title: 'Anar en bici', category: 'transport', monthlySaving: '', status: 'paused', startedOn: '' },
+      today,
+    );
+    assert.ok(paused.ok);
+    await client.saveHabit(paused.habit);
+    const both = await client.plan({ subject: me, municipalityCodes: ['250404'], assumptions });
+    assert.deepEqual(
+      both.person.habits.map(habit => [habit.status, habit.monthlySavingCents]),
+      [
+        ['active', 12_000],
+        ['paused', null],
+      ],
+    );
+    assert.equal(both.plans[0].withHabits?.months, after.plans[0].withHabits?.months);
+    // A day the server refuses comes back as the server's own sentence, for the form to show.
+    await assert.rejects(client.saveHabit({ ...read.habit, startedOn: '2099-01-01' }), { kind: 'failed' });
+  } finally {
+    await mcp.close();
+    db.close();
+  }
 });

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "userId": "user-004",
+  "inputs": [
+    {
+      "id": "demo-user-004-eligibility",
+      "source": "interview",
+      "observedAt": "2026-11-21T09:00:00.000Z",
+      "confirmed": true,
+      "synthetic": true,
+      "data": {
+        "eligibility": {
+          "primaryResidence": true,
+          "birthDate": "1986-03-14",
+          "children": [
+            {
+              "birthDate": "2021-05-02",
+              "meetsItpSchooling": true,
+              "inDesignatedSchool": true
+            }
+          ],
+          "itpTransaction": true,
+          "satisfiesItpOccupancyRules": true,
+          "largeFamily": false,
+          "singleParent": false,
+          "disability65": false,
+          "firstRuralMove": true,
+          "ownsHomeInSpain": false,
+          "incomeWithinFiveIprem": true,
+          "filing": "joint",
+          "itpBuyerNetTaxBaseEur": 14000,
+          "itpFamilyNetTaxBaseEur": 26000,
+          "irpfNetTaxBaseEur": 26000
+        }
+      }
+    }
+  ]
+}

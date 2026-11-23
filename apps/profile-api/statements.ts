@@ -12,6 +12,7 @@ import { getTransaction } from '../../packages/db/ledger.ts';
 import type { Transaction } from '../../packages/finance/cashflow.ts';
 import { cashFlowStatements, parseTransactions, summarizeTransactions } from '../../packages/finance/csv.ts';
 import { ApiError } from '../../packages/http/server.ts';
+import { createFormat } from '../../packages/i18n/format.ts';
 import { requireUser } from '../../packages/profiles/store.ts';
 import type { createBankStore, StatementBatch } from './bank.ts';
 import { manualAccountId } from './bank.ts';
@@ -146,7 +147,7 @@ export function createStatementImports(db: Database, bank: BankStore, clock: () 
       }
       if (getTransaction(db, userId, row.id)) alreadyInLedger++;
     }
-    const wording = cashFlowStatements(summary, amount => `${amount.toFixed(2)} EUR`);
+    const wording = cashFlowStatements(summary, amount => createFormat().money(amount, 'EUR'));
     return {
       previewHash,
       expiresAt,

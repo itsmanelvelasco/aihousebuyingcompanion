@@ -1,8 +1,17 @@
 import type { Policy } from '../contracts/places.ts';
-import type { FactConflict, KnownFact, NextQuestion, Person, Place, PlacePlan } from '../contracts/planner.ts';
-import { person as personSchema, planAssumptions } from '../contracts/planner.ts';
+import type {
+  FactConflict,
+  KnownFact,
+  NextQuestion,
+  Person,
+  PersonInput,
+  Place,
+  PlacePlan,
+} from '../contracts/planner.ts';
+import { planAssumptions } from '../contracts/planner.ts';
 import { defaultLocale, type Locale } from '../i18n/locales.ts';
 import { type MessageValues, translator } from '../i18n/messages.ts';
+import { inlinePerson } from '../model/person.ts';
 import type { Question, QuestionId } from '../model/questions.ts';
 import {
   answerSpecFor,
@@ -502,7 +511,7 @@ export function factsOf(
  * means nothing more is worth asking.
  */
 export function missingFacts(
-  person: Person,
+  person: PersonInput,
   places: Place[],
   policies: Policy[],
   asOf: string,
@@ -511,7 +520,7 @@ export function missingFacts(
 ): NextQuestion[] {
   const options = planAssumptions.parse(assumptions ?? {});
   const date = options.asOf ?? asOf;
-  const who = withDerivedAges(personSchema.parse(person), date);
+  const who = withDerivedAges(inlinePerson(person), date);
   const current = planPlaces(who, places, policies, options, date).plans;
   return factsOf(who, places, policies, options, date, current, locale).nextQuestions;
 }

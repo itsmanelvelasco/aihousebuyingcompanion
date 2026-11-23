@@ -3,6 +3,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { loadData } from '../packages/places/data.ts';
+import { sources } from '../packages/sources/registry.ts';
 
 /**
  * Keeps the documentation true: a command, a path or an environment variable that a document
@@ -177,4 +179,94 @@ test('every documented way to run the image says where client addresses come fro
   assert.match(read('Dockerfile'), /COPY [^\n]*scripts\/backup-db\.ts/, 'the image can run npm run db:backup');
   // /health reports the schema version of the database, never where the file is.
   assert.doesNotMatch(read('docs/areas/integration-deployment.md'), /database path/);
+});
+
+// ------------------------------------------------- facts the documents state
+
+test('the figures the README gives for the pilot are the ones in the data', () => {
+  const { snapshot, policies } = loadData();
+  const actual: Record<string, number> = {
+    'town profiles': snapshot.municipalities.length,
+    'education centres': snapshot.schools.length,
+    'rail trips': snapshot.rail.trips.length,
+    'policy records': policies.length,
+    'official sources': sources.length,
+  };
+  const readme = read('README.md');
+  for (const [thing, count] of Object.entries(actual))
+    assert.match(readme, new RegExp(`\\b${count} ${thing}\\b`), `README.md says ${count} ${thing}`);
+  // Wherever a document counts one of these, in digits or in words, it gives the real number.
+  const words = [
+    'zero',
+    'one',
+    'two',
+    'three',
+    'four',
+    'five',
+    'six',
+    'seven',
+    'eight',
+    'nine',
+    'ten',
+    'eleven',
+    'twelve',
+  ];
+  const wrong: string[] = [];
+  for (const path of markdown)
+    for (const [thing, count] of Object.entries(actual))
+      for (const match of read(path).matchAll(new RegExp(`\\b(\\d+|${words.join('|')}) ${thing}\\b`, 'gi'))) {
+        const stated = /^\d+$/.test(match[1]) ? Number(match[1]) : words.indexOf(match[1].toLowerCase());
+        if (stated !== count) wrong.push(`${path}: "${match[0]}", the data has ${count}`);
+      }
+  assert.deepEqual(wrong, []);
+});
+
+test('the documents name every official source of the registry, and only those', () => {
+  const ids = sources.map(source => source.id).sort();
+  assert.ok(ids.length >= 8, 'the registry was read');
+  for (const path of ['README.md', 'docs/areas/municipalities-incentives.md']) {
+    const text = read(path);
+    const missing = ids.filter(id => !text.includes(`\`${id}\``));
+    assert.deepEqual(missing, [], `${path} names every source`);
+    // An id written like a source's (`gencat-…`, `idescat-…`, `fgc-…`) must be one.
+    const named = [...text.matchAll(/`((?:gencat|idescat|fgc)-[a-z-]+)`/g)].map(match => match[1]);
+    assert.deepEqual(
+      [...new Set(named)].filter(id => !ids.includes(id)),
+      [],
+      `${path} names no source that does not exist`,
+    );
+  }
+});
+
+test('the README lists every npm script', () => {
+  const readme = read('README.md');
+  const unlisted = scripts.filter(
+    // `pretest` runs by itself before `npm test`.
+    name => name !== 'pretest' && !new RegExp(`npm (run )?${name}(?![\\w:-])`).test(readme),
+  );
+  assert.deepEqual(unlisted, []);
+});
+
+test('claims the code has outgrown do not come back', () => {
+  const stale: [RegExp, string][] = [
+    [/ReloCat Team/, 'the product is ReloCat'],
+    [/not assumed to be live feeds/, 'official place data is live and pre-cached'],
+    [/per-user (production )?authori[sz]ation (is|remains?|are) (not|outside)/i, 'every person belongs to an account'],
+    [/Production auth[^.]*(is|are) later work/i, 'accounts and OAuth exist'],
+    [/integration remains pending|remains to be integrated/i, 'the profile API is integrated'],
+  ];
+  const found: string[] = [];
+  for (const path of [...markdown, ...files('plugins', name => name.endsWith('.json'))])
+    for (const [pattern, why] of stale) if (pattern.test(read(path))) found.push(`${path}: ${pattern} (${why})`);
+  assert.deepEqual(found, []);
+  // The two ways to speak and the widget cache are things a person setting ReloCat up must be told.
+  const readme = read('README.md');
+  for (const fact of [
+    'Refresh tools',
+    'OPENAI_API_KEY',
+    'INTERVIEWER_PUBLIC_AI=on',
+    'packages/i18n/README.md',
+    'Montserrat',
+  ])
+    assert.ok(readme.includes(fact), `README.md mentions ${fact}`);
 });

@@ -49,8 +49,12 @@ Then open [the test page](http://127.0.0.1:8787/test) (see [Browser test page](#
 ### Try in ChatGPT
 
 1. Run the server (`npm start`) and make its `/mcp` endpoint available over HTTPS or with a supported private tunnel.
-2. In [ChatGPT Plugins](https://chatgpt.com/plugins), choose **Add custom MCP server**, enter your `https://…/mcp` URL, and name the personal plugin **ReloCat Town Explorer**. Choose **No authentication** for the public-data sample. (Choose **OAuth** instead to use your own account through the personal tools; see the tool table below.) Install or refresh the connection. [Official setup guide](https://developers.openai.com/plugins/quickstart)
+2. In [ChatGPT Plugins](https://chatgpt.com/plugins), choose **Add custom MCP server**, enter your `https://…/mcp` URL, and name the plugin **ReloCat**. Choose **No authentication** for the public data and the fictional demo, or **OAuth** to use your own account: the personal tools in the table below answer only with the account connected. Install the plugin. ChatGPT keeps its own copy of the tool list and of each widget's page, so after any later change to a tool or a widget open the plugin's settings, choose **Refresh tools** and start a new chat. [Official setup guide](https://developers.openai.com/plugins/quickstart)
 3. In a new ChatGPT Work conversation, select the plugin and ask “Open ReloCat Town Explorer for Calaf. Show me the travel estimates to Barcelona and Girona.” Switch to Camarasa in the widget to see how a town with driving estimates and no transit samples appears.
+
+## Widgets
+
+Five MCP App resources are served from `/mcp`: the Town Explorer, the workspace (`apps/web`), the journey board (`apps/board`), the sample cash-flow card and the Start talking card. Each is one HTML document: its loader (`town-explorer.ts`, `workspace.ts`, `cash-flow.ts`, `voice-card.ts`) inlines the shared theme of `packages/ui` and the script that `npm run build` bundles into `dist/`. Every script reaches its host through `App` from `@modelcontextprotocol/ext-apps`, picks the language with `browserLocale` and formats amounts with `createFormat`; there is no hand-written handshake and no second copy of a catalog. Without its bundle a widget is not served: run `npm run build` (`npm run dev` and `npm start` do).
 
 ## Tools
 

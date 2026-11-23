@@ -17,7 +17,11 @@ function build(locale: Locale) {
   const eurosExact = new Intl.NumberFormat(tag, { style: 'currency', currency: 'EUR' });
   const whole = new Intl.NumberFormat(tag, { maximumFractionDigits: 0 });
   const oneDecimal = new Intl.NumberFormat(tag, { maximumFractionDigits: 1 });
+  const twoDecimals = new Intl.NumberFormat(tag, { maximumFractionDigits: 2 });
   const percent = new Intl.NumberFormat(tag, { style: 'percent', maximumFractionDigits: 0 });
+  const percentExact = new Intl.NumberFormat(tag, { style: 'percent', maximumFractionDigits: 2 });
+  const conjunction = new Intl.ListFormat(tag, { style: 'long', type: 'conjunction' });
+  const currencies = new Map<string, Intl.NumberFormat>([['EUR', eurosExact]]);
   const day = new Intl.DateTimeFormat(dateTags[locale], { dateStyle: 'medium', timeZone: 'UTC' });
   const clock = new Intl.DateTimeFormat(dateTags[locale], { hour: '2-digit', minute: '2-digit' });
   const unknown = t('unknown');
@@ -31,6 +35,22 @@ function build(locale: Locale) {
     euros: (cents: number | null | undefined) => (known(cents) ? euros.format(cents / 100) : unknown),
     /** Integer EUR cents with cents, for a single movement. */
     eurosExact: (cents: number | null | undefined) => (known(cents) ? eurosExact.format(cents / 100) : unknown),
+    /** Integer EUR cents as whole euros, with cents only when there are some: `€950`, `€950.50`. */
+    eurosAuto: (cents: number | null | undefined) =>
+      known(cents) ? (cents % 100 === 0 ? euros : eurosExact).format(cents / 100) : unknown,
+    /**
+     * An amount in the main unit of any currency, with cents: a bank statement keeps its own
+     * currency. Euros read as `eurosExact` writes them.
+     */
+    money: (amount: number | null | undefined, currency: string) => {
+      if (!known(amount)) return unknown;
+      let format = currencies.get(currency);
+      if (!format) {
+        format = new Intl.NumberFormat(tag, { style: 'currency', currency });
+        currencies.set(currency, format);
+      }
+      return format.format(amount);
+    },
     /** Integer EUR cents a month: `€1,200/month`. */
     monthly: (cents: number | null | undefined) =>
       known(cents) ? t('perMonth', { amount: euros.format(cents / 100) }) : unknown,
@@ -38,6 +58,12 @@ function build(locale: Locale) {
     decimal: (value: number | null | undefined) => (known(value) ? oneDecimal.format(value) : unknown),
     /** A 0–1 share as a whole percentage. */
     share: (share: number | null | undefined) => (known(share) ? percent.format(share) : unknown),
+    /** A 0–1 rate as a percentage with up to two decimals: `2.25%`, `2,25 %`. */
+    percent: (rate: number | null | undefined) => (known(rate) ? percentExact.format(rate) : unknown),
+    /** A plain number with up to two decimals, grouped as the language groups. */
+    number: (value: number | null | undefined) => (known(value) ? twoDecimals.format(value) : unknown),
+    /** "a, b and c" with the language's own conjunction. */
+    list: (items: readonly string[]) => conjunction.format(items),
     /** An ISO date or date-time as a calendar day; text that is not a date is returned as it is. */
     date: (value: string | number | Date | null | undefined) => {
       if (!known(value)) return unknown;

@@ -26,6 +26,18 @@ export const emptyLaunch: WorkspaceLaunch = {
   municipalityCodes: [],
 };
 
+/**
+ * The places a demo persona opens on when the launch names none: a town without rural status, a
+ * rural municipality and a special-attention one (Balaguer, Talarn, Térmens), so what a place
+ * offers is visible side by side. `tests/demo-personas.test.ts` holds the story they tell.
+ */
+export const demoDefaultPlaces = ['250404', '252154', '252206'];
+
+/** The places to open on: those of the launch, or the demo defaults for a demo persona that came with none. */
+export function openingPlaces(subject: Subject, codes: string[]) {
+  return subject.kind === 'demo' && codes.length === 0 ? demoDefaultPlaces : codes;
+}
+
 /** A launch that cannot be read opens the workspace empty instead of failing. */
 export function parseLaunch(value: unknown): WorkspaceLaunch {
   const parsed = workspaceLaunch.safeParse(value);

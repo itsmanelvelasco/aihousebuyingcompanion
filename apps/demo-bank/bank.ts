@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { z } from 'zod';
 import { ApiError } from '../../packages/http/server.ts';
 import type { Customer, PlannedMovement } from './simulation.ts';
@@ -363,6 +364,8 @@ export function createDemoBankCore(options: DemoBankCoreOptions = {}) {
       .then(async () => {
         const temporary = `${file}.${randomUUID()}.tmp`;
         try {
+          // A first start on a fresh machine: the folder of the snapshot may not exist yet.
+          await mkdir(dirname(file), { recursive: true });
           await writeFile(temporary, `${JSON.stringify(snapshot())}\n`, { mode: 0o600 });
           await rename(temporary, file);
         } finally {

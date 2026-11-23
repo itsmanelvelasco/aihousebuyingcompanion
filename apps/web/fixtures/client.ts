@@ -4,10 +4,14 @@ import { fixtureNoSavings, fixturePlan } from './plan.ts';
 /**
  * `CallTool` for `?fixture=1`: answers the same tools with canned data so the page can be inspected
  * without a server. `variant` picks a state to look at: `nosavings` (timelines with no end),
- * `plan-error` and `bank-error` (failed tools), `empty` (no places returned).
+ * `plan-error` and `bank-error` (failed tools), `empty` (no places returned), `suggest-error` and
+ * `suggest-none` (the suggestions fail, or nothing passes the filters), `habit-error` (a server
+ * that cannot save habits yet).
  */
 export function fixtureCallTool(variant: string, delayMs = 350): CallTool {
   let polls = 0;
+  // Saving is the signed-in person's: the variant that cannot save a habit is signed in too.
+  const signedIn = variant === 'signed-in' || variant === 'habit-error';
   const ok = (structuredContent: unknown): ToolResult => ({ structuredContent });
   const fail = (text: string): ToolResult => ({ isError: true, content: [{ type: 'text', text }] });
   const startedAt = Date.now();
@@ -19,8 +23,59 @@ export function fixtureCallTool(variant: string, delayMs = 350): CallTool {
     accountCount: 1,
     transactionCount,
   });
+  const source = { observedAt: '2026-11-21', sourceUrl: 'https://api.idescat.cat/emex/v1/nodes.json?lang=ca' };
+  const towns = fixturePlan.plans.map(({ place }) => ({
+    code: place.municipalityCode,
+    name: place.name,
+    comarca: place.comarca,
+    recommendable: true,
+    identity: source,
+    centre: { ...place.centre, ...source, name: place.name },
+    rural: { ...source, category: place.rural, effectiveFrom: null },
+  }));
   return async (name, args) => {
     if (delayMs > 0) await new Promise(resolve => setTimeout(resolve, delayMs));
+    if (name === 'recommend_towns') {
+      if (variant === 'suggest-error')
+        return fail('Provide homeSizeM2 (constructed floor area) with a purchase budget to estimate a resale price.');
+      // The fixture does not screen: every sample town "fits" except the last, which is left out.
+      const fits = variant === 'suggest-none' ? [] : towns.slice(0, -1);
+      return ok({
+        snapshot: { version: 'fixture', generatedOn: '2026-11-21' },
+        travelDate: '2026-11-23',
+        towns: fits.map((municipality, index) => ({
+          municipality,
+          score: index === 0 ? 72 : null,
+          matchReasons: ['Sample reason: the official rural classification applies here.'],
+          tradeoffs: index === 0 ? ['Sample compromise: check real listings and the purchase costs.'] : [],
+          metrics: [],
+          housingEstimate: null,
+          schools: [],
+          commute: null,
+          dataMissing: index === 1 ? ['resale_eur_per_m2'] : [],
+          incentives: [],
+          relocation: {
+            coverage: 'not_researched',
+            checkedOn: null,
+            sourcePage: null,
+            asOf: '2026-11-23',
+            research: null,
+            opportunityChecks: [],
+            limitations: [],
+          },
+        })),
+        excluded: towns.slice(fits.length).map(town => ({
+          municipalityCode: town.code,
+          reasons: ['Sample exclusion: the published housing data are not enough to screen the budget.'],
+          dataMissing: ['resale_transactions'],
+        })),
+        limitations: ['Sample limitation: the suggestions cover the pilot municipalities only.'],
+      });
+    }
+    if (name === 'save_my_habit')
+      return variant === 'habit-error'
+        ? fail('MCP error -32602: Tool save_my_habit not found')
+        : ok({ saved: true, habit: { id: 'fixture-habit', ...args } });
     if (name === 'plan_home_savings') {
       if (variant === 'plan-error') return fail('MCP error -32602: Tool plan_home_savings not found');
       const base = variant === 'nosavings' ? fixtureNoSavings : fixturePlan;
@@ -31,9 +86,9 @@ export function fixtureCallTool(variant: string, delayMs = 350): CallTool {
     }
     if (name === 'show_workspace')
       return ok({
-        subject: variant === 'signed-in' ? 'me' : args.demoId ? 'demo' : 'none',
-        demoId: variant === 'signed-in' ? null : (args.demoId ?? null),
-        signedIn: variant === 'signed-in',
+        subject: signedIn ? 'me' : args.demoId ? 'demo' : 'none',
+        demoId: signedIn ? null : (args.demoId ?? null),
+        signedIn,
         demoIds: ['user-001', 'user-002', 'user-003', 'user-004'],
         municipalityCodes: args.municipalityCodes ?? [],
       });
@@ -88,22 +143,12 @@ export function fixtureCallTool(variant: string, delayMs = 350): CallTool {
         assumptions: ['Pending movements and transfers between own accounts are excluded.'],
         ledgerUpdatedAt: new Date(startedAt - 900_000).toISOString(),
       });
-    if (name === 'list_catalonia_municipalities') {
-      const source = { observedAt: '2026-11-21', sourceUrl: 'https://api.idescat.cat/emex/v1/nodes.json?lang=ca' };
+    if (name === 'list_catalonia_municipalities')
       return ok({
         snapshot: { version: 'fixture', generatedOn: '2026-11-21' },
         coverage: 'Fixture towns.',
-        municipalities: fixturePlan.plans.map(({ place }) => ({
-          code: place.municipalityCode,
-          name: place.name,
-          comarca: place.comarca,
-          recommendable: true,
-          identity: source,
-          centre: { ...place.centre, ...source, name: place.name },
-          rural: { ...source, category: place.rural, effectiveFrom: null },
-        })),
+        municipalities: towns,
       });
-    }
     return fail(`MCP error -32602: Tool ${name} not found`);
   };
 }

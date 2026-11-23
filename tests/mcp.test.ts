@@ -55,7 +55,7 @@ async function tool(name: string, args: Record<string, unknown>) {
 test('discovers schemas and exposes sourced profiles, schools and business indicators', async () => {
   assert.equal(client.getServerVersion()?.name, 'relocat');
   const listed = await client.listTools();
-  assert.equal(listed.tools.length, 35);
+  assert.equal(listed.tools.length, 37);
   // Every tool reads only, except the ones that act on the signed-in person's own record: saving
   // answers, and managing their own bank data.
   const writers = listed.tools.filter(tool => !tool.annotations?.readOnlyHint).map(tool => tool.name);
@@ -65,6 +65,7 @@ test('discovers schemas and exposes sourced profiles, schools and business indic
     'delete_statement_import',
     'disconnect_my_bank',
     'preview_statement_import',
+    'save_my_habit',
     'save_my_inputs',
     'sync_my_bank',
   ]);
@@ -111,7 +112,36 @@ test('serves the fictional interviewer cash-flow card and compares a savings hab
   assert.equal(voiceCard.mimeType, 'text/html;profile=mcp-app');
   assert('text' in voiceCard);
   assert.match(voiceCard.text, /Start talking/);
-  assert.match(JSON.stringify(start), /how many people will live in the home/);
+  // The steps the model follows are the planner flow; the two calculators are named only as what-ifs.
+  const started = start as unknown as { nextSteps: string[]; flow: string[]; signedIn: boolean; voiceSetup: string };
+  const steps = started.nextSteps;
+  assert.deepEqual(started.flow, ['get_next_questions', 'save_my_inputs', 'plan_home_savings', 'show_workspace']);
+  assert.match(steps[0], /^Call get_next_questions with person:\{\}/);
+  assert.match(
+    steps.join(' '),
+    /save_my_inputs with confirmed:true.*recommend_towns.*plan_home_savings.*show_workspace/,
+  );
+  assert.match(
+    steps.at(-1) ?? '',
+    /generate_home_savings_scenario and compare_home_savings are what-if calculators.*never present their result as the plan/,
+  );
+  assert.equal(started.signedIn, false);
+  assert.equal(
+    started.voiceSetup,
+    'Select the Voice icon in ChatGPT to start Live, then say: Use ReloCat to start my homebuying interview.',
+  );
+  assert.doesNotMatch(JSON.stringify(start) + (launcher?.description ?? ''), /ReloCat Team/);
+  const spanish = await tool('start_homebuying_interview', { locale: 'es' });
+  assert.match(
+    String((spanish as { openingQuestion: string }).openingQuestion),
+    /^¿Quieres empezar con un CSV del banco/,
+  );
+  const calculators = (await client.listTools()).tools.filter(entry =>
+    ['generate_home_savings_scenario', 'compare_home_savings'].includes(entry.name),
+  );
+  for (const calculator of calculators)
+    assert.match(calculator.description ?? '', /^A what-if calculator, not the plan/);
+  assert.match(client.getInstructions() ?? '', /The plan is plan_home_savings and nothing else/);
   const sample = await tool('sample_cash_flow', {});
   assert(typeof sample === 'object' && sample !== null && 'monthlyNetCashFlow' in sample);
   // The demo statement runs from 1 August to 25 October: August and September are averaged, October is partial.

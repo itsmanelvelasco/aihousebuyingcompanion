@@ -906,6 +906,10 @@ const personalCalls: [string, Record<string, unknown>][] = [
   ['get_my_inputs', {}],
   ['get_next_questions', { me: true, municipalityCodes: ['251207'] }],
   ['save_my_inputs', { data: { household: { size: 4 } }, confirmed: true }],
+  ['save_my_habit', { id: 'cook-at-home', title: 'Cook at home', category: 'food', monthlySavingCents: 12_000 }],
+  ['list_my_habits', {}],
+  ['get_next_questions', { me: true }],
+  ['plan_home_savings', { me: true }],
   ['get_bank_summary', { from: '2026-08-01', to: '2026-10-31' }],
   ['get_bank_updates', {}],
   ['get_bank_runtime', {}],
@@ -974,6 +978,31 @@ test('access-control matrix: MCP tools', async t => {
         | undefined
     )?.monthlyIncomeCents;
   assert.deepEqual([await incomeOf(tokenA), await incomeOf(tokenB)], [111_100, 999_900]);
+  // The habit A saved is A's alone: B lists none, and a connection without the write scope cannot save one.
+  const habitsOf = async (token: string) =>
+    ((await mcp(origin, 'list_my_habits', {}, bearer(token))).result?.structuredContent?.habits ?? []) as {
+      id: string;
+    }[];
+  assert.deepEqual([(await habitsOf(tokenA)).map(habit => habit.id), await habitsOf(tokenB)], [['cook-at-home'], []]);
+  const readOnlyA = (await connectClient(a, 'person:read')).tokens.access_token;
+  const refusedHabit = await mcp(
+    origin,
+    'save_my_habit',
+    { id: 'tea', title: 'Tea at home', category: 'food' },
+    bearer(readOnlyA),
+  );
+  assert.equal(refusedHabit.status, 403);
+  assert.match(refusedHabit.headers.get('www-authenticate') ?? '', /error="insufficient_scope"/);
+  assert.deepEqual(
+    (await habitsOf(tokenA)).map(habit => habit.id),
+    ['cook-at-home'],
+  );
+  // A refusal also carries one sentence an assistant can say aloud about connecting the account.
+  const refusal = await mcp(origin, 'save_my_habit', { id: 'tea', title: 'Tea at home', category: 'food' });
+  assert.equal(refusal.status, 401);
+  assert.match(refusal.result?.content?.[1]?.text ?? '', /connect your account first/);
+  assert.match(serialized(refusal.result?._meta), /mcp\/www_authenticate/);
+  assert.match(serialized(refusal.result?._meta), /connectar el teu compte/);
   assert.equal((await mcp(origin, 'get_person', {}, bearer(tokenB))).result?.structuredContent?.householdSize, null);
 
   // The session cookie of a same-origin page works like a token; from another origin it is not used.

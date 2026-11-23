@@ -3,10 +3,15 @@ import { existsSync, readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { test } from 'node:test';
 import vm from 'node:vm';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { cashFlow } from '../apps/mcp-server/cash-flow.messages.ts';
+import { loadCashFlowCard } from '../apps/mcp-server/cash-flow.ts';
+import { cashFlowView } from '../apps/mcp-server/cash-flow-view.ts';
 import { connect } from '../apps/mcp-server/connect.messages.ts';
 import { connectScript } from '../apps/mcp-server/connect-agents.messages.ts';
 import { connectPage, handleConnectPage } from '../apps/mcp-server/connect-page.ts';
+import { createMcpServer } from '../apps/mcp-server/tools.ts';
 import { explorer } from '../apps/mcp-server/town-explorer.messages.ts';
 import { loadTownExplorerPage } from '../apps/mcp-server/town-explorer.ts';
 import { voiceCard } from '../apps/mcp-server/voice-card.messages.ts';
@@ -16,6 +21,7 @@ import { chooseLocale } from '../packages/i18n/browser.ts';
 import { createFormat } from '../packages/i18n/format.ts';
 import { type Locale, localeNames, locales } from '../packages/i18n/locales.ts';
 import { translator } from '../packages/i18n/messages.ts';
+import { loadData } from '../packages/places/data.ts';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -247,7 +253,6 @@ test('the voice card is a whole document that takes its height from its content'
     assert.ok(existsSync(bundle), 'run `npm run build` first');
     const script = readFileSync(bundle, 'utf8').replace(/<\/script/gi, '<\\/script');
     assert.ok(card.includes(`<script>${script}</script>`), 'the bundled script is inlined');
-    assert.doesNotMatch(card, /ui\/notifications\/size-changed', \{\s*width: document\.documentElement\.scrollWidth/);
     assert.match(card, /<div class="rc-lang"><\/div>/);
     // English before the script runs, and the three languages in the script.
     for (const [, key, text] of card.matchAll(/data-i18n="(\w+)"[^>]*>([^<]*)</g))
@@ -265,25 +270,32 @@ test('the voice card is a whole document that takes its height from its content'
 
 // ------------------------------------------------------------ cash-flow card
 
-/** The card's own script, run against the few DOM calls it makes. */
-function runCashFlow(options: { search?: string; stored?: string; languages?: string[]; host?: string }) {
-  const html = read('apps/mcp-server/cash-flow-widget.html');
-  const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1];
-  assert(script);
-  type Node = {
-    id: string;
-    textContent: string;
-    hidden: boolean;
-    lang: string;
-    dataset: Record<string, string>;
-    attributes: Record<string, string>;
-    children: Node[];
-    onclick?: () => void;
-    setAttribute(name: string, value: string): void;
-    append(...nodes: Node[]): void;
-    replaceChildren(...nodes: Node[]): void;
-  };
-  const node = (id = ''): Node => ({
+type FakeNode = {
+  id: string;
+  textContent: string;
+  hidden: boolean;
+  lang: string;
+  dataset: Record<string, string>;
+  attributes: Record<string, string>;
+  children: FakeNode[];
+  click?: () => void;
+  setAttribute(name: string, value: string): void;
+  addEventListener(type: string, listener: () => void): void;
+  append(...nodes: FakeNode[]): void;
+  replaceChildren(...nodes: FakeNode[]): void;
+};
+
+/**
+ * A built widget script run as ChatGPT runs it: in a frame whose parent answers the MCP Apps
+ * handshake. Only the DOM calls the cards make exist. `sent` is what the script posted to its host.
+ */
+async function runWidget(
+  bundle: string,
+  options: { search?: string; stored?: string; languages?: string[]; marked?: string[] } = {},
+) {
+  const file = new URL(`../apps/mcp-server/dist/${bundle}`, import.meta.url);
+  assert.ok(existsSync(file), 'run `npm run build` first');
+  const node = (id = ''): FakeNode => ({
     id,
     textContent: '',
     hidden: false,
@@ -294,6 +306,9 @@ function runCashFlow(options: { search?: string; stored?: string; languages?: st
     setAttribute(name, value) {
       this.attributes[name] = value;
     },
+    addEventListener(type, listener) {
+      if (type === 'click') this.click = listener;
+    },
     append(...nodes) {
       this.children.push(...nodes);
     },
@@ -301,81 +316,149 @@ function runCashFlow(options: { search?: string; stored?: string; languages?: st
       this.children = nodes;
     },
   });
-  const nodes = new Map<string, Node>();
-  const marked = [...html.matchAll(/data-i18n="(\w+)"/g)].map(([, key]) =>
-    Object.assign(node(), { dataset: { i18n: key } }),
-  );
+  const nodes = new Map<string, FakeNode>();
+  const named = (id: string) => {
+    if (!nodes.has(id)) nodes.set(id, node(id));
+    return nodes.get(id) as FakeNode;
+  };
+  const marked = (options.marked ?? []).map(key => Object.assign(node(), { dataset: { i18n: key } }));
   const listeners: ((event: unknown) => void)[] = [];
+  const sent: { id?: number; method?: string; params?: Record<string, unknown> }[] = [];
   const store = new Map<string, string>(options.stored ? [['relocat.lang', options.stored]] : []);
-  const parent = { postMessage() {} };
+  const parent = { postMessage: (message: (typeof sent)[number]) => sent.push(message) };
+  const size = { width: 320, height: 240 };
+  const documentElement = {
+    lang: 'en',
+    style: {},
+    scrollWidth: size.width,
+    scrollHeight: size.height,
+    getBoundingClientRect: () => size,
+  };
   const document = {
     title: '',
-    documentElement: { lang: 'en' },
-    getElementById(id: string) {
-      if (!nodes.has(id)) nodes.set(id, node(id));
-      return nodes.get(id);
-    },
+    documentElement,
+    body: node(),
+    getElementById: named,
     createElement: () => node(),
-    querySelectorAll: () => marked,
+    // The voice card looks its language switcher up by class; neither card needs another selector.
+    querySelector: (selector: string) => (selector === '.rc-lang' ? named('languages') : null),
+    querySelectorAll: (selector: string) => (selector === '[data-i18n]' ? marked : []),
   };
-  const window = {
+  const window: Record<string, unknown> = {
     parent,
-    openai: undefined,
-    addEventListener(_type: string, listener: (event: unknown) => void) {
-      listeners.push(listener);
+    addEventListener(type: string, listener: (event: unknown) => void) {
+      if (type === 'message') listeners.push(listener);
     },
+    removeEventListener() {},
   };
-  vm.runInNewContext(
-    `${script}\nglobalThis.pickLocale = pickLocale; globalThis.messages = messages; globalThis.names = names;`,
-    {
-      window,
-      document,
-      location: { search: options.search ?? '' },
-      navigator: { languages: options.languages ?? ['en-GB'] },
-      localStorage: {
-        getItem: (key: string) => store.get(key) ?? null,
-        setItem: (key: string, value: string) => store.set(key, value),
-      },
-      Intl,
-      URLSearchParams,
+  window.window = window;
+  vm.runInNewContext(readFileSync(file, 'utf8'), {
+    window,
+    document,
+    location: { search: options.search ?? '' },
+    navigator: { languages: options.languages ?? ['en-GB'] },
+    localStorage: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, value),
     },
-  );
-  const send = (data: Record<string, unknown>) => {
+    console: { log() {}, debug() {}, info() {}, warn() {}, error() {} },
+    ResizeObserver: class {
+      observe() {}
+      disconnect() {}
+    },
+    requestAnimationFrame: (run: () => void) => setTimeout(run, 0),
+    getComputedStyle: () => ({}),
+    setTimeout,
+    clearTimeout,
+    URLSearchParams,
+    URL,
+    Intl,
+  });
+  const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+  const send = async (data: Record<string, unknown>) => {
     for (const listener of listeners) listener({ source: parent, data: { jsonrpc: '2.0', ...data } });
+    await settle();
   };
-  send({ id: 1, result: options.host ? { hostContext: { locale: options.host } } : {} });
+  await settle();
   const text = (id: string) => nodes.get(id)?.textContent;
   const rows = (id: string) => (nodes.get(id)?.children ?? []).map(row => row.children.map(cell => cell.textContent));
-  return { document, send, text, rows, store, languages: () => nodes.get('languages') as Node, marked };
+  return { document, sent, send, text, rows, store, languages: () => named('languages'), marked };
 }
 
-test('the cash-flow card carries the catalog and picks a language as the other widgets do', () => {
-  const html = read('apps/mcp-server/cash-flow-widget.html');
-  assert.ok(html.includes(`const messages = ${JSON.stringify(cashFlow)};`), 'the copy in the page equals the catalog');
-  assert.ok(
-    html.includes(`const names = { en: '${localeNames.en}', ca: '${localeNames.ca}', es: '${localeNames.es}' };`),
+/** The host's side of the handshake: the answer to `ui/initialize`, or its refusal. */
+async function answerInitialize(card: Awaited<ReturnType<typeof runWidget>>, hostLocale?: string, refuse = false) {
+  const request = card.sent.find(message => message.method === 'ui/initialize');
+  assert(request, 'the widget asks its host to initialise');
+  await card.send(
+    refuse
+      ? { id: request.id, error: { code: -32000, message: 'refused' } }
+      : {
+          id: request.id,
+          result: {
+            protocolVersion: request.params?.protocolVersion,
+            hostInfo: { name: 'test-host', version: '1.0.0' },
+            hostCapabilities: {},
+            hostContext: hostLocale ? { locale: hostLocale } : {},
+          },
+        },
   );
-  for (const [, key, text] of html.matchAll(/data-i18n="(\w+)">([^<]*)</g))
-    assert.equal(text, cashFlow.en[key as keyof typeof cashFlow.en], key);
-  assert.ok(html.includes(`<p id="coverage" role="status">${cashFlow.en.loading}</p>`));
+}
 
-  // Same decision as `chooseLocale`: the address, the stored choice, the host, the browser.
-  const cases: { search?: string; stored?: string; host?: string; languages?: string[] }[] = [
-    {},
-    { languages: ['fr-FR', 'es-ES', 'ca'] },
-    { host: 'ca-ES', languages: ['es'] },
-    { stored: 'es', host: 'ca', languages: ['en'] },
-    { search: '?lang=ca', stored: 'es', host: 'en-US' },
-    { search: '?lang=fr', host: 'pt-BR', languages: ['de'] },
-    { stored: 'constructor', host: 'ES_es' },
-  ];
-  for (const reader of cases) {
-    const expected = chooseLocale({ ...reader, hostLocale: reader.host, documentLang: 'en' });
-    assert.equal(runCashFlow(reader).document.documentElement.lang, expected, JSON.stringify(reader));
+test('every card completes the host handshake through App, with no hand-written one left', async () => {
+  // ChatGPT refuses a widget that does not send `ui/notifications/initialized` after `ui/initialize`.
+  for (const bundle of ['cash-flow.js', 'voice-card.js']) {
+    const card = await runWidget(bundle);
+    assert.deepEqual(
+      card.sent.map(message => message.method),
+      ['ui/initialize'],
+      bundle,
+    );
+    await answerInitialize(card);
+    assert.equal(card.sent[1]?.method, 'ui/notifications/initialized', bundle);
+  }
+  // One mechanism: no source of this server posts the handshake itself.
+  for (const path of [
+    'apps/mcp-server/cash-flow-widget.html',
+    'apps/mcp-server/cash-flow-widget.ts',
+    'apps/mcp-server/voice-card.ts',
+    'apps/mcp-server/voice-card-widget.ts',
+    'apps/mcp-server/town-explorer-widget.ts',
+  ])
+    assert.doesNotMatch(read(path), /ui\/initialize|ui\/notifications|postMessage/, path);
+});
+
+test('the cash-flow card is its template in English with the bundled script inlined', async () => {
+  const template = read('apps/mcp-server/cash-flow-widget.html');
+  assert.doesNotMatch(template, /<script/, 'the template carries no script and no copy of the catalog');
+  const keys = [...template.matchAll(/data-i18n="(\w+)">([^<]*)</g)];
+  assert.ok(keys.length >= 3);
+  for (const [, key, text] of keys) assert.equal(text, cashFlow.en[key as keyof typeof cashFlow.en], key);
+  assert.ok(template.includes(`<p id="coverage" role="status">${cashFlow.en.loading}</p>`));
+
+  const page = loadCashFlowCard();
+  const script = read('apps/mcp-server/dist/cash-flow.js').replace(/<\/script/gi, '<\\/script');
+  assert.ok(page.includes(`<script>${script}</script>`), 'the bundled script is inlined');
+  assert.doesNotMatch(page, /<!-- WIDGET -->|\/\* THEME \*\//);
+
+  // What the MCP server hands ChatGPT is that document, not the bare template.
+  const { snapshot, policies, travelEstimates } = loadData();
+  const server = createMcpServer({ snapshot, policies, travelEstimates, listings: {} });
+  const client = new Client({ name: 'relocat-tests', version: '1.0.0' });
+  const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverSide);
+  await client.connect(clientSide);
+  try {
+    const served = (await client.readResource({ uri: 'ui://relocat/cash-flow.html' })).contents[0];
+    assert('text' in served);
+    // (Compared with `ok`: a failure should name the cause, not print two half-megabyte pages.)
+    assert.ok(served.text === page, 'apps/mcp-server/interview-tools.ts must serve loadCashFlowCard()');
+  } finally {
+    await client.close();
+    await server.close();
   }
 });
 
-test('the cash-flow card shows amounts, the unknown state and its failure in each language', () => {
+test('the cash-flow card says amounts, the unknown state and its failure in each language', () => {
   const summary = {
     observedMonths: ['2026-08', '2026-09', '2026-10'],
     monthlyExpenses: { Rent: 950, 'Eating out': 120.5, Farmàcia: 31 },
@@ -383,6 +466,7 @@ test('the cash-flow card shows amounts, the unknown state and its failure in eac
     monthlyCostOfLiving: 2026.5,
     monthlyNetCashFlow: null,
   };
+  const plain = (text: string) => text.replace(/[  ]/g, ' ');
   const expected: Record<Locale, { coverage: string; one: string; net: string[]; rent: string[]; failed: string }> = {
     en: {
       coverage: '3 months of fictional transactions',
@@ -395,44 +479,83 @@ test('the cash-flow card shows amounts, the unknown state and its failure in eac
       coverage: '3 mesos de moviments ficticis',
       one: '1 mes de moviments ficticis',
       net: ['Flux de caixa net', 'Sense identificar'],
-      rent: ['Habitatge (lloguer)', '950,00 €'],
+      rent: ['Habitatge (lloguer)', '950,00 €'],
       failed: 'La previsualització del flux de caixa no està disponible.',
     },
     es: {
       coverage: '3 meses de movimientos ficticios',
       one: '1 mes de movimientos ficticios',
       net: ['Flujo de caja neto', 'Sin identificar'],
-      rent: ['Vivienda (alquiler)', '950,00 €'],
+      rent: ['Vivienda (alquiler)', '950,00 €'],
       failed: 'La vista previa del flujo de caja no está disponible.',
     },
   };
   for (const locale of locales) {
-    const card = runCashFlow({ host: locale });
-    assert.equal(card.text('coverage'), cashFlow[locale].loading);
-    assert.equal(card.document.title, cashFlow[locale].title);
+    const waiting = cashFlowView(null, locale);
+    assert.deepEqual(
+      [waiting.title, waiting.coverage, waiting.totals, waiting.expenses],
+      [cashFlow[locale].title, cashFlow[locale].loading, null, null],
+    );
+    assert.equal(cashFlowView(null, locale, true).coverage, expected[locale].failed);
+    const view = cashFlowView(summary, locale);
+    assert.equal(view.coverage, expected[locale].coverage);
+    assert.deepEqual(view.totals?.[2], expected[locale].net);
+    assert.deepEqual(view.expenses?.[0].map(plain), expected[locale].rent);
+    // The amounts are the shared formatter's; a category the statement names is shown as received.
+    assert.equal(view.totals?.[1][1], createFormat(locale).money(2026.5, 'EUR'));
+    assert.equal(view.expenses?.[2][0], 'Farmàcia');
+    assert.equal(cashFlowView({ ...summary, observedMonths: ['2026-08'] }, locale).coverage, expected[locale].one);
+  }
+});
+
+test('the cash-flow card picks its language as the other widgets do and shows a tool result', async () => {
+  const marked = [...read('apps/mcp-server/cash-flow-widget.html').matchAll(/data-i18n="(\w+)"/g)].map(
+    ([, key]) => key,
+  );
+  // The decision is `browserLocale`: the address, the stored choice, the host, the browser.
+  const cases: { search?: string; stored?: string; host?: string; languages?: string[] }[] = [
+    {},
+    { languages: ['fr-FR', 'es-ES', 'ca'] },
+    { host: 'ca-ES', languages: ['es'] },
+    { stored: 'es', host: 'ca', languages: ['en'] },
+    { search: '?lang=ca', stored: 'es', host: 'en-US' },
+    { search: '?lang=fr', host: 'pt-BR', languages: ['de'] },
+    { stored: 'constructor', host: 'ES_es' },
+  ];
+  for (const reader of cases) {
+    const card = await runWidget('cash-flow.js', { ...reader, marked });
+    await answerInitialize(card, reader.host);
+    const expected = chooseLocale({ ...reader, hostLocale: reader.host, documentLang: 'en' });
+    assert.equal(card.document.documentElement.lang, expected, JSON.stringify(reader));
+    assert.equal(card.document.title, cashFlow[expected].title);
+    assert.equal(card.text('coverage'), cashFlow[expected].loading);
     assert.deepEqual(
       card.marked.map(element => element.textContent),
-      card.marked.map(element => cashFlow[locale][element.dataset.i18n as keyof typeof cashFlow.en]),
+      marked.map(key => cashFlow[expected][key as keyof typeof cashFlow.en]),
     );
-    card.send({ method: 'ui/notifications/tool-result', params: { structuredContent: summary } });
-    assert.equal(card.text('coverage'), expected[locale].coverage);
-    assert.deepEqual(card.rows('totals')[2], expected[locale].net);
-    assert.deepEqual(card.rows('expenses')[0], expected[locale].rent);
-    // A category the statement names is shown as received.
-    assert.equal(card.rows('expenses')[2][0], 'Farmàcia');
-    card.send({
-      method: 'ui/notifications/tool-result',
-      params: { structuredContent: { ...summary, observedMonths: ['2026-08'] } },
-    });
-    assert.equal(card.text('coverage'), expected[locale].one);
-
-    const broken = runCashFlow({ stored: locale });
-    broken.send({ id: 1, error: { code: -1 } });
-    assert.equal(broken.text('coverage'), expected[locale].failed);
   }
 
+  const card = await runWidget('cash-flow.js', { search: '?lang=ca', marked });
+  await answerInitialize(card);
+  await card.send({
+    method: 'ui/notifications/tool-result',
+    params: {
+      content: [],
+      structuredContent: {
+        observedMonths: ['2026-08', '2026-09'],
+        monthlyExpenses: { Rent: 950 },
+        monthlyNetCashFlow: 873.5,
+      },
+    },
+  });
+  assert.equal(card.text('coverage'), '2 mesos de moviments ficticis');
+  assert.deepEqual(card.rows('totals')[0], ['Sou estimat', 'Sense identificar']);
+  assert.equal(card.rows('expenses')[0][0], 'Habitatge (lloguer)');
+  assert.equal(card.document.getElementById('breakdown').hidden, false);
+  await card.send({ method: 'ui/notifications/host-context-changed', params: { locale: 'es-ES' } });
+  assert.equal(card.document.documentElement.lang, 'ca', 'the address still decides');
+
   // The switcher: a click shows the language at once, marks it and stores it.
-  const card = runCashFlow({ search: '?lang=ca' });
   const buttons = card.languages().children;
   assert.deepEqual(
     buttons.map(button => button.textContent),
@@ -442,15 +565,20 @@ test('the cash-flow card shows amounts, the unknown state and its failure in eac
     buttons.map(button => button.attributes['aria-pressed']),
     ['false', 'true', 'false'],
   );
-  buttons[2].onclick?.();
+  buttons[2].click?.();
   assert.equal(card.document.documentElement.lang, 'es');
-  assert.equal(card.text('coverage'), cashFlow.es.loading);
+  assert.equal(card.text('coverage'), '2 meses de movimientos ficticios');
   assert.equal(card.store.get('relocat.lang'), 'es');
   assert.deepEqual(
     buttons.map(button => button.attributes['aria-pressed']),
     ['false', 'false', 'true'],
   );
   assert.equal(card.languages().attributes['aria-label'], 'Idioma');
+
+  // A host that refuses the handshake: the card says so in the person's language.
+  const broken = await runWidget('cash-flow.js', { stored: 'es', marked });
+  await answerInitialize(broken, undefined, true);
+  assert.equal(broken.text('coverage'), cashFlow.es.unavailable);
 });
 
 test('the homepage catalog has no markup outside the three keys written as HTML', () => {

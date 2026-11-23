@@ -31,7 +31,8 @@ import { createPeople } from './people.ts';
 
 /**
  * Everything ReloCat serves on its one origin, as a request handler: accounts and OAuth, `/mcp`,
- * the board, the workspace, `/api` and `/health`. `index.ts` reads the environment, opens the
+ * the board, the workspace, `/api`, `/health` and, when it runs, the consent page of the fictional
+ * Banc Demo under `/banc-demo`. `index.ts` reads the environment, opens the
  * database and listens; tests build the same handler over a temporary database.
  *
  * The identity rule is enforced here. Each request is resolved to a caller once (OAuth access token,
@@ -53,6 +54,15 @@ export type AppOptions = {
   dataStatus?: BoardOptions['dataStatus'];
   /** Voice and guided interview, mounted under `/interview`. */
   interviewer?: (request: IncomingMessage, response: ServerResponse) => unknown;
+  /**
+   * Banc Demo's customer pages (its consent page), mounted under `path` on this origin so a person
+   * reaches them wherever they reach ReloCat. `handle` receives the request with `path` removed
+   * from its URL, and `path` itself. The bank's keyed API is not mounted: it stays on its own port.
+   */
+  demoBank?: {
+    path: string;
+    handle: (request: IncomingMessage, response: ServerResponse, basePath: string) => unknown;
+  };
   /** Extra fields of `GET /health`. */
   health?: () => Record<string, unknown>;
   rateLimit?: { perMinute?: number; webhooksPerMinute?: number } & Pick<
@@ -83,6 +93,8 @@ export type AppOptions = {
 const warningEveryMs = 5 * 60_000;
 
 const apiPrefix = '/api';
+/** Under `/api`: the signed-in caller's own bank event stream (Server-Sent Events). */
+const ownStreamPath = '/me/bank/events/stream';
 
 export function createApp(options: AppOptions) {
   const { db, publicOrigin, access } = options;
@@ -231,7 +243,7 @@ export function createApp(options: AppOptions) {
   });
   const habits = createHabitsHandler({ ...options.habits, token: options.adminToken, db, authorize: authorizeApi });
   const people = createPeople(
-    { ...profiles.people, habits: habits.read },
+    { ...profiles.people, habits: habits.read, saveHabit: habits.save },
     { origin: () => publicOrigin ?? localOrigin() },
   );
   const demo = access.publicDemo ? people.demo(access.demoUserIds, ownedByAccount) : null;
@@ -356,13 +368,27 @@ export function createApp(options: AppOptions) {
       });
     const webhook = path.startsWith(`${apiPrefix}/webhooks/`);
     const { allowed, retryAfterSeconds } = (webhook ? webhookLimiter : limiter).check(request);
-    if (!limiterOptions.exempt(request)) noteClient(request);
+    // A bank calling its webhook is another server, not a visitor: it has a budget of its own above
+    // and no client address to state (Banc Demo calls from this machine), so it raises no warning.
+    if (!webhook && !limiterOptions.exempt(request)) noteClient(request);
     if (!allowed) return limited(response, retryAfterSeconds);
     if (path === apiPrefix || path.startsWith(`${apiPrefix}/`)) {
       request.url = (request.url ?? '').slice(apiPrefix.length) || '/';
+      // `/api/me/bank/events/stream`: the caller's own event stream, for a page that knows no user
+      // id. The id comes from the credential; `/api` then checks the route against it as always.
+      if (request.url.split('?')[0] === ownStreamPath) {
+        const who = authorizeApi(request);
+        if (!who || who === 'admin') return sendJson(response, 401, { error: 'Unauthorized' });
+        request.url = `/users/${who.userId}${request.url.slice('/me'.length)}`;
+      }
       const parts = request.url.split('?')[0].split('/').filter(Boolean);
       const isHabits = parts[0] === 'limits' || (parts[0] === 'users' && parts[2] === 'habits');
       return isHabits ? habits(request, response) : profiles.handle(request, response);
+    }
+    const bankMount = options.demoBank;
+    if (bankMount && (path === bankMount.path || path.startsWith(`${bankMount.path}/`))) {
+      request.url = (request.url ?? '').slice(bankMount.path.length) || '/';
+      return bankMount.handle(request, response, bankMount.path);
     }
     if (await routes.handle(request, response)) return;
     if (options.interviewer && (path === '/interview' || path.startsWith('/interview/')))

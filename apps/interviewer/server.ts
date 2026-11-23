@@ -8,12 +8,15 @@ import { firstScenarioInput, generateFirstScenario } from '../../packages/financ
 import type { ClientAddressSource } from '../../packages/http/rate-limit.ts';
 import { createRateLimiter } from '../../packages/http/rate-limit.ts';
 import { ApiError, readText, sendJson, sendText } from '../../packages/http/server.ts';
+import { stepImageIds } from '../../packages/ui/images.manifest.ts';
 import { inlineUi } from '../../packages/ui/inline.ts';
 
 /**
  * The voice and guided interviewer as a request handler, so the one server can mount it under a
  * path prefix. The page, its bundle, the demo CSV and `/scenario` are public and free. `/classify`
  * and `/voice` call OpenAI with the owner's key, so they are local-only unless `publicAi` is set.
+ * The page's plan is not computed here: the page reads `plan_home_savings` from `/mcp` on the same
+ * origin. `/scenario` stays as plain savings arithmetic for other clients; the page no longer calls it.
  */
 export type InterviewerOptions = {
   /** Path the handler is mounted under, such as `/interview`. Leave empty when it owns the origin. */
@@ -272,8 +275,8 @@ export function createInterviewerHandler(options: InterviewerOptions = {}): Hand
       if (request.method === 'GET' && Object.hasOwn(assets, route)) {
         const [file, type] = assets[route];
         const body = await readFile(file, 'utf8');
-        // The page template carries theme, mark and favicon placeholders filled from packages/ui.
-        return sendText(response, 200, type === 'text/html' ? inlineUi(body) : body, type);
+        // The page template carries theme, mark, favicon and checkpoint-illustration placeholders filled from packages/ui.
+        return sendText(response, 200, type === 'text/html' ? inlineUi(body, { art: [...stepImageIds] }) : body, type);
       }
       if (request.method !== 'POST' || !Object.hasOwn(routes, route)) return error(response, 404, 'Unknown route.');
       await routes[route](request, response);

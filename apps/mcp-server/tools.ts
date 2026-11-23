@@ -38,7 +38,7 @@ import { getRelocationResearch } from '../../packages/places/relocation.ts';
 import { registerBankTools } from './bank-tools.ts';
 import type { Caller } from './identity.ts';
 import { anonymous } from './identity.ts';
-import { interviewerRouting, registerInterviewerTools } from './interview-tools.ts';
+import { interviewerRouting, plannerFlowGuidance, registerInterviewerTools } from './interview-tools.ts';
 import { registerPlannerTools } from './planner-tools.ts';
 import { toolMessages } from './tools.messages.ts';
 import { registerTownExplorer } from './town-explorer.ts';
@@ -49,7 +49,10 @@ const placeCoverage =
   'Selected Catalan municipalities, including the FGC Lleida–La Pobla corridor and Lleida as a transport destination.';
 /** How the model chooses the language of a result: said once in the server instructions. */
 export const languageGuidance =
-  'Tools that return text for display (recommend_towns, recommend_towns_for_profile, get_town_profile, get_applicable_incentives, check_housing_incentives, plan_home_savings, get_next_questions, get_place) take an optional locale: pass ca, es or en to match the language the person writes in, and answer in that language. Codes, ids, statuses and numbers are the same in every language.';
+  'Tools that return text for display (start_homebuying_interview, recommend_towns, recommend_towns_for_profile, get_town_profile, get_applicable_incentives, check_housing_incentives, plan_home_savings, get_next_questions, get_place, and the tools about the signed-in person) take an optional locale: pass ca, es or en to match the language the person writes in, and answer in that language. Codes, ids, statuses and numbers are the same in every language.';
+/** Said before a host's own guidance (the journey board): it is a scripted demo, never the plan. */
+const separateDemoFrame =
+  "Separate from the planner flow, this server also offers a scripted demo, the journey board: a rehearsal with scripted scenes and fictional figures, opened only when the user asks for it by name. Nothing it shows is the person's plan, and a home purchase conversation never goes through it. Its guidance follows:";
 const businessKinds = new Set([
   'registered_unemployment',
   'resident_social_security_affiliates',
@@ -97,9 +100,10 @@ export function createMcpServer(options: McpServerOptions) {
     {
       instructions:
         interviewerRouting +
+        ` ${plannerFlowGuidance}` +
         ' Use ReloCat to compare selected Catalan municipalities from a dated official-data snapshot. Cite evidence URLs. Explain geographic proxies and use the actual school and service dates. Describe sample travel times as approximate, with the transport mode and sample date. Distinguish policy eligibility from application status. Do not infer user finances, schooling, residence or tax facts. ' +
         languageGuidance +
-        (options.extraInstructions ? ` ${options.extraInstructions}` : ''),
+        (options.extraInstructions ? ` ${separateDemoFrame} ${options.extraInstructions}` : ''),
     },
   );
 
@@ -337,7 +341,8 @@ export function createMcpServer(options: McpServerOptions) {
     },
   );
 
-  registerInterviewerTools(server);
+  const caller = options.caller ?? anonymous;
+  registerInterviewerTools(server, { caller });
   server.registerTool(
     'search_homes',
     {
@@ -358,7 +363,6 @@ export function createMcpServer(options: McpServerOptions) {
     },
   );
 
-  const caller = options.caller ?? anonymous;
   if (options.townExplorerPage) registerTownExplorer(server, snapshot, options.townExplorerPage);
   if (options.workspacePage) registerWorkspace(server, options.workspacePage, caller);
   // Personal bank tools are always listed, so a chat host can see that they need sign-in.

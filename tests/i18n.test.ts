@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
@@ -16,6 +16,7 @@ import {
   translator,
 } from '../packages/i18n/messages.ts';
 import { languageSwitcher, localeCookie, localizeHtml, requestLocale, toolLocale } from '../packages/i18n/server.ts';
+import { wording } from '../packages/places/wording.ts';
 
 const root = resolve(import.meta.dirname, '..');
 
@@ -177,4 +178,48 @@ test('numbers, money, dates and durations are written as each language writes th
   assert.equal(plain(es.share(0.2)), '20 %');
   assert.match(ca.date('2026-11-23'), /23/);
   assert.equal(en.date('not a date'), 'not a date');
+});
+
+test('one formatter writes cents when present, rates with decimals, lists and other currencies', () => {
+  const en = createFormat('en');
+  const ca = createFormat('ca');
+  const es = createFormat('es');
+  const plain = (text: string) => text.replace(/[  ]/g, ' ');
+  // Cents only when there are some.
+  assert.equal(en.eurosAuto(95_000), '€950');
+  assert.equal(en.eurosAuto(95_050), '€950.50');
+  assert.equal(plain(ca.eurosAuto(95_000)), '950 €');
+  assert.equal(plain(es.eurosAuto(95_050)), '950,50 €');
+  assert.equal(es.eurosAuto(null), 'Desconocido');
+  // A rate keeps up to two decimals; `share` stays a whole percentage.
+  assert.equal(en.percent(0.0225), '2.25%');
+  assert.equal(en.percent(0.05), '5%');
+  assert.equal(plain(ca.percent(0.0225)), '2,25 %');
+  assert.equal(en.share(0.0225), '2%');
+  assert.equal(ca.percent(undefined), 'Desconegut');
+  assert.equal(en.number(1234.567), '1,234.57');
+  assert.equal(plain(es.number(12345.5)), '12.345,5');
+  // Lists take the language's own conjunction.
+  assert.equal(en.list(['schools', 'trains', 'shops']), 'schools, trains and shops');
+  assert.equal(ca.list(['escoles', 'trens', 'botigues']), 'escoles, trens i botigues');
+  assert.equal(es.list(['escuelas', 'trenes']), 'escuelas y trenes');
+  assert.equal(en.list(['schools']), 'schools');
+  // A statement keeps its own currency; euros read as `eurosExact` writes them.
+  assert.equal(en.money(1234.5, 'EUR'), en.eurosExact(123_450));
+  assert.equal(en.money(1234.5, 'EUR'), '€1,234.50');
+  assert.equal(en.money(12.5, 'USD'), 'US$12.50');
+  assert.equal(plain(es.money(12.5, 'GBP')), '12,50 GBP');
+  assert.equal(ca.money(null, 'USD'), 'Desconegut');
+
+  // The sentences of the domain packages delegate: English as given, the other languages formatted.
+  const english = wording('en');
+  const catalan = wording('ca');
+  assert.equal(english.euros(8_831_800, '€88318'), '€88318');
+  assert.equal(catalan.euros(8_831_850, '€88318.5'), ca.eurosAuto(8_831_850));
+  assert.equal(english.percent(0.0225), '2.25%');
+  assert.equal(catalan.percent(0.0225), ca.percent(0.0225));
+  assert.equal(catalan.number(1234.5), ca.number(1234.5));
+  assert.equal(english.list(['a', 'b'], ' / '), 'a / b');
+  assert.equal(catalan.list(['a', 'b'], ' / '), 'a i b');
+  assert.doesNotMatch(readFileSync(new URL('../packages/places/wording.ts', import.meta.url), 'utf8'), /Intl\./);
 });

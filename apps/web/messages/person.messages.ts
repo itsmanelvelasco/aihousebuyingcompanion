@@ -64,7 +64,7 @@ export const personMessages = defineMessages(
     habits: 'Habits',
     effectNotEstimated: 'Effect on the plan not estimated',
     addingInPlan: 'Adding {amount} in this plan',
-    noHabits: 'No habits recorded yet. Savings habits agreed in the chat appear here.',
+    noHabits: 'No habits recorded yet. Add one below, or agree one with ReloCat in the chat and it appears here.',
     noSavingAssumed: 'No saving assumed',
     switchedOn: 'Switched on in what-if',
     switchedOff: 'Switched off in what-if',
@@ -146,7 +146,8 @@ export const personMessages = defineMessages(
       habits: 'Hàbits',
       effectNotEstimated: 'Efecte sobre el pla no estimat',
       addingInPlan: 'Sumen {amount} en aquest pla',
-      noHabits: 'Encara no hi ha hàbits registrats. Els hàbits d’estalvi acordats al xat apareixen aquí.',
+      noHabits:
+        'Encara no hi ha hàbits registrats. Afegeix-ne un a sota, o acorda’n un amb ReloCat al xat i apareixerà aquí.',
       noSavingAssumed: 'No se suposa cap estalvi',
       switchedOn: 'Activat a l’estimació hipotètica',
       switchedOff: 'Desactivat a l’estimació hipotètica',
@@ -228,7 +229,8 @@ export const personMessages = defineMessages(
       habits: 'Hábitos',
       effectNotEstimated: 'Efecto sobre el plan no estimado',
       addingInPlan: 'Suman {amount} en este plan',
-      noHabits: 'Todavía no hay hábitos registrados. Los hábitos de ahorro acordados en el chat aparecen aquí.',
+      noHabits:
+        'Todavía no hay hábitos registrados. Añade uno debajo, o acuerda uno con ReloCat en el chat y aparecerá aquí.',
       noSavingAssumed: 'No se supone ningún ahorro',
       switchedOn: 'Activado en la estimación hipotética',
       switchedOff: 'Desactivado en la estimación hipotética',

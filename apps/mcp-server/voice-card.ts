@@ -6,52 +6,16 @@ import { themeCss } from '../../packages/ui/inline.ts';
 import { voiceCard } from './voice-card.messages.ts';
 
 /**
- * Used only while `dist/voice-card.js` has not been built: the host handshake written by hand,
- * in English. The built script (`voice-card-widget.ts`) replaces it and adds the other languages.
+ * The built script of the card (`voice-card-widget.ts`). It is the only way the card reaches its
+ * host: without `npm run build` there is no card, as with the other widgets.
  */
-const fallbackScript = `
-  if (window.parent !== window) {
-    const send = (method, params, id) =>
-      window.parent.postMessage({ jsonrpc: '2.0', method, params, id }, '*');
-    window.addEventListener('message', event => {
-      if (event.source !== window.parent || event.data?.jsonrpc !== '2.0' ||
-          event.data.id !== 1 || !event.data.result) return;
-      send('ui/notifications/initialized', {});
-      new ResizeObserver(() => send('ui/notifications/size-changed', {
-        width: document.documentElement.scrollWidth,
-        height: document.querySelector('main').offsetHeight,
-      })).observe(document.querySelector('main'));
-    });
-    send('ui/initialize', {
-      appInfo: { name: 'ReloCat Start talking', version: '1.0.0' },
-      appCapabilities: {},
-      protocolVersion: '2026-01-26',
-    }, 1);
-  }
-
-  document.querySelector('.launch')?.addEventListener('click', event => {
-    if (typeof window.openai?.openExternal !== 'function') return;
-    event.preventDefault();
-    const link = event.currentTarget;
-    try {
-      Promise.resolve(window.openai.openExternal({ href: link.href, redirectUrl: false }))
-        .catch(showLaunchError);
-    } catch { showLaunchError(); }
-    function showLaunchError() {
-      document.querySelector('#launch-help').hidden = false;
-    }
-  });
-`;
-
-/** The built widget script, or the hand-written fallback when the bundle is missing. */
 function widgetScript() {
-  let script = fallbackScript;
   try {
-    script = readFileSync(new URL('./dist/voice-card.js', import.meta.url), 'utf8');
+    return readFileSync(new URL('./dist/voice-card.js', import.meta.url), 'utf8').replace(/<\/script/gi, '<\\/script');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    throw new Error('The voice card has not been built. Run `npm run build`.');
   }
-  return script.replace(/<\/script/gi, '<\\/script');
 }
 
 /**

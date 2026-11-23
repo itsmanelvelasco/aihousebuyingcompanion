@@ -7,7 +7,12 @@ import { accountIdOfUser } from '../packages/db/auth.ts';
 import type { Database } from '../packages/db/database.ts';
 import { open } from '../packages/db/database.ts';
 import { insertUser, readSection, userExists, writeSection } from '../packages/db/profiles.ts';
+import { readStory, type Story, seedDemoStories, writeStory } from '../packages/profiles/demo-stories.ts';
 import { profileSchema, sections } from '../packages/profiles/store.ts';
+
+export { seedDemoStories };
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
  * `npm run db:reseed-demo [-- --dry-run]`
@@ -19,8 +24,10 @@ import { profileSchema, sections } from '../packages/profiles/store.ts';
  *
  * What it touches, and nothing else:
  *   - only the ids of the demo allowlist (`DEMO_USER_IDS`, default `user-001` to `user-004`);
- *   - only the three profile documents (`details`, `preferences`, `bank-account`) of each.
- * Saved answers, ledgers, bank connections and habits of a persona stay as they are. An id that
+ *   - the three profile documents (`details`, `preferences`, `bank-account`) of each;
+ *   - the story of each (`seedDemoStories`): the answers in its `demo-inputs.json` and the habits in
+ *     its `demo-habits.json`, written by their own ids.
+ * Other saved answers and habits, ledgers and bank connections of a persona stay as they are. An id that
  * belongs to an account is a person, not a persona: it is skipped and reported, whatever the
  * allowlist says. It is safe while the server runs: all documents are written in one short
  * transaction, and the server reads them on the next request.
@@ -37,7 +44,7 @@ export async function reseedDemo(
   options: { fixtures: string; ids: string[]; dryRun?: boolean },
 ): Promise<ReseedOutcome> {
   const outcome: ReseedOutcome = { updated: [], created: [], unchanged: [], skipped: [] };
-  const ready: { id: string; profile: ReturnType<typeof profileSchema.parse> }[] = [];
+  const ready: { id: string; profile: ReturnType<typeof profileSchema.parse>; story: Story }[] = [];
   for (const id of options.ids) {
     if (!safeId.safeParse(id).success) {
       outcome.skipped.push({ id, reason: 'not a valid id' });
@@ -54,31 +61,32 @@ export async function reseedDemo(
       if (profile.details.id !== id) throw new Error('details.id does not match the folder name');
       if (!sections.every(section => profile[section].synthetic === true))
         throw new Error('a fixture document is not marked synthetic');
-      ready.push({ id, profile });
+      ready.push({ id, profile, story: await readStory(options.fixtures, id) });
     } catch (error) {
       outcome.skipped.push({ id, reason: error instanceof Error ? error.message : 'unreadable fixture' });
     }
   }
   db.transaction(() => {
     const now = new Date().toISOString();
-    for (const { id, profile } of ready) {
+    for (const { id, profile, story } of ready) {
       // Checked inside the transaction: an account may have been created for this id a moment ago.
       if (accountIdOfUser(db, id) !== undefined) {
         outcome.skipped.push({ id, reason: 'belongs to an account; a person is never overwritten' });
         continue;
       }
       const exists = userExists(db, id);
-      const same =
-        exists &&
-        sections.every(section => JSON.stringify(readSection(db, id, section)) === JSON.stringify(profile[section]));
-      if (same) {
+      const sameDocuments = exists && sections.every(section => same(readSection(db, id, section), profile[section]));
+      // A persona that does not exist yet has no story either; one that exists is compared record by record.
+      const storyDiffers = exists ? writeStory(db, id, story, true) : story.inputs.length + story.goals.length > 0;
+      if (sameDocuments && !storyDiffers) {
         outcome.unchanged.push(id);
         continue;
       }
       (exists ? outcome.updated : outcome.created).push(id);
       if (options.dryRun) continue;
       if (!exists) insertUser(db, id, now);
-      for (const section of sections) writeSection(db, id, section, profile[section], now);
+      if (!sameDocuments) for (const section of sections) writeSection(db, id, section, profile[section], now);
+      writeStory(db, id, story, false);
     }
   });
   return outcome;

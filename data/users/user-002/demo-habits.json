@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "userId": "user-002",
+  "goals": [
+    {
+      "id": "cook-at-home",
+      "title": "Cook at home on weekdays",
+      "action": "Plan five dinners on Sunday and skip weekday takeaways.",
+      "category": "food",
+      "targetDaysPerWeek": 5,
+      "plannedMonthlySavingCents": 12000,
+      "active": true,
+      "startedOn": "2026-11-10"
+    },
+    {
+      "id": "unused-subscriptions",
+      "title": "Cancel unused subscriptions",
+      "action": "Review the subscriptions on the first of the month and cancel the ones nobody used.",
+      "category": "subscriptions",
+      "targetDaysPerWeek": 1,
+      "plannedMonthlySavingCents": 3500,
+      "active": true,
+      "startedOn": "2026-11-03"
+    },
+    {
+      "id": "bike-to-work",
+      "title": "Cycle to work twice a week",
+      "action": "Leave the car at home on Tuesdays and Thursdays.",
+      "category": "transport",
+      "targetDaysPerWeek": 2,
+      "plannedMonthlySavingCents": 4000,
+      "active": false,
+      "startedOn": "2026-11-05"
+    }
+  ],
+  "checkins": []
+}

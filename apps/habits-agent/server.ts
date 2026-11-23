@@ -93,8 +93,15 @@ export function createHabitsHandler(options: HabitsOptions) {
       reply(500, { error: 'Habit storage unavailable' });
     }
   };
-  /** The handler, with in-process read access to one user's habit state for the rest of the server. */
-  return Object.assign(handle, { read: (id: string) => store.read(id) });
+  /**
+   * The handler, with in-process access to one user's habits for the rest of the server: `read` the
+   * state, and `save` one goal (create, or replace with `replace`) under the store's own rules for
+   * the start day. The caller decides whose habits these are; the HTTP routes above are unchanged.
+   */
+  return Object.assign(handle, {
+    read: (id: string) => store.read(id),
+    save: (id: string, goal: unknown, replace = false) => store.saveGoal(safeId.parse(id), goal, replace),
+  });
 }
 
 /** The same API as a standalone HTTP server, for tests and isolated use. */

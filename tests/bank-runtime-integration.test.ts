@@ -29,7 +29,14 @@ test('real bank runtime changes are readable across MCP connections without raw 
   const token = 'integration-secret-token';
   const api = createProfileApiHandler(db, token);
   // The tools reach the stores in-process through a handle bound to the caller's own person.
-  const people = createPeople({ ...api.people, habits: createHabitStore(db).read });
+  const people = createPeople({
+    ...api.people,
+    habits: createHabitStore(db).read,
+    // Nothing here saves a habit.
+    saveHabit: async () => {
+      throw new Error('Habits are not saved in this test');
+    },
+  });
   const { snapshot, policies } = loadData();
   const mcp = createHttpServer(snapshot, policies, {
     caller: { me: people.own('demo'), scopes: ['person:read'], demo: null },

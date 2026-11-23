@@ -150,6 +150,12 @@ export const person = z
          * It is separate from `synthetic`: a real person can be connected to a fictional bank.
          */
         bankSynthetic: z.boolean().nullable().optional(),
+        /**
+         * The upfront cash the person said they are aiming for, when they stated one. The plan shows
+         * it next to the upfront cash it computes and says how the two relate; the timeline always
+         * uses the computed figure, so a stated target never replaces the arithmetic in silence.
+         */
+        targetCashCents: positiveCents.nullable().optional(),
       })
       .strict(),
     home: z
@@ -166,6 +172,45 @@ export const person = z
   .strict();
 export type Person = z.infer<typeof person>;
 export type Habit = z.infer<typeof habit>;
+
+/**
+ * A person as a tool accepts it inline: the same entity, with every field optional. `id` defaults
+ * to `what-if`, `synthetic` to false, and everything else to unknown or empty, so an assistant can
+ * start with `{}` and add each answer as it is given. Unknown stays `null`, never zero. `basis` may
+ * be left out: `inlinePerson` (`packages/model/person.ts`) reads figures said in a conversation as
+ * declared. The result of parsing is completed by `inlinePerson`, never used as it is.
+ */
+export const personInput = person
+  .extend({
+    id: safeId.default('what-if'),
+    synthetic: z.boolean().default(false),
+    householdSize: person.shape.householdSize.default(null),
+    currentMunicipalityCode: person.shape.currentMunicipalityCode.default(null),
+    finances: person.shape.finances
+      .extend({
+        monthlyIncomeCents: positiveCents.nullable().default(null),
+        monthlyExpensesCents: positiveCents.nullable().default(null),
+        currentSavingsCents: positiveCents.nullable().default(null),
+        emergencyReserveCents: positiveCents.default(0),
+        basis: person.shape.finances.shape.basis.optional(),
+        asOf: isoDate.nullable().default(null),
+      })
+      .strict()
+      .prefault({}),
+    home: person.shape.home
+      .extend({
+        floorAreaM2: person.shape.home.shape.floorAreaM2.default(null),
+        budgetCents: positiveCents.nullable().default(null),
+      })
+      .strict()
+      .prefault({}),
+    habits: z
+      .array(habit.extend({ adherence: habit.shape.adherence.default(null) }).strict())
+      .max(20)
+      .default([]),
+  })
+  .strict();
+export type PersonInput = z.input<typeof personInput>;
 
 // ----------------------------------------------------------------- place
 
@@ -308,19 +353,65 @@ export const placePlan = z
     monthsSavedByHabits: z.number().int().nullable(),
     monthsSavedByPlace: z.number().int().nullable(),
     benefits: z.array(placeBenefit),
+    /**
+     * Present when the person stated an upfront target (`finances.targetCashCents`): the target, the
+     * upfront cash this plan computed for the baseline (null when none could be computed), and the
+     * target less the computed figure. `usedByTimeline` is always `computed`: every timeline here is
+     * measured against the computed upfront cash, and the stated target is shown beside it.
+     */
+    upfrontTarget: z
+      .object({
+        statedCents: positiveCents,
+        computedCents: positiveCents.nullable(),
+        differenceCents: cents.nullable(),
+        usedByTimeline: z.literal('computed'),
+      })
+      .strict()
+      .optional(),
     assumptions: z.array(z.string()),
     dataMissing: z.array(z.string()),
   })
   .strict();
 export type PlacePlan = z.infer<typeof placePlan>;
 
+/**
+ * The plan when no place is chosen yet: what the person would need anywhere in Catalonia, from a
+ * stated budget, the general transfer tax (or a Catalonia-wide reduced rate already verified) and
+ * their habits. It has no place and counts no benefit of a place.
+ */
+export const anywherePlan = placePlan.omit({
+  place: true,
+  withPlaceBenefits: true,
+  monthsSaved: true,
+  monthsSavedByPlace: true,
+  estimatedPurchaseDate: true,
+});
+export type AnywherePlan = z.infer<typeof anywherePlan>;
+
+/**
+ * Said when no place is chosen: the question to ask, why, where the answer is saved and the tool
+ * that proposes places. It is not one of `nextQuestions`, because its answer is a municipality, not
+ * a fact about the person.
+ */
+export const placeQuestion = z
+  .object({
+    inputPath: z.literal('location.selectedMunicipalityCode'),
+    label: z.string(),
+    question: z.string(),
+    why: z.string(),
+    /** The tool that proposes places to choose from. */
+    suggestTool: z.literal('recommend_towns'),
+  })
+  .strict();
+export type PlaceQuestion = z.infer<typeof placeQuestion>;
+
 export const planInput = z
   .object({
     /** A stored person. Either this or `person` is required. */
     userId: safeId.optional(),
     person: person.optional(),
-    /** Places to compare, at most eight. */
-    municipalityCodes: z.array(municipalityCode).min(1).max(8),
+    /** Places to compare, at most eight. Empty or left out: no place is chosen yet. */
+    municipalityCodes: z.array(municipalityCode).max(8).default([]),
     assumptions: planAssumptions.optional(),
   })
   .strict();
@@ -503,9 +594,20 @@ export const planResult = z
      * before this field existed.
      */
     habits: z.array(habitEffect).optional(),
-    /** Sorted by the shortest finite timeline with place benefits; places without one come last. */
+    /** Sorted by the shortest finite timeline with place benefits; places without one come last. Empty when no place is chosen. */
     plans: z.array(placePlan),
+    /** Only when no place is chosen: the plan anywhere in Catalonia, without the benefits of a place. */
+    withoutPlace: anywherePlan.optional(),
+    /** Only when no place is chosen: the question that chooses one, and the tool that proposes places. */
+    placeQuestion: placeQuestion.optional(),
     limitations: z.array(z.string()),
+    /**
+     * Set by the tool that returns the plan: true when it is the plan of the signed-in person's
+     * stored answers, false for an inline person or a demo persona. Absent from `planForPlaces`.
+     */
+    stored: z.boolean().optional(),
+    /** For an inline person: the sentence saying the answers live only in this conversation, in the person's language. */
+    sayNotStored: z.string().nullable().optional(),
   })
   .strict();
 export type PlanResult = z.infer<typeof planResult>;
