@@ -14,36 +14,51 @@ import { themeCss } from '../../packages/ui/inline.ts';
  */
 
 const layoutCss = `
-  body { min-height: 100vh; }
-  .page { width: min(100% - 32px, 34rem); margin: 0 auto; padding: var(--rc-space-8) 0 var(--rc-space-12); }
-  .page--wide { width: min(100% - 32px, 46rem); }
-  .top { display: flex; align-items: center; justify-content: space-between; gap: var(--rc-space-4); margin-bottom: var(--rc-space-8); }
-  .top nav { display: flex; gap: var(--rc-space-3); align-items: center; font-size: var(--rc-text-sm); }
-  h1 { font-size: var(--rc-text-2xl, 1.75rem); margin: 0 0 var(--rc-space-2); }
-  h2 { font-size: var(--rc-text-lg, 1.25rem); margin: 0 0 var(--rc-space-3); }
-  .lede { color: var(--rc-muted); margin: 0 0 var(--rc-space-6); }
-  form.stack, .stack { display: grid; gap: var(--rc-space-4); }
-  .rc-card + .rc-card { margin-top: var(--rc-space-5); }
+  body { min-height: 100vh; min-height: 100dvh; }
+  .page { width: min(100% - 2 * var(--rc-space-5), 34rem); margin: 0 auto; padding: var(--rc-space-8) 0 var(--rc-space-12); }
+  .page--wide { width: min(100% - 2 * var(--rc-space-5), 46rem); }
+  .top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--rc-space-2) var(--rc-space-4); margin-bottom: var(--rc-space-8); }
+  .top nav { display: flex; flex-wrap: wrap; gap: 0 var(--rc-space-4); align-items: center; min-width: 0; font-size: var(--rc-text-sm); }
+  .top nav span { min-width: 0; overflow-wrap: anywhere; }
+  .top nav a, .inline > a { display: inline-flex; align-items: center; min-height: var(--rc-control); }
+  h1 { font-size: var(--rc-text-2xl); line-height: 2rem; margin: 0 0 var(--rc-space-2); }
+  h2 { font-size: var(--rc-text-lg); line-height: 1.5rem; letter-spacing: 0; margin: 0 0 var(--rc-space-3); }
+  h3 { font-size: var(--rc-text-md); line-height: 1.25rem; margin: var(--rc-space-5) 0 var(--rc-space-2); }
+  p:not(.rc-note) { max-width: var(--rc-measure); }
+  .lede { color: var(--rc-muted); margin: 0 0 var(--rc-space-6); overflow-wrap: anywhere; }
+  .page > .rc-note { margin-bottom: var(--rc-space-4); }
+  .page > .hint { margin-top: var(--rc-space-4); }
+  /* A form: 20 px between fields, 4 px from a field to its hint, 24 px before the action. */
+  form.stack, .stack { display: grid; gap: var(--rc-space-5); }
+  .stack > .rc-field + .hint { margin-top: calc(var(--rc-space-1) - var(--rc-space-5)); }
+  .stack > .rc-btn, .stack > .actions { margin-top: var(--rc-space-1); }
+  .rc-field input:not([type="checkbox"], [type="radio"]) { min-height: var(--rc-control-lg); }
+  @media (pointer: coarse) {
+    .rc-field input:not([type="checkbox"], [type="radio"]) { min-height: calc(var(--rc-control-lg) + var(--rc-space-2)); }
+  }
+  .rc-card + .rc-card { margin-top: var(--rc-space-6); }
+  .rc-card:not(.stack) > * + * { margin-top: var(--rc-space-3); }
+  .rc-card:not(.stack) > h3 { margin-top: var(--rc-space-6); }
   .row { display: flex; flex-wrap: wrap; gap: var(--rc-space-3); align-items: center; justify-content: space-between; }
   .actions { display: flex; flex-wrap: wrap; gap: var(--rc-space-3); }
-  .facts { display: grid; grid-template-columns: minmax(8rem, 14rem) 1fr; gap: 6px var(--rc-space-4); margin: 0; font-size: var(--rc-text-sm); }
+  .facts { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: var(--rc-space-2) var(--rc-space-4); margin: 0; font-size: var(--rc-text-sm); }
   .facts dt { color: var(--rc-muted); }
   .facts dd { margin: 0; overflow-wrap: anywhere; }
+  .stack > ul { margin: 0; padding-left: var(--rc-space-5); }
   ul.plain { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--rc-space-3); }
   .hint { color: var(--rc-muted); font-size: var(--rc-text-sm); margin: 0; }
   .danger { border-color: var(--rc-danger); }
   code { overflow-wrap: anywhere; }
-  h3 { font-size: var(--rc-text-md, 1.05rem); margin: var(--rc-space-5) 0 var(--rc-space-2); }
   .scroll { overflow-x: auto; }
   .rc-table { width: 100%; font-size: var(--rc-text-sm); }
   .rc-table td.num, .rc-table th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .inline { display: flex; flex-wrap: wrap; gap: var(--rc-space-2); align-items: center; }
+  .inline { display: flex; flex-wrap: wrap; gap: var(--rc-space-2) var(--rc-space-3); align-items: center; }
+  .inline label { display: inline-flex; align-items: center; gap: var(--rc-space-2); font-size: var(--rc-text-sm); }
   .inline select, .inline input[type="date"] { width: auto; }
   .movements { min-width: 40rem; }
   .movements td.date { white-space: nowrap; }
-  .movements form.inline { flex-wrap: nowrap; }
-  .movements select { max-width: 12rem; min-height: 0; padding-block: 4px; }
-  .tag { display: inline-block; border: 1px solid var(--rc-line, currentColor); border-radius: 999px; padding: 0 8px; font-size: var(--rc-text-xs, 0.75rem); color: var(--rc-muted); }
+  .movements select { max-width: 10rem; }
+  .tag { display: inline-block; border: 1px solid var(--rc-line); border-radius: var(--rc-radius-pill); padding: 0 var(--rc-space-2); font-size: var(--rc-text-xs); line-height: 1.25rem; white-space: nowrap; color: var(--rc-muted); }
 `;
 
 export type PageAccount = { email: string } | null;
@@ -75,7 +90,12 @@ ${body}
 }
 
 const errorNote = (message?: string) =>
-  message ? `<p class="rc-note rc-note--error" role="alert">${e(message)}</p>` : '';
+  message ? `<p class="rc-note rc-note--error" id="form-error" role="alert">${e(message)}</p>` : '';
+/** Ties a field to the form's error message, and to its own hint, for assistive technology. */
+const describedBy = (error: string | undefined, hint?: string) => {
+  const ids = [hint, error ? 'form-error' : undefined].filter(Boolean).join(' ');
+  return ids ? ` aria-describedby="${ids}"` : '';
+};
 const hidden = (name: string, value: string | undefined) =>
   value === undefined ? '' : `<input type="hidden" name="${e(name)}" value="${e(value)}">`;
 
@@ -101,11 +121,11 @@ ${errorNote(input.error)}
 <form class="stack rc-card" method="post" action="/signup" autocomplete="on">
   ${hidden('csrf', input.csrf)}${hidden('next', input.next)}
   <label class="rc-field">Email
-    <input type="email" name="email" required maxlength="254" autocomplete="email" value="${e(input.email)}"></label>
+    <input type="email" name="email" required maxlength="254" autocomplete="email" autocapitalize="none" spellcheck="false"${describedBy(input.error)} value="${e(input.email)}"></label>
   <label class="rc-field">Password
-    <input type="password" name="password" required minlength="${minPasswordLength}" maxlength="200" autocomplete="new-password">
+    <input type="password" name="password" required minlength="${minPasswordLength}" maxlength="200" autocomplete="new-password"${describedBy(input.error, 'password-hint')}>
   </label>
-  <p class="hint">At least ${minPasswordLength} characters. There is no password reset yet: this server sends no email, so keep the password somewhere safe.</p>
+  <p class="hint" id="password-hint">At least ${minPasswordLength} characters. There is no password reset yet: this server sends no email, so keep the password somewhere safe.</p>
   <button class="rc-btn rc-btn--primary" type="submit">Create account</button>
 </form>
 <p class="hint">Already have one? <a href="/login${input.next ? `?next=${encodeURIComponent(input.next)}` : ''}">Sign in</a>.</p>`,
@@ -121,9 +141,9 @@ ${input.notice ? `<p class="rc-note" role="status">${e(input.notice)}</p>` : ''}
 <form class="stack rc-card" method="post" action="/login" autocomplete="on">
   ${hidden('csrf', input.csrf)}${hidden('next', input.next)}
   <label class="rc-field">Email
-    <input type="email" name="email" required maxlength="254" autocomplete="username" value="${e(input.email)}"></label>
+    <input type="email" name="email" required maxlength="254" autocomplete="username" autocapitalize="none" spellcheck="false"${describedBy(input.error)} value="${e(input.email)}"></label>
   <label class="rc-field">Password
-    <input type="password" name="password" required maxlength="200" autocomplete="current-password"></label>
+    <input type="password" name="password" required maxlength="200" autocomplete="current-password"${describedBy(input.error)}></label>
   <button class="rc-btn rc-btn--primary" type="submit">Sign in</button>
 </form>
 <p class="hint">New here? <a href="/signup${input.next ? `?next=${encodeURIComponent(input.next)}` : ''}">Create an account</a>.
@@ -181,8 +201,8 @@ export function consentPage(input: {
       : ''
   }
   <div class="actions">
-    <button class="rc-btn rc-btn--primary" type="submit" name="decision" value="allow">Allow</button>
-    <button class="rc-btn" type="submit" name="decision" value="deny">Deny</button>
+    <button class="rc-btn rc-btn--primary" type="submit" name="decision" value="allow">Allow access</button>
+    <button class="rc-btn" type="submit" name="decision" value="deny">Deny access</button>
   </div>
 </form>
 <p class="hint">You can remove this access at any time on your account page.</p>`,
@@ -283,7 +303,7 @@ function bankSection(csrf: string, bank: BankSection) {
           return `<li class="row"><div><strong>${e(item.displayName)}</strong>${syntheticTag(item.synthetic)}
 <p class="hint">${how}</p></div>
 <form method="post" action="/account/bank/connect">${token}${hidden('provider', item.id)}
-<button class="rc-btn rc-btn--sm" type="submit">${again && item.connect === 'consent_at_bank' ? 'Connect again' : 'Connect'}</button></form></li>`;
+<button class="rc-btn rc-btn--sm" type="submit" aria-label="${again && item.connect === 'consent_at_bank' ? 'Connect again' : 'Connect'} ${e(item.displayName)}">${again && item.connect === 'consent_at_bank' ? 'Connect again' : 'Connect'}</button></form></li>`;
         })
         .join('')}</ul>`
     : '<p class="hint">No bank can be connected on this server.</p>';
@@ -310,9 +330,9 @@ function bankSection(csrf: string, bank: BankSection) {
           }</p></div>
 <div class="actions">
 <form method="post" action="/account/bank/sync">${token}${hidden('connection', connection.id)}
-<button class="rc-btn rc-btn--sm" type="submit">Fetch now</button></form>
+<button class="rc-btn rc-btn--sm" type="submit" aria-label="Fetch now from ${e(connection.displayName)}">Fetch now</button></form>
 <form method="post" action="/account/bank/disconnect">${token}${hidden('connection', connection.id)}
-<button class="rc-btn rc-btn--sm rc-btn--quiet" type="submit">Disconnect</button></form></div></li>`,
+<button class="rc-btn rc-btn--sm rc-btn--quiet" type="submit" aria-label="Disconnect ${e(connection.displayName)}">Disconnect</button></form></div></li>`,
         )
         .join('')}</ul>`
     : '<p class="hint">No bank is connected. Your plan then uses only the figures you stated yourself.</p>';
@@ -375,21 +395,21 @@ function bankSection(csrf: string, bank: BankSection) {
 <td>${e(movement.description)}${movement.status === 'pending' ? ' <span class="tag">pending</span>' : ''}${syntheticTag(movement.synthetic)}</td>
 <td class="num">${e(euros(movement.amountCents))}</td>
 <td><form class="inline" method="post" action="/account/bank/movement">${token}${back}${hidden('movement', movement.id)}
-<select name="category" aria-label="Category of this movement">${options}</select>
-<button class="rc-btn rc-btn--sm" type="submit">Save</button>${movement.categoryChosen ? '<span class="tag">your choice</span>' : ''}</form></td>
+<select class="rc-input" name="category" aria-label="Category of this movement">${options}</select>
+<button class="rc-btn rc-btn--sm" type="submit" aria-label="Save the category of this movement">Save</button>${movement.categoryChosen ? '<span class="tag">your choice</span>' : ''}</form></td>
 <td>${remove}</td></tr>`;
     })
     .join('');
   const movements = `<h3 id="movements">Your movements</h3>
 <form class="inline" method="get" action="/account">
-  <label>From <input type="date" name="from" value="${e(bank.from)}"></label>
-  <label>To <input type="date" name="to" value="${e(bank.to)}"></label>
-  <button class="rc-btn rc-btn--sm" type="submit">Show</button>
+  <label>From <input class="rc-input" type="date" name="from" value="${e(bank.from)}"></label>
+  <label>To <input class="rc-input" type="date" name="to" value="${e(bank.to)}"></label>
+  <button class="rc-btn rc-btn--sm" type="submit">Show movements</button>
   ${bank.from || bank.to ? '<a href="/account#movements">All dates</a>' : ''}
 </form>
 ${
   bank.movements.length
-    ? `<div class="scroll"><table class="rc-table movements"><thead><tr><th>Date</th><th>Description</th><th class="num">Amount</th><th>Category</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    ? `<div class="scroll"><table class="rc-table movements"><thead><tr><th>Date</th><th>Description</th><th class="num">Amount</th><th>Category</th><th><span class="rc-sr-only">Delete</span></th></tr></thead><tbody>${rows}</tbody></table></div>
 <div class="row"><p class="hint">${e(bank.total)} movement(s) · page ${e(bank.page)} of ${e(pages)}</p>
 <div class="actions">${bank.page > 1 ? pageLink(bank.page - 1, 'Newer') : ''}${bank.page < pages ? pageLink(bank.page + 1, 'Older') : ''}</div></div>
 <p class="hint">Choose “Transfer between my accounts” for money you moved between your own accounts, so it is not counted as income or spending. A category you choose is kept when the bank reports the movement again. Movements that came from a bank cannot be deleted here, because the next fetch would bring them back.</p>`
@@ -409,7 +429,7 @@ ${
     <label class="rc-field">CSV file with the columns date, description and amount
       <input type="file" name="statement" accept=".csv,text/csv" required></label>
     <p class="hint">Dates as YYYY-MM-DD, amounts signed (money out negative), up to 256 KiB. You see a summary first; nothing is saved until you confirm.</p>
-    <div><button class="rc-btn" type="submit">Read the statement</button></div>
+    <div class="actions"><button class="rc-btn" type="submit">Read the statement</button></div>
   </form>
   ${imports ? `<h3>Statements you imported</h3>${imports}` : ''}
   ${movements}
@@ -432,7 +452,7 @@ export function accountPage(input: {
           client => `<li class="row"><div><strong>${e(client.clientName)}</strong>
 <p class="hint">Connected ${day(client.connectedAt)} · ${client.scopes.map(scope => e(scopes[scope])).join(' · ')}</p></div>
 <form method="post" action="/account/disconnect">${hidden('csrf', input.csrf)}${hidden('grant', client.grantId)}
-<button class="rc-btn rc-btn--sm" type="submit">Remove access</button></form></li>`,
+<button class="rc-btn rc-btn--sm" type="submit" aria-label="Remove access of ${e(client.clientName)}">Remove access</button></form></li>`,
         )
         .join('')}</ul>`
     : '<p class="hint">No assistant or application is connected. Add ReloCat to ChatGPT or another MCP client and it will ask you here.</p>';
@@ -477,9 +497,9 @@ ${input.bank ? bankSection(input.csrf, input.bank) : ''}
     <label class="rc-field">Current password
       <input type="password" name="current" required maxlength="200" autocomplete="current-password"></label>
     <label class="rc-field">New password
-      <input type="password" name="next" required minlength="${minPasswordLength}" maxlength="200" autocomplete="new-password"></label>
-    <p class="hint">At least ${minPasswordLength} characters. Changing it signs you out of every other browser and disconnects every assistant; you stay signed in here.</p>
-    <div><button class="rc-btn" type="submit">Change password</button></div>
+      <input type="password" name="next" required minlength="${minPasswordLength}" maxlength="200" autocomplete="new-password" aria-describedby="new-password-hint"></label>
+    <p class="hint" id="new-password-hint">At least ${minPasswordLength} characters. Changing it signs you out of every other browser and disconnects every assistant; you stay signed in here.</p>
+    <div class="actions"><button class="rc-btn" type="submit">Change password</button></div>
   </form>
 </section>
 <section class="rc-card danger" aria-labelledby="delete-title">
@@ -489,8 +509,8 @@ ${input.bank ? bankSection(input.csrf, input.bank) : ''}
     ${hidden('csrf', input.csrf)}
     <label class="rc-field">Password
       <input type="password" name="password" required maxlength="200" autocomplete="current-password"></label>
-    <label><input type="checkbox" name="confirm" value="yes" required> I understand that all my data will be deleted.</label>
-    <div><button class="rc-btn" type="submit">Delete my account and data</button></div>
+    <label class="rc-check"><input type="checkbox" name="confirm" value="yes" required> I understand that all my data will be deleted.</label>
+    <div class="actions"><button class="rc-btn rc-btn--danger" type="submit">Delete my account and data</button></div>
   </form>
 </section>`,
     { account: input.account, csrf: input.csrf, wide: true },
@@ -588,7 +608,7 @@ export function statementPreviewPage(input: {
     <form method="post" action="/account/bank/import/confirm">${hidden('csrf', input.csrf)}${hidden('preview', preview.previewHash)}
       <button class="rc-btn rc-btn--primary" type="submit">Import ${e(preview.newRows)} movement(s)</button></form>
     <form method="post" action="/account/bank/import/cancel">${hidden('csrf', input.csrf)}${hidden('preview', preview.previewHash)}
-      <button class="rc-btn" type="submit">Discard</button></form>
+      <button class="rc-btn" type="submit">Discard statement</button></form>
   </div>
   <p class="hint">This summary is kept until ${minute(preview.expiresAt)}; after that, read the file again.</p>
 </section>`,

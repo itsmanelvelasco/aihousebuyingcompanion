@@ -1,6 +1,6 @@
-import { formatClock, formatDate, formatEuros, formatMonthly } from '../format.ts';
+import { formatClock, formatDate, formatEuros } from '../format.ts';
 import type { BankFeedState } from '../hooks.ts';
-import { Ago, Badge, ErrorNote, Icon } from './bits.tsx';
+import { Ago, Badge, ErrorNote, Icon, Monthly } from './bits.tsx';
 
 type Props = {
   userId: string | null;
@@ -130,10 +130,10 @@ export function BankStrip({ userId, feed, onRetry, personSynthetic }: Props) {
                       <dt>Spending</dt>
                       <dd>{formatEuros(feed.summary.expenseCents)}</dd>
                     </div>
-                    <div>
+                    <div className="figure-key">
                       <dt>Average kept</dt>
                       <dd className={feed.summary.averageMonthlySavingsCents === null ? 'unknown' : undefined}>
-                        {formatMonthly(feed.summary.averageMonthlySavingsCents)}
+                        <Monthly cents={feed.summary.averageMonthlySavingsCents} />
                       </dd>
                     </div>
                   </dl>

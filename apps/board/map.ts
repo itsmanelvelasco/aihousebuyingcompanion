@@ -373,7 +373,7 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
   function label(value: string, xx: number, yy: number, color: string, bold = false, align: CanvasTextAlign = 'left') {
     if (!ctx) return;
     ctx.fillStyle = color;
-    ctx.font = `${bold ? 750 : 550} ${bold ? 12 : 11}px system-ui`;
+    ctx.font = `${bold ? 700 : 500} 12px Montserrat, ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif`;
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
     ctx.fillText(value, xx, yy);

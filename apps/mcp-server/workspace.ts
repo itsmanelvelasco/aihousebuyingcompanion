@@ -4,6 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { widgetUri } from '../../packages/config/product.ts';
 import { municipalityCode } from '../../packages/contracts/places.ts';
+import { stepImageIds } from '../../packages/ui/images.manifest.ts';
 import { inlineUi } from '../../packages/ui/inline.ts';
 import type { Caller } from './identity.ts';
 import { anonymous, security } from './identity.ts';
@@ -42,8 +43,8 @@ export function loadWorkspacePage() {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   }
-  const styles = readFileSync(web('workspace.css'), 'utf8');
-  return inlineUi(readFileSync(web('workspace.html'), 'utf8'), { art: ['workspace-empty'] })
+  const styles = ['workspace.css', 'journey.css'].map(file => readFileSync(web(file), 'utf8')).join('\n');
+  return inlineUi(readFileSync(web('workspace.html'), 'utf8'), { art: ['workspace-empty', ...stepImageIds] })
     .replace('/* STYLES */', () => styles.replace(/<\/style/gi, '<\\/style'))
     .replace('<!-- WIDGET -->', () => `<script>${bundle.replace(/<\/script/gi, '<\\/script')}</script>`);
 }

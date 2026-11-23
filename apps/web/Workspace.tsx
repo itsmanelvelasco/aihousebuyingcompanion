@@ -4,11 +4,13 @@ import type { ToolClient } from './client.ts';
 import { BankStrip } from './components/BankStrip.tsx';
 import { Wordmark } from './components/bits.tsx';
 import { DetailsPanel } from './components/DetailsPanel.tsx';
+import { Journey } from './components/Journey.tsx';
 import { Notes } from './components/Notes.tsx';
 import { PersonPanel } from './components/PersonPanel.tsx';
 import { PlacesPanel } from './components/PlacesPanel.tsx';
 import { formatDate } from './format.ts';
 import { useBankFeed, usePlan } from './hooks.ts';
+import { journey } from './journey.ts';
 import type { Subject, WorkspaceLaunch } from './launch.ts';
 import { subjectOf } from './launch.ts';
 import type { HabitOverrides } from './view-model.ts';
@@ -69,7 +71,7 @@ function SubjectBanner(props: {
           className="rc-btn rc-btn--sm rc-btn--quiet"
           onClick={() => props.onSubject({ kind: 'none' })}
         >
-          Clear
+          Clear estimate
         </button>
       </p>
     );
@@ -99,6 +101,16 @@ export function Workspace({ client, launch, mode }: Props) {
     void reload(false);
   }, [reload]);
   const person = storedPerson;
+  const trail = useMemo(
+    () =>
+      journey({
+        result: plan.result ?? null,
+        placeCount: codes.length,
+        bankMovements: feed.summary?.transactionCount ?? null,
+        bankSynthetic: feed.summary?.synthetic ?? null,
+      }),
+    [plan.result, codes.length, feed.summary],
+  );
   const stored = subject.kind === 'me' || subject.kind === 'demo';
   const label =
     subject.kind === 'demo'
@@ -130,6 +142,8 @@ export function Workspace({ client, launch, mode }: Props) {
       ) : null}
 
       <SubjectBanner subject={subject} launch={launch} mode={mode} onSubject={setSubject} />
+
+      <Journey journey={trail} />
 
       {stored ? (
         <BankStrip userId={label} feed={feed} onRetry={retryFeed} personSynthetic={person?.synthetic ?? null} />

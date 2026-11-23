@@ -15,7 +15,7 @@ p { max-width: 72ch; }
 .intro { color: var(--rc-muted); margin-bottom: 32px; }
 .layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 32px; align-items: start; }
 form { padding: 24px; border: 1px solid var(--rc-line); border-radius: var(--rc-radius-lg); background: var(--rc-surface); }
-label { display: block; font-size: var(--rc-text-sm); font-weight: 700; margin: 16px 0 6px; }
+label { display: block; font-size: var(--rc-text-sm); font-weight: 700; margin: 16px 0 8px; }
 form > label:first-child { margin-top: 0; }
 input, select { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--rc-line-strong); border-radius: var(--rc-radius-sm); background: var(--rc-surface); font-size: 1rem; }
 button { width: 100%; min-height: 44px; margin-top: 24px; padding: 8px 18px; border: 1px solid var(--rc-accent); border-radius: var(--rc-radius-md); background: var(--rc-accent); color: var(--rc-on-accent); font-weight: 700; transition: background-color var(--rc-dur-fast) var(--rc-ease), transform var(--rc-dur-fast) var(--rc-ease); }
@@ -27,20 +27,21 @@ button:disabled { cursor: progress; opacity: 0.55; }
 .hint, .quiet { font-size: var(--rc-text-sm); color: var(--rc-muted); }
 .hint { margin: 8px 0; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.check { display: flex; gap: 8px; align-items: start; font-weight: 400; }
-.check input { width: 18px; min-height: 18px; margin: 2px 0; accent-color: var(--rc-accent); }
+.check { display: flex; gap: 8px; align-items: center; min-height: 44px; font-weight: 400; }
+.check input { flex: none; width: 20px; min-height: 20px; margin: 0; accent-color: var(--rc-accent); }
 .results { min-height: 350px; }
 .empty { padding: 40px 32px; border: 1px dashed var(--rc-line-strong); border-radius: var(--rc-radius-lg); }
 .card { padding: 24px; margin-bottom: 16px; border: 1px solid var(--rc-line); border-radius: var(--rc-radius-lg); background: var(--rc-surface); }
 .card h3 { margin-bottom: 8px; font: 700 var(--rc-text-xl) / 1.2 var(--rc-font-display); }
 .card p { margin: 8px 0; }
-.tag { display: inline-block; margin: 4px 6px 4px 0; padding: 2px 10px; border-radius: var(--rc-radius-pill); background: var(--rc-violet-soft); color: var(--rc-violet); font-size: var(--rc-text-xs); font-weight: 700; }
+.tag { display: inline-block; margin: 4px 8px 4px 0; padding: 2px 10px; border-radius: var(--rc-radius-pill); background: var(--rc-violet-soft); color: var(--rc-violet); font-size: var(--rc-text-xs); font-weight: 700; }
 .notice { padding: 12px 16px; margin-bottom: 16px; border-radius: var(--rc-radius-md); background: var(--rc-warn-soft); color: var(--rc-warn); }
 .notice.error { background: var(--rc-danger-soft); color: var(--rc-danger); }
 ul { padding-left: 20px; line-height: 1.6; }
 details { margin: 20px 0; }
 pre { max-height: 480px; padding: 16px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--rc-line); border-radius: var(--rc-radius-sm); background: var(--rc-surface); font-size: var(--rc-text-xs); }
-.links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.links { display: flex; flex-wrap: wrap; gap: 0 12px; margin-top: 8px; }
+.links a { display: inline-flex; align-items: center; min-height: 44px; }
 footer { margin: 32px 0; color: var(--rc-muted); font-size: var(--rc-text-sm); }
 @media (max-width: 760px) {
   .layout { grid-template-columns: 1fr; }
@@ -51,7 +52,7 @@ footer { margin: 32px 0; color: var(--rc-muted); font-size: var(--rc-text-sm); }
 }
 </style></head><body>
 <header><a class="rc-wordmark" href="/connect" aria-label="ReloCat home"><!-- MARK --><span>Relo<b>Cat</b></span></a><a href="/connect">Connect your agent</a><span class="status" id="connection">Checking live search…</span></header>
-<main><h1>Try your move.</h1><p class="intro">Explore towns, inspect real relocation research, or look for example homes. See what the data can answer before you make a decision.</p>
+<main><h1>Try your move</h1><p class="intro">Explore towns, inspect real relocation research, or look for example homes. See what the data can answer before you make a decision.</p>
 <div class="layout"><form id="form">
 <label for="mode">What would you like to try?</label><select id="mode"><option value="profile">Explore a town</option><option value="recommend">Find towns for my family</option><option value="homes">Find Idealista examples</option></select>
 <div id="town-field"><label for="town">Town</label><select id="town"></select></div>
@@ -61,7 +62,7 @@ footer { margin: 32px 0; color: var(--rc-muted); font-size: var(--rc-text-sm); }
 <div id="bedroom-field" hidden><label for="bedrooms">Minimum bedrooms</label><input id="bedrooms" type="number" min="0" max="20" value="3"><p class="hint">Budget and bedrooms guide the search. Check the original listing to confirm them.</p></div></div>
 <p class="hint" id="cost" hidden>Uses your server’s treg key. Requests a $0.01 search limit; provider charges can vary. No key is sent to this browser.</p>
 <button id="run" type="submit">Explore town</button><p class="hint" id="config-note"></p></form>
-<section class="results" aria-live="polite" aria-busy="false" id="results"><div class="empty"><h2>Start with somewhere.</h2><p>Try Calaf for schools and rental context, Juncosa for municipal housing leads, or Ulldemolins for the bar-and-home opportunity.</p><p class="quiet">18 municipalities. Detailed opportunity research in 3.</p></div></section></div><footer id="footer">Local test page · uses the same MCP tools as the app.</footer></main>
+<section class="results" aria-live="polite" aria-busy="false" id="results"><div class="empty"><h2>Start with somewhere</h2><p>Try Calaf for schools and rental context, Juncosa for municipal housing leads, or Ulldemolins for the bar-and-home opportunity.</p><p class="quiet">18 municipalities. Detailed opportunity research in 3.</p></div></section></div><footer id="footer">Local test page · uses the same MCP tools as the app.</footer></main>
 <script>
 const $=id=>document.getElementById(id);let configured=false;
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n};

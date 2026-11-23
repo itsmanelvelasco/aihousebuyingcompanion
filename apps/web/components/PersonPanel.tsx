@@ -15,7 +15,7 @@ import {
   habitStatusLabel,
   habitSwitchedOn,
 } from '../view-model.ts';
-import { Badge, ErrorNote, Icon, Skeleton, Switch } from './bits.tsx';
+import { Badge, ErrorNote, Icon, Monthly, Skeleton, Switch } from './bits.tsx';
 
 type Props = {
   client: ToolClient;
@@ -51,6 +51,8 @@ const euroFields = [
 /** Four money fields in whole euros. The values go to the server as integer cents; no sum is made here. */
 function FiguresForm(props: {
   submit: string;
+  /** Whether this form's button is the main action of its panel; a panel shows one primary button. */
+  primary?: boolean;
   busy?: boolean;
   onSubmit: (cents: Record<string, number | undefined>) => void;
 }) {
@@ -69,7 +71,12 @@ function FiguresForm(props: {
           <input name={field.name} inputMode="decimal" autoComplete="off" />
         </label>
       ))}
-      <button type="submit" className="rc-btn rc-btn--primary rc-btn--sm" disabled={props.busy}>
+      <button
+        type="submit"
+        className={props.primary ? 'rc-btn rc-btn--primary rc-btn--sm' : 'rc-btn rc-btn--sm'}
+        disabled={props.busy}
+        aria-busy={props.busy || undefined}
+      >
         {props.submit}
       </button>
     </form>
@@ -143,7 +150,7 @@ function NoPerson(props: Props) {
       </div>
       <details>
         <summary>Or type four figures at once (nothing is saved)</summary>
-        <FiguresForm submit="Estimate" onSubmit={whatIf} />
+        <FiguresForm submit="Show estimate" onSubmit={whatIf} />
       </details>
     </div>
   );
@@ -181,7 +188,7 @@ function SaveDetails(props: Props) {
     <details className="save-details">
       <summary>Add or correct your figures</summary>
       <p className="hint">Saved to your own profile as confirmed by you. Leave a field empty to keep what is stored.</p>
-      <FiguresForm submit="Save" busy={state.busy} onSubmit={cents => void save(cents)} />
+      <FiguresForm submit="Save figures" primary busy={state.busy} onSubmit={cents => void save(cents)} />
       {state.message ? (
         <p className={state.failed ? 'hint hint-warn' : 'hint'} role="status">
           {state.message}
@@ -229,7 +236,7 @@ export function PersonPanel(props: Props) {
       ) : !person ? (
         <>
           <p className="rc-sr-only" role="status">
-            Loading the person's figures…
+            Loading the person’s figures…
           </p>
           <Skeleton lines={6} />
         </>
@@ -269,13 +276,13 @@ function PersonDetails(props: Props & { person: Person; result: PlanResult | nul
           <div>
             <dt>Income</dt>
             <dd className={finances.monthlyIncomeCents === null ? 'unknown' : undefined}>
-              {formatMonthly(finances.monthlyIncomeCents)}
+              <Monthly cents={finances.monthlyIncomeCents} />
             </dd>
           </div>
           <div>
             <dt>Expenses</dt>
             <dd className={finances.monthlyExpensesCents === null ? 'unknown' : undefined}>
-              {formatMonthly(finances.monthlyExpensesCents)}
+              <Monthly cents={finances.monthlyExpensesCents} />
             </dd>
           </div>
           <div>
@@ -290,10 +297,10 @@ function PersonDetails(props: Props & { person: Person; result: PlanResult | nul
               {formatEuros(finances.emergencyReserveCents)} <small>kept aside, not spent on the purchase</small>
             </dd>
           </div>
-          <div>
+          <div className="figure-key">
             <dt>Saved each month</dt>
             <dd className={baselineSaving === null ? 'unknown' : undefined}>
-              {baselineSaving === null ? 'Not estimated' : formatMonthly(baselineSaving)}{' '}
+              {baselineSaving === null ? 'Not estimated' : <Monthly cents={baselineSaving} />}{' '}
               <small>before habits, as the plan computes it</small>
             </dd>
           </div>
@@ -307,7 +314,7 @@ function PersonDetails(props: Props & { person: Person; result: PlanResult | nul
           {home.budgetCents !== null
             ? `Looking for a home up to ${formatEuros(home.budgetCents)}`
             : home.floorAreaM2 !== null
-              ? `Looking for about ${home.floorAreaM2} m², priced from each place's average`
+              ? `Looking for about ${home.floorAreaM2} m², priced from each place’s average`
               : 'Home size and budget unknown'}
           {`, with a ${formatShare(home.depositRate)} deposit.`}
         </p>

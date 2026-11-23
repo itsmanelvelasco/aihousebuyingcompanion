@@ -1,0 +1,161 @@
+/* The trail of checkpoints (components/Journey.tsx). Art comes from `--rc-art-step-*`, set by the loader. */
+.art-step-profile {
+  background-image: var(--rc-art-step-profile);
+}
+.art-step-money {
+  background-image: var(--rc-art-step-money);
+}
+.art-step-bank {
+  background-image: var(--rc-art-step-bank);
+}
+.art-step-places {
+  background-image: var(--rc-art-step-places);
+}
+.art-step-aid {
+  background-image: var(--rc-art-step-aid);
+}
+.art-step-habits {
+  background-image: var(--rc-art-step-habits);
+}
+.art-step-ready {
+  background-image: var(--rc-art-step-ready);
+}
+
+.journey {
+  display: grid;
+  gap: var(--rc-space-6);
+}
+.journey-focus {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--rc-space-3);
+}
+.journey-art {
+  width: 80px;
+  aspect-ratio: 1;
+}
+.journey-copy {
+  display: grid;
+  gap: var(--rc-space-2);
+}
+.journey-copy h2 {
+  font-size: var(--rc-text-2xl);
+  line-height: 2rem;
+}
+.journey-copy > p:not(.rc-label) {
+  max-width: var(--rc-measure);
+  color: var(--rc-muted);
+}
+.journey-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--rc-space-3);
+  color: var(--rc-muted);
+  font-size: var(--rc-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.journey-progress progress {
+  flex: 1 1 auto;
+  max-width: 240px;
+  height: 8px;
+  border: 0;
+  border-radius: var(--rc-radius-pill);
+  background: var(--rc-track);
+  overflow: hidden;
+  appearance: none;
+}
+.journey-progress progress::-webkit-progress-bar {
+  background: var(--rc-track);
+}
+.journey-progress progress::-webkit-progress-value {
+  border-radius: var(--rc-radius-pill);
+  background: var(--rc-gold);
+}
+.journey-progress progress::-moz-progress-bar {
+  border-radius: var(--rc-radius-pill);
+  background: var(--rc-gold);
+}
+
+.journey-steps {
+  display: grid;
+  /* Narrow frames first: one checkpoint per row. */
+  grid-template-columns: 1fr;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.journey-step {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--rc-space-3);
+  min-width: 0;
+  min-height: 56px;
+  padding: var(--rc-space-2);
+  border-radius: var(--rc-radius-md);
+  font-size: var(--rc-text-sm);
+  line-height: 1.25rem;
+}
+.journey-thumb {
+  width: 40px;
+  aspect-ratio: 1;
+  border-radius: var(--rc-radius-sm);
+}
+.journey-step strong {
+  font-weight: var(--rc-weight-semibold);
+  overflow-wrap: anywhere;
+}
+.journey-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rc-space-1);
+  color: var(--rc-muted);
+}
+.journey-state .rc-icon {
+  width: 1rem;
+  height: 1rem;
+}
+.is-done .journey-state {
+  color: var(--rc-accent);
+}
+.is-current {
+  background: var(--rc-gold-soft);
+}
+.is-current .journey-state {
+  color: var(--rc-warn);
+  font-weight: var(--rc-weight-semibold);
+}
+.is-ahead .journey-thumb,
+.is-unknown .journey-thumb {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+
+/* Wider frames: the list becomes a strip of seven tiles under a larger illustration. */
+@media (min-width: 620px) {
+  .journey-focus {
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: var(--rc-space-4);
+  }
+  .journey-art {
+    width: 112px;
+  }
+  .journey-steps {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: var(--rc-space-2);
+  }
+  .journey-step {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    align-content: start;
+    gap: var(--rc-space-1);
+    min-height: 0;
+    text-align: center;
+    font-size: var(--rc-text-xs);
+    line-height: 1rem;
+  }
+  .journey-thumb {
+    width: 56px;
+  }
+}

@@ -8,66 +8,75 @@
 <!-- FAVICON -->
 <style>
   /* THEME */
-  /* The interview is a night scene: the shared theme's deep-green panel, with gold as the accent. */
+  /* The interview is a night scene. The page pins the dark scheme, so every --rc-* token takes its dark value,
+     and points the surface tokens at the theme's fixed night panel. Gold is the one accent: the primary action,
+     a pressed toggle and the focus ring. */
   :root {
     color-scheme: dark;
-    font: 16px/1.5 var(--rc-font-text, system-ui, sans-serif);
-    color: #f9f4e8;
-    background: var(--rc-night, #143326);
-    --muted: #b4c7b9;
-    --line: #355248;
-    --accent: var(--rc-gold, #f6c95c);
-    --panel: #1b3d2e;
+    --rc-paper: var(--rc-night);
+    --rc-surface: var(--rc-night-2);
+    --rc-ink: var(--rc-on-night);
+    --rc-muted: var(--rc-on-night-muted);
+    --rc-focus: var(--rc-gold);
+    --veil: rgb(255 255 255 / 0.07);
   }
-  body { color: #f9f4e8; background: var(--rc-night, #143326); }
-  h1, h2 { font-family: var(--rc-font-display, ui-serif, Georgia, serif); color: inherit; }
-  .top .rc-wordmark, .top .rc-wordmark b { color: inherit; }
-  * { box-sizing: border-box; }
-  [hidden] { display: none !important; }
-  body { min-height: 100svh; margin: 0; display: flex; flex-direction: column; }
-  button, input, select { font: inherit; }
-  button, .button {
-    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    border: 1px solid var(--line); border-radius: 100px; padding: 9px 16px;
-    color: inherit; background: transparent; cursor: pointer;
+  body { min-height: 100svh; display: flex; flex-direction: column; }
+  strong { font-weight: var(--rc-weight-semibold); }
+  h1 { font-size: clamp(2rem, 1.25rem + 3.75vw, 3.5rem); }
+  h2 { font-size: var(--rc-text-xl); line-height: 1.2; }
+  h3 { margin-bottom: 4px; }
+  p { margin-bottom: 12px; }
+  .hint { font-size: var(--rc-text-sm); color: var(--rc-muted); }
+  .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .actions + .hint { margin-top: 12px; }
+
+  /* Buttons are the shared .rc-btn; these are the two states the interview adds. */
+  .rc-btn[aria-pressed="true"] { border-color: var(--rc-gold); background: var(--rc-gold-soft); color: var(--rc-ink); box-shadow: inset 0 0 0 1px var(--rc-gold); }
+  .rc-btn.end { border-color: var(--rc-danger); color: var(--rc-danger); }
+  @media (hover: hover) {
+    .rc-btn.end:hover:not(:disabled) { border-color: var(--rc-danger); background: var(--rc-danger-soft); color: var(--rc-danger); }
   }
-  button:hover, .button:hover { background: #ffffff12; }
-  button:disabled { opacity: .45; cursor: default; }
-  button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, #csv:focus-visible + label {
-    outline: 2px solid var(--accent); outline-offset: 3px;
+
+  /* Fields: the label sits above its control, the control keeps 16 px text and a 44 px target. */
+  label { display: grid; gap: 8px; color: var(--rc-muted); font-size: var(--rc-text-sm); font-weight: var(--rc-weight-semibold); text-align: left; }
+  label.check { display: flex; align-items: center; min-height: var(--rc-control); color: var(--rc-ink); font-size: var(--rc-text-md); font-weight: 400; }
+  input:not([type="checkbox"], [type="radio"], [type="file"]), select {
+    min-width: 0; min-height: var(--rc-control); padding: 8px 12px;
+    border: 1px solid var(--rc-line-strong); border-radius: var(--rc-radius-sm);
+    background: var(--rc-sunken); color: var(--rc-ink); font-size: 1rem; font-weight: 400;
   }
-  .primary { background: var(--accent); color: #18291e; border-color: transparent; font-weight: 660; }
-  .primary:hover { background: #f0f9d7; }
-  .quiet { color: var(--muted); }
-  .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
+  label > input:not([type="checkbox"], [type="radio"], [type="file"]), label > select { width: 100%; }
+  input[type="checkbox"] { flex: none; width: 24px; height: 24px; margin: 0; accent-color: var(--rc-gold); }
+  input:disabled, select:disabled { opacity: 0.55; }
+
   .top {
-    display: flex; justify-content: space-between; align-items: center; gap: 14px;
-    padding: 22px clamp(18px, 4vw, 60px); border-bottom: 1px solid #ffffff13;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 20px clamp(20px, 4vw, 64px); border-bottom: 1px solid var(--rc-line);
   }
-  .brand { display: flex; gap: 10px; align-items: center; font-size: .94rem; font-weight: 680; }
+  .brand { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: center; font-size: var(--rc-text-md); font-weight: var(--rc-weight-semibold); }
+  .brand-page::before { content: '· '; }
+  .top .rc-wordmark, .top .rc-wordmark b { color: inherit; }
   .top .actions { justify-content: flex-end; }
-  .top button { font-size: .88rem; padding: 7px 12px; }
   .stage {
     flex: 1; display: flex; align-items: center; justify-content: center;
-    padding: clamp(24px, 5vh, 60px) 18px;
+    padding: clamp(24px, 5vh, 64px) 20px;
     background: radial-gradient(ellipse at 50% 46%, #1e352a 0%, #101d19 58%);
   }
   .conversation { text-align: center; width: min(100%, 680px); }
-  h1 { font: 500 clamp(2.25rem, 6vw, 4.5rem)/1.03 Georgia, serif; letter-spacing: -.055em; margin: 0; }
-  .intro { margin: 12px 0 0; color: var(--muted); font-size: .96rem; }
+  .intro { margin: 12px 0 0; color: var(--rc-muted); text-wrap: balance; }
   .voice-graphic {
-    --size: clamp(134px, 28vh, 244px);
+    --size: clamp(136px, 28vh, 244px);
     position: relative; display: grid; place-items: center; width: var(--size); height: var(--size);
-    margin: clamp(24px, 5vh, 50px) auto; border-radius: 50%; isolation: isolate;
+    margin: clamp(24px, 5vh, 48px) auto; border-radius: 50%; isolation: isolate;
     background: radial-gradient(ellipse at 37% 18%, #f1f2bc, #93bd83 28%, #2e654f 57%, #17382f 76%);
     box-shadow: inset 0 0 28px #d3f6a44f, 0 0 56px #79be7b3a, 0 22px 58px #0b160f8a;
   }
   .voice-graphic::before, .voice-graphic::after {
     content: ''; position: absolute; z-index: -1; border-radius: 50%; border: 1px solid #bce09f38;
   }
-  .voice-graphic::before { inset: -10px; }
-  .voice-graphic::after { inset: -22px; }
-  .wave { display: flex; align-items: center; gap: 5px; height: 36px; }
+  .voice-graphic::before { inset: -12px; }
+  .voice-graphic::after { inset: -24px; }
+  .wave { display: flex; align-items: center; gap: 4px; height: 36px; }
   .wave i { width: 4px; height: var(--height); border-radius: 4px; background: #ffffe4; box-shadow: 0 0 12px #e7fac462; }
   .wave i:nth-child(2n) { animation-delay: .16s !important; }
   [data-voice="speaking"] .wave i, [data-voice="hearing"] .wave i { animation: wave .8s ease-in-out infinite alternate; }
@@ -75,57 +84,50 @@
   [data-voice="muted"] .wave { opacity: .4; }
   @keyframes wave { from { transform: scaleY(.58); } to { transform: scaleY(1.65); } }
   @keyframes pulse { from { opacity: .42; } to { opacity: 1; } }
-  #voice-status { min-height: 1.5em; margin: 0 0 12px; color: var(--muted); }
+  #voice-status { min-height: 1.5em; margin: 0 0 12px; color: var(--rc-muted); }
   .voice-controls { justify-content: center; }
-  .voice-controls button { min-height: 45px; }
-  .end { color: #ffccbd; border-color: #7c4f46; }
-  .end:hover { background: #a04c322c; }
-  #last-question { max-width: 500px; margin: 16px auto 0; padding: 10px 14px; border-radius: 14px; background: #ffffff0b; }
-  #typed-answer, #guided-answer { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px auto 0; max-width: 500px; }
-  #typed-answer input, #guide-field { flex: 1; min-width: 130px; }
-  #guide-field > * { width: 100%; }
-  #guide-field fieldset { margin: 0; padding: 0; border: 0; display: grid; gap: 8px; text-align: left; }
-  #guide-field label { display: grid; gap: 4px; font-size: .9rem; text-align: left; }
+  #last-question { max-width: 500px; margin: 16px auto 0; padding: 12px 16px; border-radius: var(--rc-radius-md); background: var(--veil); text-align: left; }
+  #typed-answer, #guided-answer { display: flex; flex-wrap: wrap; align-items: start; gap: 8px; margin: 12px auto 0; max-width: 500px; }
+  #typed-answer label { flex-basis: 100%; }
+  #typed-answer input, #guide-field { flex: 1; min-width: 128px; }
   #guide-field { display: grid; gap: 8px; align-content: start; }
-  #guide-field label.check { display: flex; align-items: center; gap: 8px; min-height: 32px; }
-  #guide-field label.check input { width: 18px; height: 18px; margin: 0; padding: 0; }
+  #guide-field > * { width: 100%; }
+  #guide-field fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+  #guide-field fieldset, #guide-field fieldset > div { display: grid; gap: 20px; }
+  #guide-field fieldset > div:empty { display: none; }
   .guide-why, .guide-error { flex-basis: 100%; margin: 0; text-align: left; }
-  .guide-error { color: #ffccbd; font-size: .9rem; }
-  .facts { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
-  .more { margin-top: 13px; color: var(--muted); font-size: .87rem; }
-  .more button { border: 0; text-decoration: underline; text-underline-offset: 3px; }
+  .guide-error { color: var(--rc-danger); font-size: var(--rc-text-sm); font-weight: var(--rc-weight-semibold); }
+  .more { margin-top: 12px; }
+  .facts { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--rc-line); }
   dialog {
-    color: inherit; width: min(94vw, 530px); max-height: 88svh; padding: clamp(16px, 4vw, 28px);
-    background: var(--panel); border: 1px solid var(--line); border-radius: 24px;
-    box-shadow: 0 30px 90px #0009;
+    width: min(100vw - 32px, 528px); max-height: 88svh; padding: clamp(16px, 4vw, 24px);
+    border: 1px solid var(--rc-line); border-radius: var(--rc-radius-xl);
+    background: var(--rc-paper); color: var(--rc-ink);
   }
-  dialog::backdrop { background: #080f0ed0; }
+  dialog::backdrop { background: rgb(8 15 14 / 0.82); }
   .panel-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-  h2 { font: 500 1.9rem Georgia, serif; margin: 0; }
-  h3 { font-size: 1.16rem; margin: 0 0 5px; }
-  p { margin: 0 0 12px; }
-  .hint { font-size: .88rem; color: var(--muted); }
-  .source-options { display: grid; gap: 9px; margin: 12px 0; }
-  .source { width: 100%; justify-content: space-between; border-radius: 13px; padding: 12px 14px; text-align: left; }
-  .source small { color: var(--muted); }
-  .bank-preview { border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 14px; }
+  .source-options { display: grid; gap: 8px; margin: 12px 0; }
+  .source { width: 100%; flex-wrap: wrap; justify-content: space-between; gap: 0 12px; padding: 12px 16px; text-align: left; }
+  .source strong { font-weight: inherit; }
+  .source small { font-weight: 400; }
+  #sources > label:not(.check, .rc-btn) { margin-bottom: 12px; }
+  #currency { width: auto; min-width: 128px; justify-self: start; }
+  .bank-preview { border: 1px solid var(--rc-line); border-radius: var(--rc-radius-md); padding: 16px; margin-bottom: 16px; }
   #csv { position: absolute; width: 1px; height: 1px; opacity: 0; }
-  input, select {
-    color: inherit; background: #101e19; border: 1px solid #5e7e6e; padding: 7px 10px; border-radius: 9px;
-  }
-  dl { margin: 10px 0; }
-  dl div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding: 5px 0; }
-  dd { margin: 0; font-variant-numeric: tabular-nums; }
-  summary { cursor: pointer; color: var(--accent); }
-  #fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 12px 0 16px; }
-  #fields label { font-size: .88rem; }
-  #fields input, #fields select { width: 100%; display: block; margin-top: 4px; }
-  #plan { margin: 0 0 16px; padding: 12px; border-radius: 13px; background: #ffffff0a; }
+  #csv:focus-visible + label { outline: 3px solid var(--rc-focus); outline-offset: 2px; }
+  dl { margin: 12px 0; }
+  dl div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--rc-line); padding: 8px 0; }
+  dd { font-variant-numeric: tabular-nums; text-align: right; }
+  #fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 20px 16px; margin: 12px 0 24px; }
+  #plan { margin: 0 0 16px; padding: 12px; border-radius: var(--rc-radius-md); background: var(--veil); }
   @media (max-width: 560px) {
-    .top { padding: 12px 14px; }
-    .brand { font-size: .82rem; line-height: 1.15; }
-    .top button { padding: 6px 9px; font-size: .79rem; }
-    .top .actions { gap: 5px; }
+    .top { padding: 12px 20px; }
+    .brand { flex-direction: column; align-items: start; gap: 4px; font-size: var(--rc-text-sm); }
+    .brand-page::before { content: none; }
+    .top .actions { gap: 4px; }
+    .top .rc-btn { padding-inline: 8px; }
+    #guide-field { flex-basis: 100%; }
+    #guided-answer .rc-btn { flex: 1 1 100%; }
   }
   @media (prefers-reduced-motion: reduce) {
     .wave, .wave i { animation: none !important; }
@@ -134,50 +136,51 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="rc-wordmark"><!-- MARK --><span>Relo<b>Cat</b></span></span> · Interview</div>
+  <div class="brand"><span class="rc-wordmark"><!-- MARK --><span>Relo<b>Cat</b></span></span><span class="brand-page">Interview</span></div>
   <nav class="actions" aria-label="Interview tools">
-    <button id="source-button" data-open="data-panel">Add bank data</button>
-    <button data-open="plan-panel">Your plan</button>
+    <button id="source-button" class="rc-btn rc-btn--sm" data-open="data-panel">Add bank data</button>
+    <button class="rc-btn rc-btn--sm" data-open="plan-panel">Your plan</button>
   </nav>
 </header>
 <main class="stage">
   <section id="conversation" class="conversation" data-voice="idle" aria-labelledby="title">
-    <h1 id="title">Let’s talk about your first home.</h1>
+    <h1 id="title">Let’s talk about your first home</h1>
     <p class="intro">Start with your bank transactions, then talk through your first-home goals.</p>
     <div class="voice-graphic" aria-hidden="true">
       <div class="wave"><i style="--height:10px"></i><i style="--height:21px"></i><i style="--height:34px"></i><i style="--height:25px"></i><i style="--height:13px"></i></div>
     </div>
     <p id="voice-status" role="status">Ready to talk.</p>
     <div class="actions voice-controls">
-      <button id="start" class="primary">Start talking</button>
-      <button id="mute" aria-pressed="false" hidden>Mute mic</button>
-      <button id="stop" class="end" hidden>End conversation</button>
+      <button id="start" class="rc-btn rc-btn--gold">Start talking</button>
+      <button id="mute" class="rc-btn" aria-pressed="false" hidden>Mute mic</button>
+      <button id="stop" class="rc-btn end" hidden>End conversation</button>
     </div>
     <p id="last-question" aria-live="polite" hidden></p>
     <form id="typed-answer" hidden>
-      <input id="answer" aria-label="Type an interview answer" placeholder="Type your answer" maxlength="1000" required>
-      <button id="send-answer" disabled>Send</button>
+      <label for="answer">Your answer</label>
+      <input id="answer" type="text" autocomplete="off" enterkeyhint="send" maxlength="1000" required>
+      <button id="send-answer" class="rc-btn" disabled>Send answer</button>
     </form>
     <form id="guided-answer" novalidate hidden>
       <div id="guide-field"></div>
-      <button class="primary">Continue</button>
-      <button id="skip" type="button">Skip</button>
+      <button class="rc-btn rc-btn--gold">Save answer</button>
+      <button id="skip" class="rc-btn" type="button">Skip question</button>
       <p id="guide-error" class="guide-error" role="alert" hidden></p>
       <p id="guide-why" class="hint guide-why" hidden></p>
     </form>
-    <div class="more"><button data-open="options-panel">Conversation options</button></div>
+    <div class="more"><button class="rc-btn rc-btn--quiet" data-open="options-panel">Conversation options</button></div>
     <audio id="audio" autoplay></audio>
   </section>
 </main>
 <dialog id="data-panel" aria-labelledby="data-heading">
-  <div class="panel-head"><h2 id="data-heading">Add bank data</h2><button data-close>Close</button></div>
+  <div class="panel-head"><h2 id="data-heading">Add bank data</h2><button class="rc-btn rc-btn--sm" data-close>Close</button></div>
   <div id="sources">
     <p class="hint">Use a statement to ground the conversation in your actual spending.</p>
     <div class="source-options">
-      <button id="bank" class="source"><strong>Connect a bank</strong><small>Demo connection</small></button>
-      <input id="csv" type="file" accept=".csv,text/csv"><label class="button source" for="csv"><strong>Upload CSV</strong><small>Bank statement</small></label>
+      <button id="bank" class="rc-btn source"><strong>Connect a bank</strong><small>Demo connection</small></button>
+      <input id="csv" type="file" accept=".csv,text/csv"><label class="rc-btn source" for="csv"><strong>Upload CSV</strong><small>Bank statement</small></label>
     </div>
-    <label><input id="use-decisions" type="checkbox"> Categorize CSV with OpenAI</label>
+    <label class="check"><input id="use-decisions" type="checkbox"> Categorize CSV with OpenAI</label>
     <p class="hint">If selected, OpenAI receives shortened descriptions and whether each transaction is money in or out. Individual dates and amounts stay in this browser.</p>
     <label>CSV currency <select id="currency"><option>EUR</option><option>USD</option><option>GBP</option></select></label>
     <p class="hint" id="import-status" role="status">CSV columns should be date, description and amount. Use signed amounts.</p>
@@ -191,18 +194,18 @@
       <p>Everyday checking · 3 months of transactions</p>
       <p class="hint">This connection uses fictional transactions and never asks for bank credentials.</p>
     </div>
-    <div class="actions"><button id="demo" class="primary">Connect demo account</button><button id="bank-back">Back</button></div>
+    <div class="actions"><button id="demo" class="rc-btn rc-btn--gold">Connect demo account</button><button id="bank-back" class="rc-btn">Back</button></div>
     <p class="hint" id="bank-status" role="status"></p>
   </div>
 </dialog>
 <dialog id="plan-panel" aria-labelledby="plan-heading">
-  <div class="panel-head"><h2 id="plan-heading">Your home and savings plan</h2><button data-close>Close</button></div>
+  <div class="panel-head"><h2 id="plan-heading">Your home and savings plan</h2><button class="rc-btn rc-btn--sm" data-close>Close</button></div>
   <div id="plan" aria-live="polite"></div>
   <details>
     <summary>Review or edit answers</summary>
     <form id="profile">
       <div id="fields"></div>
-      <div class="actions"><button class="primary">Save answers</button><button id="clear" type="button">Clear saved data</button></div>
+      <div class="actions"><button class="rc-btn rc-btn--gold">Save answers</button><button id="clear" class="rc-btn" type="button">Clear saved data</button></div>
     </form>
     <p class="hint" id="save-status" role="status">Your summary and answers are saved in this browser.</p>
   </details>
@@ -212,17 +215,17 @@
     <dl id="facts"></dl>
     <p id="profile-status" class="hint" role="status">These answers are only on this device.</p>
     <div class="actions">
-      <button id="save-profile" class="primary" hidden>Save my answers to my ReloCat profile</button>
-      <a id="profile-signin" class="button" href="../login?next=%2Finterview%2F" hidden>Sign in to save them</a>
+      <button id="save-profile" class="rc-btn rc-btn--gold" hidden>Save my answers to my ReloCat profile</button>
+      <a id="profile-signin" class="rc-btn" href="../login?next=%2Finterview%2F" hidden>Sign in to save them</a>
     </div>
   </section>
 </dialog>
 <dialog id="options-panel" aria-labelledby="options-heading">
-  <div class="panel-head"><h2 id="options-heading">Conversation options</h2><button data-close>Close</button></div>
+  <div class="panel-head"><h2 id="options-heading">Conversation options</h2><button class="rc-btn rc-btn--sm" data-close>Close</button></div>
   <div class="actions">
-    <button id="captions" aria-pressed="false">Captions</button>
-    <button id="type-toggle" aria-pressed="false" disabled>Type a reply</button>
-    <button id="guide">Guided interview</button>
+    <button id="captions" class="rc-btn" aria-pressed="false">Captions</button>
+    <button id="type-toggle" class="rc-btn" aria-pressed="false" disabled>Type a reply</button>
+    <button id="guide" class="rc-btn">Guided interview</button>
   </div>
   <p class="hint">Voice uses your microphone and sends your saved answers and financial summary to OpenAI. Uploaded CSV files are processed in this browser.</p>
 </dialog>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { CallTool } from './client.ts';
 import { createToolClient, httpCallTool } from './client.ts';
+import { Wordmark } from './components/bits.tsx';
 import { fixtureCallTool } from './fixtures/client.ts';
 import { fixturePlan } from './fixtures/plan.ts';
 import type { WorkspaceLaunch } from './launch.ts';
@@ -74,7 +75,7 @@ function Hosted() {
   if (failed)
     return (
       <Shell>
-        <p className="note note-error" role="alert">
+        <p className="rc-note rc-note--error" role="alert">
           <strong>Could not connect to the chat.</strong> Reopen the ReloCat workspace to try again.
         </p>
       </Shell>
@@ -82,7 +83,7 @@ function Hosted() {
   if (!client || !connected || !launch)
     return (
       <Shell>
-        <p className="note" role="status">
+        <p className="rc-note" role="status">
           Opening the workspace…
         </p>
       </Shell>
@@ -94,9 +95,7 @@ function Shell({ children }: { children: ReactNode }) {
   return (
     <main>
       <header className="masthead">
-        <p className="brand">
-          relo<span>.cat</span>
-        </p>
+        <Wordmark />
         <h1>How soon could you buy?</h1>
       </header>
       {children}
@@ -144,7 +143,7 @@ function Standalone() {
   if (!launch)
     return (
       <Shell>
-        <p className="note" role="status">
+        <p className="rc-note" role="status">
           Opening the workspace…
         </p>
       </Shell>

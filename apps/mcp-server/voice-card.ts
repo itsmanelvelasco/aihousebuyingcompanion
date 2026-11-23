@@ -81,7 +81,7 @@ ${themeCss()}
   main { padding: 24px 20px; max-width: 38rem; margin: auto; }
   .orb { display: grid; place-items: center; width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 16px;
     background: radial-gradient(circle at 35% 25%, #fff6c4, var(--rc-gold) 55%, #d9a93c);
-    box-shadow: 0 0 28px rgb(246 201 92 / 0.45); color: var(--rc-gold-ink); }
+    box-shadow: 0 0 28px color-mix(in srgb, var(--rc-gold) 45%, transparent); color: var(--rc-gold-ink); }
   .orb .rc-icon { width: 36px; height: 36px; }
   h1 { font-size: var(--rc-text-2xl); }
   p { margin: 8px auto 20px; max-width: 30rem; color: var(--rc-on-night-muted); }

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { type IconName, iconAttributes, iconPaths, markSvg } from '../../../packages/ui/icons.ts';
 import type { ToolError } from '../client.ts';
-import { formatAgo, formatDate, safeHref, sourceHost } from '../format.ts';
+import { formatAgo, formatDate, formatMonthly, safeHref, sourceHost } from '../format.ts';
 import { useNow } from '../hooks.ts';
 
 /** An icon from the shared set. Decorative unless `label` names what it stands for. */
@@ -46,6 +46,22 @@ export function Source(props: { url: string; observedAt?: string | null; geograp
         label
       )}
     </small>
+  );
+}
+
+/**
+ * A monthly amount with its period set smaller than the figure. Presentation only: the text is
+ * `formatMonthly`'s, split at the slash, and an unknown amount stays the word it already was.
+ */
+export function Monthly({ cents }: { cents: number | null | undefined }) {
+  const text = formatMonthly(cents);
+  const slash = text.lastIndexOf('/');
+  if (slash < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, slash)}
+      <span className="unit">{text.slice(slash)}</span>
+    </>
   );
 }
 

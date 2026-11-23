@@ -16,6 +16,8 @@ const violet = '#663e91';
 const terracotta = '#d98a5f';
 const wall = '#fff6e6';
 const ink = '#143326';
+/** The product typeface first; an SVG shown as an image cannot load it, so system fonts follow. */
+const fontStack = 'Montserrat,ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif';
 
 const svg = (width: number, height: number, body: string, label?: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid slice" ${
@@ -104,6 +106,17 @@ const arm = (d: string) => `<path d="${d}" fill="none" stroke="${deep}" stroke-w
 
 const backdrop = `<rect width="400" height="400" fill="${sky}"/><circle cx="200" cy="210" r="168" fill="${sun}" opacity=".2"/>`;
 
+/** A journey step: the mascot beside a checkpoint flag, with the emblem of the step at the upper right. */
+const checkpointArt = (emblem: string) =>
+  svg(
+    400,
+    400,
+    backdrop +
+      `<path d="M72 344V200" stroke="#7a5a48" stroke-width="8" stroke-linecap="round"/><path d="M72 204h54l-14 18 14 18H72Z" fill="${sun}" stroke="${ink}" stroke-width="4" stroke-linejoin="round"/>` +
+      `<g transform="translate(-6 40) scale(.84)">${mascotBody(arm('M300 252c26-10 40-34 44-62') + arm('M100 262c-20 6-34 20-40 36'))}</g>` +
+      emblem,
+  );
+
 /** Each fallback, keyed by the id of the image slot it stands in for. */
 export const fallbackArt = {
   'hero-valley': () => svg(1600, 900, valley(1600, 900)),
@@ -137,11 +150,39 @@ export const fallbackArt = {
       624,
       valley(1200, 624) +
         `<rect width="1200" height="624" fill="url(#fade)"/><defs><linearGradient id="fade" x1="0" x2="1"><stop offset="0" stop-color="${sky}"/><stop offset=".42" stop-color="${sky}" stop-opacity=".94"/><stop offset=".7" stop-color="${sky}" stop-opacity="0"/></linearGradient></defs>` +
-        `<text x="72" y="118" font-family="system-ui,sans-serif" font-size="44" font-weight="800" letter-spacing="-1.5" fill="${deep}">Relo<tspan fill="${violet}">Cat</tspan></text>` +
-        `<text x="72" y="300" font-family="Georgia,serif" font-size="92" font-weight="700" letter-spacing="-3" fill="#163d2b">Find your place</text>` +
-        `<text x="72" y="398" font-family="Georgia,serif" font-size="92" font-weight="700" font-style="italic" letter-spacing="-3" fill="${violet}">in Catalonia.</text>` +
-        `<text x="72" y="474" font-family="system-ui,sans-serif" font-size="30" fill="#304e3d">Towns, school journeys and housing support, compared.</text>`,
+        `<text x="72" y="118" font-family="${fontStack}" font-size="44" font-weight="800" letter-spacing="-1.5" fill="${deep}">Relo<tspan fill="${violet}">Cat</tspan></text>` +
+        `<text x="72" y="300" font-family="${fontStack}" font-size="92" font-weight="700" letter-spacing="-3" fill="#163d2b">Find your place</text>` +
+        `<text x="72" y="398" font-family="${fontStack}" font-size="92" font-weight="700" font-style="italic" letter-spacing="-3" fill="${violet}">in Catalonia.</text>` +
+        `<text x="72" y="474" font-family="${fontStack}" font-size="30" fill="#304e3d">Towns, school journeys and housing support, compared.</text>`,
       'ReloCat. Find your place in Catalonia.',
+    ),
+  'step-profile': () =>
+    checkpointArt(
+      `<rect x="286" y="150" width="64" height="80" rx="8" fill="${wall}" stroke="${ink}" stroke-width="5"/><path d="M300 176h36M300 196h36M300 214h22" stroke="${ink}" stroke-width="4" stroke-linecap="round" opacity=".55"/>`,
+    ),
+  'step-money': () =>
+    checkpointArt(
+      `<circle cx="318" cy="190" r="34" fill="${sun}" stroke="${ink}" stroke-width="5"/><circle cx="318" cy="190" r="18" fill="none" stroke="${ink}" stroke-width="4" opacity=".45"/>`,
+    ),
+  'step-bank': () =>
+    checkpointArt(
+      `<path d="M278 176l40-26 40 26Z" fill="${violet}" stroke="${ink}" stroke-width="5" stroke-linejoin="round"/><path d="M290 184v40M318 184v40M346 184v40M278 230h80" stroke="${ink}" stroke-width="7" stroke-linecap="round"/>`,
+    ),
+  'step-places': () =>
+    checkpointArt(
+      `<path d="M270 226c20-30 40-30 56 0Z" fill="${hillNear}"/><path d="M316 226c18-36 44-36 60 0Z" fill="${hillNear}"/><path d="M288 198l12-12 12 12v14h-24Z" fill="${terracotta}" stroke="${ink}" stroke-width="4" stroke-linejoin="round"/><path d="M336 192l12-12 12 12v14h-24Z" fill="${terracotta}" stroke="${ink}" stroke-width="4" stroke-linejoin="round"/>`,
+    ),
+  'step-aid': () =>
+    checkpointArt(
+      `<rect x="282" y="186" width="72" height="44" rx="6" fill="#7a5a48" stroke="${ink}" stroke-width="5"/><path d="M282 186c0-22 72-22 72 0" fill="${terracotta}" stroke="${ink}" stroke-width="5"/><path d="M318 150l5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1Z" fill="${sun}"/>`,
+    ),
+  'step-habits': () =>
+    checkpointArt(
+      `<path d="M318 232v-56" stroke="${ink}" stroke-width="6" stroke-linecap="round"/><path d="M318 196c-26 0-34-16-34-28 20 0 34 8 34 28ZM318 184c24 0 32-14 32-26-18 0-32 8-32 26Z" fill="${hillNear}" stroke="${ink}" stroke-width="4" stroke-linejoin="round"/><circle cx="318" cy="152" r="10" fill="${sun}" stroke="${ink}" stroke-width="3"/>`,
+    ),
+  'step-ready': () =>
+    checkpointArt(
+      `<circle cx="318" cy="168" r="20" fill="none" stroke="${sun}" stroke-width="12"/><path d="M318 188v48M318 216h16M318 232h12" stroke="${sun}" stroke-width="12" stroke-linecap="round"/>`,
     ),
 } as const satisfies Record<string, () => string>;
 

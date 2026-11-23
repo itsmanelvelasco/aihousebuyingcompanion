@@ -66,7 +66,7 @@ async function requestImage(
       quality: settings.quality,
       background: 'opaque',
       output_format: spec.format,
-      ...(spec.format === 'png' ? {} : { output_compression: 88 }),
+      ...(spec.format === 'png' ? {} : { output_compression: spec.compression ?? 88 }),
     }),
     signal: AbortSignal.timeout(settings.timeoutMs),
   });

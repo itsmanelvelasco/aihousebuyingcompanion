@@ -27,14 +27,19 @@
       padding: 8px 12px;
       border-radius: var(--rc-radius-sm);
       background: var(--rc-surface);
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
       transform: translateY(-200%);
     }
     .skip:focus { transform: none; }
     .masthead { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
     .masthead .rc-wordmark { font-size: 1.5rem; }
+    .masthead .rc-wordmark, .footer-bottom .rc-wordmark { min-height: 44px; }
     .site-nav { display: flex; align-items: center; gap: 8px; }
-    .nav-link { display: inline-flex; align-items: center; min-height: 44px; padding-inline: 10px; font-size: var(--rc-text-md); font-weight: 700; text-decoration: none; }
-    .nav-link:hover { text-decoration: underline; }
+    .site-nav .rc-btn { white-space: nowrap; }
+    .nav-link { display: inline-flex; align-items: center; min-height: 44px; padding-inline: 12px; font-size: var(--rc-text-md); font-weight: 700; text-decoration: none; }
+    @media (hover: hover) { .nav-link:hover { text-decoration: underline; } }
 
     /* The hero is a "day" panel: cream in both themes, because the illustration is painted on cream. */
     .hero {
@@ -48,14 +53,11 @@
       border-radius: var(--rc-radius-xl);
       background: var(--rc-day);
       color: var(--rc-on-day);
-      /* Controls inside keep their light values in both themes. */
-      --rc-accent: #17593d;
-      --rc-accent-hover: #1f6d4c;
-      --rc-on-accent: #fffdf4;
-      --rc-surface: #fffcf5;
-      --rc-accent-soft: #e3f1e5;
-      --rc-line-strong: #17593d;
-      --rc-focus: #663e91;
+      /* Everything inside resolves the light half of the theme tokens in both themes. */
+      color-scheme: light;
+      /* Montserrat sets wide: 64 px is the largest size that keeps the title clear of the illustration. */
+      --rc-text-hero: clamp(2.5rem, 1.5rem + 3.5vw, 4rem);
+      --rc-line-strong: var(--rc-accent);
     }
     .village {
       position: absolute;
@@ -68,13 +70,13 @@
       mask-image: linear-gradient(90deg, transparent 2%, #000 39%);
     }
     .hero-copy { padding: 48px clamp(24px, 4.6vw, 64px); }
-    h1 { color: #163d2b; font-size: var(--rc-text-hero); line-height: 1; letter-spacing: -0.035em; }
-    h1 span { display: block; color: #663e91; font-style: italic; }
+    h1 { color: var(--rc-on-day); font-size: var(--rc-text-hero); line-height: 1; letter-spacing: -0.035em; }
+    h1 span { display: block; color: var(--rc-violet); }
     .hero-copy p { max-width: 33ch; margin: 24px 0; color: var(--rc-on-day-muted); font-size: clamp(1rem, 1.5vw, 1.25rem); line-height: 1.5; }
     .actions { display: flex; flex-wrap: wrap; gap: 12px; }
 
-    .body-section { margin: clamp(48px, 6.2vw, 88px) auto; }
-    .body-section h2 { font-size: clamp(2rem, 4vw, 3.25rem); line-height: 1.05; letter-spacing: -0.03em; }
+    .body-section { margin: clamp(48px, 8vw, 96px) auto; }
+    .body-section h2 { font-size: clamp(2rem, 4vw, 3.25rem); }
     .section-intro { margin-top: 12px; color: var(--rc-muted); max-width: 60ch; }
     .discover {
       display: grid;
@@ -87,10 +89,10 @@
     .welcome { width: clamp(118px, 15vw, 195px); margin-top: 16px; }
     .storylines { border-top: 1px solid var(--rc-line); }
     .storylines > div { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; padding: 16px 0; border-bottom: 1px solid var(--rc-line); }
-    .storylines .rc-icon { grid-row: span 2; width: 28px; height: 28px; margin-top: 2px; color: var(--rc-violet); }
-    .storylines dt { color: var(--rc-accent); font-size: var(--rc-text-lg); font-weight: 800; line-height: 1.3; }
+    .storylines .rc-icon { grid-row: span 2; width: 24px; height: 24px; color: var(--rc-violet); }
+    .storylines dt { color: var(--rc-accent); font-size: var(--rc-text-lg); font-weight: 800; line-height: 24px; }
     .storylines dd { color: var(--rc-muted); max-width: var(--rc-measure); }
-    .discovery-link { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin-top: 8px; font-weight: 700; }
+    .discovery-link { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 8px; font-weight: 700; }
 
     #setup { scroll-margin-top: 16px; }
     .setup-heading { margin-bottom: 24px; }
@@ -98,7 +100,8 @@
       display: grid;
       grid-template-columns: minmax(205px, .37fr) minmax(0, 1fr);
       border: 1px solid var(--rc-line);
-      border-radius: var(--rc-radius-lg);
+      /* Concentric with the agent buttons: their 8 px radius plus the 12 px padding of the list. */
+      border-radius: var(--rc-radius-xl);
       background: var(--rc-surface);
       overflow: clip;
     }
@@ -108,16 +111,16 @@
       gap: 12px;
       align-items: center;
       min-height: 44px;
-      padding: 6px 12px;
+      padding: 4px 12px;
       border: 1px solid transparent;
       border-radius: var(--rc-radius-sm);
       background: transparent;
       text-align: left;
       font-weight: 600;
-      transition: background-color var(--rc-dur-fast) var(--rc-ease);
+      transition: background-color var(--rc-dur-fast) var(--rc-ease), transform var(--rc-dur-fast) var(--rc-ease);
     }
     @media (hover: hover) { .agent:hover { background: var(--rc-surface); } }
-    .agent:active { transform: scale(.98); }
+    .agent:active { transform: scale(.97); }
     .agent[aria-pressed="true"] { border-color: var(--rc-violet); background: var(--rc-surface); color: var(--rc-violet); font-weight: 800; }
     .agent-mark {
       display: inline-grid;
@@ -125,16 +128,18 @@
       place-items: center;
       width: 28px;
       height: 28px;
-      border: 1px solid rgb(34 53 42 / .14);
-      border-radius: 8px;
+      /* Brand logos are drawn for a white tile, so the tile and its tokens stay light in both themes. */
+      color-scheme: light;
+      border: 1px solid var(--rc-line);
+      border-radius: var(--rc-radius-sm);
       background: #fff;
-      color: #663e91;
+      color: var(--rc-violet);
     }
     .agent-mark img { width: 74%; height: 74%; object-fit: contain; }
     .agent-mark .rc-icon { width: 16px; height: 16px; }
     .agent-detail { min-width: 0; padding: clamp(20px, 3vw, 36px); }
     .agent-heading { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
-    .agent-heading .agent-mark { width: 40px; height: 40px; border-radius: 10px; }
+    .agent-heading .agent-mark { width: 40px; height: 40px; border-radius: var(--rc-radius-md); }
     .agent-heading .agent-mark .rc-icon { width: 22px; height: 22px; }
     .agent-heading h3 { font-size: var(--rc-text-2xl); line-height: 1.15; }
     #agent-kind, .meta { color: var(--rc-muted); font-size: var(--rc-text-sm); }
@@ -145,14 +150,14 @@
     .endpoint-row input { flex: 1 1 auto; font-family: var(--rc-font-mono); }
     .endpoint-row .rc-btn { flex: 0 0 auto; }
     #endpoint-note { margin-top: 8px; font-weight: 400; }
-    .instructions ol { margin: 16px 0 0; padding-inline-start: 22px; max-width: var(--rc-measure); }
+    .instructions ol { margin: 16px 0 0; padding-inline-start: 24px; max-width: var(--rc-measure); }
     .instructions li { margin-bottom: 8px; padding-inline-start: 4px; }
     .instructions li::marker { color: var(--rc-violet); font-weight: 800; }
     #config { margin-top: 12px; display: grid; gap: 8px; justify-items: start; }
     pre {
       width: 100%;
       margin: 0;
-      padding: 12px 14px;
+      padding: 12px 16px;
       border-radius: var(--rc-radius-sm);
       background: var(--rc-violet-soft);
       color: var(--rc-ink);
@@ -164,7 +169,7 @@
     .copy-status { color: var(--rc-accent); font-size: var(--rc-text-md); font-weight: 700; }
     .copy-status:not(:empty) { margin-top: 8px; }
     .agent-footer { margin-top: 16px; }
-    .agent-footer a { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-weight: 700; }
+    .agent-footer a { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 700; }
     .questions {
       display: grid;
       grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
@@ -192,7 +197,7 @@
     .footer-content pre { margin-top: 4px; background: var(--rc-surface); }
     .footer-bottom { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--rc-line); }
     .footer-links { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: var(--rc-text-md); }
-    .footer-links a { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
+    .footer-links a { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
     @media (prefers-color-scheme: dark) {
       /* Raster art is painted on cream: it keeps its cream tile instead of blending into a dark page. */
       .mascot { mix-blend-mode: normal; }
@@ -204,6 +209,8 @@
     @media (max-width: 720px) {
       .hero { display: grid; min-height: 0; }
       .hero-copy { padding: 28px 24px 8px; position: relative; z-index: 1; }
+      /* Below 48 px the display tracking relaxes. */
+      h1 { letter-spacing: -0.02em; }
       .village { position: relative; grid-row: 2; width: 100%; height: clamp(195px, 48vw, 294px); mask-image: linear-gradient(180deg, transparent, #000 23%); }
       .hero-copy p { margin: 16px 0; }
       .discover, .questions { grid-template-columns: minmax(0, 1fr); gap: 16px; }
@@ -215,8 +222,10 @@
       .agent-picker { display: grid; margin-bottom: 20px; }
     }
     @media (max-width: 480px) {
-      .wrap { width: calc(100% - 32px); }
-      .masthead { min-height: 60px; }
+      .masthead { min-height: 60px; gap: 8px; }
+      /* The title flows over three lines here instead of breaking before the violet words. */
+      h1 span { display: inline; }
+      .discovery-intro, .question-intro { grid-template-columns: minmax(0, 1fr) 72px; }
       .masthead .rc-wordmark { font-size: 1.25rem; }
       .site-nav .nav-link { display: none; }
       .hero-copy { padding-inline: 20px; }
@@ -225,6 +234,11 @@
       .endpoint-row { flex-wrap: wrap; }
       .endpoint-row .rc-btn { width: 100%; }
       .prompt { grid-template-columns: minmax(0, 1fr); gap: 8px; justify-items: start; }
+    }
+    @media (max-width: 359px) {
+      /* On the narrowest phones the section titles need the whole line. */
+      .discovery-intro, .question-intro { grid-template-columns: minmax(0, 1fr); }
+      .welcome, .guide { display: none; }
     }
 </style>
 </head>
@@ -242,7 +256,7 @@
     <section class="hero" aria-labelledby="hero-title">
       <img class="village" src="{{art:hero-valley}}" alt="" fetchpriority="high">
       <div class="hero-copy">
-        <h1 id="hero-title">Find your place <span>in Catalonia.</span></h1>
+        <h1 id="hero-title">Find your place <span>in Catalonia</span></h1>
         <p>Compare towns, school journeys and housing support before you decide where to move.</p>
         <div class="actions">
           <a class="rc-btn rc-btn--primary" href="/preview">Explore towns</a>
@@ -254,7 +268,7 @@
     <section class="body-section discover" aria-labelledby="discover-title">
       <div class="discovery-intro">
         <div>
-          <h2 id="discover-title">Get a feel for everyday life.</h2>
+          <h2 id="discover-title">Get a feel for everyday life</h2>
           <p class="section-intro">Start with 18 Catalan municipalities in the pilot.</p>
         </div>
         <img class="mascot welcome" src="{{art:mascot-welcome}}" alt="" width="227" height="208" loading="lazy">
@@ -271,7 +285,7 @@
 
     <section class="body-section" id="setup" aria-labelledby="setup-title">
       <div class="setup-heading">
-        <h2 id="setup-title">Bring ReloCat into your chat.</h2>
+        <h2 id="setup-title">Bring ReloCat into your chat</h2>
         <p class="section-intro">Choose your AI agent for step-by-step connection instructions.</p>
       </div>
       <div class="setup-panel">
@@ -559,7 +573,7 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "rc-btn rc-btn--sm";
-      button.textContent = "Copy";
+      button.textContent = "Copy question";
       button.setAttribute("aria-label", "Copy question: " + text);
       button.onclick = () => copy(text, get("prompt-feedback"), () => selectContents(question));
       row.append(question, button);

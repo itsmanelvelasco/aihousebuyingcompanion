@@ -25,8 +25,8 @@
       overflow: hidden;
       background: var(--rc-day);
       color: var(--rc-on-day);
-      --rc-accent: #17593d;
-      --rc-violet: #663e91;
+      /* A fixed cream panel: the wordmark inside resolves the light half of the theme tokens. */
+      color-scheme: light;
     }
     .hero-art {
       position: absolute;
@@ -37,7 +37,7 @@
       background: var(--rc-art-hero-valley) 58% 66% / cover no-repeat;
       mask-image: linear-gradient(to right, transparent, #000 24%);
     }
-    .hero h1 { max-width: 10ch; margin: 8px 0; font-size: 3.25rem; line-height: 0.98; letter-spacing: -0.035em; color: #163d2b; }
+    .hero h1 { max-width: 10ch; margin: 8px 0; font-size: clamp(var(--rc-text-3xl), 1.25rem + 3.75vw, var(--rc-text-4xl)); color: var(--rc-on-day); }
     .hero .intro { max-width: 25ch; color: var(--rc-on-day-muted); }
     .explorer { margin-top: 24px; }
     .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; margin-bottom: 12px; }
@@ -46,6 +46,7 @@
     /* Segmented control: which towns the map and the list show. */
     .views { display: flex; gap: 4px; padding: 4px; background: var(--rc-violet-soft); border-radius: var(--rc-radius-md); }
     .views button {
+      position: relative;
       min-height: 36px;
       padding: 4px 12px;
       border: 1px solid transparent;
@@ -54,14 +55,17 @@
       color: var(--rc-violet);
       font-size: var(--rc-text-sm);
       font-weight: 700;
-      transition: background-color var(--rc-dur-fast) var(--rc-ease);
+      transition: background-color var(--rc-dur-fast) var(--rc-ease), transform var(--rc-dur-fast) var(--rc-ease);
     }
+    /* The 36 px segments keep a 44 px touch target through the padding of the group. */
+    .views button::after { content: ""; position: absolute; inset: -4px 0; }
+    .views button:active { transform: scale(0.97); }
     .views button[aria-pressed="true"] { background: var(--rc-surface); border-color: var(--rc-line); box-shadow: var(--rc-shadow-sm); }
     @media (hover: hover) { .views button:hover { background: var(--rc-surface); } }
     .workspace { display: grid; grid-template-columns: minmax(0, 1.48fr) minmax(0, 1fr); align-items: start; gap: 12px; }
     .map-shell { min-width: 0; border: 1px solid var(--rc-line); background: #ece8f3; border-radius: var(--rc-radius-lg); overflow: hidden; }
     /* The map is drawn on a fixed light canvas, so its controls keep light colours in both themes. */
-    .map { height: 342px; position: relative; color-scheme: light; color: #22352a; touch-action: manipulation; }
+    .map { height: 342px; position: relative; color-scheme: light; color: var(--rc-ink); touch-action: manipulation; }
     .map canvas, #map-pins { position: absolute; inset: 0; width: 100%; height: 100%; }
     #map-pins { pointer-events: none; }
     .map-controls { position: absolute; z-index: 4; top: 8px; right: 8px; display: grid; justify-items: end; gap: 4px; }
@@ -72,17 +76,17 @@
       min-width: 36px;
       min-height: 36px;
       padding: 0 8px;
-      border: 1px solid #7f8676;
+      border: 1px solid var(--rc-line-strong);
       border-radius: var(--rc-radius-sm);
-      background: #fffcf5;
-      color: #17593d;
+      background: var(--rc-surface);
+      color: var(--rc-accent);
       font-size: var(--rc-text-sm);
       font-weight: 700;
     }
     .map-controls button::after { content: ""; position: absolute; inset: -4px; }
     .map-controls button:disabled { opacity: 0.45; }
     .map-controls button:active:not(:disabled) { transform: scale(0.96); }
-    @media (hover: hover) { .map-controls button:hover:enabled { background: #e3f1e5; } }
+    @media (hover: hover) { .map-controls button:hover:enabled { background: var(--rc-accent-soft); } }
     .map-controls .zoom { display: flex; gap: 4px; }
     .map-key {
       position: absolute;
@@ -91,17 +95,17 @@
       left: 12px;
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
       padding: 4px 8px;
       border-radius: var(--rc-radius-sm);
-      background: #fffcf5ea;
-      color: #3a5545;
+      background: color-mix(in srgb, var(--rc-surface) 92%, transparent);
+      color: var(--rc-on-day-muted);
       font-size: var(--rc-text-xs);
       font-weight: 800;
       pointer-events: none;
     }
-    .north { display: inline-block; width: 0; height: 0; border-inline: 4px solid transparent; border-bottom: 8px solid #3a5545; }
-    figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; padding: 6px 12px; background: var(--rc-surface); color: var(--rc-muted); font-size: var(--rc-text-xs); border-top: 1px solid var(--rc-line); }
+    .north { display: inline-block; width: 0; height: 0; border-inline: 4px solid transparent; border-bottom: 8px solid currentColor; }
+    figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; padding: 8px 12px; background: var(--rc-surface); color: var(--rc-muted); font-size: var(--rc-text-xs); border-top: 1px solid var(--rc-line); }
     #map-selection { color: var(--rc-violet); font-weight: 700; }
     .map-pin {
       position: absolute;
@@ -133,8 +137,9 @@
       line-height: 1;
     }
     .pin-marker { border: 2px solid #fffcf5; box-shadow: 0 2px 4px #41295c38; }
-    .pin-marker:empty { width: 15px; height: 15px; background: #7950a7; }
-    .map-pin:hover, .map-pin:focus-visible, .map-pin[aria-pressed="true"] { z-index: 3; }
+    .pin-marker:empty { width: 16px; height: 16px; background: #7950a7; }
+    .map-pin:focus-visible, .map-pin[aria-pressed="true"] { z-index: 3; }
+    @media (hover: hover) { .map-pin:hover { z-index: 3; } }
     .map-pin[aria-pressed="true"] .pin-marker, .town-card[aria-pressed="true"] .rank { background: var(--rc-gold); color: var(--rc-gold-ink); }
     .results { min-width: 0; }
     .town-list { list-style: none; padding: 0 4px 4px; margin: 0 -4px; display: grid; gap: 8px; max-height: 367px; overflow: auto; scrollbar-color: var(--rc-line-strong) transparent; }
@@ -150,16 +155,16 @@
       border-radius: var(--rc-radius-md);
       padding: 12px;
       background: var(--rc-surface);
-      transition: background-color var(--rc-dur-fast) var(--rc-ease), border-color var(--rc-dur-fast) var(--rc-ease);
+      transition: background-color var(--rc-dur-fast) var(--rc-ease), border-color var(--rc-dur-fast) var(--rc-ease), transform var(--rc-dur-fast) var(--rc-ease);
     }
     .town-card[aria-pressed="true"] { border-color: var(--rc-violet); background: var(--rc-violet-soft); }
     @media (hover: hover) { .town-card:hover { border-color: var(--rc-violet); background: var(--rc-violet-soft); } }
     .town-card:active { transform: scale(0.99); }
     .town-card strong, .town-card small { display: block; overflow-wrap: anywhere; }
-    .town-card strong { font: 700 var(--rc-text-lg) / 1.15 var(--rc-font-display); letter-spacing: -0.01em; }
-    .town-card .region { margin-top: 2px; }
+    .town-card strong { font: 700 var(--rc-text-lg) / 1.15 var(--rc-font-display); }
+    .town-card .region { margin-top: 4px; }
     .town-card .highlight { margin-top: 4px; color: var(--rc-accent); font-weight: 700; line-height: 1.35; }
-    .town-card .access { margin-top: 2px; line-height: 1.35; }
+    .town-card .access { margin-top: 4px; line-height: 1.35; }
     .card-arrow { width: 7px; height: 7px; border: solid var(--rc-violet); border-width: 2px 2px 0 0; transform: rotate(45deg); margin-right: 4px; }
     .chooser { margin: 0 0 8px; color: var(--rc-muted); }
     .panel-message.hint { padding: 0 0 8px; border: 0; background: transparent; color: var(--rc-muted); font-size: var(--rc-text-sm); }
@@ -179,17 +184,17 @@
       background: var(--rc-surface);
       align-items: center;
     }
-    .overview h2 { font-size: var(--rc-text-3xl); line-height: 1.06; overflow-wrap: anywhere; }
+    .overview h2 { font-size: var(--rc-text-3xl); line-height: 1.25; overflow-wrap: anywhere; }
     .overview p { margin-top: 4px; }
     .metric { border-radius: var(--rc-radius-sm); padding: 12px; background: var(--rc-gold-soft); color: var(--rc-warn); }
     .metric small { color: inherit; }
-    .metric strong { display: block; margin: 2px 0; font-size: var(--rc-text-xl); font-variant-numeric: tabular-nums; color: var(--rc-ink); }
+    .metric strong { display: block; margin: 4px 0; font-size: var(--rc-text-xl); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--rc-ink); }
     .evidence { margin-top: 24px; }
     .evidence h3 { display: flex; align-items: center; gap: 8px; font-size: var(--rc-text-lg); }
     .evidence h3 .rc-icon { color: var(--rc-violet); }
     .evidence p { margin-top: 4px; max-width: var(--rc-measure); }
     table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    th, td { padding: 8px 6px; text-align: start; border-bottom: 1px solid var(--rc-line); vertical-align: top; }
+    th, td { padding: 8px; text-align: start; border-bottom: 1px solid var(--rc-line); vertical-align: top; }
     thead th { font-size: var(--rc-text-sm); color: var(--rc-muted); }
     tbody th { width: 46%; font-weight: 600; }
     td { font-variant-numeric: tabular-nums; }
@@ -211,7 +216,6 @@
     @media (max-width: 420px) {
       main { padding: 12px; }
       .hero { min-height: 172px; padding: 16px; }
-      .hero h1 { font-size: 2.4rem; }
       .hero .intro { font-size: var(--rc-text-sm); max-width: 17ch; }
       .hero-art { width: 62%; background-position: 54% 65%; }
       .map { height: 242px; }

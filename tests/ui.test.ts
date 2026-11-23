@@ -39,8 +39,12 @@ test('the theme is one self-contained stylesheet with light and dark tokens', ()
   ]) {
     assert.ok(css.includes(component), `${component} is styled`);
   }
-  // Widgets run under a CSP with no external requests: no remote fonts, imports or images.
-  assert.doesNotMatch(css, /@import|@font-face|url\(|https?:/i);
+  // Widgets run under a CSP with no external requests: no imports and no remote fonts or images.
+  // The one typeface is embedded as a data: URL on the first line; nothing else is a URL.
+  const [fontFace, ...rest] = css.split('\n');
+  assert.match(fontFace, /^@font-face\{font-family:"Montserrat";[^}]*src:url\("data:font\/woff2;base64,[\w+/=]+"\) /);
+  assert.doesNotMatch(rest.join('\n'), /@import|@font-face|url\(|https?:/i);
+  assert.match(css, /--rc-font-text: "Montserrat",/);
 });
 
 test('the icon set covers what the surfaces need, in one style', () => {
@@ -142,14 +146,14 @@ test('page templates fail loudly on an unknown icon or image slot', () => {
 });
 
 test('every image slot has a prompt, a valid size and a drawn fallback', () => {
-  assert.ok(images.length >= 4 && images.length <= 8, 'the manifest is a short list');
+  assert.ok(images.length >= 4 && images.length <= 16, 'the manifest is a short list');
   assert.equal(new Set(images.map(image => image.id)).size, images.length);
   for (const spec of images) {
     const [width, height] = spec.size.split('x').map(Number);
     assert.ok(width % 16 === 0 && height % 16 === 0, `${spec.id}: edges divisible by 16`);
     assert.ok(width / height <= 3 && height / width <= 3, `${spec.id}: aspect ratio within 3:1`);
     assert.ok(width * height >= 655_360 && width * height <= 8_294_400, `${spec.id}: pixel count in range`);
-    assert.match(spec.path, /^apps\/mcp-server\/assets\/[a-z-]+\.(jpg|png|webp)$/);
+    assert.match(spec.path, /^apps\/mcp-server\/assets\/(steps\/)?[a-z-]+\.(jpg|png|webp)$/);
     assert.ok(imagePrompt(spec).startsWith(imageStyle), `${spec.id}: shares the family style`);
     assert.match(spec.scene, /^Scene: /);
     const fallback = fallbackArt[spec.id]();

@@ -134,6 +134,7 @@ export function pageHeaders(formAction: string[] = []) {
       "default-src 'none'",
       "style-src 'unsafe-inline'",
       'img-src data:',
+      'font-src data:',
       "base-uri 'none'",
       "frame-ancestors 'none'",
       `form-action 'self'${formAction.map(origin => ` ${origin}`).join('')}`,

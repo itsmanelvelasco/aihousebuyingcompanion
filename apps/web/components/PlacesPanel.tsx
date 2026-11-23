@@ -72,7 +72,7 @@ export function PlacesPanel(props: Props) {
         <div className="legend" aria-hidden="true">
           <span className="key key-baseline">Baseline</span>
           <span className="key key-habits">With habits</span>
-          <span className="key key-place">With this place's benefits</span>
+          <span className="key key-place">With this place’s benefits</span>
         </div>
       ) : null}
 
@@ -313,7 +313,7 @@ function StepRow({ step }: { step: TimelineStep }) {
         <span className="step-value">{step.text}</span>
       </div>
       <div className={hasBar ? 'track' : 'track track-empty'} aria-hidden="true">
-        {hasBar ? <span className="fill" style={{ width: `${step.barPercent}%` }} /> : null}
+        {hasBar ? <span className="fill" style={{ transform: `scaleX(${(step.barPercent ?? 0) / 100})` }} /> : null}
       </div>
       <p className="step-foot">
         {step.state === 'not_estimated' ? (
@@ -440,7 +440,7 @@ function AddPlace(props: { client: ToolClient; codes: string[]; onAdd: (code: st
         ))}
       </select>
       <button type="submit" className="rc-btn rc-btn--primary" disabled={!choice}>
-        Add
+        Add place
       </button>
     </form>
   );

@@ -14,6 +14,8 @@ export type ImageSpec = {
   path: string;
   size: `${number}x${number}`;
   format: 'jpeg' | 'png' | 'webp';
+  /** Output compression for jpeg and webp, 0 to 100. Default 88; lower for images a widget embeds in number. */
+  compression?: number;
   /** Where the image appears. */
   usedIn: string;
   /** Empty when the image is decoration next to text that already says the same thing. */
@@ -86,7 +88,95 @@ export const images: ImageSpec[] = [
     scene:
       'Scene: a small Catalan town in a green valley at golden hour, filling the frame edge to edge: bell tower and clay roofs slightly right of centre, terraced fields, cypress, layered hills, low sun at the upper right. In the lower left foreground one ReloCat mascot stands on the path, seen from behind at three-quarter view, looking towards the town. Balanced so the image still reads when cropped to a square from the centre. Wide 1.91:1 composition.',
   },
+  {
+    id: 'step-profile',
+    path: 'apps/mcp-server/assets/steps/step-profile.webp',
+    size: '816x816',
+    format: 'webp',
+    compression: 72,
+    usedIn: 'Journey steps, step 1 of 7: About you',
+    alt: '',
+    scene:
+      'Scene: the ReloCat mascot at the start of a trail, wearing a small terracotta backpack and holding an open blank notebook and a pencil, one foot forward, eager to set off. Beside it a short wooden pole carries a small golden pennant, the checkpoint flag of a trail game. Plain flat cream background (#fbefdc) with nothing else in it, soft contact shadow, generous empty margin on all sides. Square composition, spot illustration that still reads at thumbnail size.',
+  },
+  {
+    id: 'step-money',
+    path: 'apps/mcp-server/assets/steps/step-money.webp',
+    size: '816x816',
+    format: 'webp',
+    compression: 72,
+    usedIn: 'Journey steps, step 2 of 7: Your money',
+    alt: '',
+    scene:
+      'Scene: the ReloCat mascot dropping a golden coin into a glass jar shaped like a little house, already a third full of golden coins; two coins lie on the ground. Beside it a short wooden pole carries a small golden pennant, the checkpoint flag of a trail game. Plain flat cream background (#fbefdc) with nothing else in it, soft contact shadow, generous empty margin on all sides. Square composition, spot illustration that still reads at thumbnail size.',
+  },
+  {
+    id: 'step-bank',
+    path: 'apps/mcp-server/assets/steps/step-bank.webp',
+    size: '816x816',
+    format: 'webp',
+    compression: 72,
+    usedIn: 'Journey steps, step 3 of 7: Your bank',
+    alt: '',
+    scene:
+      'Scene: the ReloCat mascot shaking hands with a tiny friendly stone bank building with three columns and a violet roof, a thin dotted golden line joining the two like a link. Beside it a short wooden pole carries a small golden pennant, the checkpoint flag of a trail game. Plain flat cream background (#fbefdc) with nothing else in it, soft contact shadow, generous empty margin on all sides. Square composition, spot illustration that still reads at thumbnail size.',
+  },
+  {
+    id: 'step-places',
+    path: 'apps/mcp-server/assets/steps/step-places.webp',
+    size: '816x816',
+    format: 'webp',
+    compression: 72,
+    usedIn: 'Journey steps, step 4 of 7: Compare towns',
+    alt: '',
+    scene:
+      'Scene: the ReloCat mascot standing on a small hilltop looking through a brass telescope towards three tiny distant villages on separate sage hills, each with a clay roof and a bell tower. Beside it a short wooden pole carries a small golden pennant, the checkpoint flag of a trail game. Plain flat cream background (#fbefdc) with nothing else in it, soft contact shadow, generous empty margin on all sides. Square composition, spot illustration that still reads at thumbnail size.',
+  },
+  {
+    id: 'step-aid',
+    path: 'apps/mcp-server/assets/steps/step-aid.webp',
+    size: '816x816',
+    format: 'webp',
+    compression: 72,
+    usedIn: 'Journey steps, step 5 of 7: Aid and tax reliefs',
+    alt: '',
+    scene:
+      'Scene: the ReloCat mascot kneeling to open a small wooden treasure chest with a golden key; warm golden light and three golden stars rise from the chest, which holds rolled paper scrolls tied with violet ribbon, not jewels. Beside it a short wooden pole carries a small golden pennant, the checkpoint flag of a trail game. Plain flat cream background (#fbefdc) with nothing else in it, soft contact shadow, generous empty margin on all sides. Square composition, spot illustration that still reads at thumbnail size.',
+  },
+  {
+    id: 'step-habits',
+    path: 'apps/mcp-server/assets/steps/step-habits.webp',
+    size: '816x816',
+    format: 'webp',
+    compression: 72,
+    usedIn: 'Journey steps, step 6 of 7: Saving habits',
+    alt: '',
+    scene:
+      'Scene: the ReloCat mascot watering a young sapling with a small green watering can; the sapling has leaf-green leaves and three golden coins growing among them like fruit. Beside it a short wooden pole carries a small golden pennant, the checkpoint flag of a trail game. Plain flat cream background (#fbefdc) with nothing else in it, soft contact shadow, generous empty margin on all sides. Square composition, spot illustration that still reads at thumbnail size.',
+  },
+  {
+    id: 'step-ready',
+    path: 'apps/mcp-server/assets/steps/step-ready.webp',
+    size: '816x816',
+    format: 'webp',
+    compression: 72,
+    usedIn: 'Journey steps, step 7 of 7: Ready to buy',
+    alt: '',
+    scene:
+      'Scene: the ReloCat mascot cheering with both arms raised, holding a large golden key above its head in front of a small lime-washed house with an open violet door; a few golden and violet paper confetti pieces in the air, a golden medal on a ribbon around its neck. The pole beside it carries a large golden pennant: the last checkpoint of a trail game. Plain flat cream background (#fbefdc) with nothing else in it, soft contact shadow, generous empty margin on all sides. Square composition, spot illustration that still reads at thumbnail size.',
+  },
 ];
+
+/** The ids of the journey-step illustrations, in the order of the journey. */
+export const stepImageIds = [
+  'step-profile',
+  'step-money',
+  'step-bank',
+  'step-places',
+  'step-aid',
+  'step-habits',
+  'step-ready',
+] as const;
 
 /** The full prompt sent to the Images API for one image. */
 export const imagePrompt = (spec: ImageSpec) => `${imageStyle}\n\n${spec.scene}`;

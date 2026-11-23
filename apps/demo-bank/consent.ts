@@ -113,16 +113,39 @@ export function createConsentDesk(options: ConsentDeskOptions) {
 <meta name="robots" content="noindex">
 <title>Banc Demo · allow access</title>
 <style>
-  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; background: #f4f1ea; color: #1f2a2e; }
-  main { max-width: 34rem; margin: 0 auto; padding: 2rem 1rem 4rem; }
-  .card { background: #fff; border: 1px solid #d9d3c5; border-radius: 12px; padding: 1.25rem; }
-  .tag { display: inline-block; background: #7a2e1d; color: #fff; border-radius: 999px; padding: 2px 10px; font-size: .8rem; }
+  /* Banc Demo's own look, on purpose not ReloCat's: system type, grey-blue ink, light only. */
+  :root {
+    color-scheme: light;
+    --bank-page: #f4f1ea; --bank-card: #fff; --bank-ink: #1f2a2e; --bank-ink-hover: #33424a; --bank-ink-active: #0f1719;
+    --bank-muted: #5b6468; --bank-line: #d9d3c5; --bank-control-line: #767f83; --bank-tint: #edf0f1;
+    --bank-flag: #7a2e1d; --bank-focus: #0b57d0;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; background: var(--bank-page); color: var(--bank-ink); }
+  main { max-width: 36.5rem; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { margin: 12px 0 16px; font-size: 2rem; font-weight: 600; line-height: 2.5rem; letter-spacing: -0.02em; }
+  p { margin: 0 0 16px; }
+  .card { background: var(--bank-card); border: 1px solid var(--bank-line); border-radius: 12px; padding: 20px; }
+  .tag { display: inline-block; background: var(--bank-flag); color: #fff; border-radius: 999px; padding: 4px 12px; font-size: 0.75rem; line-height: 1rem; }
   label, select, button { font: inherit; }
-  select { width: 100%; padding: .5rem; margin-top: .25rem; }
-  .actions { display: flex; gap: .75rem; margin-top: 1rem; }
-  button { padding: .55rem 1rem; border-radius: 8px; border: 1px solid #1f2a2e; background: #fff; cursor: pointer; }
-  button.primary { background: #1f2a2e; color: #fff; }
-  .hint { color: #5b6468; font-size: .9rem; }
+  label { display: grid; gap: 8px; margin-bottom: 4px; font-size: 0.875rem; line-height: 1.25rem; color: var(--bank-muted); }
+  select { width: 100%; min-height: 48px; padding: 8px 12px; border: 1px solid var(--bank-control-line); border-radius: 8px; background: var(--bank-card); color: var(--bank-ink); font-size: 1rem; line-height: 1.5; cursor: pointer; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+  button { min-width: 120px; min-height: 44px; padding: 8px 20px; border-radius: 8px; border: 1px solid var(--bank-ink); background: var(--bank-card); color: var(--bank-ink); font-weight: 600; line-height: 1.5rem; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: background-color 150ms ease-out, border-color 150ms ease-out, transform 150ms ease-out; }
+  button.primary { background: var(--bank-ink); color: #fff; }
+  @media (hover: hover) {
+    select:hover { border-color: var(--bank-ink); }
+    button:hover { background: var(--bank-tint); }
+    button.primary:hover { border-color: var(--bank-ink-hover); background: var(--bank-ink-hover); }
+  }
+  button:active { transform: scale(0.97); background: var(--bank-line); }
+  button.primary:active { border-color: var(--bank-ink-active); background: var(--bank-ink-active); }
+  :focus-visible { outline: 2px solid var(--bank-focus); outline-offset: 2px; }
+  .hint { color: var(--bank-muted); font-size: 0.875rem; line-height: 1.25rem; }
+  .card > .hint { margin: 0; }
+  main > .hint { margin: 16px 0 0; }
+  @media (pointer: coarse) { select { min-height: 56px; } }
+  @media (prefers-reduced-motion: reduce) { button { transition: none; } button:active { transform: none; } }
 </style>
 </head>
 <body>
@@ -140,7 +163,7 @@ export function createConsentDesk(options: ConsentDeskOptions) {
   <p class="hint">A real bank would ask you to sign in and confirm with a second factor here. Banc Demo is fictional: it has no logins, its customers are invented and so is every movement. Nothing on this page concerns a real account.</p>
   <div class="actions">
     <button class="primary" type="submit" name="decision" value="approve">Allow for ${consentDays} days</button>
-    <button type="submit" name="decision" value="deny">Deny</button>
+    <button type="submit" name="decision" value="deny">Deny access</button>
   </div>
 </form>
 <p class="hint">After you choose, you return to ${e(target.host)}.</p>

@@ -11,9 +11,21 @@ import { images } from './images.manifest.ts';
 const root = new URL('../../', import.meta.url);
 let cachedTheme: string | undefined;
 
+/**
+ * Montserrat (variable weight, Latin subset, SIL Open Font License: see fonts/OFL.txt) as an
+ * `@font-face` with the file embedded. A page must allow `font-src data:`; where a host forbids
+ * it, the system fonts named after Montserrat in `--rc-font-text` are used.
+ */
+function fontFace() {
+  const font = readFileSync(new URL('./fonts/montserrat-latin-wght-normal.woff2', import.meta.url));
+  const source = `url("data:font/woff2;base64,${font.toString('base64')}") format("woff2")`;
+  return `@font-face{font-family:"Montserrat";font-style:normal;font-weight:100 900;font-display:swap;src:${source};}\n`;
+}
+
 /** The shared stylesheet as text, safe to place inside a `<style>` element. */
 export function themeCss() {
-  cachedTheme ??= readFileSync(new URL('./theme.css', import.meta.url), 'utf8').replace(/<\/style/gi, '<\\/style');
+  cachedTheme ??=
+    fontFace() + readFileSync(new URL('./theme.css', import.meta.url), 'utf8').replace(/<\/style/gi, '<\\/style');
   return cachedTheme;
 }
 

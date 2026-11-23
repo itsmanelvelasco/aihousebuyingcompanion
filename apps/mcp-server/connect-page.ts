@@ -67,7 +67,7 @@ export function handleConnectPage(req: IncomingMessage, res: ServerResponse, pub
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-cache',
     'Content-Security-Policy':
-      "default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+      "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
   });

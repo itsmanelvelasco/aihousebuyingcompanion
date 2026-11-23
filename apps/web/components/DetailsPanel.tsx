@@ -293,7 +293,7 @@ function QuestionForm(props: {
                       className="rc-btn rc-btn--quiet rc-btn--sm"
                       onClick={() => setBirths(previous => previous.filter((_, position) => position !== index))}
                     >
-                      Remove<span className="rc-sr-only"> child {index + 1}</span>
+                      Remove child<span className="rc-sr-only"> {index + 1}</span>
                     </button>
                   ) : null}
                 </div>
@@ -471,7 +471,7 @@ function KnownList(props: { facts: KnownFact[]; onChange: (id: string) => void; 
                 className="rc-btn rc-btn--quiet rc-btn--sm known-change"
                 onClick={() => props.onChange(fact.id)}
               >
-                Change<span className="rc-sr-only"> {fact.label}</span>
+                Change answer<span className="rc-sr-only">: {fact.label}</span>
               </button>
             ) : null}
           </div>

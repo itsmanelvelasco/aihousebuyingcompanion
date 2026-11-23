@@ -492,8 +492,8 @@ test('the page offers to save only through a relative link and a button that sta
   const page = (await send('GET', '/interview/')).text;
   // Hidden until the server says who is there: standalone, the answers stay on this device.
   assert.match(page, /<p id="profile-status" class="hint" role="status">These answers are only on this device\.<\/p>/);
-  assert.match(page, /<button id="save-profile" class="primary" hidden>/);
-  assert.match(page, /<a id="profile-signin" class="button" href="\.\.\/login\?next=%2Finterview%2F" hidden>/);
+  assert.match(page, /<button id="save-profile" class="rc-btn rc-btn--gold" hidden>/);
+  assert.match(page, /<a id="profile-signin" class="rc-btn" href="\.\.\/login\?next=%2Finterview%2F" hidden>/);
   const script = (await send('GET', '/interview/app.js')).text;
   assert.match(script, /save_plan_facts/);
   assert.match(script, /save_my_inputs/);

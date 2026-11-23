@@ -1,7 +1,8 @@
 /*
  * ReloCat design system: the one stylesheet every surface inlines (see packages/ui/inline.ts).
  * Tokens first, then a small set of shared components, all prefixed `rc-`.
- * System fonts only and nothing fetched: widgets run under a CSP that allows no external request.
+ * Nothing is fetched: widgets run under a CSP that allows no external request, so the one typeface
+ * (Montserrat, see packages/ui/fonts) is embedded by `themeCss` as a data: URL, with system fonts behind it.
  * Light and dark come from `color-scheme` + light-dark(); a host can force one with
  * <html data-theme="light|dark">.
  */
@@ -26,6 +27,9 @@
   --rc-gold: #f6c95c;
   --rc-gold-soft: light-dark(#fff0b9, #4a3d1c);
   --rc-gold-ink: #47391c;
+  --rc-gold-hover: #ffd978;
+  /* The edge of a gold control: 3:1 against paper in light, where the gold fill alone is not. */
+  --rc-gold-line: light-dark(#9a7410, #d9a93c);
   --rc-warn: light-dark(#5d4500, #f6dd8f);
   --rc-warn-soft: var(--rc-gold-soft);
   --rc-danger: light-dark(#8a2c2c, #ffb9ad);
@@ -41,15 +45,18 @@
   --rc-on-day: #1c3b2b;
   --rc-on-day-muted: #3a5545;
   /* Data marks: baseline, with habits, with a place's benefits. */
-  --rc-bar-baseline: light-dark(#9a9f8e, #879283);
+  --rc-bar-baseline: light-dark(#7d8371, #879283);
   --rc-bar-habits: light-dark(#7950a7, #c9a6f2);
   --rc-bar-place: light-dark(#1f7a55, #7fd3a4);
   --rc-track: light-dark(#efe8d6, #364037);
 
-  /* Type: a serif for display, the system sans for everything else. */
-  --rc-font-display: ui-serif, Georgia, "Times New Roman", serif;
-  --rc-font-text: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  /* Type: Montserrat for display and text; hierarchy comes from weight and colour, not a second family. */
+  --rc-font-text: "Montserrat", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --rc-font-display: var(--rc-font-text);
   --rc-font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  /* Two weights per component: semibold for the title, label or action, regular for the rest. */
+  --rc-weight-regular: 400;
+  --rc-weight-semibold: 600;
   --rc-text-xs: 0.75rem;
   --rc-text-sm: 0.8125rem;
   --rc-text-md: 0.9375rem;
@@ -90,6 +97,7 @@
   --rc-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --rc-control: 44px;
   --rc-control-sm: 36px;
+  --rc-control-lg: 48px;
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -130,18 +138,19 @@ dd {
 h1,
 h2 {
   font-family: var(--rc-font-display);
-  font-weight: 700;
+  font-weight: var(--rc-weight-semibold);
   letter-spacing: -0.02em;
   line-height: 1.1;
   text-wrap: balance;
 }
 h3 {
   font-size: var(--rc-text-base);
+  font-weight: var(--rc-weight-semibold);
   line-height: 1.25;
 }
 a {
   color: var(--rc-accent);
-  text-underline-offset: 0.19em;
+  text-underline-offset: 0.2em;
   text-decoration-thickness: 1px;
 }
 button,
@@ -155,6 +164,14 @@ button,
 summary,
 select {
   cursor: pointer;
+}
+a,
+button,
+summary,
+label,
+[role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 :disabled {
   cursor: not-allowed;
@@ -178,6 +195,9 @@ pre {
 @media (hover: hover) {
   a:hover {
     color: var(--rc-violet);
+  }
+  a.rc-wordmark:hover {
+    color: var(--rc-accent);
   }
 }
 
@@ -204,9 +224,6 @@ pre {
   width: 1.3em;
   height: 1.3em;
 }
-a.rc-wordmark:hover {
-  color: var(--rc-accent);
-}
 
 /* Icons: one 24 px grid, 1.75 stroke, round joins. Sized by the text around them. */
 .rc-icon {
@@ -218,7 +235,7 @@ a.rc-wordmark:hover {
 
 /* Eyebrow label: short, capitalised, never more than three or four words. */
 .rc-label {
-  font: 700 var(--rc-text-xs) / 1.35 var(--rc-font-text);
+  font: var(--rc-weight-semibold) var(--rc-text-xs) / 1rem var(--rc-font-text);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--rc-muted);
@@ -235,14 +252,14 @@ a.rc-wordmark:hover {
   justify-content: center;
   gap: var(--rc-space-2);
   min-height: var(--rc-control);
-  padding: 8px 18px;
+  padding: var(--rc-space-2) var(--rc-space-5);
   border: 1px solid var(--rc-line-strong);
   border-radius: var(--rc-radius-md);
   background: var(--rc-surface);
   color: var(--rc-accent);
-  font-weight: 700;
+  font-weight: var(--rc-weight-semibold);
   font-size: var(--rc-text-md);
-  line-height: 1.25;
+  line-height: 1.25rem;
   text-decoration: none;
   transition:
     background-color var(--rc-dur-fast) var(--rc-ease),
@@ -254,8 +271,14 @@ a.rc-wordmark:hover {
   background: var(--rc-accent);
   color: var(--rc-on-accent);
 }
+/* The one filled red: an action that deletes and cannot be undone. */
+.rc-btn--danger {
+  border-color: var(--rc-danger);
+  background: var(--rc-danger);
+  color: var(--rc-on-accent);
+}
 .rc-btn--gold {
-  border-color: #d9a93c;
+  border-color: var(--rc-gold-line);
   background: var(--rc-gold);
   color: var(--rc-gold-ink);
   box-shadow: var(--rc-shadow-press);
@@ -264,12 +287,12 @@ a.rc-wordmark:hover {
   border-color: transparent;
   background: transparent;
   text-decoration: underline;
-  text-underline-offset: 0.19em;
-  padding-inline: 10px;
+  text-underline-offset: 0.2em;
+  padding-inline: var(--rc-space-3);
 }
 .rc-btn--sm {
   min-height: var(--rc-control-sm);
-  padding: 4px 14px;
+  padding: var(--rc-space-1) var(--rc-space-4);
   border-radius: var(--rc-radius-sm);
   font-size: var(--rc-text-sm);
 }
@@ -293,9 +316,14 @@ a.rc-wordmark:hover {
     border-color: var(--rc-accent-hover);
     color: var(--rc-on-accent);
   }
+  .rc-btn--danger:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--rc-danger) 86%, var(--rc-ink));
+    border-color: var(--rc-danger);
+    color: var(--rc-on-accent);
+  }
   .rc-btn--gold:hover:not(:disabled) {
-    background: #ffd978;
-    border-color: #d9a93c;
+    background: var(--rc-gold-hover);
+    border-color: var(--rc-gold-line);
     color: var(--rc-gold-ink);
   }
   .rc-btn--quiet:hover:not(:disabled) {
@@ -306,10 +334,23 @@ a.rc-wordmark:hover {
 .rc-btn:active:not(:disabled) {
   transform: scale(0.97);
 }
+.rc-btn--primary:active:not(:disabled) {
+  border-color: var(--rc-accent-active);
+  background: var(--rc-accent-active);
+}
+.rc-btn--danger:active:not(:disabled) {
+  background: color-mix(in oklab, var(--rc-danger) 74%, var(--rc-ink));
+}
 .rc-btn:disabled,
 .rc-btn[aria-disabled="true"] {
   opacity: 0.5;
   box-shadow: none;
+  cursor: not-allowed;
+}
+/* A button that is working or switched off takes no second press. */
+.rc-btn[aria-busy="true"],
+.rc-btn[aria-disabled="true"] {
+  pointer-events: none;
 }
 .rc-btn[aria-busy="true"]::before {
   content: "";
@@ -330,19 +371,19 @@ a.rc-wordmark:hover {
 .rc-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 10px;
+  gap: var(--rc-space-1);
+  padding: var(--rc-space-1) var(--rc-space-3);
   border: 1px solid var(--rc-line);
   border-radius: var(--rc-radius-pill);
   color: var(--rc-muted);
   font-size: var(--rc-text-xs);
-  font-weight: 700;
-  line-height: 1.5;
+  font-weight: var(--rc-weight-semibold);
+  line-height: 1rem;
   white-space: nowrap;
 }
 .rc-pill .rc-icon {
-  width: 1.1em;
-  height: 1.1em;
+  width: 1rem;
+  height: 1rem;
 }
 .rc-pill--ok {
   border-color: transparent;
@@ -405,9 +446,10 @@ a.rc-wordmark:hover {
 /* Field: label above, 16 px text so phones do not zoom, 3:1 border. */
 .rc-field {
   display: grid;
-  gap: 6px;
+  gap: var(--rc-space-2);
   font-size: var(--rc-text-sm);
-  font-weight: 700;
+  font-weight: var(--rc-weight-semibold);
+  line-height: 1.25rem;
 }
 .rc-input,
 .rc-field input:not([type="checkbox"], [type="radio"]),
@@ -417,26 +459,52 @@ a.rc-wordmark:hover {
   width: 100%;
   min-width: 0;
   min-height: var(--rc-control);
-  padding: 8px 12px;
+  padding: var(--rc-space-2) var(--rc-space-3);
   border: 1px solid var(--rc-line-strong);
   border-radius: var(--rc-radius-sm);
   background: var(--rc-surface);
   color: var(--rc-ink);
-  font-size: 1rem;
-  font-weight: 400;
+  font-size: max(1rem, 16px);
+  font-weight: var(--rc-weight-regular);
+  line-height: 1.5;
+  transition: border-color var(--rc-dur-fast) var(--rc-ease);
+}
+@media (hover: hover) {
+  .rc-input:hover:not(:disabled),
+  .rc-field input:not([type="checkbox"], [type="radio"]):hover:not(:disabled),
+  .rc-field select:hover:not(:disabled),
+  .rc-field textarea:hover:not(:disabled) {
+    border-color: var(--rc-ink);
+  }
 }
 .rc-input::placeholder,
 .rc-field input::placeholder {
   color: var(--rc-muted);
-  opacity: 0.8;
+  opacity: 1;
 }
+/* An invalid field is marked by a heavier edge as well as its colour; its message sits next to it. */
 .rc-input[aria-invalid="true"],
 .rc-field [aria-invalid="true"] {
   border-color: var(--rc-danger);
+  box-shadow: inset 0 0 0 1px var(--rc-danger);
 }
 .rc-input:disabled,
 .rc-field :disabled {
   opacity: 0.55;
+}
+/* Checkbox or radio with its sentence: a 24 px box, and the whole 44 px row is the target. */
+.rc-check {
+  display: flex;
+  align-items: center;
+  gap: var(--rc-space-3);
+  min-height: var(--rc-control);
+}
+.rc-check input {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--rc-accent);
 }
 
 /* Rows: a list or table whose rows are divided by one hairline. */
@@ -446,7 +514,7 @@ a.rc-wordmark:hover {
   list-style: none;
 }
 .rc-rows > * {
-  padding: 10px 0;
+  padding: var(--rc-space-3) 0;
   border-bottom: 1px solid var(--rc-line);
 }
 .rc-rows > :last-child {
@@ -458,7 +526,7 @@ a.rc-wordmark:hover {
 }
 .rc-table th,
 .rc-table td {
-  padding: 8px 6px;
+  padding: var(--rc-space-2);
   border-bottom: 1px solid var(--rc-line);
   text-align: start;
   vertical-align: top;
@@ -466,6 +534,7 @@ a.rc-wordmark:hover {
 .rc-table thead th {
   color: var(--rc-muted);
   font-size: var(--rc-text-sm);
+  font-weight: var(--rc-weight-semibold);
 }
 .rc-table td {
   font-variant-numeric: tabular-nums;
@@ -473,7 +542,7 @@ a.rc-wordmark:hover {
 
 /* Notes: the same box for loading, empty, warning and error states. */
 .rc-note {
-  padding: 12px 14px;
+  padding: var(--rc-space-3) var(--rc-space-4);
   border: 1px solid var(--rc-line);
   border-radius: var(--rc-radius-md);
   background: var(--rc-paper);
@@ -509,12 +578,12 @@ a.rc-wordmark:hover {
 }
 .rc-skeleton {
   display: grid;
-  gap: 10px;
-  padding: 4px 0;
+  gap: var(--rc-space-3);
+  padding: var(--rc-space-1) 0;
 }
 .rc-skeleton span {
   height: 12px;
-  border-radius: 6px;
+  border-radius: var(--rc-radius-pill);
   background: linear-gradient(90deg, var(--rc-track) 25%, var(--rc-line) 50%, var(--rc-track) 75%) 0 0 / 300% 100%;
   animation: rc-shimmer 1.6s linear infinite;
 }
@@ -529,7 +598,7 @@ details > summary {
   align-items: center;
   gap: var(--rc-space-2);
   color: var(--rc-accent);
-  font-weight: 700;
+  font-weight: var(--rc-weight-semibold);
   list-style: none;
 }
 details > summary::-webkit-details-marker {
@@ -538,9 +607,9 @@ details > summary::-webkit-details-marker {
 details > summary::before {
   content: "";
   flex: none;
-  width: 7px;
-  height: 7px;
-  margin: 0 4px 0 2px;
+  width: 8px;
+  height: 8px;
+  margin: 0 var(--rc-space-1);
   border: solid currentColor;
   border-width: 0 2px 2px 0;
   transform: rotate(-45deg);
