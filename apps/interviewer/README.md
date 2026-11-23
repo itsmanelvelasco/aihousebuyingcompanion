@@ -37,9 +37,10 @@ The same-origin check stops other websites from using the routes through a visit
 
 ## Use it
 
-1. Click **Start talking** and allow microphone access. The interviewer starts with bank data: upload a CSV, connect the fictional demo bank, or give rough figures by voice. Say "I'd like to connect a bank" or open **Add bank data** at any time; the interviewer receives the new summary without restarting.
-2. Answer one question at a time. Say "I earn 3,100 and spend 2,050": the interviewer repeats the figures and, once you confirm, saves them as monthly income and monthly spending. Name a town ("Talarn"): it is chosen only when it is exactly a town of the pilot and you confirm it.
-3. Ask for the plan, or open **Your plan**. It is the answer of `plan_home_savings`: the shortest timeline, the next question, the aid counted and the aid awaiting verification with the question that would verify it, and what the estimate assumes. **Open the workspace** carries the same towns to `/workspace`.
+1. Click **Start talking** and allow microphone access. The interviewer says in two short sentences what to tell it (monthly income and spending, savings for the purchase, who will live in the home, where) and listens. Bank data is optional: say "I'd like to connect a bank" or open **Add bank data** at any time; the interviewer receives the new summary without restarting.
+2. Talk freely, in any order, pauses included: the session waits for you (`semantic_vad` with low eagerness; see `turnDetection` in `voice.ts`). "I earn 3,100, spend 2,050, have 24,000 saved, we are two, I'd like Talarn" is saved in one call, each figure in its own field, and nothing you did not say is filled in. A town is chosen only when it is exactly a town of the pilot and you confirm it; a household or tax fact always needs your yes.
+3. The interviewer then asks only what is missing, one short question at a time.
+4. Ask for the plan, or open **Your plan**. It is the answer of `plan_home_savings`: the shortest timeline, the next question, the aid counted and the aid awaiting verification with the question that would verify it, and what the estimate assumes. **Open the workspace** carries the same towns to `/workspace`.
 
 ### One question set, one order, one plan
 
@@ -67,7 +68,13 @@ The live interview keeps the screen focused on listening and speaking. **Convers
 
 ### Inside a chat: the interview card
 
-When the ReloCat plugin answers "I want to buy a home", ChatGPT shows the card of `start_homebuying_interview`. With voice open to the chat host, that card is this interview at the size of a card (`card.html`, `card.ts`): **Start talking** asks for the microphone and the conversation happens there, with no other window. It shows the status, what ReloCat just said as a caption (always on: in a chat the sound is often off), **Mute mic**, **End conversation**, a field to **Type a reply**, the trail of checkpoints, and a short plan summary once the plan is asked for. **Continue in the chat instead** sends the opening message into the chat.
+When the ReloCat plugin answers "I want to buy a home", ChatGPT shows the card of `start_homebuying_interview`. With voice open to the chat host, that card is this interview at the size of a card (`card.html`, `card.ts`), and the conversation happens there, with no other window. The card is an orb, one state word, the current question and things to tap; everything else is an icon with an accessible name (`card.messages.ts` holds every word, and `tests/interviewer-card.test.ts` holds the card to twelve words of prose per state and language).
+
+- **The orb** is the start button, then the mute control. Its ring follows the sound: the microphone while you have the turn, ReloCat's voice while it speaks (an `AnalyserNode` on each stream; no loop with `prefers-reduced-motion`, when hidden or after the end). The state is also said in a word: Listening, Speaking, Muted.
+- **Five chips** (Income, Spending, Savings, Household, Place) are what the opening asks for. Each fills in with what was saved from what you said; one you did not mention stays empty. Tap a chip to give or correct that one thing; a town found by name waits on its chip for your yes or no.
+- **The question** is the one line of ReloCat's turn that asks. When it is the question the planner handed the session, its answers can be tapped: yes, no and "I don't know", the options of a choice, or a compact field for a figure. A tapped answer goes to the session as your turn, like a typed reply.
+- **Icons:** a keyboard (the field to type a reply), a check ("I'm done": ends your turn at once instead of waiting for the pause) and stop. The trail of checkpoints is one row and a button: it asks the planner for the plan and opens a summary of one figure, the place and one line about aid.
+- **Continue in the chat** sends the opening message into the chat.
 
 - **Same interview.** The card runs `session.ts`, `voice.ts`, `plan.ts` and the voice call of `realtime.ts`, the same modules as the page. Its session has five functions: there is no bank panel, so `show_interview_panel` is left out, and `open_workspace` asks ReloCat in the chat to show the workspace for the same towns.
 - **Tools through the host.** The card has no ReloCat cookie. It calls `get_next_questions`, `save_my_inputs`, `plan_home_savings` and `list_catalonia_municipalities` through the chat host (`App.callServerTool`), with the person's own connection to the MCP server. When their ReloCat account is not connected, the answers stay in the card, and the assistant says so once with how to connect. A host that offers no tool calls still gets the voice conversation; the answers stay in the card and there is no plan.

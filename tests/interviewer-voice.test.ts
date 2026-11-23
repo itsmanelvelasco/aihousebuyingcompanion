@@ -287,8 +287,10 @@ test('the session is given the language to transcribe, and can be sent without i
   assert.equal(update.type, 'session.update');
   assert.equal(update.session.type, 'realtime');
   assert.deepEqual(update.session.audio.input.transcription, { model: 'gpt-4o-mini-transcribe', language: 'ca' });
+  // The interview opens with a free answer: a thinking pause must not end the person's turn.
   assert.deepEqual(update.session.audio.input.turn_detection, {
-    type: 'server_vad',
+    type: 'semantic_vad',
+    eagerness: 'low',
     create_response: true,
     interrupt_response: true,
   });
@@ -297,6 +299,11 @@ test('the session is given the language to transcribe, and can be sent without i
   // The fallback when the service refuses the settings: the same session, as it was before transcription.
   const plain = sessionUpdate(context('ca'), { transcription: false });
   assert.equal('transcription' in plain.session.audio.input, false);
+  assert.deepEqual(plain.session.audio.input.turn_detection, {
+    type: 'server_vad',
+    create_response: true,
+    interrupt_response: true,
+  });
   assert.deepEqual(plain.session.tools, update.session.tools);
 });
 

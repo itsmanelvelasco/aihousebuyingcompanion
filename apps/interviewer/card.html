@@ -7,9 +7,9 @@
 <style>
   /* THEME */
   /* ART */
-  /* The interview card shown inside a chat: a night panel of the shared theme, as the interview page is. The page
-     pins the dark scheme so every --rc-* token takes its dark value, and gold is the one accent. The content sets
-     the height: nothing here is sized to the window. */
+  /* The interview card shown inside a chat: a night panel of the shared theme. One rule: an orb, one state word,
+     the current question and things to tap. Everything else is an icon with a name. The page pins the dark scheme
+     so every --rc-* token takes its dark value, and gold is the one accent. The content sets the height. */
   :root {
     color-scheme: dark;
     --rc-body-size: 0.9375rem;
@@ -18,34 +18,109 @@
     --rc-ink: var(--rc-on-night);
     --rc-muted: var(--rc-on-night-muted);
     --rc-focus: var(--rc-gold);
-    --veil: rgb(255 255 255 / 0.07);
+    --veil: rgb(255 255 255 / 0.08);
+    --question-line: calc(var(--rc-text-lg) * 1.3);
   }
   html { background: var(--rc-night); }
-  body { background: linear-gradient(135deg, var(--rc-night), var(--rc-night-2)); text-align: center; overflow-wrap: anywhere; }
-  main { max-width: 38rem; margin: auto; padding: 24px 20px 16px; }
-  h1 { font-size: var(--rc-text-2xl); line-height: 1.2; text-wrap: balance; }
-  h2 { font-size: var(--rc-text-md); line-height: 1.3; }
-  p { margin: 8px auto 0; max-width: 30rem; }
-  strong { font-weight: var(--rc-weight-semibold); }
-  .hint { color: var(--rc-muted); font-size: var(--rc-text-sm); }
-  .intro { color: var(--rc-muted); text-wrap: balance; }
+  body { background: linear-gradient(135deg, var(--rc-night), var(--rc-night-2)); text-align: center; }
+  main { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 26rem; margin: auto; padding: 20px 16px 8px; }
+  main > * { max-width: 100%; }
+  h1 { font-size: var(--rc-text-lg); line-height: 1.3; white-space: nowrap; }
+  /* While talking the title is for assistive tech only: the orb and the question are the card. */
+  [data-live="true"] h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  button { font: inherit; cursor: pointer; }
+  button:disabled { cursor: default; }
 
-  /* The orb says what the conversation is doing: still when idle, moving while someone speaks. */
-  .orb {
-    display: grid; place-items: center; width: 72px; height: 72px; margin: 0 auto 16px; border-radius: 50%;
-    background: radial-gradient(circle at 35% 25%, #fff6c4, var(--rc-gold) 55%, #d9a93c);
-    box-shadow: 0 0 28px color-mix(in srgb, var(--rc-gold) 45%, transparent); color: var(--rc-gold-ink);
+  /* The orb: the start button when idle, the mute control while talking. Its ring follows the sound: the person's
+     microphone while listening, ReloCat's voice while it speaks. Only transform and opacity move, driven by --level. */
+  .stage { position: relative; display: grid; place-items: center; width: 128px; height: 128px; --level: 0; }
+  .stage::before {
+    content: ""; position: absolute; inset: 16px; border-radius: 50%; background: var(--rc-gold);
+    opacity: calc(0.16 + var(--level) * 0.3); transform: scale(calc(1.08 + var(--level) * 0.24));
   }
-  .orb .rc-icon { width: 32px; height: 32px; }
-  [data-voice="hearing"] .orb, [data-voice="speaking"] .orb { animation: orb 0.9s ease-in-out infinite alternate; }
+  .orb {
+    position: relative; display: grid; place-items: center; width: 96px; height: 96px; padding: 0; border: 0; border-radius: 50%;
+    background: radial-gradient(circle at 35% 25%, #fff6c4, var(--rc-gold) 55%, #d9a93c); color: var(--rc-gold-ink);
+    transition: transform var(--rc-dur-fast) var(--rc-ease), opacity var(--rc-dur-fast) var(--rc-ease);
+  }
+  .orb:focus-visible { outline-offset: 5px; }
+  .orb:active { transform: scale(0.97); }
+  .orb span { display: none; }
+  .orb .rc-icon { display: block; width: 36px; height: 36px; }
+  .orb .i-mic { display: block; }
+  [data-voice="speaking"] .orb .i-mic, [data-voice="muted"] .orb .i-mic, [data-mic="off"] .orb .i-mic { display: none; }
+  [data-voice="speaking"] .orb .i-speak { display: block; }
+  [data-voice="muted"] .orb .i-off, [data-mic="off"]:not([data-voice="speaking"]) .orb .i-off { display: block; }
+  /* Speaking: the orb turns pale and the ring is ReloCat's voice. */
+  [data-voice="speaking"] .orb { background: radial-gradient(circle at 35% 25%, #fff, var(--rc-on-night) 60%, var(--rc-on-night-muted)); color: var(--rc-night); }
+  [data-voice="speaking"] .stage::before { background: var(--rc-on-night); }
+  /* Muted, or a conversation without a microphone: an empty outline, no ring. */
+  [data-voice="muted"] .orb, [data-mic="off"]:not([data-voice="speaking"]) .orb { background: transparent; box-shadow: inset 0 0 0 2px var(--rc-gold-line); color: var(--rc-on-night-muted); }
+  [data-voice="muted"] .stage::before, [data-mic="off"]:not([data-voice="speaking"]) .stage::before { opacity: 0; }
   [data-voice="connecting"] .orb, [data-voice="thinking"] .orb { animation: wait 0.9s ease-in-out infinite alternate; }
-  [data-voice="muted"] .orb { opacity: 0.55; }
-  @keyframes orb { from { transform: scale(0.94); } to { transform: scale(1.08); } }
-  @keyframes wait { from { opacity: 0.5; } to { opacity: 1; } }
+  @keyframes wait { from { opacity: 0.55; } to { opacity: 1; } }
+  .state { min-height: 1.25rem; margin-top: -4px; color: var(--rc-muted); font-size: var(--rc-text-sm); font-weight: var(--rc-weight-semibold); line-height: 1.25rem; white-space: nowrap; }
+  [data-live="true"] .state { color: var(--rc-gold); }
 
-  /* The trail of checkpoints: the one to work on, with its illustration, and how many are reached. */
-  .trail { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 16px auto 0; text-align: left; }
-  .trail-art { flex: none; width: 48px; height: 48px; border-radius: var(--rc-radius-md); background: var(--veil) center / cover no-repeat; }
+  /* A quiet text link: 44 px to press, one line. */
+  .link { min-height: var(--rc-control); padding: 0 12px; border: 0; border-radius: var(--rc-radius-sm); background: none; color: var(--rc-gold); font-size: var(--rc-text-sm); font-weight: var(--rc-weight-semibold); text-decoration: underline; text-underline-offset: 0.2em; white-space: nowrap; }
+  .link:disabled { color: var(--rc-muted); text-decoration: none; }
+
+  /* Chips. A topic chip is what the person was asked to tell: empty until it was said, then filled with its value. */
+  .topics, .choices { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+  .chip {
+    position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--rc-control); padding: 0 16px;
+    border: 1px solid var(--rc-line-strong); border-radius: var(--rc-radius-pill); background: var(--veil); color: var(--rc-ink);
+    font-size: var(--rc-text-md); font-weight: var(--rc-weight-semibold); line-height: 1.2; white-space: nowrap;
+    transition: transform var(--rc-dur-fast) var(--rc-ease), background-color var(--rc-dur-fast) var(--rc-ease);
+  }
+  .chip:active:not(:disabled), .round:active:not(:disabled) { transform: scale(0.97); }
+  .chip[aria-pressed="true"] { border-color: var(--rc-gold); background: var(--rc-gold); color: var(--rc-gold-ink); }
+  .choices .chip:disabled:not([aria-pressed="true"]) { opacity: 0.45; }
+  .topic { min-height: 36px; padding: 0 12px; border-style: dashed; background: none; color: var(--rc-muted); font-size: var(--rc-text-sm); font-weight: var(--rc-weight-regular); }
+  /* A 36 px chip keeps a 44 px target. */
+  .topic::after, .mini::after { content: ""; position: absolute; inset: -4px 0; }
+  .topic .rc-icon { width: 16px; height: 16px; }
+  .topic b { color: var(--rc-ink); font-weight: var(--rc-weight-semibold); font-variant-numeric: tabular-nums; }
+  .topic[data-state="filled"] { border-style: solid; border-color: var(--rc-gold-line); background: var(--rc-gold-soft); color: var(--rc-on-night-muted); }
+  .topic[data-state="asks"] { border-style: solid; border-color: var(--rc-gold); color: var(--rc-ink); }
+  .topic[aria-pressed="true"] { background: none; color: var(--rc-ink); box-shadow: 0 0 0 2px var(--rc-gold); }
+  .pair { display: inline-flex; align-items: center; gap: 6px; }
+
+  /* The question: the one line of ReloCat's turn that asks. Three lines are reserved so the card does not jump. */
+  .ask { display: grid; align-content: center; min-height: calc(var(--question-line) * 3); width: 100%; }
+  .ask:has(#question[hidden]) { display: none; }
+  #question {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+    font-size: var(--rc-text-lg); font-weight: var(--rc-weight-semibold); line-height: 1.3; text-wrap: balance; overflow-wrap: anywhere;
+  }
+
+  /* One compact field: a figure with its unit, or a typed reply. 16 px text so a phone does not zoom. */
+  .field { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 20rem; padding: 3px 3px 3px 16px; border: 1px solid var(--rc-line-strong); border-radius: var(--rc-radius-pill); background: var(--rc-sunken); }
+  .field:focus-within { outline: 3px solid var(--rc-focus); outline-offset: 2px; }
+  .field input { flex: 1; min-width: 0; height: var(--rc-control); padding: 0; border: 0; outline: 0; background: none; color: var(--rc-ink); font: inherit; font-size: 1rem; }
+  .field input::placeholder { color: var(--rc-muted); opacity: 1; }
+  .field--number { max-width: 13rem; }
+  .field--number input { text-align: right; font-weight: var(--rc-weight-semibold); font-variant-numeric: tabular-nums; }
+  .unit { color: var(--rc-muted); font-weight: var(--rc-weight-semibold); white-space: nowrap; }
+  .figure { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; width: 100%; }
+
+  /* Round icon buttons: 44 px, named for assistive tech and on hover. */
+  .controls { display: flex; justify-content: center; gap: 16px; }
+  .round { position: relative; display: grid; flex: none; place-items: center; width: var(--rc-control); height: var(--rc-control); padding: 0; border: 1px solid var(--rc-line-strong); border-radius: 50%; background: var(--veil); color: var(--rc-ink); transition: transform var(--rc-dur-fast) var(--rc-ease), background-color var(--rc-dur-fast) var(--rc-ease); }
+  .round .rc-icon { width: 22px; height: 22px; }
+  .round:disabled { opacity: 0.4; }
+  .round[aria-expanded="true"] { border-color: var(--rc-gold); color: var(--rc-gold); }
+  .round--gold { border-color: var(--rc-gold-line); background: var(--rc-gold); color: var(--rc-gold-ink); }
+  .round--stop { border-color: var(--rc-danger); color: var(--rc-danger); }
+  .mini { width: 36px; height: 36px; }
+  .mini .rc-icon { width: 18px; height: 18px; }
+
+  /* The trail of checkpoints, in one row: the current one's illustration, seven segments, the count. It opens the plan. */
+  .trail { display: inline-flex; align-items: center; gap: 10px; min-height: 48px; padding: 4px 14px 4px 4px; border: 0; border-radius: var(--rc-radius-pill); background: var(--veil); color: var(--rc-ink); transition: transform var(--rc-dur-fast) var(--rc-ease), background-color var(--rc-dur-fast) var(--rc-ease); }
+  .trail:active { transform: scale(0.97); }
+  .trail[aria-expanded="true"] { box-shadow: inset 0 0 0 1px var(--rc-gold-line); }
+  .trail-art { flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--veil) center / cover no-repeat; }
   .trail-art[data-step="step-profile"] { background-image: var(--rc-art-step-profile); }
   .trail-art[data-step="step-money"] { background-image: var(--rc-art-step-money); }
   .trail-art[data-step="step-bank"] { background-image: var(--rc-art-step-bank); }
@@ -53,88 +128,116 @@
   .trail-art[data-step="step-aid"] { background-image: var(--rc-art-step-aid); }
   .trail-art[data-step="step-habits"] { background-image: var(--rc-art-step-habits); }
   .trail-art[data-step="step-ready"] { background-image: var(--rc-art-step-ready); }
-  .trail p { display: grid; gap: 2px; margin: 0; }
-  .trail ol { display: flex; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; }
-  .trail li { width: 16px; height: 4px; border-radius: 2px; background: var(--rc-line-strong); }
+  .trail ol { display: flex; gap: 3px; margin: 0; padding: 0; list-style: none; }
+  .trail li { width: 14px; height: 4px; border-radius: 2px; background: var(--rc-line-strong); }
   .trail li[data-state="done"] { background: var(--rc-gold); }
   .trail li[data-state="current"] { background: var(--rc-on-night); }
   .trail li[data-state="unknown"] { opacity: 0.5; }
+  #trail-count { color: var(--rc-muted); font-size: var(--rc-text-sm); font-weight: var(--rc-weight-semibold); font-variant-numeric: tabular-nums; }
 
-  #voice-status { min-height: 1.5em; margin-top: 16px; color: var(--rc-muted); }
-  .actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; }
-  .rc-btn[aria-pressed="true"] { border-color: var(--rc-gold); background: var(--rc-gold-soft); color: var(--rc-ink); box-shadow: inset 0 0 0 1px var(--rc-gold); }
-  .rc-btn.end { border-color: var(--rc-danger); color: var(--rc-danger); }
-  .rc-btn--quiet { color: var(--rc-gold); }
+  /* The plan at the size of a card: one figure, where, one line about aid, one button. */
+  .plan { display: grid; justify-items: center; gap: 2px; width: 100%; max-width: 20rem; padding: 12px 16px; border-radius: var(--rc-radius-md); background: var(--veil); }
+  .plan p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  #plan-figure { color: var(--rc-gold); font-size: var(--rc-text-2xl); font-weight: var(--rc-weight-semibold); line-height: 1.2; font-variant-numeric: tabular-nums; white-space: normal; text-wrap: balance; }
+  #plan-label, #plan-aid { color: var(--rc-muted); font-size: var(--rc-text-sm); }
+  .plan .rc-btn { margin-top: 8px; border-color: var(--rc-gold-line); background: none; color: var(--rc-gold); white-space: nowrap; }
+
+  /* One line with an icon, closed with an icon button. Only the sentence to type in the chat may wrap. */
+  .note { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 22rem; padding: 0 0 0 12px; font-size: var(--rc-text-xs); line-height: 1.3; text-align: left; }
+  .note > .rc-icon { width: 16px; height: 16px; }
+  #notice-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .note[data-long="true"] #notice-text { white-space: normal; overflow-wrap: anywhere; padding-block: 8px; }
+  .note .mini { border: 0; background: none; color: inherit; }
+
+  .foot { display: grid; justify-items: center; }
+  .fine { color: var(--rc-muted); font-size: var(--rc-text-xs); line-height: 1.3; white-space: nowrap; }
+  [data-live="true"] .fine, [data-live="true"] #continue { display: none; }
+  .rc-lang { justify-content: center; font-size: var(--rc-text-xs); letter-spacing: 0.04em; }
+  .rc-lang button { justify-content: center; min-width: var(--rc-control); }
+
   @media (hover: hover) {
-    .rc-btn.end:hover:not(:disabled) { border-color: var(--rc-danger); background: var(--rc-danger-soft); color: var(--rc-danger); }
-  }
-
-  /* What ReloCat just said, for a chat with the sound off. */
-  #last-question { margin-top: 16px; padding: 12px 16px; border-radius: var(--rc-radius-md); background: var(--veil); color: var(--rc-ink); text-align: left; }
-
-  /* The typed reply: the label above its field, a 16 px field and 44 px targets. */
-  #typed-answer { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; max-width: 30rem; margin: 12px auto 0; }
-  #typed-answer label { flex-basis: 100%; color: var(--rc-muted); font-size: var(--rc-text-sm); font-weight: var(--rc-weight-semibold); text-align: left; }
-  #typed-answer input {
-    flex: 1 1 160px; min-width: 0; min-height: var(--rc-control); padding: 8px 12px;
-    border: 1px solid var(--rc-line-strong); border-radius: var(--rc-radius-sm);
-    background: var(--rc-sunken); color: var(--rc-ink); font: inherit; font-size: 1rem;
-  }
-
-  .plan { max-width: 30rem; margin: 16px auto 0; padding: 12px 16px; border-radius: var(--rc-radius-md); background: var(--veil); text-align: left; }
-  .plan p { max-width: none; }
-  .plan h2 { color: var(--rc-muted); font-size: var(--rc-text-sm); }
-  .plan h3 { margin-top: 12px; color: var(--rc-muted); font-size: var(--rc-text-sm); }
-  .plan ul { margin: 4px 0 0; padding-left: 20px; }
-  .plan .plan-headline { font-weight: var(--rc-weight-semibold); }
-  .plan .actions { justify-content: flex-start; }
-
-  .notice { margin-top: 12px; }
-  .rc-lang { justify-content: center; margin-top: 8px; }
-  @media (hover: hover) {
+    .orb:hover:not([aria-disabled="true"]) { opacity: 0.92; }
+    .chip:hover:not(:disabled), .round:hover:not(:disabled), .trail:hover { background: color-mix(in srgb, var(--rc-on-night) 16%, transparent); }
+    .chip[aria-pressed="true"]:hover:not(:disabled), .round--gold:hover:not(:disabled) { background: var(--rc-gold-hover); }
+    .round--stop:hover:not(:disabled) { background: var(--rc-danger-soft); }
+    .link:hover:not(:disabled) { color: var(--rc-gold-hover); }
+    .plan .rc-btn:hover:not(:disabled) { border-color: var(--rc-gold); background: var(--veil); color: var(--rc-gold); }
     .rc-lang button:hover { background: color-mix(in srgb, var(--rc-on-night) 14%, transparent); color: var(--rc-on-night); }
   }
-  @media (max-width: 420px) {
-    main { padding-inline: 16px; }
-    .actions .rc-btn, #typed-answer .rc-btn { flex: 1 1 100%; }
+  @media (max-width: 360px) {
+    main { padding-inline: 12px; }
+    .topics { gap: 6px 4px; }
+    .choices { gap: 6px; }
+    .topic { gap: 4px; padding: 0 8px; font-size: var(--rc-text-xs); }
+    .topic .rc-icon { width: 14px; height: 14px; }
+    /* The notice keeps its one line on the narrowest card. */
+    .note { gap: 6px; width: calc(100% + 8px); max-width: none; margin-inline: -4px; padding-left: 8px; font-size: 0.6875rem; }
+    .note > .rc-icon { width: 14px; height: 14px; }
+    .note .mini { width: 30px; height: 30px; }
+  }
+  /* No level animation: the ring is still, and the word and the icon carry the state. */
+  @media (prefers-reduced-motion: reduce) {
+    .stage::before { opacity: 0.2; transform: scale(1.12); }
   }
 </style>
 </head>
 <body>
-<main id="card" data-voice="idle" aria-labelledby="title">
-  <div class="orb" aria-hidden="true"><!-- ICON:mic --></div>
-  <h1 id="title" data-i18n="heading">Your homebuying interview</h1>
-  <p class="intro" data-i18n="intro">Talk it through here, in this card. ReloCat asks one question at a time.</p>
-  <div id="trail" class="trail" role="group" aria-label="Your journey" hidden>
-    <span id="trail-art" class="trail-art" aria-hidden="true"></span>
-    <div><p><strong id="trail-title"></strong><span id="trail-count" class="hint"></span></p><ol id="trail-steps" aria-hidden="true"></ol></div>
+<main id="card" data-voice="idle" data-live="false" aria-labelledby="title">
+  <h1 id="title" data-i18n="heading">Your interview</h1>
+  <div id="stage" class="stage">
+    <button id="orb" type="button" class="orb" data-i18n-label="start" aria-label="Start talking" title="Start talking"><span class="i-mic"><!-- ICON:mic --></span><span class="i-speak"><!-- ICON:pulse --></span><span class="i-off"><!-- ICON:mic-off --></span></button>
   </div>
-  <p id="voice-status" role="status">Ready when you are. Your microphone is asked for when you start.</p>
-  <div class="actions">
-    <button id="start" type="button" class="rc-btn rc-btn--gold" data-say="start">Start talking</button>
-    <button id="type-instead" type="button" class="rc-btn" data-i18n="typeInstead" hidden>Answer by typing</button>
-    <button id="mute" type="button" class="rc-btn" aria-pressed="false" hidden>Mute mic</button>
-    <button id="stop" type="button" class="rc-btn end" data-say="end" hidden>End conversation</button>
+  <p id="state" class="state" role="status">Tap to talk</p>
+  <button id="type-instead" type="button" class="link" data-i18n="typeInstead" hidden>Reply in writing</button>
+  <div id="topics" class="topics" role="group" data-i18n-label="topics" aria-label="What you told ReloCat" hidden>
+    <button id="topic-income" type="button" class="chip topic"><!-- ICON:wallet --><span data-i18n="topicIncome">Income</span><b id="topic-income-value" hidden></b></button>
+    <button id="topic-spending" type="button" class="chip topic"><!-- ICON:basket --><span data-i18n="topicSpending">Spending</span><b id="topic-spending-value" hidden></b></button>
+    <button id="topic-savings" type="button" class="chip topic"><!-- ICON:bank --><span data-i18n="topicSavings">Savings</span><b id="topic-savings-value" hidden></b></button>
+    <button id="topic-household" type="button" class="chip topic"><!-- ICON:household --><span data-i18n="topicHousehold">Household</span><b id="topic-household-value" hidden></b></button>
+    <span class="pair">
+      <button id="topic-place" type="button" class="chip topic"><!-- ICON:pin --><span data-i18n="topicPlace">Place</span><b id="topic-place-value" hidden></b></button>
+      <button id="place-yes" type="button" class="round round--gold mini" hidden><!-- ICON:tick --></button>
+      <button id="place-no" type="button" class="round mini" hidden><!-- ICON:close --></button>
+    </span>
   </div>
-  <p id="last-question" aria-live="polite" hidden></p>
-  <form id="typed-answer" hidden>
-    <label for="answer" data-say="typeReply">Type a reply</label>
-    <input id="answer" type="text" autocomplete="off" enterkeyhint="send" maxlength="1000" required>
-    <button id="send-answer" class="rc-btn" data-say="sendAnswer" disabled>Send answer</button>
+  <div class="ask"><p id="question" aria-live="polite" hidden></p></div>
+  <div id="choices" class="choices" role="group" aria-labelledby="question" hidden></div>
+  <div id="figure" class="figure" hidden>
+    <form id="number" class="field field--number">
+      <label class="rc-sr-only" for="amount" id="amount-label"></label>
+      <input id="amount" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="send" maxlength="12" required>
+      <span id="unit" class="unit" aria-hidden="true">€</span>
+      <button id="confirm" class="round round--gold" data-i18n-label="confirm" aria-label="Confirm" title="Confirm" disabled><!-- ICON:tick --></button>
+    </form>
+    <button id="unknown" type="button" class="chip" hidden></button>
+  </div>
+  <form id="typed-answer" class="field" hidden>
+    <label class="rc-sr-only" for="answer" data-i18n="typeReply">Type a reply</label>
+    <input id="answer" type="text" autocomplete="off" enterkeyhint="send" maxlength="1000" data-i18n-placeholder="typeReply" placeholder="Type a reply" required>
+    <button id="send-answer" class="round round--gold" data-i18n-label="send" aria-label="Send" title="Send" disabled><!-- ICON:next --></button>
   </form>
-  <section id="plan" class="plan" aria-labelledby="plan-heading" hidden>
-    <h2 id="plan-heading" data-i18n="planHeading">Your plan so far</h2>
-    <div id="plan-body" aria-live="polite"></div>
-    <div class="actions"><button id="workspace" type="button" class="rc-btn" data-say="openWorkspace">Open the workspace</button></div>
-    <p id="workspace-status" class="hint" role="status" hidden></p>
-  </section>
-  <p id="notice" class="hint notice" role="status" hidden></p>
-  <div class="actions">
-    <button id="continue" type="button" class="rc-btn rc-btn--quiet" data-i18n="continueInChat">Continue in the chat instead</button>
+  <div id="controls" class="controls" hidden>
+    <button id="keyboard" type="button" class="round" aria-expanded="false" aria-controls="typed-answer" data-i18n-label="typeReply" aria-label="Type a reply" title="Type a reply"><!-- ICON:keyboard --></button>
+    <button id="done" type="button" class="round" data-i18n-label="done" aria-label="I’m done" title="I’m done" disabled><!-- ICON:check --></button>
+    <button id="stop" type="button" class="round round--stop" data-i18n-label="end" aria-label="End conversation" title="End conversation"><!-- ICON:stop --></button>
   </div>
-  <p id="chat-status" class="hint" role="status" hidden></p>
-  <p id="voice-note" class="hint" data-i18n="voiceNote">Voice uses your microphone and sends what you say to OpenAI.</p>
-  <div class="rc-lang" id="languages" role="group" aria-label="Language"><button type="button" data-lang="en" lang="en" aria-pressed="true">English</button><button type="button" data-lang="ca" lang="ca" aria-pressed="false">Català</button><button type="button" data-lang="es" lang="es" aria-pressed="false">Castellano</button></div>
+  <button id="trail" type="button" class="trail" aria-expanded="false" aria-controls="plan" hidden>
+    <span id="trail-art" class="trail-art" aria-hidden="true"></span>
+    <ol id="trail-steps" aria-hidden="true"></ol>
+    <span id="trail-count" aria-hidden="true"></span>
+  </button>
+  <section id="plan" class="plan" aria-live="polite" hidden>
+    <p id="plan-figure" hidden></p>
+    <p id="plan-label"></p>
+    <p id="plan-aid" hidden></p>
+    <button id="workspace" type="button" class="rc-btn rc-btn--sm" hidden>Open workspace</button>
+  </section>
+  <p id="notice" class="rc-note rc-note--warn note" role="status" hidden><!-- ICON:warning --><span id="notice-text"></span><button id="notice-close" type="button" class="round mini" data-i18n-label="dismiss" aria-label="Dismiss" title="Dismiss"><!-- ICON:close --></button></p>
+  <div class="foot">
+    <p id="voice-note" class="fine" data-i18n="voiceNote">Your voice is sent to OpenAI.</p>
+    <button id="continue" type="button" class="link" data-i18n="continueInChat">Continue in the chat</button>
+    <div class="rc-lang" id="languages" role="group" aria-label="Language"><button type="button" data-lang="en" lang="en" aria-label="English" title="English" aria-pressed="true">EN</button><button type="button" data-lang="ca" lang="ca" aria-label="Català" title="Català" aria-pressed="false">CA</button><button type="button" data-lang="es" lang="es" aria-label="Castellano" title="Castellano" aria-pressed="false">ES</button></div>
+  </div>
   <audio id="audio" autoplay></audio>
 </main>
 <!-- WIDGET -->

@@ -954,7 +954,8 @@ test('the voice session speaks the language chosen on the page, with its instruc
   // The page builds the session instructions around that line and tells a live session about a change.
   const page = await readFile(new URL('../apps/interviewer/app.ts', import.meta.url), 'utf8');
   const voice = await readFile(new URL('../apps/interviewer/voice.ts', import.meta.url), 'utf8');
-  assert.match(voice, /\$\{voiceLanguageInstruction\(context\.locale\)\} Ask one question, then stop and listen\./);
+  assert.match(voice, /\$\{voiceLanguageInstruction\(context\.locale\)\}\n\$\{turns\}/);
+  assert.match(voice, /ask one question per turn, then stop and listen\./);
   assert.match(page, /connection\?\.changeLanguage\(chosen\)/);
   const call = await readFile(new URL('../apps/interviewer/realtime.ts', import.meta.url), 'utf8');
   assert.match(call, /voiceLanguageChange\(chosen\)/);

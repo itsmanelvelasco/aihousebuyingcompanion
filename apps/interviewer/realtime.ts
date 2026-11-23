@@ -17,6 +17,7 @@ import { sessionUpdate, voiceTools } from './voice.ts';
 /** Events sent to the Realtime session over the data channel. */
 type RealtimeClientEvent =
   | { type: 'response.create' }
+  | { type: 'input_audio_buffer.commit' }
   | SessionUpdate
   | {
       type: 'conversation.item.create';
@@ -101,6 +102,8 @@ export type VoiceCallOptions = {
   onCanSend: (allowed: boolean) => void;
   /** The assistant's audio, to play. */
   onRemoteStream: (stream: MediaStream) => void;
+  /** The person's microphone, once granted: for a level meter. The call still owns and stops it. */
+  onLocalStream?: (stream: MediaStream) => void;
   onEnd: (reason: VoiceEnd) => void;
   platform?: VoicePlatform;
   /** How long the call may take to become live. Default 45 seconds. */
@@ -189,6 +192,11 @@ export function startVoiceCall(options: VoiceCallOptions) {
   /** A tool result was sent and the model still owes a spoken reply. */
   let followUp = false;
   let pendingTools = 0;
+  /**
+   * Until when an `error` of the service is the answer to "I’m done" (an empty audio buffer, or a
+   * reply the detection had already started) and not the end of the conversation.
+   */
+  let lenientUntil = 0;
 
   function close() {
     if (ended) return;
@@ -305,7 +313,10 @@ export function startVoiceCall(options: VoiceCallOptions) {
       finishTurn();
     }
     if (data.type === 'error') {
-      if (updating) {
+      if (Date.now() < lenientUntil) {
+        // "I’m done" with nothing said since the last turn: the commit is refused, the reply was still asked for.
+        lenientUntil = 0;
+      } else if (updating) {
         // New settings after a language change were refused: the conversation goes on with the ones it had.
         updating = false;
       } else if (!greeted && !plain) {
@@ -333,6 +344,7 @@ export function startVoiceCall(options: VoiceCallOptions) {
           return;
         }
         stream = media;
+        options.onLocalStream?.(media);
         peer.addTrack(media.getAudioTracks()[0], media);
       } else {
         // Nothing is sent, the assistant is still heard: the offer carries one audio line to receive on.
@@ -410,6 +422,19 @@ export function startVoiceCall(options: VoiceCallOptions) {
       muted = value;
       for (const track of stream.getAudioTracks()) track.enabled = !muted;
       render();
+      return true;
+    },
+    /**
+     * "I’m done": the person's turn ends now, without waiting for the silence the detection wants. What
+     * was said is committed and the reply is requested. False when there is no turn to end (not live,
+     * no microphone, muted, or the assistant is answering).
+     */
+    endTurn() {
+      if (!send || !stream || !greeted || ended || muted || responding || playing || pendingTools) return false;
+      lenientUntil = Date.now() + 3000;
+      userSpeaking = false;
+      send({ type: 'input_audio_buffer.commit' });
+      requestReply();
       return true;
     },
     /** A typed reply, as the person's turn. False when it cannot be sent now (mid-turn, or not live). */

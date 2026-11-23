@@ -171,6 +171,8 @@ export const interview = defineMessages(
     placeNoMatchNone: 'No town covered by ReloCat has that name yet. Choose one from the list, or use Skip.',
     placeUnavailable: 'The list of towns could not be read. Use Skip and try again later.',
     signedOutNote: 'You are not signed in: your answers stay on this device.',
+    'voice.opening':
+      'Tell me your monthly income and spending, your savings, who will live there and where. I’m listening.',
     'voice.signedOutNotice':
       'You are not signed in, so your answers stay on this device. To keep them in your ReloCat profile, use the “{link}” link on this page.',
     'access.signed_in_saved': 'You are signed in: each answer you confirm is saved to your ReloCat profile.',
@@ -413,6 +415,7 @@ export const interview = defineMessages(
         'Encara no hi ha cap municipi cobert per ReloCat amb aquest nom. Tria’n un de la llista o fes servir Salta.',
       placeUnavailable: 'No s’ha pogut llegir la llista de municipis. Fes servir Salta i torna-ho a provar més tard.',
       signedOutNote: 'No has iniciat la sessió: les teves respostes es queden en aquest dispositiu.',
+      'voice.opening': 'Explica’m els teus ingressos i despeses al mes, els estalvis, qui hi viurà i on. T’escolto.',
       'voice.signedOutNotice':
         'No has iniciat la sessió, així que les teves respostes es queden en aquest dispositiu. Per desar-les al teu perfil de ReloCat, fes servir l’enllaç «{link}» d’aquesta pàgina.',
       'access.signed_in_saved': 'Has iniciat la sessió: cada resposta que confirmes es desa al teu perfil de ReloCat.',
@@ -658,6 +661,8 @@ export const interview = defineMessages(
         'Todavía no hay ningún municipio cubierto por ReloCat con ese nombre. Elige uno de la lista o usa Salta.',
       placeUnavailable: 'No se ha podido leer la lista de municipios. Usa Salta e inténtalo de nuevo más tarde.',
       signedOutNote: 'No has iniciado sesión: tus respuestas se quedan en este dispositivo.',
+      'voice.opening':
+        'Cuéntame tus ingresos y gastos al mes, tus ahorros, quién vivirá en la casa y dónde. Te escucho.',
       'voice.signedOutNotice':
         'No has iniciado sesión, así que tus respuestas se quedan en este dispositivo. Para guardarlas en tu perfil de ReloCat, usa el enlace «{link}» de esta página.',
       'access.signed_in_saved': 'Has iniciado sesión: cada respuesta que confirmas se guarda en tu perfil de ReloCat.',

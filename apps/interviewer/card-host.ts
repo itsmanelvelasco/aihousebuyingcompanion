@@ -1,9 +1,11 @@
+import type { PlanResult } from '../../packages/contracts/planner.ts';
 import { createFormat } from '../../packages/i18n/format.ts';
 import type { Locale } from '../../packages/i18n/locales.ts';
 import { translator } from '../../packages/i18n/messages.ts';
 import { card } from './card.messages.ts';
 import type { CallTool, ProfileAccess, ToolAnswer } from './facts.ts';
 import { voiceFactContext } from './facts.ts';
+import { bestPlan } from './plan.ts';
 import type { VoiceEnd } from './realtime.ts';
 import type { Interview, PlanOutcome } from './session.ts';
 import type { VoiceContext } from './voice.ts';
@@ -185,4 +187,128 @@ export function cardFailure(reason: VoiceEnd): CardFailure {
           ? 'voiceOff'
           : 'voiceNetwork';
   return { key, offerTyping: false };
+}
+
+// ------------------------------------------------------- what the card shows
+
+/** A question as the session is told it (`Interview.spoken`): what the card knows about the one being asked. */
+export type SpokenQuestion = NonNullable<ReturnType<Interview['spoken']>>;
+
+const sentenceEnd = /(?<=[.!?…]["”»)]?)\s+/;
+
+/**
+ * The one line of a spoken turn the card shows: its last sentence that ends in a question mark, or,
+ * when the turn asks nothing, its last sentence. An acknowledgement or a notice before the question is
+ * heard, not shown. A dot inside a figure ("3.100 €") does not end a sentence.
+ */
+export function shownQuestion(transcript: string): { text: string; asks: boolean } {
+  const sentences = transcript
+    .trim()
+    .split(sentenceEnd)
+    .map(sentence => sentence.trim())
+    .filter(Boolean);
+  const question = sentences.findLast(sentence => /\?["”»)]?$/.test(sentence));
+  return { text: question ?? sentences.at(-1) ?? '', asks: question !== undefined };
+}
+
+/** How the current question can be answered by tapping: nothing when its answer is not a closed one or a figure. */
+export type AnswerControls =
+  | { kind: 'chips'; options: { label: string; text: string }[] }
+  /** A compact numeric field with its unit; `unknown` is the label of "I don't know" when the question allows it. */
+  | { kind: 'number'; unit: string; unknown: string | null }
+  /** A name to type: the town. */
+  | { kind: 'text' }
+  | null;
+
+export function answerControls(
+  asked: Pick<SpokenQuestion, 'answer' | 'allowUnknown'> | null,
+  locale: Locale,
+): AnswerControls {
+  if (!asked) return null;
+  const t = translator(card, locale);
+  const unknown = asked.allowUnknown ? t('dontKnow') : null;
+  const chips = (labels: string[]): AnswerControls => ({
+    kind: 'chips',
+    options: [...labels, ...(unknown ? [unknown] : [])].map(label => ({ label, text: label })),
+  });
+  const { answer } = asked;
+  switch (answer.type) {
+    case 'boolean':
+      return chips([t('yes'), t('no')]);
+    case 'choice':
+      return chips(answer.options.map(option => option.label));
+    case 'money':
+      return { kind: 'number', unit: '€', unknown };
+    case 'number':
+      return { kind: 'number', unit: answer.unit, unknown };
+    case 'percent':
+      return { kind: 'number', unit: '%', unknown };
+    case 'place':
+      return { kind: 'text' };
+    default:
+      // A date, the children of the household: said or typed, never tapped.
+      return null;
+  }
+}
+
+/** A figure as typed in the compact field, or null when it is not one. Comma or dot for the decimals. */
+export function typedNumber(text: string) {
+  const value = text.trim().replace(/\s/g, '');
+  return /^\d{1,9}([.,]\d{1,2})?$/.test(value) ? value : null;
+}
+
+/**
+ * The five things the opening asks for, as the chips of the card. A chip fills in with what was saved
+ * from what the person said, and stays empty for what they did not say: nothing is inferred here.
+ */
+export const cardTopics = [
+  { id: 'monthlyIncome', label: 'topicIncome', node: 'topic-income' },
+  { id: 'monthlyExpenses', label: 'topicSpending', node: 'topic-spending' },
+  { id: 'purchaseSavings', label: 'topicSavings', node: 'topic-savings' },
+  { id: 'householdSize', label: 'topicHousehold', node: 'topic-household' },
+  { id: 'place', label: 'topicPlace', node: 'topic-place' },
+] as const;
+export type CardTopicId = (typeof cardTopics)[number]['id'];
+
+/** What each chip shows: the saved value formatted for the language, or null when there is none. */
+export function topicValues(
+  interview: Pick<Interview, 'journey' | 'lastPlan'>,
+  locale: Locale,
+): Record<CardTopicId, string | null> {
+  const format = createFormat(locale);
+  const { answers, extras, places } = interview.journey;
+  // A connected person's saved figures arrive with the plan; what was said here comes first.
+  const saved = interview.lastPlan?.person;
+  const money = (id: 'monthlyIncome' | 'monthlyExpenses' | 'purchaseSavings', stored: number | null | undefined) => {
+    const value = answers[id];
+    if (value === null) return format.unknown;
+    const cents = typeof value === 'number' ? value : stored;
+    return typeof cents === 'number' ? format.eurosAuto(cents) : null;
+  };
+  const size = extras.householdSize ?? saved?.householdSize;
+  return {
+    monthlyIncome: money('monthlyIncome', saved?.finances.monthlyIncomeCents),
+    monthlyExpenses: money('monthlyExpenses', saved?.finances.monthlyExpensesCents),
+    purchaseSavings: money('purchaseSavings', saved?.finances.currentSavingsCents),
+    householdSize: typeof size === 'number' ? format.count(size) : null,
+    place: places.at(-1)?.name ?? interview.lastPlan?.plans[0]?.place.name ?? null,
+  };
+}
+
+/** The plan at the size of a card: one figure, where, and at most one line about aid. An estimate, and labelled so. */
+export function planSummary(result: PlanResult, locale: Locale) {
+  const t = translator(card, locale);
+  const best = bestPlan(result);
+  const anywhere = result.withoutPlace;
+  const timeline = best ? best.withPlaceBenefits : (anywhere?.withHabits ?? anywhere?.baseline ?? null);
+  const counted = best?.benefits.filter(benefit => benefit.counted).length ?? 0;
+  const pending =
+    best?.benefits.filter(benefit => !benefit.counted && benefit.eligibilityStatus === 'needs_verification').length ??
+    0;
+  return {
+    /** The shortest timeline; "no finite timeline" stays words, never a number. */
+    figure: createFormat(locale).duration(timeline?.months ?? null),
+    label: best ? t('planLabel', { place: best.place.name }) : t('planAnywhere'),
+    aid: counted ? t('aidCounted', { count: counted }) : pending ? t('aidPending', { count: pending }) : null,
+  };
 }
