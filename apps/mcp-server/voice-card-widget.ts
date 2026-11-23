@@ -27,13 +27,47 @@ function show(locale: Locale) {
 }
 show(browserLocale());
 
+type OpenAiHost = {
+  openExternal?: (target: { href: string; redirectUrl: boolean }) => unknown;
+  sendFollowUpMessage?: (message: { prompt: string }) => unknown;
+};
+const openai = () => (window as { openai?: OpenAiHost }).openai;
+
+/**
+ * "Start the interview here": the opening message goes into the chat the card is shown in, as the
+ * person's own message, so the interview continues there by text or with the host's voice mode.
+ * A host that offers no way to send it gets the sentence to say or type instead.
+ */
+document.querySelector<HTMLButtonElement>('.start-here')?.addEventListener('click', async event => {
+  const button = event.currentTarget as HTMLButtonElement;
+  const reveal = (id: string) => {
+    document.querySelector<HTMLElement>('#start-sent')!.hidden = id !== 'start-sent';
+    document.querySelector<HTMLElement>('#start-help')!.hidden = id !== 'start-help';
+  };
+  const text = translator(voiceCard, (document.documentElement.lang as Locale) || 'en')('startMessage');
+  button.setAttribute('aria-busy', 'true');
+  try {
+    const host = openai();
+    if (typeof host?.sendFollowUpMessage === 'function') await host.sendFollowUpMessage({ prompt: text });
+    else if (app) {
+      const sent = await app.sendMessage({ role: 'user', content: [{ type: 'text', text }] }, requestOptions);
+      if (sent.isError) throw new Error('The host refused the message');
+    } else throw new Error('No host');
+    reveal('start-sent');
+    button.disabled = true;
+  } catch {
+    reveal('start-help');
+  } finally {
+    button.removeAttribute('aria-busy');
+  }
+});
+
 document.querySelector<HTMLAnchorElement>('.launch')?.addEventListener('click', event => {
   const link = event.currentTarget as HTMLAnchorElement;
   const showHelp = () => {
-    document.querySelector<HTMLElement>('#launch-help')!.hidden = false;
+    document.querySelector<HTMLElement>('#start-help')!.hidden = false;
   };
-  const host = (window as { openai?: { openExternal?: (target: { href: string; redirectUrl: boolean }) => unknown } })
-    .openai;
+  const host = openai();
   if (typeof host?.openExternal === 'function') {
     event.preventDefault();
     try {

@@ -271,6 +271,175 @@ test('public AI is same-origin, limited per client and capped across clients', a
   assert.equal(shared.calls.length, 10);
 });
 
+// ------------------------------------------------- the card embedded in a chat
+
+const chatHost = 'https://web-sandbox.oaiusercontent.com';
+/** A request as a browser sends it from a page of another site, through the public host. */
+const embedHeaders = (origin: string, client = '203.0.113.9') => ({
+  host: 'www.relo.cat',
+  origin,
+  'content-type': sdp,
+  'sec-fetch-site': 'cross-site',
+  'x-forwarded-for': client,
+});
+
+test('/voice answers a card on an allowed embedding origin, and only /voice', async () => {
+  const logged: string[] = [];
+  const options = {
+    apiKey: fakeKey,
+    publicAi: true,
+    publicOrigin: 'https://www.relo.cat',
+    embedOrigins: [chatHost],
+    log: (message: string) => void logged.push(message),
+  };
+  const { send, calls } = await serve(options, () => new Response('v=0 answer'));
+
+  // The preflight of `Content-Type: application/sdp`: answered, with nothing sent upstream.
+  const preflight = await send('OPTIONS', '/interview/voice', {
+    host: 'www.relo.cat',
+    origin: chatHost,
+    'access-control-request-method': 'POST',
+    'access-control-request-headers': 'content-type',
+  });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers['access-control-allow-origin'], chatHost);
+  assert.equal(preflight.headers['access-control-allow-methods'], 'POST');
+  assert.match(String(preflight.headers['access-control-allow-headers']), /content-type/i);
+  // No cookie is read by the route, and none is allowed.
+  assert.equal(preflight.headers['access-control-allow-credentials'], undefined);
+  assert.equal(calls.length, 0);
+
+  const answer = await send('POST', '/interview/voice', embedHeaders(chatHost), 'v=0 offer');
+  assert.equal(answer.status, 200);
+  assert.equal(answer.text, 'v=0 answer');
+  assert.equal(answer.headers['access-control-allow-origin'], chatHost);
+  assert.match(String(answer.headers.vary), /Origin/);
+  assert.equal(answer.headers['access-control-allow-credentials'], undefined);
+  assert.equal(calls.length, 1);
+  assert.equal((calls[0].init.body as FormData).get('sdp'), 'v=0 offer');
+  assert.doesNotMatch(answer.text + JSON.stringify(answer.headers), new RegExp(fakeKey));
+
+  // Another site is refused with a JSON error its page can read, and the operator is told once which origin it was.
+  for (const origin of ['https://evil.example', 'https://oaiusercontent.com.evil.example', 'null']) {
+    const refused = await send('POST', '/interview/voice', embedHeaders(origin), 'v=0 offer');
+    assert.equal(refused.status, 403, origin);
+    assert.match(JSON.parse(refused.text).error, /INTERVIEWER_EMBED_ORIGINS/);
+    assert.equal(refused.headers['access-control-allow-origin'], origin);
+  }
+  await send('POST', '/interview/voice', embedHeaders('https://evil.example'), 'v=0 offer');
+  assert.equal(calls.length, 1);
+  assert.equal(logged.length, 3);
+  assert.match(logged[0], /origin "https:\/\/evil\.example".*INTERVIEWER_EMBED_ORIGINS/);
+
+  // Categorization is not embeddable: the allowed origin is another site there, as before.
+  const classify = await send(
+    'POST',
+    '/interview/classify',
+    { ...embedHeaders(chatHost), 'content-type': json },
+    descriptors,
+  );
+  assert.equal(classify.status, 403);
+  assert.equal(classify.headers['access-control-allow-origin'], undefined);
+  assert.equal((await send('OPTIONS', '/interview/classify', { host: 'www.relo.cat', origin: chatHost })).status, 404);
+
+  // The page itself is unchanged: same-origin passes, and a same-origin request marked cross-site does not.
+  const own = { host: 'www.relo.cat', origin: 'https://www.relo.cat', 'content-type': sdp };
+  const page = await send('POST', '/interview/voice', own, 'v=0');
+  assert.equal(page.status, 200);
+  assert.equal(page.headers['access-control-allow-origin'], undefined);
+  assert.equal((await send('POST', '/interview/voice', { ...own, 'sec-fetch-site': 'cross-site' }, 'v=0')).status, 403);
+  assert.equal(
+    (await send('POST', '/interview/voice', { host: 'www.relo.cat', 'content-type': sdp }, 'v=0')).status,
+    403,
+  );
+});
+
+test('embedding origins are exact origins, host suffixes or any origin, and nothing without public voice', async () => {
+  const post = async (options: InterviewerOptions, origin: string) => {
+    const { send } = await serve({ apiKey: fakeKey, log: () => {}, ...options }, () => new Response('v=0 answer'));
+    return (await send('POST', '/interview/voice', embedHeaders(origin), 'v=0')).status;
+  };
+  // A suffix covers the hosts under it, over https only, and not a host that merely ends with the same letters.
+  const suffix = { publicAi: true, embedOrigins: ['.oaiusercontent.com'] };
+  assert.equal(await post(suffix, 'https://abc123.web-sandbox.oaiusercontent.com'), 200);
+  assert.equal(await post(suffix, 'http://abc123.oaiusercontent.com'), 403);
+  assert.equal(await post(suffix, 'https://oaiusercontent.com'), 403);
+  assert.equal(await post(suffix, 'https://evil-oaiusercontent.com'), 403);
+  assert.equal(await post(suffix, 'https://x.oaiusercontent.com.evil.example'), 403);
+  // `*` is any origin, the one a sandboxed frame states included.
+  const any = { publicAi: true, embedOrigins: ['*'] };
+  assert.equal(await post(any, 'https://anything.example'), 200);
+  assert.equal(await post(any, 'null'), 200);
+  // Empty, the default: nothing changes, and there is no preflight to answer.
+  assert.equal(await post({ publicAi: true }, chatHost), 403);
+  assert.equal(await post({ publicAi: true, embedOrigins: [] }, chatHost), 403);
+  const closed = await serve({ apiKey: fakeKey, publicAi: true });
+  const preflight = await closed.send('OPTIONS', '/interview/voice', { host: 'www.relo.cat', origin: chatHost });
+  assert.equal(preflight.status, 404);
+  assert.equal(preflight.headers['access-control-allow-origin'], undefined);
+  // Without public voice the list does nothing: voice stays on the operator's own machine.
+  assert.equal(await post({ publicAi: false, embedOrigins: ['*'] }, chatHost), 403);
+  const local = await serve({ apiKey: fakeKey, embedOrigins: ['*'] });
+  assert.equal((await local.send('OPTIONS', '/interview/voice', { host: local.local, origin: chatHost })).status, 404);
+  // No key: the card is told so, in an answer it can read.
+  const keyless = await serve({ publicAi: true, embedOrigins: [chatHost] });
+  const off = await keyless.send('POST', '/interview/voice', embedHeaders(chatHost), 'v=0');
+  assert.deepEqual([off.status, off.headers['access-control-allow-origin']], [503, chatHost]);
+
+  // The variable: origins are normalised, and an entry that is none of the three forms fails at start.
+  assert.deepEqual(interviewerEnv({}).embedOrigins, []);
+  assert.deepEqual(
+    interviewerEnv({ INTERVIEWER_EMBED_ORIGINS: ' https://Chat.Example/ , .OAIusercontent.com,*, null' }).embedOrigins,
+    ['https://chat.example', '.oaiusercontent.com', '*', 'null'],
+  );
+  for (const bad of ['oaiusercontent.com', 'https://chat.example/path', 'ftp://chat.example', '.', '*.example.com'])
+    assert.throws(() => interviewerEnv({ INTERVIEWER_EMBED_ORIGINS: bad }), /INTERVIEWER_EMBED_ORIGINS/, bad);
+});
+
+test('an embedded card spends from the same hourly allowance as the page', async () => {
+  let time = 1_000_000;
+  const options = {
+    apiKey: fakeKey,
+    publicAi: true,
+    aiRequestsPerHour: 2,
+    embedOrigins: [chatHost],
+    now: () => time,
+    log: () => {},
+  };
+  const { send, calls, publicHeaders } = await serve(options, () => new Response('v=0 answer'));
+  const card = (client: string) => send('POST', '/interview/voice', embedHeaders(chatHost, client), 'v=0');
+  assert.equal((await card('203.0.113.1')).status, 200);
+  // The page and the card of one visitor share one allowance.
+  assert.equal((await send('POST', '/interview/voice', publicHeaders(sdp, '203.0.113.1'), 'v=0')).status, 200);
+  const limited = await card('203.0.113.1');
+  assert.equal(limited.status, 429);
+  assert.equal(limited.headers['retry-after'], '3600');
+  // The card can read why.
+  assert.equal(limited.headers['access-control-allow-origin'], chatHost);
+  assert.equal(calls.length, 2);
+  // A preflight spends nothing, and a refused origin does not use up anybody's allowance.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await send('OPTIONS', '/interview/voice', {
+      host: 'www.relo.cat',
+      origin: chatHost,
+      'x-forwarded-for': '203.0.113.2',
+    });
+    await send('POST', '/interview/voice', embedHeaders('https://evil.example', '203.0.113.2'), 'v=0');
+  }
+  assert.equal((await card('203.0.113.2')).status, 200);
+  time += 3_600_000;
+  assert.equal((await card('203.0.113.1')).status, 200);
+
+  // Ten times the per-client allowance is the ceiling for everyone together, cards included.
+  const shared = await serve({ ...options, aiRequestsPerHour: 1 }, () => new Response('v=0 answer'));
+  const statuses: number[] = [];
+  for (let client = 1; client <= 11; client++)
+    statuses.push(
+      (await shared.send('POST', '/interview/voice', embedHeaders(chatHost, `198.51.100.${client}`), 'v=0')).status,
+    );
+  assert.deepEqual(statuses, [...Array(10).fill(200), 429]);
+});
+
 test('body limits hold before anything is sent upstream', async () => {
   for (const publicAi of [false, true]) {
     const { send, calls, localHeaders } = await serve({ apiKey: fakeKey, publicAi });
@@ -296,6 +465,7 @@ test('environment options keep public AI off unless it is switched on explicitly
   assert.deepEqual(interviewerEnv({}), {
     apiKey: undefined,
     publicAi: false,
+    embedOrigins: [],
     aiRequestsPerHour: 20,
     models: interviewerEnv({}).models,
   });
@@ -505,7 +675,9 @@ test('the voice session is told which facts are answered and what to ask next, n
   // The instructions lead the model: one question, the reason, confirmation before saving, null for unknown.
   assert.match(factInstructions, /one per turn/);
   assert.match(factInstructions, /save null, never zero, never a\s+guess/);
-  assert.match(factInstructions, /only after the person confirms it/);
+  // A plain figure is saved at once; a household or tax fact still needs a yes. The why is said only on request.
+  assert.match(factInstructions, /saved only after the person says yes/);
+  assert.match(factInstructions, /otherwise do not say them/);
 });
 
 test('the page offers to save only through a relative link and a button that start hidden', async () => {
@@ -783,7 +955,9 @@ test('the voice session speaks the language chosen on the page, with its instruc
   const page = await readFile(new URL('../apps/interviewer/app.ts', import.meta.url), 'utf8');
   const voice = await readFile(new URL('../apps/interviewer/voice.ts', import.meta.url), 'utf8');
   assert.match(voice, /\$\{voiceLanguageInstruction\(context\.locale\)\} Ask one question, then stop and listen\./);
-  assert.match(page, /voiceLanguageChange\(chosen\)/);
+  assert.match(page, /connection\?\.changeLanguage\(chosen\)/);
+  const call = await readFile(new URL('../apps/interviewer/realtime.ts', import.meta.url), 'utf8');
+  assert.match(call, /voiceLanguageChange\(chosen\)/);
   // The next question reaches the model in the reviewed wording of that language; ids and values do not change.
   const answers: FactAnswers = { monthlyIncome: 320_000, itpBuyerNetTaxBase: null };
   const english = voiceFactContext(answers, day);

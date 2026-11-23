@@ -21,13 +21,14 @@ import {
 } from '../../packages/model/questions.ts';
 import { cashQuestions, moneyIn, statementNote } from './cash.ts';
 import type { FactAnswers } from './facts.ts';
-import { toolCaller, voiceFactContext, voiceLanguageChange } from './facts.ts';
+import { toolCaller, voiceFactContext } from './facts.ts';
 import { interview as catalog } from './messages.ts';
 import { planView, trail } from './plan.ts';
+import type { VoicePhase as CallPhase, VoiceCall, VoiceEnd } from './realtime.ts';
+import { startVoiceCall, voiceSupport } from './realtime.ts';
 import type { Asked, Journey, PlanOutcome } from './session.ts';
 import { createInterview, emptyJourney } from './session.ts';
-import type { SessionUpdate, VoiceContext } from './voice.ts';
-import { sessionUpdate, voiceTools } from './voice.ts';
+import type { VoiceContext } from './voice.ts';
 
 type BankSource = 'demo' | 'csv';
 /** Everything kept in this browser's storage between visits. */
@@ -53,61 +54,8 @@ type LegacyState = {
   profileCurrency?: string;
 };
 
-/** Events this page sends to the Realtime session over the data channel. */
-type RealtimeClientEvent =
-  | { type: 'response.create' }
-  | SessionUpdate
-  | {
-      type: 'conversation.item.create';
-      item:
-        | { type: 'message'; role: 'system' | 'user'; content: { type: 'input_text'; text: string }[] }
-        | { type: 'function_call_output'; call_id: string; output: string };
-    };
-
-/** The Realtime server events this page acts on. Every other event is ignored. */
-type RealtimeServerEvent =
-  | {
-      type:
-        | 'session.updated'
-        | 'input_audio_buffer.speech_started'
-        | 'input_audio_buffer.speech_stopped'
-        | 'response.created'
-        | 'output_audio_buffer.started'
-        | 'output_audio_buffer.stopped'
-        | 'output_audio_buffer.cleared'
-        | 'response.done'
-        | 'error';
-    }
-  | { type: 'response.output_audio_transcript.done'; transcript: string }
-  | { type: 'response.function_call_arguments.done'; name: string; arguments: string; call_id: string };
-
-type VoicePhase = 'idle' | 'connecting' | 'hearing' | 'speaking' | 'thinking' | 'muted' | 'listening';
-
-/** One live voice interview: the WebRTC peer plus what the turn-taking logic needs to remember. */
-type VoiceSession = {
-  peer: RTCPeerConnection;
-  abort: AbortController;
-  timer?: ReturnType<typeof setTimeout>;
-  stream?: MediaStream;
-  send?: (event: RealtimeClientEvent) => void;
-  /** The data channel is open and the session settings were sent. */
-  configured?: boolean;
-  /** The service accepted the settings and the first reply was requested. */
-  greeted?: boolean;
-  /** The service refused the settings once and they were sent again without transcription. */
-  plain?: boolean;
-  /** New settings were sent after a language change and are not acknowledged yet. */
-  updating?: boolean;
-  responding?: boolean;
-  playing?: boolean;
-  userSpeaking?: boolean;
-  muted?: boolean;
-  /** A new bank summary is waiting to be shared at the next quiet moment. */
-  pendingCash?: boolean;
-  /** A tool result was sent and the model still owes a spoken reply. */
-  followUp?: boolean;
-  pendingTools?: number;
-};
+/** What the conversation area shows: `idle` between conversations, else the phase of the live call (`realtime.ts`). */
+type VoicePhase = 'idle' | CallPhase;
 
 /** A page element that must exist with the expected type; the markup and this script ship together. */
 function element<T extends HTMLElement>(id: string, type: new () => T): T {
@@ -209,14 +157,6 @@ class Told extends Error {
     this.key = key;
   }
 }
-/** The voice service refused the session; the status says why in any language. */
-class VoiceRefusal extends Error {
-  readonly status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
 /**
  * An error in the page's language. English shows the error's own text, as before; another
  * language shows this page's sentence for it, since a library's message cannot be translated here.
@@ -266,7 +206,11 @@ let state = emptyState();
 let importAttempt = 0;
 say(ui.saveStatus, line('savedHere'));
 say(ui.importStatus, line('csvColumns'));
-say(ui.voiceStatus, line('ready'));
+/** False when the server said voice cannot answer this visitor: the page then runs the written interview. */
+const voiceOpen = document.documentElement.dataset.voice !== 'off';
+const idleLine = () => line(voiceOpen ? 'ready' : 'readyWritten');
+if (!voiceOpen) ui.start.dataset.i18n = 'startWritten';
+say(ui.voiceStatus, idleLine());
 try {
   const saved = localStorage.getItem(key);
   // Written only by save() below, so the stored shape is this page's own State, of this version or an earlier one.
@@ -321,7 +265,8 @@ function showRows(list: HTMLElement, entries: [label: string, value: string, act
   );
 }
 
-let connection: VoiceSession | undefined;
+/** The live voice call (`realtime.ts`), while there is one. */
+let connection: VoiceCall | undefined;
 /** The guided interview is running. */
 let guiding = false;
 /** The guided question on screen. `only`: one answer is being changed, and the interview ends after it. */
@@ -725,8 +670,7 @@ async function importCsv(text: string, source: BankSource, currency: string, use
   renderTrail();
   ui.dataPanel.close();
   if (connection?.configured) {
-    connection.pendingCash = true;
-    shareCashWhenReady(connection);
+    connection.shareWhenQuiet(cashUpdateNote);
   } else if (!connection && !guiding) {
     setVoiceStatus('idle', line(source === 'demo' ? 'demoAddedReady' : 'csvAddedReady'));
   }
@@ -799,9 +743,6 @@ ui.bankBack.addEventListener('click', () => {
 
 // ------------------------------------------------------------ voice functions
 
-/** The functions of the voice session (`voice.ts`); each is answered by the same interview as the guided form. */
-const voiceToolNames = new Set(voiceTools().map(tool => tool.name));
-
 function showRequestedPanel({ panel }: Record<string, unknown>): Record<string, unknown> {
   switch (panel) {
     case 'demo_bank':
@@ -836,6 +777,7 @@ function openWorkspace(): Record<string, unknown> {
   };
 }
 
+/** The functions of the voice session (`voice.ts`); each is answered by the same interview as the guided form. */
 async function runVoiceTool(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
   switch (name) {
     case 'save_interview_answers':
@@ -927,10 +869,7 @@ async function startGuide(only?: Asked) {
 function endInterview(message: Line) {
   const previous = connection;
   connection = undefined;
-  previous?.abort.abort();
-  clearTimeout(previous?.timer);
-  previous?.peer.close();
-  for (const track of previous?.stream?.getTracks() ?? []) track.stop();
+  previous?.close();
   ui.audio.srcObject = null;
   ui.mute.hidden = true;
   ui.typeToggle.disabled = true;
@@ -955,264 +894,96 @@ function setVoiceStatus(phase: VoicePhase, message: Line) {
   say(ui.voiceStatus, message);
 }
 
-function renderVoiceState(session: VoiceSession) {
-  if (session.userSpeaking) return setVoiceStatus('hearing', line('hearing'));
-  if (session.playing) return setVoiceStatus('speaking', line('speaking'));
-  if (session.responding) return setVoiceStatus('thinking', line('thinking'));
-  if (session.muted) return setVoiceStatus('muted', line('muted'));
-  setVoiceStatus('listening', line('listening'));
-}
+/** What the status line says in each phase of a live call. */
+const phaseLines: Record<CallPhase, Key> = {
+  connecting: 'connectingMic',
+  hearing: 'hearing',
+  speaking: 'speaking',
+  thinking: 'thinking',
+  muted: 'muted',
+  listening: 'listening',
+};
 
-function requestReply(session: VoiceSession) {
-  session.responding = true;
-  ui.sendAnswer.disabled = true;
-  renderVoiceState(session);
-  session.send?.({ type: 'response.create' });
-}
+/** What to tell a live session about a statement added mid-interview, built when it is said. */
+const cashUpdateNote = () =>
+  `The user just updated their data in the bank data panel. Briefly acknowledge the update and continue the interview with one relevant question. Say clearly if the data is fictional. ${(state.cash && cashFlowStatements(state.cash, money).guidance) ?? ''} Source: ${state.source === 'demo' ? 'fictional demo account' : 'user CSV'}. Updated context: ${JSON.stringify({ statementCurrency: state.currency, cash: state.cash })}`;
 
-function shareCashWhenReady(session: VoiceSession) {
-  if (
-    !session.greeted ||
-    !session.pendingCash ||
-    session.responding ||
-    session.playing ||
-    session.userSpeaking ||
-    session.pendingTools
-  )
-    return false;
-  session.pendingCash = false;
-  session.send?.({
-    type: 'conversation.item.create',
-    item: {
-      type: 'message',
-      role: 'system',
-      content: [
-        {
-          type: 'input_text',
-          text: `The user just updated their data in the bank data panel. Briefly acknowledge the update and continue the interview with one relevant question. Say clearly if the data is fictional. ${(state.cash && cashFlowStatements(state.cash, money).guidance) ?? ''} Source: ${state.source === 'demo' ? 'fictional demo account' : 'user CSV'}. Updated context: ${JSON.stringify({ statementCurrency: state.currency, cash: state.cash })}`,
-        },
-      ],
-    },
-  });
-  requestReply(session);
-  return true;
-}
-
-function finishTurn(session: VoiceSession) {
-  if (session.responding || session.playing || session.userSpeaking || session.pendingTools) return;
-  if (shareCashWhenReady(session)) {
-    session.followUp = false;
-  } else if (session.followUp) {
-    session.followUp = false;
-    requestReply(session);
-  } else {
-    ui.sendAnswer.disabled = false;
+/** Why a call ended by itself, as the line the page shows. */
+function endLine(reason: VoiceEnd): Line {
+  switch (reason.kind) {
+    case 'timeout':
+      return line('voiceTimeout');
+    case 'failed':
+      return line('voiceFailed');
+    case 'disconnected':
+      return line('voiceDisconnected');
+    case 'error':
+      return line('voiceError');
+    default:
+      return () => {
+        // The server and the browser explain a failure in English; another language names the cause by its status.
+        const { status, message } = reason;
+        const named = t(
+          status === 403
+            ? 'voiceLocalOnly'
+            : status === 503
+              ? 'voiceNoKey'
+              : status === 429
+                ? 'voiceTooMany'
+                : 'voiceNotStarted',
+        );
+        return `${locale === 'en' ? message || named : named} ${t('openGuided')}`;
+      };
   }
 }
 
-const plainServerEvents = new Set([
-  'session.updated',
-  'input_audio_buffer.speech_started',
-  'input_audio_buffer.speech_stopped',
-  'response.created',
-  'output_audio_buffer.started',
-  'output_audio_buffer.stopped',
-  'output_audio_buffer.cleared',
-  'response.done',
-  'error',
-]);
-
-/** Narrow one data-channel message to an event this page handles; null for everything else. */
-function readServerEvent(raw: unknown): RealtimeServerEvent | null {
-  const data: unknown = JSON.parse(String(raw));
-  if (!isRecord(data) || typeof data.type !== 'string') return null;
-  const { type } = data;
-  if (plainServerEvents.has(type)) return data as RealtimeServerEvent;
-  if (type === 'response.output_audio_transcript.done') {
-    return typeof data.transcript === 'string' && data.transcript ? { type, transcript: data.transcript } : null;
-  }
-  if (type === 'response.function_call_arguments.done') {
-    const { name, arguments: args, call_id } = data;
-    return typeof name === 'string' && typeof args === 'string' && typeof call_id === 'string'
-      ? { type, name, arguments: args, call_id }
-      : null;
-  }
-  return null;
-}
-
-async function startInterview() {
+function startInterview() {
   if (connection || guiding) return;
-  if (!navigator.mediaDevices?.getUserMedia || !('RTCPeerConnection' in window)) {
+  const support = voiceSupport();
+  if (!support.microphone || !support.peer) {
     setVoiceStatus('idle', line('voiceUnsupported'));
     return;
   }
-  const peer = new RTCPeerConnection();
-  const session: VoiceSession = { peer, abort: new AbortController() };
-  connection = session;
-  session.timer = setTimeout(() => {
-    if (connection === session) endInterview(line('voiceTimeout'));
-  }, 45000);
+  // The WebRTC peer, the data-channel protocol and the turn-taking are the shared call (`realtime.ts`).
+  const call = startVoiceCall({
+    endpoint: 'voice',
+    context: voiceContext,
+    runTool: runVoiceTool,
+    onPhase: phase => setVoiceStatus(phase, line(phaseLines[phase])),
+    onGreeted: () => {
+      ui.mute.hidden = false;
+      say(ui.mute, line('mute'));
+      ui.mute.setAttribute('aria-pressed', 'false');
+      ui.typeToggle.disabled = false;
+    },
+    onCaption: transcript => {
+      ui.lastQuestion.textContent = transcript;
+      ui.lastQuestion.hidden = ui.captions.getAttribute('aria-pressed') !== 'true';
+    },
+    onCanSend: allowed => {
+      ui.sendAnswer.disabled = !allowed;
+    },
+    onRemoteStream: stream => {
+      ui.audio.srcObject = stream;
+    },
+    onEnd: reason => {
+      if (connection === call) endInterview(endLine(reason));
+    },
+  });
+  connection = call;
   renderCash();
   ui.lastQuestion.hidden = true;
   ui.lastQuestion.textContent = '';
-  setVoiceStatus('connecting', line('connectingMic'));
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    if (connection !== session) {
-      for (const track of stream.getTracks()) track.stop();
-      return;
-    }
-    session.stream = stream;
-    peer.addTrack(stream.getAudioTracks()[0], stream);
-    peer.ontrack = event => {
-      if (connection === session) ui.audio.srcObject = event.streams[0];
-    };
-    peer.onconnectionstatechange = () => {
-      if (connection === session && peer.connectionState === 'failed') endInterview(line('voiceFailed'));
-    };
-    const channel = peer.createDataChannel('oai-events');
-    const send = (event: RealtimeClientEvent) => channel.send(JSON.stringify(event));
-    session.send = send;
-    channel.onclose = () => {
-      if (connection === session) endInterview(line('voiceDisconnected'));
-    };
-    channel.onopen = async () => {
-      // The functions, the instructions with this page's labels, and the language to transcribe (`voice.ts`).
-      const context = await voiceContext();
-      if (connection !== session) return;
-      session.configured = true;
-      send(sessionUpdate(context));
-    };
-    channel.onmessage = async event => {
-      if (connection !== session) return;
-      const data = readServerEvent(event.data);
-      if (!data) return;
-      if (data.type === 'session.updated') session.updating = false;
-      if (data.type === 'session.updated' && !session.greeted) {
-        clearTimeout(session.timer);
-        session.greeted = true;
-        ui.mute.hidden = false;
-        say(ui.mute, line('mute'));
-        ui.mute.setAttribute('aria-pressed', 'false');
-        ui.typeToggle.disabled = false;
-        if (!shareCashWhenReady(session)) requestReply(session);
-      }
-      if (data.type === 'input_audio_buffer.speech_started') {
-        session.userSpeaking = true;
-        ui.sendAnswer.disabled = true;
-        renderVoiceState(session);
-      }
-      if (data.type === 'input_audio_buffer.speech_stopped') {
-        session.userSpeaking = false;
-        session.responding = true;
-        renderVoiceState(session);
-      }
-      if (data.type === 'response.created') {
-        session.responding = true;
-        ui.sendAnswer.disabled = true;
-        renderVoiceState(session);
-      }
-      if (data.type === 'output_audio_buffer.started') {
-        session.playing = true;
-        renderVoiceState(session);
-      }
-      if (data.type === 'output_audio_buffer.stopped' || data.type === 'output_audio_buffer.cleared') {
-        session.playing = false;
-        renderVoiceState(session);
-        finishTurn(session);
-      }
-      if (data.type === 'response.output_audio_transcript.done') {
-        ui.lastQuestion.textContent = data.transcript;
-        ui.lastQuestion.hidden = ui.captions.getAttribute('aria-pressed') !== 'true';
-      }
-      if (data.type === 'response.function_call_arguments.done' && voiceToolNames.has(data.name)) {
-        session.pendingTools = (session.pendingTools ?? 0) + 1;
-        let output: Record<string, unknown>;
-        try {
-          const args: unknown = JSON.parse(data.arguments);
-          if (!isRecord(args)) throw new Error('Tool arguments must be an object.');
-          output = await runVoiceTool(data.name, args);
-        } catch {
-          output = { error: 'The requested action could not be completed.' };
-        }
-        session.pendingTools--;
-        if (connection !== session) return;
-        send({
-          type: 'conversation.item.create',
-          item: {
-            type: 'function_call_output',
-            call_id: data.call_id,
-            output: JSON.stringify(output),
-          },
-        });
-        session.followUp = true;
-        finishTurn(session);
-      }
-      if (data.type === 'response.done') {
-        session.responding = false;
-        renderVoiceState(session);
-        finishTurn(session);
-      }
-      if (data.type === 'error') {
-        if (session.updating) {
-          // New settings after a language change were refused: the conversation goes on with the ones it had.
-          session.updating = false;
-        } else if (!session.greeted && !session.plain) {
-          // The first settings were refused: send them once more without transcription, as before it existed.
-          session.plain = true;
-          send(sessionUpdate(await voiceContext(), { transcription: false }));
-        } else endInterview(line('voiceError'));
-      }
-    };
-    const offer = await peer.createOffer();
-    await peer.setLocalDescription(offer);
-    const response = await fetch('voice', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/sdp' },
-      body: offer.sdp,
-      signal: session.abort.signal,
-    });
-    if (!response.ok) {
-      const failure: unknown = await response.json();
-      throw new VoiceRefusal(
-        response.status,
-        isRecord(failure) && typeof failure.error === 'string' ? failure.error : '',
-      );
-    }
-    await peer.setRemoteDescription({ type: 'answer', sdp: await response.text() });
-  } catch (error) {
-    if (connection === session)
-      endInterview(() => {
-        // The server and the browser explain a failure in English; another language names the cause by its status.
-        const refused = error instanceof VoiceRefusal ? error.status : 0;
-        const cause =
-          locale === 'en'
-            ? errorMessage(error)
-            : t(
-                refused === 403
-                  ? 'voiceLocalOnly'
-                  : refused === 503
-                    ? 'voiceNoKey'
-                    : refused === 429
-                      ? 'voiceTooMany'
-                      : 'voiceNotStarted',
-              );
-        return `${cause} ${t('openGuided')}`;
-      });
-  }
 }
 
 ui.start.addEventListener('click', () => {
-  void startInterview();
+  void (voiceOpen ? startInterview() : startGuide());
 });
 ui.stop.addEventListener('click', () => endInterview(line('ended')));
 ui.mute.addEventListener('click', () => {
-  if (!connection?.stream) return;
-  connection.muted = !connection.muted;
-  for (const track of connection.stream.getAudioTracks()) track.enabled = !connection.muted;
+  if (!connection?.setMuted(!connection.muted)) return;
   say(ui.mute, line(connection.muted ? 'unmute' : 'mute'));
   ui.mute.setAttribute('aria-pressed', String(connection.muted));
-  renderVoiceState(connection);
 });
 ui.captions.addEventListener('click', () => {
   const enabled = ui.captions.getAttribute('aria-pressed') !== 'true';
@@ -1287,7 +1058,7 @@ ui.guidedAnswer.addEventListener('submit', async event => {
 });
 ui.skip.addEventListener('click', () => {
   if (!guiding || !guide) return;
-  if (guide.only) return endInterview(line('ready'));
+  if (guide.only) return endInterview(idleLine());
   // A skipped question stays unanswered: it is not recorded as "I don't know".
   interview.skip(guide.asked.id);
   ui.guideError.hidden = true;
@@ -1303,17 +1074,7 @@ ui.saveProfile.addEventListener('click', async () => {
 ui.typedAnswer.addEventListener('submit', event => {
   event.preventDefault();
   const text = ui.answer.value.trim();
-  if (!connection?.send || ui.sendAnswer.disabled || !text) return;
-  connection.send({
-    type: 'conversation.item.create',
-    item: {
-      type: 'message',
-      role: 'user',
-      content: [{ type: 'input_text', text }],
-    },
-  });
-  requestReply(connection);
-  ui.answer.value = '';
+  if (connection?.sayTyped(text)) ui.answer.value = '';
 });
 ui.clear.addEventListener('click', () => {
   if (!window.confirm(t('confirmClear'))) return;
@@ -1321,7 +1082,7 @@ ui.clear.addEventListener('click', () => {
   state = emptyState();
   interview.reset(state.journey);
   planOutcome = null;
-  endInterview(line('ready'));
+  endInterview(idleLine());
   ui.lastQuestion.hidden = true;
   ui.lastQuestion.textContent = '';
   ui.currency.value = state.currency;
@@ -1369,22 +1130,13 @@ function applyLocale(next: Locale) {
   // A guided question on screen is asked again in the new language.
   if (guiding && guide) void showGuideQuestion(guide.only ? interview.question(guide.asked.id) : undefined);
 }
-ui.languages.addEventListener('click', async event => {
+ui.languages.addEventListener('click', event => {
   const chosen = toLocale((event.target as HTMLElement).closest<HTMLButtonElement>('button[data-lang]')?.dataset.lang);
   if (!chosen || chosen === locale) return;
   rememberLocale(chosen);
   applyLocale(chosen);
   // A live voice conversation is told, so the next spoken turn is in the new language, and its settings
   // follow: the labels it names and the language its transcription expects.
-  const session = connection;
-  if (!session?.greeted) return;
-  session.send?.({
-    type: 'conversation.item.create',
-    item: { type: 'message', role: 'system', content: [{ type: 'input_text', text: voiceLanguageChange(chosen) }] },
-  });
-  const context = await voiceContext();
-  if (connection !== session || locale !== chosen) return;
-  session.updating = true;
-  session.send?.(sessionUpdate(context, { transcription: !session.plain }));
+  void connection?.changeLanguage(chosen);
 });
 applyLocale(locale);

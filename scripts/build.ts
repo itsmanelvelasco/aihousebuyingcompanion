@@ -23,6 +23,13 @@ const bundles = [
   { entryPoints: ['apps/board/widget.ts'], outfile: 'apps/board/dist/widget.js' },
   { entryPoints: ['apps/interviewer/app.ts'], outfile: 'apps/interviewer/dist/app.js' },
   {
+    // The interview card embedded in a chat: inlined into a widget resource, so it is minified.
+    entryPoints: ['apps/interviewer/card.ts'],
+    outfile: 'apps/interviewer/dist/card.js',
+    minify: true,
+    legalComments: 'eof' as const,
+  },
+  {
     entryPoints: ['apps/web/main.tsx'],
     outfile: 'apps/web/dist/workspace.js',
     minify: true,

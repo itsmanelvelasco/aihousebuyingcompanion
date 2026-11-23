@@ -88,12 +88,19 @@ export type InterviewerOptions = {
   caller?: Caller;
   /** Where the Start talking card leads; omitted, `voiceUrlConfig()` (`RELOCAT_VOICE_URL`, else `<PUBLIC_ORIGIN>/interview/`). */
   voiceUrl?: string | null;
+  /**
+   * The interview card that holds the voice interview itself, built by the composition root
+   * (`apps/interviewer`), with the origin it calls for voice. Omitted: the simple card, whose button
+   * continues the interview in the chat.
+   */
+  interviewCard?: { page: string; origin: string };
 };
 
 export function registerInterviewerTools(server: McpServer, options: InterviewerOptions = {}) {
   const launchHref = options.voiceUrl === undefined ? voiceUrlConfig() : options.voiceUrl;
   const launchUrl = launchHref ? (URL.parse(launchHref) ?? undefined) : undefined;
   const signedIn = Boolean(options.caller?.me);
+  const embedded = options.interviewCard;
   server.registerResource(
     'ReloCat Start talking',
     voiceCardUri,
@@ -106,10 +113,18 @@ export function registerInterviewerTools(server: McpServer, options: Interviewer
         {
           uri: voiceCardUri,
           mimeType: widgetType,
-          text: renderVoiceCard(launchHref),
+          text: embedded ? embedded.page : renderVoiceCard(launchHref),
           _meta: {
-            ui: { prefersBorder: true, csp: { connectDomains: [], resourceDomains: [] } },
-            ...(launchUrl && { 'openai/widgetCSP': { redirect_domains: [launchUrl.origin] } }),
+            ui: {
+              prefersBorder: true,
+              // The embedded card posts its WebRTC offer to ReloCat's own voice route and nothing else.
+              csp: { connectDomains: embedded ? [embedded.origin] : [], resourceDomains: [] },
+              // Asked for so that voice can run inside the card where a host grants it; a host may refuse.
+              permissions: { microphone: {} },
+            },
+            ...(embedded
+              ? { 'openai/widgetCSP': { connect_domains: [embedded.origin], resource_domains: [] } }
+              : launchUrl && { 'openai/widgetCSP': { redirect_domains: [launchUrl.origin] } }),
           },
         },
       ],
@@ -122,7 +137,10 @@ export function registerInterviewerTools(server: McpServer, options: Interviewer
       title: 'Start the homebuying interview',
       description:
         interviewerRouting +
-        ' If the user requests voice from a text chat, share voiceSetup and, when voiceUrl is not null, the link to ReloCat’s own voice page. Otherwise ask the returned opening question, wait for the user to choose where their figures come from, and follow nextSteps: they are the planner flow, the only way to the plan.',
+        ' If the user requests voice from a text chat, share voiceSetup and, when voiceUrl is not null, the link to ReloCat’s own voice page. Otherwise ask the returned opening question, wait for the user to choose where their figures come from, and follow nextSteps: they are the planner flow, the only way to the plan.' +
+        (embedded
+          ? ' When voiceInCard is true, the card shown with this result holds the voice interview itself: say in one short sentence that they can press its button to talk there, or answer here in the chat, and do not repeat a question the card already asked aloud unless they answer here.'
+          : ''),
       annotations: readOnly,
       _meta: { ui: { resourceUri: voiceCardUri } },
       inputSchema: z.object({ locale: localeArgument }).strict(),
@@ -133,6 +151,8 @@ export function registerInterviewerTools(server: McpServer, options: Interviewer
         voiceSetup: z.string(),
         /** ReloCat's own voice page, or null when this server has no public address. */
         voiceUrl: z.url().nullable(),
+        /** True when the card shown with this result holds the voice interview itself. */
+        voiceInCard: z.boolean(),
         /** True when the caller is signed in, so confirmed answers can be saved with save_my_inputs. */
         signedIn: z.boolean(),
         sources: z.object({
@@ -151,6 +171,7 @@ export function registerInterviewerTools(server: McpServer, options: Interviewer
         openingQuestion: say('openingQuestion'),
         voiceSetup: say('voiceSetup'),
         voiceUrl: launchHref,
+        voiceInCard: Boolean(embedded),
         signedIn,
         sources: {
           demo: 'Call sample_cash_flow when the person chooses the fictional transactions. Its figures are fictional: say so, and use them only in the inline person of get_next_questions and plan_home_savings (monthlyInflows as person.finances.monthlyIncomeCents and monthlyCostOfLiving as person.finances.monthlyExpensesCents, euros times 100). Never save fictional figures to a real profile with save_my_inputs.',

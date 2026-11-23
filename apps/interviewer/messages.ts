@@ -17,6 +17,9 @@ export const interview = defineMessages(
     heading: 'Let’s talk about your first home',
     intro: 'Start with your bank transactions, then talk through your first-home goals.',
     ready: 'Ready to talk.',
+    readyWritten:
+      'Voice is not open on this site. Here the interview is written; to speak, use ReloCat inside ChatGPT.',
+    startWritten: 'Start the interview',
     readyResume: 'Ready to pick up where you left off.',
     start: 'Start talking',
     mute: 'Mute mic',
@@ -253,6 +256,9 @@ export const interview = defineMessages(
       heading: 'Parlem del teu primer habitatge',
       intro: 'Comença pels teus moviments bancaris i després parla dels objectius del teu primer habitatge.',
       ready: 'A punt per parlar.',
+      readyWritten:
+        'La veu no està oberta en aquest lloc. Aquí l’entrevista és per escrit; per parlar, fes servir ReloCat dins de ChatGPT.',
+      startWritten: 'Comença l’entrevista',
       readyResume: 'A punt per continuar on ho vas deixar.',
       start: 'Comença a parlar',
       mute: 'Silencia el micròfon',
@@ -495,6 +501,9 @@ export const interview = defineMessages(
       heading: 'Hablemos de tu primera vivienda',
       intro: 'Empieza por tus movimientos bancarios y después habla de los objetivos de tu primera vivienda.',
       ready: 'Todo listo para hablar.',
+      readyWritten:
+        'La voz no está abierta en este sitio. Aquí la entrevista es por escrito; para hablar, usa ReloCat dentro de ChatGPT.',
+      startWritten: 'Empieza la entrevista',
       readyResume: 'Todo listo para seguir donde lo dejaste.',
       start: 'Empieza a hablar',
       mute: 'Silencia el micrófono',

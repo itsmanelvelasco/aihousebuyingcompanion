@@ -91,6 +91,16 @@ export function createInterview(deps: {
   journey: Journey;
   /** Called after every change of the journey or of the access, so the page can store and redraw. */
   changed?: () => void;
+  /**
+   * How to find out whether somebody is signed in. Default `accessVia` (`show_workspace`), which a
+   * page of this origin may call; the card embedded in a chat asks its own way.
+   */
+  access?: (call: CallTool) => Promise<ProfileAccess>;
+  /**
+   * The sentence said once when answers are not being saved, by where the interview runs. Default:
+   * the page's own, which names its sign-in link.
+   */
+  notSavedNotice?: (access: Exclude<ProfileAccess, 'signed_in'>) => string;
 }) {
   const { call, today, locale } = deps;
   let journey = deps.journey;
@@ -248,8 +258,11 @@ export function createInterview(deps: {
     noticeSaid = true;
     return {
       stored: 'device',
-      sayOnce:
-        access === 'signed_out' ? t()('voice.signedOutNotice', { link: t()('signInToSave') }) : t()('save.unavailable'),
+      sayOnce: deps.notSavedNotice
+        ? deps.notSavedNotice(access)
+        : access === 'signed_out'
+          ? t()('voice.signedOutNotice', { link: t()('signInToSave') })
+          : t()('save.unavailable'),
     };
   }
 
@@ -439,7 +452,7 @@ export function createInterview(deps: {
      * saved as soon as the person is back signed in.
      */
     async start() {
-      access = await accessVia(call);
+      access = await (deps.access ?? accessVia)(call);
       changed();
       const outcome = access === 'signed_in' && journey.unsaved.length ? await flush() : null;
       return { access, saved: outcome };

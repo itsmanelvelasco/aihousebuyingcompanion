@@ -54,6 +54,8 @@ export type BoardOptions = {
   sharedBoard?: boolean;
   /** Paid listing search configuration, including its spending budget. Defaults to the environment. */
   listings?: ListingSearchConfig;
+  /** The interview card with voice inside it, handed to the MCP server as it is. Omitted: the simple card. */
+  interviewCard?: { page: string; origin: string };
   /** Counts new runs per client so one visitor cannot fill the store and push other runs out. */
   newRuns?: { check(request: IncomingMessage): { allowed: boolean } };
 };
@@ -73,6 +75,7 @@ export function createBoardApp({
   sharedBoard = true,
   newRuns,
   listings,
+  interviewCard,
 }: BoardOptions) {
   if (db) persistDemoRuns(db);
 
@@ -158,6 +161,7 @@ export function createBoardApp({
       dataStatus,
       townExplorerPage,
       workspacePage,
+      interviewCard,
       caller,
       listings,
       extraInstructions: boardInstructions,

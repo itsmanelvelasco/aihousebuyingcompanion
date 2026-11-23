@@ -415,9 +415,14 @@ test('a persona with confirmed facts and a habit shows what a place and a habit 
 
 test('the voice link is the configured page, else the product’s own voice page, else none', async () => {
   assert.equal(voiceUrlConfig({}), null);
-  assert.equal(voiceUrlConfig({ PUBLIC_ORIGIN: 'https://www.relo.cat' }), 'https://www.relo.cat/interview/');
+  // The own voice page is linked only when it is open to visitors.
+  assert.equal(voiceUrlConfig({ PUBLIC_ORIGIN: 'https://www.relo.cat' }), null);
   assert.equal(
-    voiceUrlConfig({ PUBLIC_ORIGIN: 'https://www.relo.cat/', RELOCAT_VOICE_URL: '' }),
+    voiceUrlConfig({ PUBLIC_ORIGIN: 'https://www.relo.cat', INTERVIEWER_PUBLIC_AI: 'on' }),
+    'https://www.relo.cat/interview/',
+  );
+  assert.equal(
+    voiceUrlConfig({ PUBLIC_ORIGIN: 'https://www.relo.cat/', RELOCAT_VOICE_URL: '', INTERVIEWER_PUBLIC_AI: 'on' }),
     'https://www.relo.cat/interview/',
   );
   assert.equal(
@@ -432,7 +437,7 @@ test('the voice link is the configured page, else the product’s own voice page
     'nonsense',
   ])
     assert.equal(
-      voiceUrlConfig({ PUBLIC_ORIGIN: 'https://www.relo.cat', RELOCAT_VOICE_URL: bad }),
+      voiceUrlConfig({ PUBLIC_ORIGIN: 'https://www.relo.cat', RELOCAT_VOICE_URL: bad, INTERVIEWER_PUBLIC_AI: 'on' }),
       'https://www.relo.cat/interview/',
       bad,
     );

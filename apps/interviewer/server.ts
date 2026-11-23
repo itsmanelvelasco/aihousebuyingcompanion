@@ -2,7 +2,15 @@ import { readFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createServer } from 'node:http';
 import { z } from 'zod';
-import { defaultPorts, envFlag, envInteger, envPort, envString, openaiModels } from '../../packages/config/env.ts';
+import {
+  defaultPorts,
+  envFlag,
+  envInteger,
+  envPort,
+  envString,
+  interviewerEmbedOriginsConfig,
+  openaiModels,
+} from '../../packages/config/env.ts';
 import { classificationLimit, expenseCategories, incomeCategories } from '../../packages/finance/csv.ts';
 import { firstScenarioInput, generateFirstScenario } from '../../packages/finance/scenario.ts';
 import type { ClientAddressSource } from '../../packages/http/rate-limit.ts';
@@ -15,6 +23,8 @@ import { inlineUi } from '../../packages/ui/inline.ts';
  * The voice and guided interviewer as a request handler, so the one server can mount it under a
  * path prefix. The page, its bundle, the demo CSV and `/scenario` are public and free. `/classify`
  * and `/voice` call OpenAI with the owner's key, so they are local-only unless `publicAi` is set.
+ * With `publicAi`, `/voice` alone also answers the other sites listed in `embedOrigins`: that is how
+ * the interview card embedded in a chat (`card.ts`) reaches it from the chat host's origin.
  * The page's plan is not computed here: the page reads `plan_home_savings` from `/mcp` on the same
  * origin. `/scenario` stays as plain savings arithmetic for other clients; the page no longer calls it.
  */
@@ -27,6 +37,14 @@ export type InterviewerOptions = {
   publicAi?: boolean;
   /** The public origin, such as `https://www.relo.cat`, accepted as same-origin behind a proxy. */
   publicOrigin?: string | null;
+  /**
+   * Other sites whose pages may call `/voice` when `publicAi` is on: origins, host suffixes such as
+   * `.oaiusercontent.com`, or `*` (`interviewerEmbedOriginsConfig`). Empty or omitted: none. The
+   * route uses no cookie, so nothing is granted but the voice exchange itself, under the same limits.
+   */
+  embedOrigins?: readonly string[];
+  /** Where operator notes go, such as an embedding origin that was refused. Default `console.warn`. */
+  log?: (message: string) => void;
   /** Paid requests one client may make per hour when `publicAi` is on. All clients share ten times this. */
   aiRequestsPerHour?: number;
   models?: { classification: string; realtime: string };
@@ -103,6 +121,27 @@ function isLocalRequest(request: IncomingMessage) {
   );
 }
 
+/**
+ * Whether `origin` (an `Origin` header) is one of the embedding origins in `rules`: `*` is any
+ * origin, an entry that starts with a dot is a host suffix of an https origin, anything else is an
+ * exact origin (or the literal `null` of a sandboxed frame).
+ */
+export function embedOriginAllowed(origin: string | undefined, rules: readonly string[]) {
+  if (!origin || !rules.length) return false;
+  if (rules.includes('*')) return true;
+  const value = origin.toLowerCase();
+  if (rules.includes(value)) return true;
+  const url = URL.parse(value);
+  return (
+    url?.protocol === 'https:' &&
+    url.origin === value &&
+    rules.some(rule => rule.startsWith('.') && url.hostname.endsWith(rule))
+  );
+}
+
+/** How many distinct refused origins are reported to the operator; more would only be noise. */
+const reportedOriginsLimit = 50;
+
 /** Build the interviewer handler. Mount it with `createInterviewerHandler({ prefix: '/interview', ... })`. */
 export function createInterviewerHandler(options: InterviewerOptions = {}): Handler {
   const prefix = (options.prefix ?? '').replace(/\/+$/, '');
@@ -111,6 +150,10 @@ export function createInterviewerHandler(options: InterviewerOptions = {}): Hand
   const publicOrigin = options.publicOrigin ? new URL(options.publicOrigin).origin : null;
   const models = options.models ?? openaiModels();
   const fetcher = options.fetcher ?? fetch;
+  // Embedding spends the same credits as the page, so it exists only where public voice does.
+  const embedOrigins = publicAi ? (options.embedOrigins ?? []) : [];
+  const log = options.log ?? (message => console.warn(message));
+  const reportedOrigins = new Set<string>();
   const perHour = z
     .number()
     .int()
@@ -128,10 +171,63 @@ export function createInterviewerHandler(options: InterviewerOptions = {}): Hand
     clientAddress: options.clientAddress,
   });
 
-  /** Why a paid request is refused, or null when its origin is acceptable. */
-  function refusal(request: IncomingMessage) {
+  /** The request comes from a page of this site: its Origin is the public origin or this Host. */
+  function isSameOrigin(request: IncomingMessage) {
+    const origin = request.headers.origin;
+    try {
+      return (
+        origin !== undefined &&
+        (origin === publicOrigin || new URL(origin).host === (request.headers.host ?? '').toLowerCase())
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /** Tell the operator, once per origin, which embedding origin was refused, so it can be allowed. */
+  function reportRefusedOrigin(origin: string) {
+    // The header is the caller's own text: it is shortened and quoted before it reaches a log.
+    const shown = JSON.stringify(origin.slice(0, 200));
+    if (reportedOrigins.has(shown) || reportedOrigins.size >= reportedOriginsLimit) return;
+    reportedOrigins.add(shown);
+    log(
+      `Voice was refused to a page of another site, origin ${shown}. If this is the chat host that shows the ReloCat interview card, add that origin to INTERVIEWER_EMBED_ORIGINS.`,
+    );
+  }
+
+  /**
+   * `/voice` called from another site, when embedding is configured. The answer is made readable to
+   * that page whatever it is (`Access-Control-Allow-Origin`), so a card that is refused can say why;
+   * what is allowed is decided here, by the allowlist, not by the browser. Nothing else is granted:
+   * the route reads no cookie, and no credentials are allowed.
+   * Returns true when the request was a preflight and has been answered.
+   */
+  function answerEmbedding(request: IncomingMessage, response: ServerResponse) {
+    const origin = request.headers.origin;
+    response.setHeader('Vary', 'Origin');
+    if (origin === undefined || isSameOrigin(request)) return false;
+    response.setHeader('Access-Control-Allow-Origin', origin);
+    if (!embedOriginAllowed(origin, embedOrigins)) reportRefusedOrigin(origin);
+    if (request.method !== 'OPTIONS') return false;
+    response
+      .writeHead(204, {
+        'Access-Control-Allow-Methods': 'POST',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '600',
+        'Cache-Control': 'no-store',
+      })
+      .end();
+    return true;
+  }
+
+  /** Why a paid request is refused, or null when its origin is acceptable. `embeddable`: the route may be called from an allowed other site. */
+  function refusal(request: IncomingMessage, embeddable = false) {
     const host = (request.headers.host ?? '').toLowerCase();
     const origin = request.headers.origin;
+    if (embeddable && embedOrigins.length && origin !== undefined && !isSameOrigin(request))
+      return embedOriginAllowed(origin, embedOrigins)
+        ? null
+        : 'Voice is not open to this site. The operator can allow its origin in INTERVIEWER_EMBED_ORIGINS.';
     if (!publicAi) {
       if (!isLocalRequest(request)) return 'Voice and OpenAI categorization are only available on the local demo.';
       return origin === `http://${host}` ? null : 'Open this feature from the local demo.';
@@ -147,8 +243,8 @@ export function createInterviewerHandler(options: InterviewerOptions = {}): Hand
   }
 
   /** Shared gate for the routes that spend OpenAI credits. Replies and returns false when refused. */
-  function allowPaid(request: IncomingMessage, response: ServerResponse, missingKey: string) {
-    const refused = refusal(request);
+  function allowPaid(request: IncomingMessage, response: ServerResponse, missingKey: string, embeddable = false) {
+    const refused = refusal(request, embeddable);
     if (refused) {
       error(response, 403, refused);
       return false;
@@ -232,7 +328,7 @@ export function createInterviewerHandler(options: InterviewerOptions = {}): Hand
     if (!request.headers['content-type']?.startsWith('application/sdp')) {
       return error(response, 415, 'Send a WebRTC session offer.');
     }
-    if (!allowPaid(request, response, 'Set OPENAI_API_KEY to enable voice.')) return;
+    if (!allowPaid(request, response, 'Set OPENAI_API_KEY to enable voice.', true)) return;
     let sdp: string;
     try {
       sdp = await readText(request, 65_536);
@@ -276,8 +372,15 @@ export function createInterviewerHandler(options: InterviewerOptions = {}): Hand
         const [file, type] = assets[route];
         const body = await readFile(file, 'utf8');
         // The page template carries theme, mark, favicon and checkpoint-illustration placeholders filled from packages/ui.
-        return sendText(response, 200, type === 'text/html' ? inlineUi(body, { art: [...stepImageIds] }) : body, type);
+        if (type !== 'text/html') return sendText(response, 200, body, type);
+        // The page is told whether voice can answer this visitor (a key, and this machine or public voice), so
+        // it offers the written interview instead of a button that would be refused.
+        const voice = apiKey && (publicAi || isLocalRequest(request)) ? 'on' : 'off';
+        const page = inlineUi(body, { art: [...stepImageIds] }).replace('<html ', `<html data-voice="${voice}" `);
+        return sendText(response, 200, page, type);
       }
+      // The card embedded in a chat calls `/voice` from the host's origin: its preflight is answered here.
+      if (route === '/voice' && embedOrigins.length && answerEmbedding(request, response)) return;
       if (request.method !== 'POST' || !Object.hasOwn(routes, route)) return error(response, 404, 'Unknown route.');
       await routes[route](request, response);
     } catch {
@@ -293,6 +396,7 @@ export function interviewerEnv(env: Record<string, string | undefined> = process
   return {
     apiKey: envString('OPENAI_API_KEY', env),
     publicAi: envFlag('INTERVIEWER_PUBLIC_AI', env),
+    embedOrigins: interviewerEmbedOriginsConfig(env),
     aiRequestsPerHour: envInteger('INTERVIEWER_AI_REQUESTS_PER_HOUR', 20, env),
     models: openaiModels(env),
   } satisfies InterviewerOptions;

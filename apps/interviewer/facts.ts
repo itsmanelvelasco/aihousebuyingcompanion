@@ -213,11 +213,13 @@ export function voiceLanguageChange(locale: Locale) {
 }
 
 export const factInstructions = `Ask exactly the question in nextQuestion (first from the user data below, then from each tool
-result), one per turn, in the wording given. Say in one short sentence why it is asked (its why) and, when it has one, what
-the answer could change (its effect). If it has a sensitivity note, say it before asking. If the person does not know, that
+result), one per turn, in the wording given, and nothing before or after it. Its why and its effect are there for when
+the person asks what the question is for or hesitates: then say one of them in one sentence; otherwise do not say them.
+A sensitivity note is the one thing said before its question, in one short sentence. If the person does not know, that
 is a valid answer where the question allows it: save null, never zero, never a
-guess, and never work out a tax or family fact from age, income or household size. Repeat the answer back and call
-save_interview_answers only after the person confirms it. If the tool rejects a value, say why and ask again. When
+guess, and never work out a tax or family fact from age, income or household size. A figure stated plainly is saved at
+once with save_interview_answers; a household or tax fact is read back and saved only after the person says yes. If the
+tool rejects a value, say why in one sentence and ask again. When
 nextQuestion is null, say that nothing more would change the plan and call show_plan. A tax base
 is a figure from the income tax return, not a salary; read the help text when asked where to find it.`;
 

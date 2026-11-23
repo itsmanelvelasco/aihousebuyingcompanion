@@ -82,6 +82,11 @@ export type McpServerOptions = {
   caller?: Caller;
   /** Built React workspace page. When present, the workspace widget and its tool are registered. */
   workspacePage?: string;
+  /**
+   * The interview card that holds the voice interview itself, with the origin it calls for voice.
+   * When present it is the `start-talking` widget; otherwise the simple card is.
+   */
+  interviewCard?: { page: string; origin: string };
   /** Freshness of the live data sources, for the `get_data_sources` tool. */
   dataStatus?: () => unknown[];
   /** Guidance appended to the server instructions by a host such as the journey board. */
@@ -342,7 +347,7 @@ export function createMcpServer(options: McpServerOptions) {
   );
 
   const caller = options.caller ?? anonymous;
-  registerInterviewerTools(server, { caller });
+  registerInterviewerTools(server, { caller, interviewCard: options.interviewCard });
   server.registerTool(
     'search_homes',
     {

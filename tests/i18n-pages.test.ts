@@ -263,9 +263,17 @@ test('the voice card is a whole document that takes its height from its content'
     assert.equal(voiceCard.es.heading, 'Tu entrevista de compra de vivienda');
   }
   const launch = renderVoiceCard('https://www.relo.cat/interview/');
-  assert.match(launch, /<a class="rc-btn rc-btn--gold launch" href="https:\/\/www\.relo\.cat\/interview\/"/);
+  // The interview starts in the chat the card is shown in: the main control is a button that sends the
+  // opening message there. The own voice page is a secondary link, only when one is given.
+  for (const card of [renderVoiceCard(null), launch]) {
+    assert.match(card, /<button type="button" class="rc-btn rc-btn--gold start-here" data-i18n="startHere">/);
+    assert.match(card, /sendFollowUpMessage/);
+    assert.match(card, /<p id="start-help" class="help" hidden="" role="status" data-i18n="instructions">/);
+    assert.doesNotMatch(card, /class="rc-btn[^"]*"[^>]*target="_blank"/, 'no button opens another tab');
+  }
+  assert.doesNotMatch(renderVoiceCard(null), /class="launch"/);
+  assert.match(launch, /<a class="launch" href="https:\/\/www\.relo\.cat\/interview\/" target="_blank"/);
   assert.match(launch, /openExternal/);
-  assert.match(launch, /<p id="launch-help" class="help" hidden="" role="status" data-i18n="instructions">/);
 });
 
 // ------------------------------------------------------------ cash-flow card

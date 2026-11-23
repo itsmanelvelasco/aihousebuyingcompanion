@@ -230,7 +230,8 @@ export function publicOriginConfig(env: Env = process.env) {
 /**
  * Where the "Start talking" card and `voiceUrl` of `start_homebuying_interview` send a person to
  * talk. `RELOCAT_VOICE_URL` when it is set: an https URL without credentials, query or fragment;
- * anything else is ignored. Otherwise the product's own voice page, `<PUBLIC_ORIGIN>/interview/`.
+ * anything else is ignored. Otherwise the product's own voice page, `<PUBLIC_ORIGIN>/interview/`,
+ * when that page is open to visitors (`INTERVIEWER_PUBLIC_AI=on`).
  * Null when neither exists (a local server without a public origin), and the card then shows the
  * steps for ChatGPT's own voice mode only.
  */
@@ -245,6 +246,10 @@ export function voiceUrlConfig(env: Env = process.env): string | null {
     !candidate.hash
   )
     return candidate.href;
+  // The product's own voice page spends the operator's OpenAI credits, so it answers visitors only
+  // when INTERVIEWER_PUBLIC_AI is on. Without it a link from outside this machine would lead to a
+  // page that cannot talk: no link, and the interview stays inside the chat.
+  if (!envFlag('INTERVIEWER_PUBLIC_AI', env)) return null;
   try {
     const origin = publicOriginConfig(env);
     return origin ? `${origin}/interview/` : null;
@@ -252,6 +257,31 @@ export function voiceUrlConfig(env: Env = process.env): string | null {
     // A malformed PUBLIC_ORIGIN is reported where the server starts; here it only means no link.
     return null;
   }
+}
+
+/**
+ * `INTERVIEWER_EMBED_ORIGINS`: the other sites whose pages may call `/interview/voice`, which is how
+ * the interview card embedded in a chat reaches voice from the chat host's own origin. A
+ * comma-separated list of origins (`https://chat.example`), host suffixes for https origins
+ * (`.oaiusercontent.com`) and `*` for any origin; `null` is the origin a sandboxed frame without
+ * one states. Empty, the default: no other site may call it. An entry that is none of these throws,
+ * so a typo is seen when the server starts and not as a card that cannot talk.
+ */
+export function interviewerEmbedOriginsConfig(env: Env = process.env) {
+  return envList('INTERVIEWER_EMBED_ORIGINS', env).map(entry => {
+    const value = entry.toLowerCase();
+    if (value === '*' || value === 'null') return value;
+    if (value.startsWith('.')) {
+      if (/^(\.[a-z0-9-]+)+$/.test(value)) return value;
+    } else {
+      const url = URL.parse(value);
+      if (url && (url.protocol === 'https:' || url.protocol === 'http:') && url.origin === value.replace(/\/$/, ''))
+        return url.origin;
+    }
+    throw new Error(
+      `INTERVIEWER_EMBED_ORIGINS: "${entry}" is not an origin (https://host), a host suffix (.example.com) or *`,
+    );
+  });
 }
 
 const demoPersonaIds = ['user-001', 'user-002', 'user-003', 'user-004'];

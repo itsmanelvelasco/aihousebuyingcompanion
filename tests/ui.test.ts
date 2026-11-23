@@ -119,7 +119,7 @@ test('the product is written ReloCat on every surface, with shared theme and no 
       `${path} has no placeholder left`,
     );
   }
-  assert.match(renderVoiceCard(null), /--rc-paper:[\s\S]*class="rc-btn rc-btn--gold"/);
+  assert.match(renderVoiceCard(null), /--rc-paper:[\s\S]*class="rc-btn rc-btn--gold start-here"/);
   // Emoji and block glyphs used to stand in for icons; the SVG set replaces them.
   const glyphs = /[⌂▂▅█★✓☕]|\p{Extended_Pictographic}️?/u;
   for (const path of [

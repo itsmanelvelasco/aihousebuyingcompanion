@@ -632,7 +632,10 @@ test('the page carries the trail, the plan link and the sign-in link, and the sc
   assert.doesNotMatch(template, /id="fields"|id="profile"/);
   const script = await readFile(new URL('../apps/interviewer/app.ts', import.meta.url), 'utf8');
   for (const tool of voiceTools().slice(0, 5)) assert(script.includes(`case '${tool.name}':`), tool.name);
-  assert.match(script, /sessionUpdate\(context\)/);
+  // The call itself (peer, data channel, turn-taking) is the module the page shares with the card.
+  assert.match(script, /startVoiceCall\(\{\s+endpoint: 'voice',\s+context: voiceContext,\s+runTool: runVoiceTool,/);
+  const call = await readFile(new URL('../apps/interviewer/realtime.ts', import.meta.url), 'utf8');
+  assert.match(call, /sessionUpdate\(context\)/);
   // A refused session setting falls back once instead of ending the conversation.
-  assert.match(script, /sessionUpdate\(await voiceContext\(\), \{ transcription: false \}\)/);
+  assert.match(call, /sessionUpdate\(context, \{ transcription: false \}\)/);
 });

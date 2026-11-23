@@ -25,34 +25,34 @@ function widgetScript() {
 export function renderVoiceCard(launchUrl: string | null) {
   const text = voiceCard.en;
   const said = (key: keyof typeof text) => ({ 'data-i18n': key });
-  const control = launchUrl
-    ? h(
-        'div',
-        null,
-        h(
-          'a',
-          {
-            className: 'rc-btn rc-btn--gold launch',
-            href: launchUrl,
-            target: '_blank',
-            rel: 'noopener noreferrer',
-            ...said('start'),
-          },
-          text.start,
-        ),
-        h('p', { className: 'help', ...said('opens') }, text.opens),
-        h(
+  // The interview starts in the chat the card is shown in: the button sends the opening message
+  // there. Nothing opens elsewhere. The product's own voice page is a secondary link, present only
+  // when that page can serve the person (`launchUrl`).
+  const control = h(
+    'div',
+    null,
+    h('button', { type: 'button', className: 'rc-btn rc-btn--gold start-here', ...said('startHere') }, text.startHere),
+    h('p', { id: 'start-sent', className: 'help', hidden: true, role: 'status', ...said('sent') }, text.sent),
+    h(
+      'p',
+      { id: 'start-help', className: 'help', hidden: true, role: 'status', ...said('instructions') },
+      text.instructions,
+    ),
+    h('p', { className: 'help', ...said('voiceTip') }, text.voiceTip),
+    launchUrl
+      ? h(
           'p',
-          { id: 'launch-help', className: 'help', hidden: true, role: 'status', ...said('instructions') },
-          text.instructions,
-        ),
-      )
-    : h(
-        'details',
-        null,
-        h('summary', { className: 'rc-btn rc-btn--gold', ...said('start') }, text.start),
-        h('p', { className: 'help', ...said('instructions') }, text.instructions),
-      );
+          { className: 'help' },
+          h(
+            'a',
+            { className: 'launch', href: launchUrl, target: '_blank', rel: 'noopener noreferrer', ...said('start') },
+            text.start,
+          ),
+          ' · ',
+          h('span', said('opens'), text.opens),
+        )
+      : null,
+  );
   const card = h(
     'main',
     { 'aria-labelledby': 'title' },
@@ -84,8 +84,7 @@ ${themeCss()}
   .orb .rc-icon { width: 36px; height: 36px; }
   h1 { font-size: var(--rc-text-2xl); }
   p { margin: 8px auto 20px; max-width: 30rem; color: var(--rc-on-night-muted); }
-  details > summary { display: inline-flex; color: var(--rc-gold-ink); }
-  details > summary::before { display: none; }
+  .launch { color: var(--rc-gold); }
   .help { margin: 12px auto 0; max-width: 25rem; font-size: var(--rc-text-sm); }
   .rc-lang { justify-content: center; margin-top: 12px; }
   .rc-lang:empty { display: none; }

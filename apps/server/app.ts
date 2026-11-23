@@ -21,6 +21,9 @@ import type { BoardOptions, CallerResolution } from '../board/server.ts';
 import { createBoardApp } from '../board/server.ts';
 import type { HabitsOptions } from '../habits-agent/server.ts';
 import { createHabitsHandler } from '../habits-agent/server.ts';
+import type { InterviewCard } from '../interviewer/card-page.ts';
+import { embeddedInterviewCard } from '../interviewer/card-page.ts';
+import { interviewerEnv } from '../interviewer/server.ts';
 import type { Caller } from '../mcp-server/identity.ts';
 import type { ProfileApiOptions } from '../profile-api/server.ts';
 import { createProfileApiHandler } from '../profile-api/server.ts';
@@ -54,6 +57,12 @@ export type AppOptions = {
   dataStatus?: BoardOptions['dataStatus'];
   /** Voice and guided interview, mounted under `/interview`. */
   interviewer?: (request: IncomingMessage, response: ServerResponse) => unknown;
+  /**
+   * The interview card with voice inside it, shown in a chat by `start_homebuying_interview`. Omitted:
+   * decided from the environment, and built only when `/interview/voice` can answer a card embedded
+   * in a chat (a key, public voice, a public origin and `INTERVIEWER_EMBED_ORIGINS`). Null: the simple card.
+   */
+  interviewCard?: InterviewCard | null;
   /**
    * Banc Demo's customer pages (its consent page), mounted under `path` on this origin so a person
    * reaches them wherever they reach ReloCat. `handle` receives the request with `path` removed
@@ -335,8 +344,15 @@ export function createApp(options: AppOptions) {
     return resolution;
   }
 
+  // This file is the composition root: the card is built by the interviewer and handed to the MCP server.
+  const interviewCard =
+    options.interviewCard === undefined
+      ? embeddedInterviewCard({ publicOrigin, ...interviewerEnv() })
+      : (options.interviewCard ?? undefined);
+
   const board = createBoardApp({
     publicOrigin,
+    interviewCard,
     allowedOrigins: options.allowedOrigins,
     data: options.data,
     dataStatus: options.dataStatus,
