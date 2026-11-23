@@ -24,6 +24,9 @@ import {
   transportQuery,
   transportResult,
 } from '../../packages/contracts/places.ts';
+import type { Locale } from '../../packages/i18n/locales.ts';
+import { translator } from '../../packages/i18n/messages.ts';
+import { toolLocale } from '../../packages/i18n/server.ts';
 import type { ListingSearchConfig } from '../../packages/listings/search.ts';
 import { searchHomes } from '../../packages/listings/search.ts';
 import { getNearbySchools, getTransportOptions } from '../../packages/places/access.ts';
@@ -37,16 +40,16 @@ import type { Caller } from './identity.ts';
 import { anonymous } from './identity.ts';
 import { interviewerRouting, registerInterviewerTools } from './interview-tools.ts';
 import { registerPlannerTools } from './planner-tools.ts';
+import { toolMessages } from './tools.messages.ts';
 import { registerTownExplorer } from './town-explorer.ts';
 import { registerWorkspace } from './workspace.ts';
 
 const lleidaCode = '251207';
 const placeCoverage =
   'Selected Catalan municipalities, including the FGC Lleida–La Pobla corridor and Lleida as a transport destination.';
-const fiscalLimitations = [
-  'Eligibility is a screening result based on declared facts and the official rules verified in the snapshot.',
-  'For tax measures, the measure’s effective dates apply. Call status is unknown because tax claims do not have a grant application window.',
-];
+/** How the model chooses the language of a result: said once in the server instructions. */
+export const languageGuidance =
+  'Tools that return text for display (recommend_towns, recommend_towns_for_profile, get_town_profile, get_applicable_incentives, check_housing_incentives, plan_home_savings, get_next_questions, get_place) take an optional locale: pass ca, es or en to match the language the person writes in, and answer in that language. Codes, ids, statuses and numbers are the same in every language.';
 const businessKinds = new Set([
   'registered_unemployment',
   'resident_social_security_affiliates',
@@ -94,7 +97,8 @@ export function createMcpServer(options: McpServerOptions) {
     {
       instructions:
         interviewerRouting +
-        ' Use ReloCat to compare selected Catalan municipalities from a dated official-data snapshot. Cite evidence URLs. Explain geographic proxies and use the actual school and service dates. Describe sample travel times as approximate, with the transport mode and sample date. Distinguish policy eligibility from application status. Do not infer user finances, schooling, residence or tax facts.' +
+        ' Use ReloCat to compare selected Catalan municipalities from a dated official-data snapshot. Cite evidence URLs. Explain geographic proxies and use the actual school and service dates. Describe sample travel times as approximate, with the transport mode and sample date. Distinguish policy eligibility from application status. Do not infer user finances, schooling, residence or tax facts. ' +
+        languageGuidance +
         (options.extraInstructions ? ` ${options.extraInstructions}` : ''),
     },
   );
@@ -138,8 +142,9 @@ export function createMcpServer(options: McpServerOptions) {
       outputSchema: recommendationResult,
       annotations: readOnly,
     },
-    input => {
-      const recommendation = recommendTowns(snapshot, policies, input, today());
+    (input, extra) => {
+      const locale = toolLocale(input.locale, extra._meta);
+      const recommendation = recommendTowns(snapshot, policies, input, today(), undefined, locale);
       const names = recommendation.towns.map(town => town.municipality.name);
       const summary = names.length
         ? `${names.join(', ')} meet the requested pilot screening criteria.`
@@ -158,8 +163,9 @@ export function createMcpServer(options: McpServerOptions) {
       outputSchema: profileRecommendationResult,
       annotations: readOnly,
     },
-    input => {
-      const recommendation = recommendTownsForProfile(snapshot, policies, input, today());
+    (input, extra) => {
+      const locale = toolLocale(input.locale, extra._meta);
+      const recommendation = recommendTownsForProfile(snapshot, policies, input, today(), locale);
       const { status, followUps, verificationNeeded, ignoredCriteria } = recommendation.profileAssessment;
       const names = recommendation.towns.map(town => town.municipality.name).join(', ');
       const summary =
@@ -188,27 +194,27 @@ export function createMcpServer(options: McpServerOptions) {
       outputSchema: profileResult,
       annotations: readOnly,
     },
-    input => {
+    (input, extra) => {
+      const locale = toolLocale(input.locale, extra._meta);
       const town = getTown(snapshot, input.municipalityCode);
       const asOf = today();
       const travelDate = input.travelDate ?? nextSchoolDay(asOf);
       const stops = snapshot.rail.stops.filter(stop => stop.municipalityCode === town.code);
       const sampleConnectionToLleida =
         stops.length && town.code !== lleidaCode
-          ? getTransportOptions(snapshot, {
-              municipalityCode: town.code,
-              destinationCode: lleidaCode,
-              travelDate,
-              limit: 3,
-            })
+          ? getTransportOptions(
+              snapshot,
+              { municipalityCode: town.code, destinationCode: lleidaCode, travelDate, limit: 3 },
+              locale,
+            )
           : null;
       return result(`${town.name}, ${town.comarca} · municipal profile from the ${metadata.generatedOn} snapshot.`, {
         snapshot: metadata,
         municipality: town,
-        relocation: getRelocationResearch(snapshot, town.code, asOf),
+        relocation: getRelocationResearch(snapshot, town.code, asOf, locale),
         metrics: snapshot.townMetrics[town.code],
         comarcaMetrics: snapshot.comarcaMetrics[town.comarca] ?? [],
-        nearbySchools: getNearbySchools(snapshot, { municipalityCode: town.code, limit: 6 }, travelDate),
+        nearbySchools: getNearbySchools(snapshot, { municipalityCode: town.code, limit: 6 }, travelDate, locale),
         travelEstimates: travelEstimates[town.code] ?? [],
         railway: {
           stops,
@@ -218,7 +224,7 @@ export function createMcpServer(options: McpServerOptions) {
           sourceUrl: snapshot.rail.sourceUrl,
         },
         services: [...(snapshot.services?.[town.code] ?? []), ...(derivedServices(snapshot)[town.code] ?? [])],
-        incentives: evaluateIncentives(policies, town, input, asOf).filter(
+        incentives: evaluateIncentives(policies, town, input, asOf, locale).filter(
           incentive => incentive.geographicStatus !== 'does_not_apply',
         ),
         dataMissing: [...missingMetrics(snapshot, town.code), ...(!stops.length ? ['local_fgc_rail_stop'] : [])],
@@ -263,10 +269,11 @@ export function createMcpServer(options: McpServerOptions) {
     },
   );
 
-  function policyResponse(input: IncentivesInput, includeExcluded: boolean) {
+  function policyResponse(input: IncentivesInput, includeExcluded: boolean, locale: Locale) {
+    const t = translator(toolMessages, locale);
     const town = getTown(snapshot, input.municipalityCode);
     const asOf = today();
-    const incentives = evaluateIncentives(policies, town, input, asOf).filter(
+    const incentives = evaluateIncentives(policies, town, input, asOf, locale).filter(
       incentive => includeExcluded || incentive.geographicStatus !== 'does_not_apply',
     );
     return result(`${incentives.length} housing measures for ${town.name} in the pilot catalogue.`, {
@@ -275,7 +282,7 @@ export function createMcpServer(options: McpServerOptions) {
       evaluatedOn: input.eventDate ?? asOf,
       asOf,
       incentives,
-      limitations: fiscalLimitations,
+      limitations: [t('fiscalScreening'), t('fiscalTaxDates')],
     });
   }
 
@@ -289,7 +296,7 @@ export function createMcpServer(options: McpServerOptions) {
       outputSchema: incentivesResult,
       annotations: readOnly,
     },
-    input => policyResponse(input, false),
+    (input, extra) => policyResponse(input, false, toolLocale(input.locale, extra._meta)),
   );
 
   server.registerTool(
@@ -302,7 +309,7 @@ export function createMcpServer(options: McpServerOptions) {
       outputSchema: incentivesResult,
       annotations: readOnly,
     },
-    input => policyResponse(input, true),
+    (input, extra) => policyResponse(input, true, toolLocale(input.locale, extra._meta)),
   );
 
   server.registerTool(

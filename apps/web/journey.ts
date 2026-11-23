@@ -1,5 +1,8 @@
 import type { PlanResult } from '../../packages/contracts/planner.ts';
+import { defaultLocale, type Locale } from '../../packages/i18n/locales.ts';
+import { translator } from '../../packages/i18n/messages.ts';
 import { formatDuration } from './format.ts';
+import { journeyMessages } from './messages/journey.messages.ts';
 
 /**
  * The journey as a trail of seven checkpoints, read from what the planner and the bank feed
@@ -58,9 +61,8 @@ export type JourneyInput = {
 
 type Verdict = { reached: boolean | null; detail: string };
 
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
-
-function verdicts(input: JourneyInput): Record<JourneyStepId, Verdict> {
+function verdicts(input: JourneyInput, locale: Locale): Record<JourneyStepId, Verdict> {
+  const t = translator(journeyMessages, locale);
   const { result, placeCount, bankMovements, bankSynthetic } = input;
   const questions = result?.nextQuestions ?? null;
   const open = (kinds: string[]) =>
@@ -74,94 +76,92 @@ function verdicts(input: JourneyInput): Record<JourneyStepId, Verdict> {
   const reachedPlan = plans.find(plan => plan.status === 'target_reached');
   const months = plans.flatMap(plan => (plan.withPlaceBenefits?.months != null ? [plan.withPlaceBenefits.months] : []));
   const shortest = months.length ? Math.min(...months) : null;
+  // A question's label is the server's text, already in the language the plan was asked in.
+  const lower = (label: string) => label.toLocaleLowerCase(locale);
 
   return {
     'step-profile': !result
-      ? { reached: null, detail: 'Choose whose plan to show, or type a few figures to start.' }
+      ? { reached: null, detail: t('profileChoose') }
       : known === null
-        ? { reached: true, detail: 'A household is on screen.' }
+        ? { reached: true, detail: t('profileOnScreen') }
         : known > 0
-          ? { reached: true, detail: `${plural(known, 'fact')} about the household on record.` }
-          : {
-              reached: false,
-              detail: 'Nothing is known about the household yet. Answer the first question to set off.',
-            },
+          ? { reached: true, detail: t('profileFacts', { count: known }) }
+          : { reached: false, detail: t('profileNothing') },
     'step-money': !result
-      ? { reached: null, detail: 'Income, spending and savings are needed for a timeline.' }
+      ? { reached: null, detail: t('moneyNeeded') }
       : questions === null
-        ? { reached: null, detail: 'This plan does not say which figures are missing.' }
+        ? { reached: null, detail: t('moneyNotSaid') }
         : required.length === 0
-          ? { reached: true, detail: 'The figures a timeline needs are all there.' }
+          ? { reached: true, detail: t('moneyAllThere') }
           : {
               reached: false,
-              detail: `Still needed for a timeline: ${required
-                .slice(0, 3)
-                .map(question => question.label.toLowerCase())
-                .join(', ')}.`,
+              detail: t('moneyStill', {
+                items: required
+                  .slice(0, 3)
+                  .map(question => lower(question.label))
+                  .join(', '),
+              }),
             },
     'step-bank':
       bankMovements === null
-        ? { reached: null, detail: 'Optional: bank movements replace declared figures with observed ones.' }
+        ? { reached: null, detail: t('bankOptional') }
         : bankMovements > 0
           ? {
               reached: true,
-              detail: `${plural(bankMovements, 'booked movement')} behind the last three months${
-                bankSynthetic === true ? ', from a fictional bank feed' : ''
-              }.`,
+              detail: t(bankSynthetic === true ? 'bankMovementsFictional' : 'bankMovements', { count: bankMovements }),
             }
-          : { reached: false, detail: 'No bank movements yet. Connect a bank or import a statement.' },
+          : { reached: false, detail: t('bankNone') },
     'step-places':
       placeCount >= 2
-        ? { reached: true, detail: `${plural(placeCount, 'place')} side by side.` }
+        ? { reached: true, detail: t('placesMany', { count: placeCount }) }
         : placeCount === 1
-          ? { reached: false, detail: 'One place so far. Add another to compare what each offers.' }
-          : { reached: false, detail: 'Add two or more places to compare what each offers.' },
+          ? { reached: false, detail: t('placesOne') }
+          : { reached: false, detail: t('placesNone') },
     'step-aid': !result
-      ? { reached: null, detail: 'Aid and tax reliefs are screened once there is a plan.' }
+      ? { reached: null, detail: t('aidLater') }
       : questions === null
-        ? { reached: null, detail: 'This plan does not say which facts are still undecided.' }
+        ? { reached: null, detail: t('aidNotSaid') }
         : placeCount === 0
-          ? { reached: false, detail: 'Aid depends on the place. Add a place first.' }
+          ? { reached: false, detail: t('aidNoPlace') }
           : deciding.length === 0
-            ? { reached: true, detail: 'Every fact that decides a measure here has an answer.' }
-            : {
-                reached: false,
-                detail: `${plural(deciding.length, 'answer')} could still change the aid or the tax. Next: ${deciding[0].label.toLowerCase()}.`,
-              },
+            ? { reached: true, detail: t('aidAllAnswered') }
+            : { reached: false, detail: t('aidOpen', { count: deciding.length, next: lower(deciding[0].label) }) },
     'step-habits': !result
-      ? { reached: null, detail: 'Habits change how much is saved each month.' }
+      ? { reached: null, detail: t('habitsLater') }
       : activeHabits > 0
-        ? { reached: true, detail: `${plural(activeHabits, 'active habit')}.` }
-        : { reached: false, detail: 'No active habit yet. Switch one on to see what it changes.' },
+        ? { reached: true, detail: t('habitsActive', { count: activeHabits }) }
+        : { reached: false, detail: t('habitsNone') },
     'step-ready': !result
-      ? { reached: null, detail: 'The last checkpoint: the upfront cash is covered.' }
+      ? { reached: null, detail: t('readyLater') }
       : reachedPlan
-        ? { reached: true, detail: `The upfront cash is covered in ${reachedPlan.place.name}.` }
+        ? { reached: true, detail: t('readyCovered', { place: reachedPlan.place.name }) }
         : shortest !== null
-          ? { reached: false, detail: `${formatDuration(shortest)} to go at the shortest timeline on screen.` }
-          : { reached: false, detail: 'No finite timeline yet, so the distance to this checkpoint is unknown.' },
+          ? { reached: false, detail: t('readyToGo', { duration: formatDuration(shortest, locale) }) }
+          : { reached: false, detail: t('readyUnknown') },
   };
 }
 
-const titles: Record<JourneyStepId, string> = {
-  'step-profile': 'About you',
-  'step-money': 'Your money',
-  'step-bank': 'Your bank',
-  'step-places': 'Compare places',
-  'step-aid': 'Aid and tax',
-  'step-habits': 'Saving habits',
-  'step-ready': 'Ready to buy',
-};
+const titles = {
+  'step-profile': 'titleProfile',
+  'step-money': 'titleMoney',
+  'step-bank': 'titleBank',
+  'step-places': 'titlePlaces',
+  'step-aid': 'titleAid',
+  'step-habits': 'titleHabits',
+  'step-ready': 'titleReady',
+} as const;
 
-export function journey(input: JourneyInput): Journey {
-  const verdict = verdicts(input);
+/** The trail in one language; English when none is stated. */
+export function journey(input: JourneyInput, locale: Locale = defaultLocale): Journey {
+  const t = translator(journeyMessages, locale);
+  const verdict = verdicts(input, locale);
   // The first checkpoint that is known not to be reached is the one to work on.
   const currentId = journeyStepIds.find(id => verdict[id].reached === false) ?? null;
   const steps = journeyStepIds.map(id => {
     const { reached, detail } = verdict[id];
     const state: JourneyStepState =
       reached === true ? 'done' : reached === null ? 'unknown' : id === currentId ? 'current' : 'ahead';
-    return { id, title: titles[id], state, detail };
+    return { id, title: t(titles[id]), state, detail };
   });
   return {
     steps,

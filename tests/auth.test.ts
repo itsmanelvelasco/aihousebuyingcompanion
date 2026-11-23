@@ -1,10 +1,19 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import test from 'node:test';
+import { consentPageMessages } from '../apps/demo-bank/consent.messages.ts';
 import { createHabitStore } from '../apps/habits-agent/store.ts';
 import { mcpEndpoint } from '../apps/mcp-server/connect-page.ts';
 import { createMcpServer } from '../apps/mcp-server/tools.ts';
+import { accountMessages } from '../apps/server/account.messages.ts';
+import { authMessages } from '../apps/server/auth.messages.ts';
+import { bankMessages } from '../apps/server/bank.messages.ts';
+import { consentMessages, scopeMessage } from '../apps/server/consent.messages.ts';
+import { localizeRefusal, refusalMessages } from '../apps/server/errors.messages.ts';
+import { accountPage, type BankSection, consentPage, euros } from '../apps/server/pages.ts';
 import { type AuthError, createAccounts } from '../packages/auth/accounts.ts';
+import { allScopes, type Scope, scopes } from '../packages/auth/oauth.ts';
 import { hashPassword, verifyPassword } from '../packages/auth/passwords.ts';
 import { csrfToken, verifyCsrf } from '../packages/auth/secrets.ts';
 import { createThrottle } from '../packages/auth/throttle.ts';
@@ -2652,4 +2661,313 @@ test('a new account’s documents say synthetic: false by themselves, with or wi
   for (const section of sections)
     assert.deepEqual([section.synthetic, JSON.parse(section.document).synthetic], [0, false]);
   db.close();
+});
+
+// ------------------------------------------------------------------ languages
+
+const plainSpaces = (text: string) => text.replace(/[  ]/g, ' ');
+
+test('account pages are written in the language of the request, and English is the default', async t => {
+  const server = await startApp();
+  t.after(() => server.close());
+  const get = (path: string, headers: Record<string, string> = {}) => fetch(`${server.origin}${path}`, { headers });
+
+  const english = await get('/signup');
+  const englishHtml = await english.text();
+  assert.match(englishHtml, /<html lang="en">/);
+  assert.match(englishHtml, /<h1>Create your account<\/h1>/);
+  assert.equal(english.headers.get('content-language'), 'en');
+  assert.equal(english.headers.get('vary'), 'Accept-Language, Cookie');
+  assert.match(english.headers.get('content-security-policy') ?? '', /^default-src 'none'; style-src 'unsafe-inline'/);
+  assert.doesNotMatch(englishHtml, /<script/i);
+  // The switcher: three links to this page, the current one marked.
+  assert.match(englishHtml, /<a href="\/signup\?lang=ca" lang="ca" hreflang="ca">Català<\/a>/);
+  assert.match(englishHtml, /<a href="\/signup\?lang=en" lang="en" hreflang="en" aria-current="true">English<\/a>/);
+
+  // The browser's preference decides when nothing was chosen; it sets no cookie.
+  const catalan = await get('/signup', { 'Accept-Language': 'ca-ES,ca;q=0.9,en;q=0.5' });
+  const catalanHtml = await catalan.text();
+  assert.match(catalanHtml, /<html lang="ca">/);
+  assert.match(catalanHtml, /<h1>Crea el teu compte<\/h1>/);
+  assert.match(catalanHtml, /Com a mínim 10 caràcters\./);
+  assert.equal(catalan.headers.get('content-language'), 'ca');
+  assert(!catalan.headers.getSetCookie().some(cookie => cookie.startsWith('rc_lang=')));
+  // Same form, same field names, whatever the language.
+  for (const field of ['name="csrf"', 'name="email"', 'name="password"', 'action="/signup"'])
+    assert(catalanHtml.includes(field), field);
+
+  // `?lang=` wins over the browser and is remembered, next to the CSRF cookie of the form.
+  const spanish = await get('/login?lang=es', { 'Accept-Language': 'ca' });
+  const spanishHtml = await spanish.text();
+  assert.match(spanishHtml, /<html lang="es">/);
+  assert.match(spanishHtml, /<h1>Iniciar sesión<\/h1>/);
+  const cookies = spanish.headers.getSetCookie();
+  assert(cookies.includes('rc_lang=es; Path=/; Max-Age=31536000; SameSite=Lax'), cookies.join(' | '));
+  assert(
+    cookies.some(cookie => cookie.startsWith('rc_pre=') && cookie.includes('HttpOnly')),
+    cookies.join(' | '),
+  );
+
+  // Anything that is not one of the three languages is ignored: never reflected, never stored.
+  for (const bad of ['%22%3E%3Cscript%3Ealert(1)%3C/script%3E', 'fr', 'zz%0d%0aSet-Cookie:x=1', '']) {
+    const response = await get(`/login?lang=${bad}`);
+    const html = await response.text();
+    assert.match(html, /<html lang="en">/, bad);
+    assert.doesNotMatch(html, /<script|alert\(1\)/i, bad);
+    assert(!response.headers.getSetCookie().some(cookie => cookie.startsWith('rc_lang=')), bad);
+  }
+  // A regional tag is reduced to its language: the cookie only ever holds one of the three values.
+  const regional = await get('/login?lang=CA-es');
+  assert(regional.headers.getSetCookie().includes('rc_lang=ca; Path=/; Max-Age=31536000; SameSite=Lax'));
+
+  // `next` is handled as before: an outside address is dropped, an accepted one is kept.
+  const outside = await (await get('/login?lang=ca&next=https://evil.example/')).text();
+  assert.doesNotMatch(outside, /evil\.example/);
+  const inside = await (await get('/login?lang=ca&next=%2Faccount')).text();
+  assert.match(inside, /name="next" value="\/account"/);
+  assert.match(inside, /<a href="\/login\?next=%2Faccount&#38;lang=es" lang="es"/);
+});
+
+test('a chosen language survives form posts and redirects, and refusals are translated', async t => {
+  const server = await startApp();
+  t.after(() => server.close());
+  const browser = server.browser();
+  await browser.request('/login?lang=es');
+
+  // A POST carries no `?lang`: the cookie decides. The session and CSRF cookies still work.
+  const wrong = await browser.login('nobody@example.com', 'not the password');
+  assert.equal(wrong.status, 400);
+  const wrongHtml = await wrong.text();
+  assert.match(wrongHtml, /<html lang="es">/);
+  assert.match(wrongHtml, /role="alert">El correo electrónico o la contraseña no son correctos\.</);
+  assert.equal(wrong.headers.get('content-language'), 'es');
+
+  const short = await browser.signUp('idioma@example.com', 'short');
+  assert.equal(short.status, 400);
+  assert.match(await short.text(), /Elige una contraseña de entre 10 y 200 caracteres\./);
+
+  const signedUp = await browser.signUp('idioma@example.com');
+  assert.equal(signedUp.status, 303);
+  assert.equal(signedUp.headers.get('location'), '/account');
+  const account = await (await browser.request('/account')).text();
+  assert.match(account, /<html lang="es">/);
+  assert.match(account, /<h1>Tu cuenta<\/h1>/);
+  assert.match(account, /<dt>Último inicio de sesión<\/dt>/);
+  assert.match(account, /<dt>Movimientos bancarios<\/dt><dd>0<\/dd>/);
+  assert.match(account, /No hay ningún banco conectado\./);
+  assert.match(account, /<a href="\/account\?lang=ca" lang="ca" hreflang="ca">Català<\/a>/);
+
+  // Switching on the account page keeps the session, and the next refusal comes in the new language.
+  const switched = await browser.request('/account?lang=ca&done=category');
+  const switchedHtml = await switched.text();
+  assert.match(switchedHtml, /<h1>El teu compte<\/h1>/);
+  assert.match(switchedHtml, /role="status">S’ha desat la categoria\.</);
+  assert.doesNotMatch(switchedHtml, /href="\/account\?done=/, 'the switcher does not repeat a notice');
+  const csrf = /name="csrf" value="([^"]+)"/.exec(switchedHtml)?.[1] ?? '';
+  const refusedChange = await browser.request('/account/password', {
+    form: { csrf, current: 'not the password', next: 'another long password' },
+  });
+  assert.equal(refusedChange.status, 400);
+  assert.match(await refusedChange.text(), /La contrasenya actual no és correcta\. No s’ha canviat res\./);
+  const forged = await browser.request('/account/password', { form: { csrf: 'forged', current: 'x', next: 'y' } });
+  assert.equal(forged.status, 403);
+  assert.match(await forged.text(), /Aquest formulari ha caducat\./);
+
+  // The consent screen: the same hidden fields and decisions, the scopes in Catalan.
+  const { body: client } = await registerClient(server.origin);
+  const { challenge } = pkce();
+  const params = {
+    response_type: 'code',
+    client_id: client.client_id,
+    redirect_uri: 'https://client.example/callback',
+    state: 'state-123',
+    scope: everyScope,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    resource: `${server.site}/mcp`,
+  };
+  const consent = await browser.request(`/oauth/authorize?${new URLSearchParams(params)}`);
+  const consentHtml = await consent.text();
+  assert.equal(consent.status, 200);
+  assert.match(consentHtml, /<h1>Vols connectar Test client\?<\/h1>/);
+  assert.match(
+    consentHtml,
+    /<li>Llegir les dades de la teva llar, les teves finances, el resum bancari i els teus hàbits<\/li>/,
+  );
+  assert.match(consentHtml, /mai els teus moviments individuals, i no pot moure diners<\/li>/);
+  assert.match(consentHtml, /name="decision" value="allow">Permet l’accés</);
+  assert.match(consentHtml, /name="decision" value="deny">Denega l’accés</);
+  for (const name of Object.keys(params)) assert(consentHtml.includes(`name="${name}"`), name);
+  assert.match(consent.headers.get('content-security-policy') ?? '', /form-action 'self' https:\/\/client\.example$/);
+  const allowed = await browser.request('/oauth/authorize', {
+    form: { ...params, csrf: /name="csrf" value="([^"]+)"/.exec(consentHtml)?.[1] ?? '', decision: 'allow' },
+  });
+  assert.equal(allowed.status, 303);
+  assert.match(allowed.headers.get('location') ?? '', /^https:\/\/client\.example\/callback\?code=/);
+
+  // An unknown application is refused in the person's language too.
+  const unknown = await browser.request(`/oauth/authorize?${new URLSearchParams({ ...params, client_id: 'nobody' })}`);
+  assert.equal(unknown.status, 400);
+  assert.match(await unknown.text(), /Aquesta aplicació no està registrada a ReloCat\./);
+});
+
+test('the page functions: English by default, dates, counts and money per language, unknown as a word', () => {
+  const bank: BankSection = {
+    available: true,
+    banks: [{ id: 'demo', displayName: 'Banc <Demo>', synthetic: true, connect: 'consent_at_bank' }],
+    connections: [],
+    pendingConsents: [{ providerId: 'demo', expiresAt: '2026-11-23T10:15:00.000Z' }],
+    accounts: [
+      { id: 'a1', name: 'Compte corrent', balanceCents: null, synthetic: true },
+      { id: 'manual-import', name: 'Statements you imported', balanceCents: -1_840_055, synthetic: false },
+    ],
+    imports: [
+      {
+        id: 'i1',
+        createdAt: '2026-11-20T10:00:00.000Z',
+        rowCount: 1,
+        coveredFrom: '2026-09-01',
+        coveredTo: '2026-10-31',
+      },
+    ],
+    movements: [
+      {
+        id: 'm1',
+        accountId: 'a1',
+        date: '2026-11-21',
+        description: 'Nòmina',
+        amountCents: 290_000,
+        category: 'income',
+        status: 'pending',
+        synthetic: true,
+        categoryChosen: true,
+      },
+    ],
+    total: 1482,
+    page: 1,
+    pageSize: 25,
+    manualAccountId: 'manual-import',
+  };
+  const input = {
+    csrf: 'token',
+    account: { email: 'a@example.com' },
+    stored: { userId: 'p1', createdAt: '2026-10-02T09:14:00.000Z', lastLoginAt: null, counts: [], answers: [] },
+    clients: [
+      { grantId: 'g', clientName: 'ChatGPT', scopes: ['person:read'] as Scope[], connectedAt: '2026-11-01T12:00:00Z' },
+    ],
+    bank,
+  };
+  const en = accountPage(input);
+  assert.equal(accountPage(input, { locale: 'en' }), en);
+  assert.doesNotMatch(en, /rc-lang" aria-label/, 'a page rendered without a path has no switcher');
+  assert.match(en, /<dd>2026-10-02<\/dd>/);
+  assert.match(en, /<dt>Last sign-in<\/dt><dd>never<\/dd>/);
+  assert.match(en, /<td class="num">unknown<\/td>/);
+  assert.match(en, /<td class="num">−€18,400\.55<\/td>/);
+  assert.match(en, /1 authorisation\(s\) started at a bank and not finished; they lapse by 2026-11-23 10:15 UTC\./);
+  assert.match(en, /2026-09-01 to 2026-10-31 · 1 rows/);
+  assert.match(en, /1482 movement\(s\) · page 1 of 60/);
+  assert.match(en, /Connected 2026-11-01 · Read your household, finances, bank summary and habits/);
+  assert.match(en, /aria-label="Connect Banc &lt;Demo&gt;">Connect</);
+
+  const ca = plainSpaces(accountPage(input, { locale: 'ca', path: '/account' }));
+  assert.match(ca, /<html lang="ca">/);
+  assert.match(ca, /<dt>Darrer inici de sessió<\/dt><dd>mai<\/dd>/);
+  assert.match(ca, /<td class="num">desconegut<\/td>/);
+  assert.match(ca, /<td class="num">−18\.400,55 €<\/td>/);
+  assert.match(ca, /Extractes que has importat <span class="tag">net dels moviments importats<\/span>/);
+  assert.match(
+    ca,
+    /Hi ha 1 autorització iniciada en un banc i no acabada; caduca com a molt tard el 23 [^<]*2026, 10:15 UTC\./,
+  );
+  assert.match(ca, /· 1 fila\n/);
+  assert.match(ca, /1\.482 moviments · pàgina 1 de 60/);
+  assert.match(ca, /<span class="tag">pendent<\/span> <span class="tag">dades fictícies<\/span>/);
+  assert.match(ca, /<option value="income" selected>Ingressos<\/option>/);
+  assert.match(ca, /aria-label="Connecta Banc &lt;Demo&gt;">Connecta</);
+  // What a form sends is the same in every language.
+  const fields = (html: string) =>
+    [...html.matchAll(/<(?:form|input|select|option|button)\b[^>]*>/g)].map(match =>
+      match[0].replace(/ aria-label="[^"]*"/, ''),
+    );
+  assert.deepEqual(fields(ca), fields(en));
+
+  const es = plainSpaces(accountPage(input, { locale: 'es' }));
+  assert.match(es, /<td class="num">desconocido<\/td>/);
+  assert.match(es, /<td class="num">−18\.400,55 €<\/td>/);
+  // Spanish groups thousands only from five digits on.
+  assert.match(es, /1482 movimientos · página 1 de 60/);
+  assert.match(es, /<dd>nunca<\/dd>/);
+  assert.deepEqual(fields(es), fields(en));
+  assert.equal(euros(-1234), '−€12.34');
+  assert.equal(plainSpaces(euros(-1234, 'es')), '−12,34 €');
+
+  // Whatever a person, an application or a bank wrote is escaped in every language.
+  for (const locale of ['en', 'ca', 'es'] as const) {
+    const consent = consentPage(
+      {
+        csrf: 'token',
+        account: { email: 'a@example.com' },
+        client: { name: '<img src=x onerror=1>' },
+        redirectUri: 'http://localhost:1/cb',
+        scopes: ['person:read', 'bank:manage'],
+        params: { state: '"><script>' },
+      },
+      { locale, path: '/oauth/authorize?state="><script>' },
+    );
+    assert.doesNotMatch(consent, /<img|<script/, locale);
+    assert.match(consent, new RegExp(`<html lang="${locale}">`));
+  }
+});
+
+test('catalogs of the account pages: the scopes match the grants, markup is plain, refusals still exist', () => {
+  // What the consent screen says in English is exactly what `packages/auth` defines for each scope.
+  for (const scope of allScopes) assert.equal(consentMessages.en[scopeMessage[scope]], scopes[scope], scope);
+  // Each translation of the bank scope keeps the three limits: approval at the bank, totals only, no money moved.
+  assert.match(
+    consentMessages.ca.scopeBankManage,
+    /tu mateix al banc.*mai els teus moviments individuals.*no pot moure diners/,
+  );
+  assert.match(
+    consentMessages.es.scopeBankManage,
+    /tú mismo en el banco.*nunca tus movimientos individuales.*no puede mover dinero/,
+  );
+
+  // Messages are written into pages as they are: none may carry a quote or any tag but <strong>.
+  const written = { authMessages, consentMessages, accountMessages, bankMessages, consentPageMessages };
+  for (const [name, catalog] of Object.entries(written))
+    for (const locale of ['en', 'ca', 'es'] as const)
+      for (const [key, message] of Object.entries(catalog[locale] as Record<string, string>)) {
+        assert.doesNotMatch(message, /["&]/, `${name}.${locale}.${key}`);
+        assert.doesNotMatch(message.replace(/<\/?strong>/g, ''), /[<>]/, `${name}.${locale}.${key}`);
+      }
+
+  // A refusal worded by another layer is recognised by its English text; that text must still be in the source.
+  const sources = [
+    'packages/auth/accounts.ts',
+    'packages/auth/oauth.ts',
+    'packages/banks/sync.ts',
+    'packages/finance/csv.ts',
+    'packages/http/server.ts',
+    'apps/profile-api/bank.ts',
+    'apps/profile-api/statements.ts',
+  ]
+    .map(file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'))
+    .join('\n');
+  for (const [key, english] of Object.entries(refusalMessages.en))
+    for (const part of english.split(/\{\w+\}/))
+      assert(sources.includes(part), `${key}: "${part}" is no longer thrown`);
+
+  assert.equal(localizeRefusal('Enter a valid email address.', 'en'), 'Enter a valid email address.');
+  assert.equal(
+    localizeRefusal('Choose a new password of 10 to 200 characters.', 'ca'),
+    'Tria una contrasenya nova d’entre 10 i 200 caràcters.',
+  );
+  assert.equal(
+    localizeRefusal('Invalid transaction on data row 7. Use YYYY-MM-DD dates and signed amounts.', 'es'),
+    'Movimiento no válido en la fila de datos 7. Usa fechas AAAA-MM-DD e importes con signo.',
+  );
+  // A wording nobody listed falls back to the error code, and without one stays as it was thrown.
+  assert.equal(localizeRefusal('Slow down.', 'ca', 'throttled'), 'Massa intents. Espera una mica i torna-ho a provar.');
+  assert.equal(localizeRefusal('Something a bank said', 'ca'), 'Something a bank said');
 });

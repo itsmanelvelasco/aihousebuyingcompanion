@@ -8,6 +8,8 @@ import type {
   PlacePlan,
   PlanResult,
 } from '../../packages/contracts/planner.ts';
+import { defaultLocale, isLocale, type Locale } from '../../packages/i18n/locales.ts';
+import { translator } from '../../packages/i18n/messages.ts';
 import {
   formatCount,
   formatDecimal,
@@ -16,11 +18,18 @@ import {
   formatEuros,
   formatMonthsSaved,
 } from './format.ts';
+import { detailsMessages } from './messages/details.messages.ts';
+import { personMessages } from './messages/person.messages.ts';
+import { placesMessages } from './messages/places.messages.ts';
 
 /**
  * View models for the workspace: what each panel says, derived from a `PlanResult`.
  * Nothing here calculates money or timelines; it only reads what the planner returned.
+ * Every function that returns text takes the language last and defaults to English.
  */
+type PlacesKey = keyof typeof placesMessages.en;
+type PersonKey = keyof typeof personMessages.en;
+type DetailsKey = keyof typeof detailsMessages.en;
 
 // ---------------------------------------------------------------- timelines
 
@@ -50,10 +59,10 @@ export type TimelineStep = {
   savedText: string | null;
 };
 
-const stepLabels: Record<TimelineKey, string> = {
-  baseline: 'Baseline',
-  withHabits: 'With habits',
-  withPlaceBenefits: 'With this place',
+const stepLabels: Record<TimelineKey, PlacesKey> = {
+  baseline: 'stepBaseline',
+  withHabits: 'stepHabits',
+  withPlaceBenefits: 'stepPlace',
 };
 
 /** The longest finite timeline across every place, so bars are comparable between places. */
@@ -66,7 +75,8 @@ export function longestTimeline(plans: PlacePlan[]) {
   return months.length ? Math.max(...months) : 0;
 }
 
-export function timelineSteps(plan: PlacePlan, scaleMonths: number): TimelineStep[] {
+export function timelineSteps(plan: PlacePlan, scaleMonths: number, locale: Locale = defaultLocale): TimelineStep[] {
+  const t = translator(placesMessages, locale);
   const saved: Record<TimelineKey, number | null> = {
     baseline: null,
     withHabits: plan.monthsSavedByHabits,
@@ -85,11 +95,11 @@ export function timelineSteps(plan: PlacePlan, scaleMonths: number): TimelineSte
     const savedMonths = key === 'baseline' ? null : saved[key];
     return {
       key,
-      label: stepLabels[key],
+      label: t(stepLabels[key]),
       state,
       months,
-      text: state === 'not_estimated' ? 'Not estimated' : formatDuration(months),
-      shortText: state === 'not_estimated' ? 'Not estimated' : formatDurationShort(months),
+      text: state === 'not_estimated' ? t('notEstimated') : formatDuration(months, locale),
+      shortText: state === 'not_estimated' ? t('notEstimated') : formatDurationShort(months, locale),
       // A finite bar is never drawn shorter than 2% so one month still shows; no bar otherwise.
       barPercent:
         state === 'finite' && months !== null && scaleMonths > 0
@@ -98,24 +108,25 @@ export function timelineSteps(plan: PlacePlan, scaleMonths: number): TimelineSte
       upfrontCashCents: timeline?.upfrontCashCents ?? null,
       monthlySavingsCents: timeline?.monthlySavingsCents ?? null,
       savedMonths,
-      savedText: key === 'baseline' || savedMonths === null ? null : formatMonthsSaved(savedMonths),
+      savedText: key === 'baseline' || savedMonths === null ? null : formatMonthsSaved(savedMonths, locale),
     };
   });
 }
 
-const statusText: Record<PlacePlan['status'], string> = {
-  estimated: 'Estimated',
-  target_reached: 'Upfront cash already covered',
-  no_positive_savings: 'No finite timeline: nothing is being saved each month',
-  insufficient_data: 'Not enough data to estimate',
-  beyond_horizon: 'No timeline: at this rate the upfront cash is more than 50 years away',
+const statusText: Record<PlacePlan['status'], PlacesKey> = {
+  estimated: 'statusEstimated',
+  target_reached: 'statusReached',
+  no_positive_savings: 'statusNoSavings',
+  insufficient_data: 'statusInsufficient',
+  beyond_horizon: 'statusBeyond',
 };
 
-const priceBasisText: Record<PlacePlan['priceBasis'], string> = {
-  budget: 'your stated budget',
-  municipal_eur_per_m2: 'the municipal average price per m²',
-  comarca_eur_per_m2: 'the comarca average price per m² (no municipal figure)',
-  unknown: 'an unknown basis',
+/** The price sentence for each basis: `{price} home, priced from …`. */
+const priceBasisText: Record<PlacePlan['priceBasis'], PlacesKey> = {
+  budget: 'priceBudget',
+  municipal_eur_per_m2: 'priceMunicipal',
+  comarca_eur_per_m2: 'priceComarca',
+  unknown: 'priceUnknownBasis',
 };
 
 export type PlanHeadline = {
@@ -129,7 +140,8 @@ export type PlanHeadline = {
   savedTotalText: string;
 };
 
-export function planHeadline(plan: PlacePlan): PlanHeadline {
+export function planHeadline(plan: PlacePlan, locale: Locale = defaultLocale): PlanHeadline {
+  const t = translator(placesMessages, locale);
   const final = plan.withPlaceBenefits;
   const tone: PlanHeadline['tone'] =
     plan.status === 'insufficient_data' || !final
@@ -141,23 +153,23 @@ export function planHeadline(plan: PlacePlan): PlanHeadline {
           : 'ok';
   const headline =
     tone === 'unknown'
-      ? 'Not enough data to estimate'
+      ? t('statusInsufficient')
       : tone === 'reached'
-        ? 'Upfront cash already covered'
+        ? t('statusReached')
         : tone === 'none'
-          ? 'No finite timeline'
-          : `Ready in ${formatDuration(final?.months)}`;
+          ? formatDuration(null, locale)
+          : t('headlineReady', { duration: formatDuration(final?.months, locale) });
   return {
     headline,
     tone,
-    statusText: statusText[plan.status],
+    statusText: t(statusText[plan.status]),
     priceText:
       plan.purchasePriceCents === null
-        ? 'Purchase price unknown'
-        : `${formatEuros(plan.purchasePriceCents)} home, priced from ${priceBasisText[plan.priceBasis]}`,
-    savedByHabitsText: formatMonthsSaved(plan.monthsSavedByHabits),
-    savedByPlaceText: formatMonthsSaved(plan.monthsSavedByPlace),
-    savedTotalText: formatMonthsSaved(plan.monthsSaved),
+        ? t('priceUnknown')
+        : t(priceBasisText[plan.priceBasis], { price: formatEuros(plan.purchasePriceCents, locale) }),
+    savedByHabitsText: formatMonthsSaved(plan.monthsSavedByHabits, locale),
+    savedByPlaceText: formatMonthsSaved(plan.monthsSavedByPlace, locale),
+    savedTotalText: formatMonthsSaved(plan.monthsSaved, locale),
   };
 }
 
@@ -185,25 +197,30 @@ export type BenefitView = {
   amountLabel: string;
 };
 
-const eligibilityLabels: Record<PlaceBenefit['eligibilityStatus'], string> = {
-  eligible: 'Eligible on supplied facts',
-  ineligible: 'Ineligible on supplied facts',
-  needs_verification: 'Eligibility needs verification',
+const eligibilityLabels: Record<PlaceBenefit['eligibilityStatus'], PlacesKey> = {
+  eligible: 'eligible',
+  ineligible: 'ineligible',
+  needs_verification: 'needsVerification',
 };
-const callLabels: Record<PlaceBenefit['callStatus'], string> = {
-  open: 'Call open',
-  closed: 'Call closed',
-  upcoming: 'Call upcoming',
-  unknown: 'Call status unknown',
+const callLabels: Record<PlaceBenefit['callStatus'], PlacesKey> = {
+  open: 'callOpen',
+  closed: 'callClosed',
+  upcoming: 'callUpcoming',
+  unknown: 'callUnknown',
 };
-const kindLabels: Record<PlaceBenefit['kind'], string> = {
-  upfront_cost_reduction: 'Lowers the upfront cost',
-  one_off_cash: 'One-off payment',
-  annual_cash: 'Yearly payment',
-  unquantified: 'No amount can be put on it',
+const kindLabels: Record<PlaceBenefit['kind'], PlacesKey> = {
+  upfront_cost_reduction: 'kindUpfront',
+  one_off_cash: 'kindOneOff',
+  annual_cash: 'kindAnnual',
+  unquantified: 'kindUnquantified',
 };
 
-export function benefitView(benefit: PlaceBenefit): BenefitView {
+export function benefitView(benefit: PlaceBenefit, locale?: Locale): BenefitView;
+/** As an array callback (`benefits.map(benefitView)`): the index it is handed is not a language. */
+export function benefitView(benefit: PlaceBenefit, index: number): BenefitView;
+export function benefitView(benefit: PlaceBenefit, language: Locale | number = defaultLocale): BenefitView {
+  const locale = isLocale(language) ? language : defaultLocale;
+  const t = translator(placesMessages, locale);
   const unverified = benefit.eligibilityStatus === 'needs_verification';
   const tone: BenefitTone = benefit.counted
     ? unverified
@@ -214,35 +231,46 @@ export function benefitView(benefit: PlaceBenefit): BenefitView {
       : benefit.eligibilityStatus === 'ineligible'
         ? 'ineligible'
         : 'not_counted';
-  const each = benefit.kind === 'annual_cash' ? ' per year' : '';
+  const yearly = benefit.kind === 'annual_cash';
   const nominal = benefit.nominalAmountCents ?? null;
   // The amount follows what the planner did: nothing of the person's own next to "ineligible", and an
   // unverified amount is conditional. The nominal figure is shown only as what the measure is worth.
   const amount =
     tone === 'ineligible'
       ? nominal === null || nominal === 0
-        ? 'Not eligible: no amount'
-        : `Not eligible (worth up to ${formatEuros(nominal)}${each} to those who qualify)`
+        ? t('notEligibleNoAmount')
+        : t(yearly ? 'notEligibleWorthPerYear' : 'notEligibleWorth', { amount: formatEuros(nominal, locale) })
       : benefit.amountCents === null
-        ? 'Amount not computed'
-        : `${formatEuros(benefit.amountCents)}${each}${tone === 'unverified' ? ', if confirmed' : ''}`;
+        ? t('amountNotComputed')
+        : t(
+            tone === 'unverified'
+              ? yearly
+                ? 'amountPerYearIfConfirmed'
+                : 'amountIfConfirmed'
+              : yearly
+                ? 'amountPerYear'
+                : 'amount',
+            { amount: formatEuros(benefit.amountCents, locale) },
+          );
   return {
     tone,
     counted: benefit.counted,
     confirmed: benefit.eligibilityStatus === 'eligible',
-    countedLabel:
-      tone === 'counted' ? 'Counted in plan' : tone === 'counted_unverified' ? 'Counted, unverified' : 'Not counted',
-    eligibilityLabel: eligibilityLabels[benefit.eligibilityStatus],
-    callLabel: callLabels[benefit.callStatus],
-    kindLabel: kindLabels[benefit.kind],
+    countedLabel: t(
+      tone === 'counted' ? 'countedInPlan' : tone === 'counted_unverified' ? 'countedUnverified' : 'notCounted',
+    ),
+    eligibilityLabel: t(eligibilityLabels[benefit.eligibilityStatus]),
+    callLabel: t(callLabels[benefit.callStatus]),
+    kindLabel: t(kindLabels[benefit.kind]),
     amountLabel: amount,
   };
 }
 
-export function benefitSummary(benefits: PlaceBenefit[]) {
+export function benefitSummary(benefits: PlaceBenefit[], locale: Locale = defaultLocale) {
+  const t = translator(placesMessages, locale);
   const counted = benefits.filter(benefit => benefit.counted).length;
-  if (!benefits.length) return 'No benefits listed for this place';
-  return `${counted} of ${benefits.length} ${benefits.length === 1 ? 'benefit' : 'benefits'} counted`;
+  if (!benefits.length) return t('benefitsNone');
+  return t('benefitsCounted', { counted, total: benefits.length });
 }
 
 // ---------------------------------------------------------------- indicators
@@ -260,28 +288,34 @@ export type IndicatorView = {
   sourceUrl: string | null;
 };
 
-const indicatorLabels: Record<IndicatorKey, string> = {
-  population: 'Population',
-  densityPerKm2: 'Density',
-  foreignPopulationPercent: 'Foreign residents',
-  resaleEurPerM2: 'Resale price',
-  rentEurPerMonth: 'Average rent',
+const indicatorLabels: Record<IndicatorKey, PlacesKey> = {
+  population: 'population',
+  densityPerKm2: 'density',
+  foreignPopulationPercent: 'foreignResidents',
+  resaleEurPerM2: 'resalePrice',
+  rentEurPerMonth: 'averageRent',
 };
-const indicatorFormat: Record<IndicatorKey, (value: number) => string> = {
-  population: value => formatCount(value),
-  densityPerKm2: value => `${formatDecimal(value)} per km²`,
-  foreignPopulationPercent: value => `${formatDecimal(value)}%`,
-  resaleEurPerM2: value => `${formatEuros(Math.round(value * 100))} per m²`,
-  rentEurPerMonth: value => `${formatEuros(Math.round(value * 100))} per month`,
+/** The figure of an indicator and, when it has a unit, the message that sets the unit around it. */
+const indicatorFormat: Record<IndicatorKey, { value: (value: number, locale: Locale) => string; unit?: PlacesKey }> = {
+  population: { value: formatCount },
+  densityPerKm2: { value: formatDecimal, unit: 'perKm2' },
+  foreignPopulationPercent: { value: formatDecimal, unit: 'percent' },
+  resaleEurPerM2: { value: (value, locale) => formatEuros(Math.round(value * 100), locale), unit: 'perM2' },
+  rentEurPerMonth: { value: (value, locale) => formatEuros(Math.round(value * 100), locale), unit: 'perMonth' },
 };
 
-export function indicatorViews(place: Place): IndicatorView[] {
+export function indicatorViews(place: Place, locale: Locale = defaultLocale): IndicatorView[] {
+  const t = translator(placesMessages, locale);
+  const figure = (key: IndicatorKey, value: number) => {
+    const { value: number, unit } = indicatorFormat[key];
+    return unit ? t(unit, { value: number(value, locale) }) : number(value, locale);
+  };
   return (Object.keys(indicatorLabels) as IndicatorKey[]).map(key => {
     const indicator = place.indicators[key];
     return {
       key,
-      label: indicatorLabels[key],
-      value: indicator ? indicatorFormat[key](indicator.value) : 'Unknown',
+      label: t(indicatorLabels[key]),
+      value: indicator ? figure(key, indicator.value) : formatCount(null, locale),
       known: indicator !== null,
       unit: indicator?.unit ?? null,
       geography: indicator?.geography ?? null,
@@ -291,43 +325,49 @@ export function indicatorViews(place: Place): IndicatorView[] {
   });
 }
 
-const serviceLabels: Record<Place['services'][number]['kind'], string> = {
-  primary_care: 'Primary care centres',
-  hospital: 'Hospitals',
-  pharmacy: 'Pharmacies',
-  school: 'Schools',
-  library: 'Libraries',
-  rail_station: 'Rail stations',
-  retail: 'Shops',
-  sports: 'Sports facilities',
-  social_services: 'Social services',
+const serviceLabels: Record<Place['services'][number]['kind'], PlacesKey> = {
+  primary_care: 'primaryCare',
+  hospital: 'hospital',
+  pharmacy: 'pharmacy',
+  school: 'school',
+  library: 'library',
+  rail_station: 'railStation',
+  retail: 'retail',
+  sports: 'sports',
+  social_services: 'socialServices',
 };
-export const serviceLabel = (kind: Place['services'][number]['kind']) => serviceLabels[kind];
+export const serviceLabel = (kind: Place['services'][number]['kind'], locale: Locale = defaultLocale) =>
+  translator(placesMessages, locale)(serviceLabels[kind]);
 
-const ruralLabels: Record<Place['rural'], string | null> = {
-  rural: 'Rural municipality',
-  special_attention: 'Rural, special attention',
-  partial: 'Partly rural',
+const ruralLabels: Record<Place['rural'], PlacesKey | null> = {
+  rural: 'rural',
+  special_attention: 'ruralSpecial',
+  partial: 'ruralPartial',
   not_listed: null,
 };
-export const ruralLabel = (category: Place['rural']) => ruralLabels[category];
+export const ruralLabel = (category: Place['rural'], locale: Locale = defaultLocale) => {
+  const key = ruralLabels[category];
+  return key ? translator(placesMessages, locale)(key) : null;
+};
 
 // ------------------------------------------------------------------- person
 
-const basisLabels: Record<Person['finances']['basis'], string> = {
-  declared: 'Declared in the interview',
-  bank_observed: 'Observed in bank movements',
-  mixed: 'Part declared, part observed in bank movements',
-  unknown: 'Origin of the figures unknown',
+const basisLabels: Record<Person['finances']['basis'], PersonKey> = {
+  declared: 'basisDeclared',
+  bank_observed: 'basisBank',
+  mixed: 'basisMixed',
+  unknown: 'basisUnknown',
 };
-export const basisLabel = (basis: Person['finances']['basis']) => basisLabels[basis];
+export const basisLabel = (basis: Person['finances']['basis'], locale: Locale = defaultLocale) =>
+  translator(personMessages, locale)(basisLabels[basis]);
 
-const habitStatusLabels: Record<Habit['status'], string> = {
-  active: 'Active',
-  proposed: 'Proposed',
-  paused: 'Paused',
+const habitStatusLabels: Record<Habit['status'], PersonKey> = {
+  active: 'habitActive',
+  proposed: 'habitProposed',
+  paused: 'habitPaused',
 };
-export const habitStatusLabel = (status: Habit['status']) => habitStatusLabels[status];
+export const habitStatusLabel = (status: Habit['status'], locale: Locale = defaultLocale) =>
+  translator(personMessages, locale)(habitStatusLabels[status]);
 
 /** Habit id → switched on or off in this what-if. Habits without an entry keep their stored status. */
 export type HabitOverrides = Record<string, boolean>;
@@ -365,20 +405,22 @@ export function habitPlanView(
   habit: Habit,
   result: Pick<PlanResult, 'habits'> | null | undefined,
   on: boolean,
+  locale: Locale = defaultLocale,
 ): HabitPlanView {
+  const t = translator(personMessages, locale);
   const effect: HabitEffect | undefined = result?.habits?.find(entry => entry.habitId === habit.id);
   if (!effect) return { state: on ? 'unknown' : 'off', label: null, explanation: null, countedMonthlyCents: null };
   if (effect.counted)
     return {
       state: 'counted',
-      label: 'Counted in plan',
+      label: t('countedInPlan'),
       explanation: effect.explanation,
       countedMonthlyCents: effect.countedMonthlyCents,
     };
   const withheld = effect.reason === 'inside_bank_figures' || effect.reason === 'start_unknown';
   return {
     state: withheld ? 'withheld' : 'off',
-    label: withheld ? 'Shown, not counted' : effect.reason === 'no_amount' && on ? 'No saving to count' : null,
+    label: withheld ? t('shownNotCounted') : effect.reason === 'no_amount' && on ? t('noSavingToCount') : null,
     explanation: withheld || effect.reason === 'no_amount' ? effect.explanation : null,
     countedMonthlyCents: 0,
   };
@@ -455,16 +497,17 @@ export function planNotes(result: PlanResult): PlanNotes {
 
 // ------------------------------------------------------------------ details
 
-const sourceLabels: Record<string, string> = {
-  profile: 'From your saved profile',
-  interview: 'Said in the interview',
-  manual: 'Typed in by you',
-  bank: 'Observed in bank movements',
-  listing: 'From a listing',
-  what_if: 'This estimate only, not saved',
+const sourceLabels: Record<string, DetailsKey> = {
+  profile: 'sourceProfile',
+  interview: 'sourceInterview',
+  manual: 'sourceManual',
+  bank: 'sourceBank',
+  listing: 'sourceListing',
+  what_if: 'sourceWhatIf',
 };
 /** Where an answer came from, in words. An unknown source is named as such, not guessed. */
-export const factSourceLabel = (source: string) => sourceLabels[source] ?? 'Source not recorded';
+export const factSourceLabel = (source: string, locale: Locale = defaultLocale) =>
+  translator(detailsMessages, locale)(Object.hasOwn(sourceLabels, source) ? sourceLabels[source] : 'sourceNotRecorded');
 
 /**
  * The sources a picked answer is written under to settle a conflict: every disagreeing source the
@@ -485,7 +528,10 @@ export type PlanChange = { place: string; lines: string[] };
  * timelines are quoted as the planner gave them; nothing is added or subtracted here. A place where
  * nothing changed is left out.
  */
-export function planChanges(before: PlanResult, after: PlanResult): PlanChange[] {
+export function planChanges(before: PlanResult, after: PlanResult, locale: Locale = defaultLocale): PlanChange[] {
+  const t = translator(detailsMessages, locale);
+  // A duration inside a sentence: "4 years 2 months", "no finite timeline".
+  const duration = (months: number | null) => formatDuration(months, locale).toLocaleLowerCase(locale);
   return after.plans.flatMap(plan => {
     const previous = before.plans.find(item => item.place.municipalityCode === plan.place.municipalityCode);
     if (!previous) return [];
@@ -493,36 +539,31 @@ export function planChanges(before: PlanResult, after: PlanResult): PlanChange[]
     for (const benefit of plan.benefits) {
       const was = previous.benefits.find(item => item.policyId === benefit.policyId);
       if (!was) continue;
-      if (benefit.counted && !was.counted) lines.push(`Counted now: ${benefit.title}.`);
-      else if (!benefit.counted && was.counted) lines.push(`No longer counted: ${benefit.title}.`);
+      if (benefit.counted && !was.counted) lines.push(t('countedNow', { title: benefit.title }));
+      else if (!benefit.counted && was.counted) lines.push(t('noLongerCounted', { title: benefit.title }));
       // A status that settles is news; one that only becomes open again is already in the question list.
       else if (
         benefit.eligibilityStatus !== was.eligibilityStatus &&
         benefit.eligibilityStatus !== 'needs_verification'
       )
         lines.push(
-          benefit.eligibilityStatus === 'eligible'
-            ? `Confirmed for you: ${benefit.title}.`
-            : `Does not apply to you: ${benefit.title}.`,
+          t(benefit.eligibilityStatus === 'eligible' ? 'confirmedForYou' : 'doesNotApply', { title: benefit.title }),
         );
     }
     const baselineRate = plan.transferTax?.baselinePolicyId ?? null;
     if (baselineRate !== (previous.transferTax?.baselinePolicyId ?? null))
-      lines.push(
-        baselineRate
-          ? 'Your transfer tax anywhere in Catalonia is now a reduced rate, so every place starts from it.'
-          : 'Your transfer tax anywhere in Catalonia is the general rate again.',
-      );
+      lines.push(t(baselineRate ? 'taxReduced' : 'taxGeneral'));
     const [was, now] = [previous.withPlaceBenefits, plan.withPlaceBenefits];
-    if (!was && now) lines.push(`A timeline can be estimated now: ${formatDuration(now.months).toLowerCase()}.`);
-    else if (was && !now) lines.push('A timeline can no longer be estimated.');
+    if (!was && now) lines.push(t('timelineNow', { duration: duration(now.months) }));
+    else if (was && !now) lines.push(t('timelineGone'));
     else if (was && now && was.months !== now.months)
-      lines.push(
-        `The wait is now ${formatDuration(now.months).toLowerCase()}; it was ${formatDuration(was.months).toLowerCase()}.`,
-      );
+      lines.push(t('waitNow', { now: duration(now.months), was: duration(was.months) }));
     else if (was && now && was.upfrontCashCents !== now.upfrontCashCents)
       lines.push(
-        `The upfront cash is now ${formatEuros(now.upfrontCashCents)}; it was ${formatEuros(was.upfrontCashCents)}.`,
+        t('upfrontNow', {
+          now: formatEuros(now.upfrontCashCents, locale),
+          was: formatEuros(was.upfrontCashCents, locale),
+        }),
       );
     return lines.length ? [{ place: plan.place.name, lines }] : [];
   });

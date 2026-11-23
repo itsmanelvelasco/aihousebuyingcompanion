@@ -7,6 +7,8 @@ import type {
   Person,
   PlanResult,
 } from '../../../packages/contracts/planner.ts';
+import { common } from '../../../packages/i18n/common.ts';
+import type { Locale } from '../../../packages/i18n/locales.ts';
 import type { AnswerValue, QuestionId } from '../../../packages/model/questions.ts';
 import {
   answerSpecFor,
@@ -20,7 +22,9 @@ import {
 import type { ToolClient } from '../client.ts';
 import { formatDate } from '../format.ts';
 import type { PlanState } from '../hooks.ts';
+import { bold, rich, srOnly, useLocale, useMessages } from '../i18n.tsx';
 import type { Subject, WorkspaceLaunch } from '../launch.ts';
+import { detailsMessages } from '../messages/details.messages.ts';
 import type { PlanChange } from '../view-model.ts';
 import { conflictSources, factSourceLabel, planChanges } from '../view-model.ts';
 import { Badge, Icon } from './bits.tsx';
@@ -44,7 +48,6 @@ type Asked = Pick<
   'id' | 'label' | 'question' | 'why' | 'help' | 'sensitivity' | 'answer' | 'allowUnknown'
 > & { effect: string | null; state: NextQuestion['state'] | 'known' };
 
-const unknownLabel = 'I don’t know';
 type Tri = 'yes' | 'no' | 'unknown' | '';
 const triValue = (choice: Tri) => (choice === 'yes' ? true : choice === 'no' ? false : null);
 
@@ -58,10 +61,11 @@ function YesNo(props: {
   describedBy?: string;
   onChange: (value: Tri) => void;
 }) {
+  const t = useMessages(detailsMessages);
   const options: [Tri, string][] = [
-    ['yes', 'Yes'],
-    ['no', 'No'],
-    ...(props.allowUnknown ? ([['unknown', unknownLabel]] as [Tri, string][]) : []),
+    ['yes', t('yes')],
+    ['no', t('no')],
+    ...(props.allowUnknown ? ([['unknown', t('unknownOption')]] as [Tri, string][]) : []),
   ];
   return (
     <fieldset className="choice-set" aria-invalid={props.invalid || undefined} aria-describedby={props.describedBy}>
@@ -100,6 +104,10 @@ function QuestionForm(props: {
 }) {
   const { asked } = props;
   const spec: AnswerSpec = asked.answer;
+  const t = useMessages(detailsMessages);
+  const shared = useMessages(common);
+  const locale = useLocale();
+  const unknownLabel = t('unknownOption');
   const id = useId();
   const [text, setText] = useState('');
   const [tri, setTri] = useState<Tri>('');
@@ -130,26 +138,23 @@ function QuestionForm(props: {
   const read = (): { value: AnswerValue | null | undefined; message?: string } => {
     switch (spec.type) {
       case 'boolean':
-        return tri === '' ? { value: undefined, message: 'Choose an answer.' } : { value: triValue(tri) };
+        return tri === '' ? { value: undefined, message: t('chooseAnswer') } : { value: triValue(tri) };
       case 'choice':
         return choice === ''
-          ? { value: undefined, message: 'Choose one of the options.' }
+          ? { value: undefined, message: t('chooseOption') }
           : { value: choice === 'unknown' ? null : choice };
       case 'children':
-        if (hasChildren === '') return { value: undefined, message: 'Say whether children live with you.' };
+        if (hasChildren === '') return { value: undefined, message: t('sayChildren') };
         return { value: hasChildren === 'none' ? [] : births.map(birthDate => ({ birthDate })) };
       case 'per_child':
         return flags.some(flag => flag === '')
-          ? { value: undefined, message: 'Answer for each child listed.' }
+          ? { value: undefined, message: t('answerEachChild') }
           : { value: flags.map(triValue) };
       default: {
         if (unknown) return { value: null };
-        if (!text.trim())
-          return { value: undefined, message: 'Enter a value, or choose “I don’t know” if it is offered.' };
+        if (!text.trim()) return { value: undefined, message: t('enterValue') };
         const value = parseTyped(asked.id as QuestionId, text);
-        return value === undefined
-          ? { value, message: 'That does not read as a number. Use digits, such as 28000.' }
-          : { value };
+        return value === undefined ? { value, message: t('notANumber') } : { value };
       }
     }
   };
@@ -159,10 +164,12 @@ function QuestionForm(props: {
     const { value, message } = read();
     const problem =
       message ??
-      validateAnswer(asked.id as QuestionId, value, {
-        today: props.today,
-        ...(spec.type === 'per_child' ? { childCount: spec.children.length } : {}),
-      });
+      validateAnswer(
+        asked.id as QuestionId,
+        value,
+        { today: props.today, ...(spec.type === 'per_child' ? { childCount: spec.children.length } : {}) },
+        locale,
+      );
     setError(problem);
     if (!problem && value !== undefined) props.onSubmit(value);
   };
@@ -252,8 +259,8 @@ function QuestionForm(props: {
           <div className="choice-row">
             {(
               [
-                ['none', 'No children'],
-                ['some', 'Yes'],
+                ['none', t('noChildren')],
+                ['some', t('yes')],
               ] as const
             ).map(([value, label]) => (
               <label key={value} className="choice">
@@ -274,7 +281,7 @@ function QuestionForm(props: {
                 // biome-ignore lint/suspicious/noArrayIndexKey: rows are positions; a child has no other identity yet.
                 <div key={index} className="child-row">
                   <label className="rc-field">
-                    Child {index + 1}: date of birth
+                    {t('childBirth', { number: index + 1 })}
                     <input
                       type="date"
                       min={`${Number(props.today.slice(0, 4)) - 120}-01-01`}
@@ -293,7 +300,7 @@ function QuestionForm(props: {
                       className="rc-btn rc-btn--quiet rc-btn--sm"
                       onClick={() => setBirths(previous => previous.filter((_, position) => position !== index))}
                     >
-                      Remove child<span className="rc-sr-only"> {index + 1}</span>
+                      {rich(t('removeChild', { number: index + 1 }), { sr: srOnly })}
                     </button>
                   ) : null}
                 </div>
@@ -304,7 +311,7 @@ function QuestionForm(props: {
                   className="rc-btn rc-btn--sm"
                   onClick={() => setBirths(previous => [...previous, ''])}
                 >
-                  Add another child
+                  {t('addChild')}
                 </button>
               ) : null}
             </div>
@@ -342,9 +349,7 @@ function QuestionForm(props: {
           {asked.help}
         </p>
       ) : null}
-      <p className="question-why">
-        <strong>Why we ask.</strong> {asked.why}
-      </p>
+      <p className="question-why">{rich(t('whyWeAsk'), { b: bold, why: asked.why })}</p>
       {asked.effect ? (
         <p className="question-effect">
           <Icon name="sparkle" /> {asked.effect}
@@ -361,7 +366,7 @@ function QuestionForm(props: {
         </button>
         {props.onCancel ? (
           <button type="button" className="rc-btn rc-btn--quiet rc-btn--sm" onClick={props.onCancel}>
-            Cancel
+            {shared('cancel')}
           </button>
         ) : null}
       </div>
@@ -369,18 +374,18 @@ function QuestionForm(props: {
   );
 }
 
-const stateLabel: Record<Asked['state'], string | null> = {
+const stateLabel = {
   missing: null,
   known: null,
-  unconfirmed: 'Stated, not confirmed',
-  conflict: 'Answers disagree',
-  said_unknown: 'You said you don’t know',
-};
+  unconfirmed: 'stateUnconfirmed',
+  conflict: 'stateConflict',
+  said_unknown: 'saidUnknown',
+} as const satisfies Record<Asked['state'], string | null>;
 
 /** A question of the set as a form can ask it, for changing an answer the plan already has. */
-function askedFromSet(id: string, person: Person, today: string): Asked | null {
+function askedFromSet(id: string, person: Person, today: string, locale: Locale): Asked | null {
   if (!isQuestionId(id)) return null;
-  const question = questionById(id);
+  const question = questionById(id, locale);
   return {
     id,
     label: question.label,
@@ -388,7 +393,7 @@ function askedFromSet(id: string, person: Person, today: string): Asked | null {
     why: question.why,
     help: question.help,
     sensitivity: question.sensitivity,
-    answer: answerSpecFor(question, person, today),
+    answer: answerSpecFor(question, person, today, locale),
     allowUnknown: question.allowUnknown,
     effect: null,
     state: 'known',
@@ -402,6 +407,8 @@ function ConflictPicker(props: {
   onPick: (index: number) => void;
 }) {
   const { conflict } = props;
+  const locale = useLocale();
+  const t = useMessages(detailsMessages);
   const id = useId();
   const [picked, setPicked] = useState<number | null>(null);
   return (
@@ -413,9 +420,7 @@ function ConflictPicker(props: {
       }}
     >
       <fieldset className="choice-set">
-        <legend>
-          <strong>{conflict.label}:</strong> two answers disagree, so the plan uses neither. Which one is right?
-        </legend>
+        <legend>{rich(t('conflictLegend'), { b: bold, label: conflict.label })}</legend>
         <div className="choice-column">
           {conflict.candidates.map((candidate, index) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: candidates have no identity beyond their position.
@@ -424,8 +429,10 @@ function ConflictPicker(props: {
               <span>
                 {candidate.text}{' '}
                 <small className="muted">
-                  {factSourceLabel(candidate.source)}, {formatDate(candidate.observedAt)}
-                  {candidate.confirmed ? ', confirmed' : ', not confirmed'}
+                  {t(candidate.confirmed ? 'candidateConfirmed' : 'candidateNotConfirmed', {
+                    source: factSourceLabel(candidate.source, locale),
+                    date: formatDate(candidate.observedAt, locale),
+                  })}
                 </small>
               </span>
             </label>
@@ -434,17 +441,20 @@ function ConflictPicker(props: {
       </fieldset>
       {props.canSave ? (
         <button type="submit" className="rc-btn rc-btn--sm" disabled={props.busy || picked === null}>
-          Keep this answer
+          {t('keepAnswer')}
         </button>
       ) : (
-        <p className="hint">Sign in with your own profile to settle this.</p>
+        <p className="hint">{t('signInToSettle')}</p>
       )}
     </form>
   );
 }
 
 function KnownList(props: { facts: KnownFact[]; onChange: (id: string) => void; editable: boolean }) {
-  if (!props.facts.length) return <p className="muted">Nothing is known yet.</p>;
+  const locale = useLocale();
+  const t = useMessages(detailsMessages);
+  if (!props.facts.length) return <p className="muted">{t('nothingKnown')}</p>;
+  const origin = (fact: KnownFact) => (fact.source ? factSourceLabel(fact.source, locale) : t('statedWithPlan'));
   return (
     <ul className="rc-rows known-list">
       {props.facts.map(fact => (
@@ -455,14 +465,15 @@ function KnownList(props: { facts: KnownFact[]; onChange: (id: string) => void; 
           </div>
           <div className="known-meta">
             <small className="muted">
-              {fact.source ? factSourceLabel(fact.source) : 'Stated with this plan'}
-              {fact.observedAt ? `, ${formatDate(fact.observedAt)}` : ''}
+              {fact.observedAt
+                ? t('sourceDated', { source: origin(fact), date: formatDate(fact.observedAt, locale) })
+                : origin(fact)}
             </small>
-            {fact.confirmed === true ? <Badge tone="ok">Confirmed</Badge> : null}
-            {fact.confirmed === false ? <Badge tone="warn">Not confirmed</Badge> : null}
+            {fact.confirmed === true ? <Badge tone="ok">{t('confirmed')}</Badge> : null}
+            {fact.confirmed === false ? <Badge tone="warn">{t('notConfirmed')}</Badge> : null}
             {fact.usedByPlan ? null : (
-              <Badge tone="off" title="No measure screened for these places reads it.">
-                Not used here
+              <Badge tone="off" title={t('notUsedTitle')}>
+                {t('notUsedHere')}
               </Badge>
             )}
             {props.editable ? (
@@ -471,13 +482,13 @@ function KnownList(props: { facts: KnownFact[]; onChange: (id: string) => void; 
                 className="rc-btn rc-btn--quiet rc-btn--sm known-change"
                 onClick={() => props.onChange(fact.id)}
               >
-                Change answer<span className="rc-sr-only">: {fact.label}</span>
+                {rich(t('changeAnswer'), { sr: srOnly, label: fact.label })}
               </button>
             ) : null}
           </div>
           {fact.stale ? (
             <p className="hint hint-warn">
-              <Icon name="warning" /> Possibly out of date. {fact.stale}
+              <Icon name="warning" /> {rich(t('possiblyStale'), { reason: fact.stale })}
             </p>
           ) : null}
         </li>
@@ -495,9 +506,12 @@ function KnownList(props: { facts: KnownFact[]; onChange: (id: string) => void; 
 export function DetailsPanel(props: Props) {
   const { plan, subject } = props;
   const result = plan.result;
+  const locale = useLocale();
+  const t = useMessages(detailsMessages);
   const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  /** Why the last answer was not saved: the server's reason, or true when it gave none. */
+  const [failure, setFailure] = useState<string | true | null>(null);
   const [changes, setChanges] = useState<{ label: string; lines: PlanChange[]; saved: boolean } | null>(null);
   /** The plan on screen when an answer was given, to say afterwards what the answer changed. */
   const pending = useRef<{ before: PlanResult; label: string; saved: boolean } | null>(null);
@@ -507,8 +521,8 @@ export function DetailsPanel(props: Props) {
     if (!waiting || !result || result === waiting.before || plan.refreshing) return;
     pending.current = null;
     setBusy(false);
-    setChanges({ label: waiting.label, lines: planChanges(waiting.before, result), saved: waiting.saved });
-  }, [result, plan.refreshing]);
+    setChanges({ label: waiting.label, lines: planChanges(waiting.before, result, locale), saved: waiting.saved });
+  }, [result, plan.refreshing, locale]);
   useEffect(() => {
     // A failed re-plan must not leave the form disabled.
     if (plan.error && pending.current) {
@@ -519,17 +533,13 @@ export function DetailsPanel(props: Props) {
 
   if (subject.kind === 'none') return null;
   const signedIn = subject.kind === 'me';
-  const where = signedIn
-    ? 'Answers are saved to your own profile, as confirmed by you.'
-    : subject.kind === 'demo'
-      ? 'This persona is fictional and read-only. An answer you try here becomes a what-if estimate and is stored nowhere.'
-      : 'Answers apply to this estimate only and are stored nowhere.';
+  const where = t(signedIn ? 'whereMe' : subject.kind === 'demo' ? 'whereDemo' : 'whereInline');
 
   const heading = (
     <header className="panel-head">
       <h2 id="details-title">
         <Icon name="household" />
-        Your details
+        {t('title')}
       </h2>
       <span className="muted">{where}</span>
     </header>
@@ -539,11 +549,7 @@ export function DetailsPanel(props: Props) {
     return (
       <section className="panel details" aria-labelledby="details-title">
         {heading}
-        <p className="rc-note">
-          {props.hasPlaces
-            ? 'The questions load with the plan.'
-            : 'Add a place to compare first: which questions matter depends on where you are looking.'}
-        </p>
+        <p className="rc-note">{props.hasPlaces ? t('questionsLoad') : t('addPlaceFirst')}</p>
       </section>
     );
 
@@ -557,9 +563,10 @@ export function DetailsPanel(props: Props) {
   const toAsk = questions.filter(question => question.state !== 'said_unknown' && question.state !== 'conflict');
   const saidUnknown = questions.filter(question => question.state === 'said_unknown');
   const editing =
-    openId && !questions.some(question => question.id === openId) ? askedFromSet(openId, person, today) : null;
+    openId && !questions.some(question => question.id === openId) ? askedFromSet(openId, person, today, locale) : null;
   const current = editing ?? questions.find(question => question.id === openId) ?? toAsk[0] ?? null;
   const listed = result.nextQuestions !== undefined;
+  const currentState = current ? stateLabel[current.state] : null;
 
   const answer = async (asked: Asked, value: AnswerValue | null) => {
     setFailure(null);
@@ -577,7 +584,7 @@ export function DetailsPanel(props: Props) {
     } catch (error) {
       pending.current = null;
       setBusy(false);
-      setFailure(error instanceof Error ? error.message : 'The answer could not be saved.');
+      setFailure(error instanceof Error && error.message ? error.message : true);
     }
   };
 
@@ -595,7 +602,7 @@ export function DetailsPanel(props: Props) {
     } catch (error) {
       pending.current = null;
       setBusy(false);
-      setFailure(error instanceof Error ? error.message : 'The answer could not be saved.');
+      setFailure(error instanceof Error && error.message ? error.message : true);
     }
   };
 
@@ -606,10 +613,18 @@ export function DetailsPanel(props: Props) {
       {changes ? (
         <div className="rc-note details-note changes" role="status">
           <p>
-            <strong>
-              {changes.saved ? 'Saved to your profile' : 'Applied to this estimate'}: {changes.label}.
-            </strong>{' '}
-            {changes.lines.length ? 'What changed:' : 'The timelines did not change with this answer alone.'}
+            {rich(
+              t(
+                changes.saved
+                  ? changes.lines.length
+                    ? 'savedChanged'
+                    : 'savedUnchanged'
+                  : changes.lines.length
+                    ? 'appliedChanged'
+                    : 'appliedUnchanged',
+              ),
+              { b: bold, label: changes.label },
+            )}
           </p>
           {changes.lines.length ? (
             <ul className="plain-list">
@@ -624,7 +639,7 @@ export function DetailsPanel(props: Props) {
       ) : null}
       {failure ? (
         <p className="rc-note rc-note--error details-note" role="alert">
-          <strong>Not saved.</strong> {failure}
+          {rich(t('notSaved'), { b: bold, reason: failure === true ? t('answerNotSaved') : failure })}
         </p>
       ) : null}
 
@@ -640,32 +655,30 @@ export function DetailsPanel(props: Props) {
 
       <div className="details-grid">
         <div className="ask">
-          <h3>{editing ? 'Change an answer' : 'Next question'}</h3>
+          <h3>{editing ? t('changeAnAnswer') : t('nextQuestion')}</h3>
           {!listed ? (
-            <p className="rc-note">This server’s plan does not say what to ask next.</p>
+            <p className="rc-note">{t('noNextQuestions')}</p>
           ) : current ? (
             <div className="question-card">
-              {stateLabel[current.state] ? <Badge tone="warn">{stateLabel[current.state]}</Badge> : null}
+              {currentState ? <Badge tone="warn">{t(currentState)}</Badge> : null}
               <QuestionForm
                 key={current.id}
                 asked={current}
                 today={today}
                 busy={busy}
                 focus={openId !== null || changes !== null}
-                submitLabel={signedIn ? 'Save to my profile' : 'Apply to this estimate'}
+                submitLabel={signedIn ? t('saveToProfile') : t('applyToEstimate')}
                 onSubmit={value => void answer(current, value)}
                 onCancel={openId ? () => setOpenId(null) : undefined}
               />
             </div>
           ) : (
-            <p className="rc-note">
-              <strong>Nothing more to ask.</strong> No other answer would change this plan for the places compared.
-            </p>
+            <p className="rc-note">{rich(t('nothingMore'), { b: bold })}</p>
           )}
 
           {toAsk.filter(question => question.id !== current?.id).length ? (
             <>
-              <h4>Then, in this order</h4>
+              <h4>{t('thenInOrder')}</h4>
               <ol className="rc-rows queue">
                 {toAsk
                   .filter(question => question.id !== current?.id)
@@ -678,20 +691,20 @@ export function DetailsPanel(props: Props) {
                     </li>
                   ))}
               </ol>
-              <p className="hint">Facts that cannot change this plan for these places are not asked.</p>
+              <p className="hint">{t('notAsked')}</p>
             </>
           ) : null}
 
           {saidUnknown.length ? (
             <>
-              <h4>You said you don’t know</h4>
+              <h4>{t('saidUnknown')}</h4>
               <ul className="rc-rows queue">
                 {saidUnknown.map(question => (
                   <li key={question.id}>
                     <button type="button" className="queue-item" onClick={() => setOpenId(question.id)}>
                       <span className="queue-label">{question.label}</span>
                       <span className="muted">
-                        Kept as unknown, never as zero. {question.effect} {question.help ?? ''}
+                        {t('keptUnknown')} {question.effect} {question.help ?? ''}
                       </span>
                     </button>
                   </li>
@@ -702,7 +715,7 @@ export function DetailsPanel(props: Props) {
         </div>
 
         <div className="known">
-          <h3>What the plan knows</h3>
+          <h3>{t('whatPlanKnows')}</h3>
           <KnownList facts={result.knownFacts ?? []} editable={!busy} onChange={setOpenId} />
         </div>
       </div>

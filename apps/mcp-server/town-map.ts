@@ -1,6 +1,9 @@
 import type { z } from 'zod';
 import type { municipality } from '../../packages/contracts/places.ts';
+import type { Format } from '../../packages/i18n/format.ts';
+import type { Translate } from '../../packages/i18n/messages.ts';
 import geography from './assets/catalonia-provinces.json' with { type: 'json' };
+import type { ExplorerKey } from './town-explorer.messages.ts';
 
 type Town = z.infer<typeof municipality>;
 type Point = { x: number; y: number };
@@ -24,7 +27,17 @@ function measure(points: Point[]) {
   return { centre: { x: (east + west) / 2, y: (north + south) / 2 }, width: east - west, height: south - north };
 }
 
-export function mountTownMap(onSelect: (code: string) => void) {
+const creditLink = (id: string, label: string) =>
+  `<a id="${id}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+
+/**
+ * `language` returns the translator and the formatters of the language now shown; the widget
+ * calls `relabel` after it changes.
+ */
+export function mountTownMap(
+  onSelect: (code: string) => void,
+  language: () => { t: Translate<ExplorerKey>; format: Format },
+) {
   const frame = document.querySelector<HTMLElement>('#map')!;
   const canvas = frame.querySelector('canvas')!;
   const controls = frame.querySelector<HTMLElement>('.map-controls')!;
@@ -32,16 +45,29 @@ export function mountTownMap(onSelect: (code: string) => void) {
   const zoomIn = document.querySelector<HTMLButtonElement>('#zoom-in')!;
   const zoomOut = document.querySelector<HTMLButtonElement>('#zoom-out')!;
   const fit = document.querySelector<HTMLButtonElement>('#fit-map')!;
-  const mapSource = document.querySelector<HTMLAnchorElement>('#map-source')!;
+  const credit = document.querySelector<HTMLElement>('#map-credit')!;
   const selectedTown = document.querySelector<HTMLElement>('#map-selection')!;
-  mapSource.href = geography.source;
-  mapSource.title = `Adapted provincial boundaries · ${geography.dataDate}`;
-  document.querySelector<HTMLAnchorElement>('#map-license')!.href = geography.license;
 
   let pins: { town: Town; position: Point; button: HTMLButtonElement }[] = [];
   let selected: string | null = null;
   let overview = true;
   let zoom = 0;
+
+  /** Everything the map says, in the language now shown. */
+  function relabel() {
+    const { t, format } = language();
+    // The names of the institute and of the licence are not translated; the sentence around them is.
+    credit.innerHTML = t('boundaries', {
+      source: creditLink('map-source', 'ICGC'),
+      license: creditLink('map-license', 'CC BY 4.0'),
+    });
+    const mapSource = credit.querySelector<HTMLAnchorElement>('#map-source')!;
+    mapSource.href = geography.source;
+    mapSource.title = t('boundariesTitle', { date: format.date(geography.dataDate) });
+    credit.querySelector<HTMLAnchorElement>('#map-license')!.href = geography.license;
+    for (const { town, button } of pins) button.setAttribute('aria-label', t('selectOnMap', { town: town.name }));
+    fit.textContent = t(overview ? 'fitTowns' : 'overview');
+  }
 
   function draw() {
     const width = frame.clientWidth;
@@ -141,7 +167,7 @@ export function mountTownMap(onSelect: (code: string) => void) {
     zoomIn.disabled = !pins.length || zoom === 3;
     zoomOut.disabled = zoom === 0;
     fit.disabled = !pins.length;
-    fit.textContent = overview ? 'Fit towns' : 'Overview';
+    fit.textContent = language().t(overview ? 'fitTowns' : 'overview');
   }
 
   zoomIn.addEventListener('click', () => {
@@ -158,6 +184,7 @@ export function mountTownMap(onSelect: (code: string) => void) {
     draw();
   });
   new ResizeObserver(draw).observe(frame);
+  relabel();
 
   return {
     setTowns(towns: Town[], shortlist: boolean, ranked = false) {
@@ -169,7 +196,7 @@ export function mountTownMap(onSelect: (code: string) => void) {
         button.type = 'button';
         button.className = 'map-pin';
         button.title = town.name;
-        button.setAttribute('aria-label', `Select ${town.name} on the map`);
+        button.setAttribute('aria-label', language().t('selectOnMap', { town: town.name }));
         const marker = document.createElement('span');
         marker.className = 'pin-marker';
         marker.setAttribute('aria-hidden', 'true');
@@ -185,5 +212,6 @@ export function mountTownMap(onSelect: (code: string) => void) {
       selected = code;
       draw();
     },
+    relabel,
   };
 }

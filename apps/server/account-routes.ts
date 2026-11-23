@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
-import type { Accounts } from '../../packages/auth/accounts.ts';
+import type { Accounts, AuthErrorCode } from '../../packages/auth/accounts.ts';
 import { AuthError } from '../../packages/auth/accounts.ts';
 import type { OAuth } from '../../packages/auth/oauth.ts';
 import { OAuthError } from '../../packages/auth/oauth.ts';
@@ -19,11 +19,16 @@ import {
   sendHtml,
   serializeCookie,
 } from '../../packages/http/server.ts';
+import type { Locale } from '../../packages/i18n/locales.ts';
+import { translator } from '../../packages/i18n/messages.ts';
+import { localeCookie, requestLocale } from '../../packages/i18n/server.ts';
 import type { createBankStore } from '../profile-api/bank.ts';
 import { dateSchema, manualAccountId } from '../profile-api/bank.ts';
 import type { StatementImports } from '../profile-api/statements.ts';
 import { maxStatementBytes } from '../profile-api/statements.ts';
-import type { BankSection, StatementPreview, StoredSummary } from './pages.ts';
+import { accountMessages, type StoredCountKey } from './account.messages.ts';
+import { localizeRefusal, noticeMessages, routeMessages } from './errors.messages.ts';
+import type { BankSection, PageLanguage, StatementPreview, StoredSummary } from './pages.ts';
 import {
   accountPage,
   bankLeavePage,
@@ -47,6 +52,10 @@ import {
  *   /.well-known/oauth-protected-resource[/mcp]  /.well-known/oauth-authorization-server
  *
  * The logic lives in `packages/auth`; this file reads requests, sets cookies and renders pages.
+ *
+ * A page is written in the language of its request (`requestLocale`: `?lang=`, the `rc_lang`
+ * cookie, then `Accept-Language`). `?lang=` also sets the cookie, so the choice survives the form
+ * posts and redirects that follow. The machine endpoints answer in English.
  */
 
 export type AccountRouteOptions = {
@@ -78,21 +87,60 @@ export type AccountRouteOptions = {
 
 /** Movements shown per page of the account page. */
 const movementsPerPage = 25;
-/** Notices after a redirect back to the account page. */
-const notices: Record<string, string> = {
-  disconnected: 'Access removed.',
-  password: 'Your password was changed. Every other browser was signed out and every assistant was disconnected.',
-  'bank-connected': 'Your bank is connected.',
-  'bank-renewed': 'Your consent at the bank was renewed.',
-  'bank-denied': 'You did not allow access at the bank. Nothing was connected.',
-  'bank-disconnected': 'The bank was disconnected and its stored credential deleted. Movements already fetched stay.',
-  synced: 'Your bank data is up to date.',
-  imported: 'The statement was imported.',
-  discarded: 'The statement was discarded. Nothing was saved.',
-  'import-deleted': 'The statement and the movements only it brought were deleted.',
-  category: 'The category was saved.',
-  'movement-deleted': 'The movement was deleted.',
+/** What is counted for "what is stored about you", in the order shown. */
+const storedCountKeys: [StoredCountKey, keyof ReturnType<typeof storedCounts>][] = [
+  ['countInputs', 'inputs'],
+  ['countBankAccounts', 'bankAccounts'],
+  ['countBankMovements', 'bankMovements'],
+  ['countBankConnections', 'bankConnections'],
+  ['countBankImports', 'bankImports'],
+  ['countHabitGoals', 'habitGoals'],
+  ['countHabitCheckins', 'habitCheckins'],
+];
+
+/**
+ * One page request: its language, the texts of these routes in that language, and where the
+ * language switcher of the answer links to (`self`, set only when the request is a GET that can
+ * simply be made again).
+ */
+type Visit = {
+  locale: Locale;
+  t: ReturnType<typeof translator<keyof typeof routeMessages.en>>;
+  /** A refusal worded by another layer, in the language of the page. */
+  refusal: (message: string, code?: AuthErrorCode) => string;
+  /** The notice of a `done` code after a redirect, or undefined. */
+  notice: (done: string | null) => string | undefined;
+  self: string | undefined;
+  /** The language of a page whose switcher links to `path`; without a path the page has no switcher. */
+  page: (path?: string) => PageLanguage;
 };
+
+function visitOf(request: IncomingMessage, url: URL, locale: Locale): Visit {
+  const query = new URLSearchParams(url.search);
+  // The switcher sets `lang` itself, and a notice is said once.
+  query.delete('lang');
+  query.delete('done');
+  const repeatable = request.method === 'GET' && url.pathname !== '/bank/consent/callback';
+  const notice = translator(noticeMessages, locale);
+  return {
+    locale,
+    t: translator(routeMessages, locale),
+    refusal: (message, code) => localizeRefusal(message, locale, code),
+    notice: done =>
+      done !== null && Object.hasOwn(noticeMessages.en, done)
+        ? notice(done as keyof typeof noticeMessages.en)
+        : undefined,
+    self: repeatable ? `${url.pathname}${query.size ? `?${query}` : ''}` : undefined,
+    page: path => ({ locale, path }),
+  };
+}
+
+/** A page in the language of the visit: `Content-Language`, and a cache key that includes the language. */
+function sendPage(response: ServerResponse, visit: Visit, status: number, html: string, formAction: string[] = []) {
+  response.setHeader('Content-Language', visit.locale);
+  response.setHeader('Vary', 'Accept-Language, Cookie');
+  return sendHtml(response, status, html, formAction);
+}
 
 const sessionCookie = (secure: boolean) => (secure ? '__Host-rc_session' : 'rc_session');
 const preCookie = (secure: boolean) => (secure ? '__Host-rc_pre' : 'rc_pre');
@@ -132,19 +180,14 @@ export function createAccountRoutes(options: AccountRouteOptions) {
   }
 
   /** A form post must come from this origin and carry the CSRF token of the session (or pre-session). */
-  function assertForm(request: IncomingMessage, key: string | undefined, fields: Record<string, string>) {
+  function assertForm(request: IncomingMessage, visit: Visit, key: string | undefined, fields: Record<string, string>) {
     const origin = request.headers.origin;
     if (origin !== undefined && origin !== options.requestOrigin(request)) {
       // The page is ours but the request arrived under another name: a proxy replaced `Host`.
-      if (origin === options.publicOrigin)
-        throw new ApiError(
-          403,
-          'This server is behind a proxy that does not pass the original Host header, so it cannot check where this form came from. The operator must configure the proxy to preserve Host.',
-        );
-      throw new ApiError(403, 'This form was sent from another site.');
+      if (origin === options.publicOrigin) throw new ApiError(403, visit.t('proxyHost'));
+      throw new ApiError(403, visit.t('otherSite'));
     }
-    if (!verifyCsrf(key, fields.csrf))
-      throw new ApiError(403, 'This form expired. Go back, reload the page and try again.');
+    if (!verifyCsrf(key, fields.csrf)) throw new ApiError(403, visit.t('formExpired'));
   }
 
   function startBrowserSession(
@@ -163,11 +206,11 @@ export function createAccountRoutes(options: AccountRouteOptions) {
     response.appendHeader('Set-Cookie', serializeCookie(preCookie(secure), '', { secure, maxAgeSeconds: 0 }));
   }
 
-  async function summary(account: {
-    userId: string;
-    createdAt: string;
-    lastLoginAt: string | null;
-  }): Promise<StoredSummary> {
+  async function summary(
+    account: { userId: string; createdAt: string; lastLoginAt: string | null },
+    locale: Locale,
+  ): Promise<StoredSummary> {
+    const label = translator(accountMessages, locale);
     const counts = storedCounts(options.db, account.userId);
     const context = await options.context(account.userId).catch(() => ({}) as Record<string, unknown>);
     const data = ((context.resolved as { data?: Record<string, Record<string, unknown>> } | undefined)?.data ??
@@ -184,15 +227,7 @@ export function createAccountRoutes(options: AccountRouteOptions) {
       userId: account.userId,
       createdAt: account.createdAt,
       lastLoginAt: account.lastLoginAt,
-      counts: [
-        { label: 'Saved answer records', count: counts.inputs },
-        { label: 'Bank accounts', count: counts.bankAccounts },
-        { label: 'Bank movements', count: counts.bankMovements },
-        { label: 'Bank connections', count: counts.bankConnections },
-        { label: 'Imported statements', count: counts.bankImports },
-        { label: 'Habit goals', count: counts.habitGoals },
-        { label: 'Habit check-ins', count: counts.habitCheckins },
-      ],
+      counts: storedCountKeys.map(([message, kind]) => ({ label: label(message), count: counts[kind] })),
       answers,
     };
   }
@@ -256,21 +291,32 @@ export function createAccountRoutes(options: AccountRouteOptions) {
   /** The account page of a session, with an optional notice or error and the status to answer with. */
   async function renderAccount(
     response: ServerResponse,
+    visit: Visit,
     session: NonNullable<ReturnType<typeof sessionOf>>,
     view: { status?: number; notice?: string; error?: string; query?: URLSearchParams | Record<string, string> } = {},
   ) {
-    return sendHtml(
+    const bank = await bankSection(session.account.userId, view.query ?? {});
+    // After a form the switcher links to the account page itself, at the movements being shown.
+    const shown = new URLSearchParams();
+    if (bank?.from) shown.set('from', bank.from);
+    if (bank?.to) shown.set('to', bank.to);
+    if (bank && bank.page > 1) shown.set('page', String(bank.page));
+    return sendPage(
       response,
+      visit,
       view.status ?? 200,
-      accountPage({
-        csrf: session.csrf,
-        account: session.account,
-        stored: await summary(session.account),
-        clients: oauth.connectedClients(session.account.id),
-        bank: await bankSection(session.account.userId, view.query ?? {}),
-        notice: view.notice,
-        error: view.error,
-      }),
+      accountPage(
+        {
+          csrf: session.csrf,
+          account: session.account,
+          stored: await summary(session.account, visit.locale),
+          clients: oauth.connectedClients(session.account.id),
+          bank,
+          notice: view.notice,
+          error: view.error,
+        },
+        visit.page(`/account${shown.size ? `?${shown}` : ''}`),
+      ),
     );
   }
 
@@ -286,10 +332,10 @@ export function createAccountRoutes(options: AccountRouteOptions) {
    * and only in the browser session of the person who started the consent; anything else is refused
    * and nothing is connected.
    */
-  async function consentCallback(request: IncomingMessage, response: ServerResponse, url: URL) {
-    if (request.method !== 'GET') throw new ApiError(405, 'Method not allowed');
+  async function consentCallback(request: IncomingMessage, response: ServerResponse, url: URL, visit: Visit) {
+    if (request.method !== 'GET') throw new ApiError(405, visit.t('methodNotAllowed'));
     const bank = options.bank;
-    if (!bank) throw new ApiError(404, 'Not found');
+    if (!bank) throw new ApiError(404, visit.t('notFound'));
     const session = sessionOf(request);
     if (!session) {
       // Signing in starts a new session, and the consent is bound to the old one: it has to be started again.
@@ -306,10 +352,17 @@ export function createAccountRoutes(options: AccountRouteOptions) {
       return redirect(response, `/account?done=${done}#bank`, 302);
     } catch (error) {
       if (!(error instanceof ApiError)) throw error;
-      return sendHtml(
+      return sendPage(
         response,
+        visit,
         error.status,
-        messagePage('Your bank was not connected', error.message, session.account, session.csrf),
+        messagePage(
+          visit.t('bankNotConnectedTitle'),
+          visit.refusal(error.message),
+          session.account,
+          session.csrf,
+          visit.page(),
+        ),
       );
     }
   }
@@ -320,26 +373,27 @@ export function createAccountRoutes(options: AccountRouteOptions) {
     response: ServerResponse,
     path: string,
     session: NonNullable<ReturnType<typeof sessionOf>>,
+    visit: Visit,
   ) {
     const bank = options.bank;
-    if (!bank) throw new ApiError(404, 'Not found');
+    if (!bank) throw new ApiError(404, visit.t('notFound'));
     const { userId } = session.account;
     let fields: Record<string, string> = {};
     let upload: { filename?: string; value: string } | undefined;
     if (path === '/account/bank/import') {
       // The only form with a file: its fields, the CSRF token included, arrive as multipart parts.
-      const parts = await readMultipart(request, maxStatementBytes + 8192, 'The statement is larger than 256 KiB.');
+      const parts = await readMultipart(request, maxStatementBytes + 8192, visit.t('statementTooLarge'));
       for (const part of parts) {
         if (part.name === 'statement') upload = part;
         else if (!(part.name in fields)) fields[part.name] = part.value;
       }
     } else fields = await readForm(request);
-    assertForm(request, session.id, fields);
+    assertForm(request, visit, session.id, fields);
     try {
       if (path === '/account/bank/connect') {
         const provider = fields.provider ?? '';
         const choice = (await bank.sync.banks()).find(candidate => candidate.id === provider);
-        if (!choice) throw new ApiError(404, 'This bank cannot be connected here.');
+        if (!choice) throw new ApiError(404, visit.t('bankCannotConnect'));
         if (choice.connect === 'direct') {
           await bank.sync.connectSelf(userId, choice.id);
           return backToAccount(response, 'bank-connected');
@@ -348,22 +402,27 @@ export function createAccountRoutes(options: AccountRouteOptions) {
           sessionKey: session.id,
           returnUrl: `${options.requestOrigin(request)}/bank/consent/callback`,
         });
-        return sendHtml(
+        return sendPage(
           response,
+          visit,
           200,
-          bankLeavePage({
-            csrf: session.csrf,
-            account: session.account,
-            bank: choice,
-            redirectUrl: started.redirectUrl,
-            expiresAt: started.expiresAt,
-          }),
+          bankLeavePage(
+            {
+              csrf: session.csrf,
+              account: session.account,
+              bank: choice,
+              redirectUrl: started.redirectUrl,
+              expiresAt: started.expiresAt,
+            },
+            visit.page(),
+          ),
         );
       }
       if (path === '/account/bank/sync') {
         const { results } = await bank.sync.sync(userId, fields.connection || undefined);
         const failed = results.find(result => result.status === 'failed');
-        if (failed && 'error' in failed) throw new ApiError(502, `The bank could not be fetched: ${failed.error}`);
+        if (failed && 'error' in failed)
+          throw new ApiError(502, visit.t('bankFetchFailed', { error: visit.refusal(String(failed.error)) }));
         return backToAccount(response, 'synced');
       }
       if (path === '/account/bank/disconnect') {
@@ -371,17 +430,21 @@ export function createAccountRoutes(options: AccountRouteOptions) {
         return backToAccount(response, 'bank-disconnected');
       }
       if (path === '/account/bank/import') {
-        if (!upload?.value.trim()) throw new ApiError(400, 'Choose a CSV file first.');
+        if (!upload?.value.trim()) throw new ApiError(400, visit.t('chooseCsv'));
         const preview = (await bank.statements.preview(userId, upload.value)) as StatementPreview;
-        return sendHtml(
+        return sendPage(
           response,
+          visit,
           200,
-          statementPreviewPage({
-            csrf: session.csrf,
-            account: session.account,
-            preview,
-            filename: upload.filename?.slice(0, 120),
-          }),
+          statementPreviewPage(
+            {
+              csrf: session.csrf,
+              account: session.account,
+              preview,
+              filename: upload.filename?.slice(0, 120),
+            },
+            visit.page(),
+          ),
         );
       }
       if (path === '/account/bank/import/confirm') {
@@ -404,14 +467,14 @@ export function createAccountRoutes(options: AccountRouteOptions) {
         await bank.ledger.deleteManual(userId, fields.movement ?? '');
         return backToAccount(response, 'movement-deleted', fields, 'movements');
       }
-      throw new ApiError(404, 'Not found');
+      throw new ApiError(404, visit.t('notFound'));
     } catch (error) {
       const known = error instanceof ApiError;
       // Anything that is not a refusal worded for the person is a fault, answered as one.
       if (!known && !(error instanceof z.ZodError)) throw error;
-      return renderAccount(response, session, {
+      return renderAccount(response, visit, session, {
         status: known ? error.status : 400,
-        error: known ? error.message : 'That did not work. Check what you entered and try again.',
+        error: known ? visit.refusal(error.message) : visit.t('didNotWork'),
         query: fields,
       });
     }
@@ -490,13 +553,24 @@ export function createAccountRoutes(options: AccountRouteOptions) {
   }
 
   /** `GET` and `POST /oauth/authorize`: validate, require a sign-in, show consent, then redirect back. */
-  async function authorize(request: IncomingMessage, response: ServerResponse, url: URL) {
+  async function authorize(request: IncomingMessage, response: ServerResponse, url: URL, visit: Visit) {
     const posted = request.method === 'POST' ? await readForm(request) : null;
     const params = posted ?? Object.fromEntries(url.searchParams);
     const validated = oauth.validateAuthorize(params);
     if ('kind' in validated) {
       if (validated.kind === 'redirect') return redirect(response, validated.location, 302);
-      return sendHtml(response, 400, messagePage('This connection cannot continue', validated.message));
+      return sendPage(
+        response,
+        visit,
+        400,
+        messagePage(
+          visit.t('cannotContinueTitle'),
+          visit.refusal(validated.message),
+          null,
+          undefined,
+          visit.page(visit.self),
+        ),
+      );
     }
     const session = sessionOf(request);
     const replay: Record<string, string> = {};
@@ -520,31 +594,36 @@ export function createAccountRoutes(options: AccountRouteOptions) {
     const target = new URL(validated.redirectUri);
     const formAction = [/^https?:$/.test(target.protocol) ? target.origin : target.protocol];
     if (!posted)
-      return sendHtml(
+      return sendPage(
         response,
+        visit,
         200,
-        consentPage({
-          csrf: session.csrf,
-          account: session.account,
-          client: validated.client,
-          redirectUri: validated.redirectUri,
-          scopes: validated.scopes,
-          params: replay,
-        }),
+        consentPage(
+          {
+            csrf: session.csrf,
+            account: session.account,
+            client: validated.client,
+            redirectUri: validated.redirectUri,
+            scopes: validated.scopes,
+            params: replay,
+          },
+          // The switcher repeats the validated request, so the consent is asked again in the new language.
+          visit.page(`/oauth/authorize?${new URLSearchParams(replay)}`),
+        ),
         formAction,
       );
-    assertForm(request, session.id, posted);
+    assertForm(request, visit, session.id, posted);
     const location = posted.decision === 'allow' ? oauth.approve(session.account.id, validated) : oauth.deny(validated);
     return redirect(response, location, 303);
   }
 
-  async function pages(request: IncomingMessage, response: ServerResponse, url: URL) {
+  async function pages(request: IncomingMessage, response: ServerResponse, url: URL, visit: Visit) {
     const path = url.pathname;
     const get = request.method === 'GET';
     const post = request.method === 'POST';
-    if (!get && !post) throw new ApiError(405, 'Method not allowed');
-    if (path === '/oauth/authorize') return authorize(request, response, url);
-    if (path === '/bank/consent/callback') return consentCallback(request, response, url);
+    if (!get && !post) throw new ApiError(405, visit.t('methodNotAllowed'));
+    if (path === '/oauth/authorize') return authorize(request, response, url, visit);
+    if (path === '/bank/consent/callback') return consentCallback(request, response, url, visit);
     const session = sessionOf(request);
     const client = options.client(request);
 
@@ -556,15 +635,17 @@ export function createAccountRoutes(options: AccountRouteOptions) {
       if (get) {
         const next = safeNext(url.searchParams.get('next'));
         if (session) return redirect(response, next ?? '/account');
-        if (signUp) return sendHtml(response, 200, signUpPage({ csrf, next, closed: !options.signUps }));
-        return sendHtml(response, 200, loginPage({ csrf, next }));
+        // The switcher keeps only the destination that was accepted, never the raw query.
+        const own = visit.page(`${path}${next ? `?${new URLSearchParams({ next })}` : ''}`);
+        if (signUp) return sendPage(response, visit, 200, signUpPage({ csrf, next, closed: !options.signUps }, own));
+        return sendPage(response, visit, 200, loginPage({ csrf, next }, own));
       }
       const fields = await readForm(request);
       const next = safeNext(fields.next);
       try {
-        assertForm(request, pre.cookie ? undefined : pre.key, fields);
+        assertForm(request, visit, pre.cookie ? undefined : pre.key, fields);
         if (signUp) {
-          if (!options.signUps) throw new ApiError(403, 'New accounts are closed on this server.');
+          if (!options.signUps) throw new ApiError(403, visit.t('signUpsClosed'));
           const account = await accounts.signUp({ email: fields.email, password: fields.password, ...client });
           startBrowserSession(request, response, accounts.startSession(account.id));
         } else {
@@ -581,7 +662,11 @@ export function createAccountRoutes(options: AccountRouteOptions) {
       } catch (error) {
         if (error instanceof DatabaseBusyError) throw error;
         const message =
-          error instanceof AuthError || error instanceof ApiError ? error.message : 'Something went wrong. Try again.';
+          error instanceof AuthError
+            ? visit.refusal(error.message, error.code)
+            : error instanceof ApiError
+              ? visit.refusal(error.message)
+              : visit.t('somethingWrong');
         const status =
           error instanceof AuthError && error.code === 'throttled'
             ? 429
@@ -591,17 +676,24 @@ export function createAccountRoutes(options: AccountRouteOptions) {
         if (error instanceof AuthError && error.retryAfterSeconds)
           response.setHeader('Retry-After', String(error.retryAfterSeconds));
         const email = typeof fields.email === 'string' ? fields.email.slice(0, 254) : undefined;
+        const own = visit.page(`${path}${next ? `?${new URLSearchParams({ next })}` : ''}`);
         const page = signUp
-          ? signUpPage({ csrf, next, email, error: message })
-          : loginPage({ csrf, next, email, error: message });
-        return sendHtml(response, status, page);
+          ? signUpPage({ csrf, next, email, error: message }, own)
+          : loginPage({ csrf, next, email, error: message }, own);
+        return sendPage(response, visit, status, page);
       }
     }
 
     if (path === '/logout') {
       if (!session) return redirect(response, '/login');
-      if (get) return sendHtml(response, 200, logoutPage({ csrf: session.csrf, account: session.account }));
-      assertForm(request, session.id, await readForm(request));
+      if (get)
+        return sendPage(
+          response,
+          visit,
+          200,
+          logoutPage({ csrf: session.csrf, account: session.account }, visit.page('/logout')),
+        );
+      assertForm(request, visit, session.id, await readForm(request));
       accounts.logout(session.id);
       options.onSignOut?.(session.account.userId);
       const secure = secureOf(request);
@@ -611,19 +703,19 @@ export function createAccountRoutes(options: AccountRouteOptions) {
 
     if (path === '/account' && get) {
       if (!session) return redirect(response, '/login?next=%2Faccount');
-      const notice = notices[url.searchParams.get('done') ?? ''];
-      return renderAccount(response, session, { notice, query: url.searchParams });
+      const notice = visit.notice(url.searchParams.get('done'));
+      return renderAccount(response, visit, session, { notice, query: url.searchParams });
     }
 
     if (path.startsWith('/account/bank/') && post) {
       if (!session) return redirect(response, '/login?next=%2Faccount');
-      return bankForms(request, response, path, session);
+      return bankForms(request, response, path, session, visit);
     }
 
     if (path === '/account/export' && post) {
       if (!session) return redirect(response, '/login?next=%2Faccount');
-      assertForm(request, session.id, await readForm(request));
-      if (!options.exportPerson) throw new ApiError(404, 'Not found');
+      assertForm(request, visit, session.id, await readForm(request));
+      if (!options.exportPerson) throw new ApiError(404, visit.t('notFound'));
       const body = JSON.stringify(options.exportPerson(session.account.userId), null, 2);
       response
         .writeHead(200, {
@@ -639,7 +731,7 @@ export function createAccountRoutes(options: AccountRouteOptions) {
     if (path === '/account/password' && post) {
       if (!session) return redirect(response, '/login?next=%2Faccount');
       const fields = await readForm(request);
-      assertForm(request, session.id, fields);
+      assertForm(request, visit, session.id, fields);
       try {
         await accounts.changePassword(
           session.account.id,
@@ -649,9 +741,9 @@ export function createAccountRoutes(options: AccountRouteOptions) {
       } catch (error) {
         if (!(error instanceof AuthError)) throw error;
         if (error.retryAfterSeconds) response.setHeader('Retry-After', String(error.retryAfterSeconds));
-        return renderAccount(response, session, {
+        return renderAccount(response, visit, session, {
           status: error.code === 'throttled' ? 429 : 400,
-          error: error.message,
+          error: visit.refusal(error.message, error.code),
         });
       }
       // Nothing issued under the old password keeps working: every assistant has to be connected again.
@@ -663,14 +755,13 @@ export function createAccountRoutes(options: AccountRouteOptions) {
     if ((path === '/account/disconnect' || path === '/account/delete') && post) {
       if (!session) return redirect(response, '/login?next=%2Faccount');
       const fields = await readForm(request);
-      assertForm(request, session.id, fields);
+      assertForm(request, visit, session.id, fields);
       if (path === '/account/disconnect') {
         oauth.disconnect(session.account.id, fields.grant ?? '');
         return redirect(response, '/account?done=disconnected');
       }
       try {
-        if (fields.confirm !== 'yes')
-          throw new AuthError('invalid_credentials', 'Tick the box to confirm the deletion.');
+        if (fields.confirm !== 'yes') throw new AuthError('invalid_credentials', visit.t('tickToConfirm'));
         // Counted for this session only: no stranger's wrong guesses can stand between a person and this.
         await accounts.deleteAccount(session.account.id, fields.password, {
           sessionId: session.id,
@@ -678,26 +769,25 @@ export function createAccountRoutes(options: AccountRouteOptions) {
         });
       } catch (error) {
         if (error instanceof DatabaseBusyError) throw error;
-        const message = error instanceof AuthError ? error.message : 'The account could not be deleted.';
+        const message =
+          error instanceof AuthError ? visit.refusal(error.message, error.code) : visit.t('accountNotDeleted');
         if (error instanceof AuthError && error.retryAfterSeconds)
           response.setHeader('Retry-After', String(error.retryAfterSeconds));
-        return renderAccount(response, session, {
+        return renderAccount(response, visit, session, {
           status: error instanceof AuthError && error.code === 'throttled' ? 429 : 400,
           error: message,
         });
       }
       const secure = secureOf(request);
       response.appendHeader('Set-Cookie', serializeCookie(sessionCookie(secure), '', { secure, maxAgeSeconds: 0 }));
-      return sendHtml(
+      return sendPage(
         response,
+        visit,
         200,
-        messagePage(
-          'Your account was deleted',
-          'Your account, your answers and every connection were removed from ReloCat.',
-        ),
+        messagePage(visit.t('deletedTitle'), visit.t('deletedMessage'), null, undefined, visit.page()),
       );
     }
-    throw new ApiError(404, 'Not found');
+    throw new ApiError(404, visit.t('notFound'));
   }
 
   const machinePaths = new Set([
@@ -737,15 +827,21 @@ export function createAccountRoutes(options: AccountRouteOptions) {
       const url = new URL(request.url ?? '/', 'http://localhost');
       if (machinePaths.has(url.pathname)) return machine(request, response, url.pathname);
       if (!pagePaths.has(url.pathname)) return false;
+      const language = requestLocale(request);
+      const visit = visitOf(request, url, language.locale);
+      // A language chosen with `?lang=` is remembered: the form posts and redirects that follow carry no query.
+      const plain = (title: string, message: string) =>
+        messagePage(title, message, null, undefined, visit.page(visit.self));
       try {
-        await pages(request, response, url);
+        if (language.chosen) response.appendHeader('Set-Cookie', localeCookie(language.locale, secureOf(request)));
+        await pages(request, response, url, visit);
       } catch (error) {
         if (response.headersSent) response.destroy();
         // A busy database is answered in one place for every route: `createApp`.
         else if (error instanceof DatabaseBusyError) throw error;
         else if (error instanceof ApiError)
-          sendHtml(response, error.status, messagePage('That did not work', error.message));
-        else sendHtml(response, 500, messagePage('Something went wrong', 'Try again in a moment.'));
+          sendPage(response, visit, error.status, plain(visit.t('didNotWorkTitle'), visit.refusal(error.message)));
+        else sendPage(response, visit, 500, plain(visit.t('wrongTitle'), visit.t('tryInAMoment')));
       }
       return true;
     },

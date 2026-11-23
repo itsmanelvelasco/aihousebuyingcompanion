@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Person, PlanResult } from '../../packages/contracts/planner.ts';
+import type { Locale } from '../../packages/i18n/locales.ts';
+import { translator } from '../../packages/i18n/messages.ts';
 import type { BankEvent, BankRuntime, BankSummary, PlanAssumptionsInput, ToolClient } from './client.ts';
 import { ToolError } from './client.ts';
 import type { Subject } from './launch.ts';
 import { subjectKey } from './launch.ts';
+import { errorMessages } from './messages/errors.messages.ts';
 import type { HabitOverrides } from './view-model.ts';
 import { addedTransactions, applyHabitOverrides, effectiveOverrides, lastCompleteMonths } from './view-model.ts';
 
-const asToolError = (error: unknown, tool: string) =>
-  error instanceof ToolError ? error : new ToolError(tool, 'failed', `The ${tool} tool could not be reached.`);
+const asToolError = (error: unknown, tool: string, locale: Locale) =>
+  error instanceof ToolError
+    ? error
+    : new ToolError(tool, 'failed', translator(errorMessages, locale)('toolUnreachable', { tool }));
 
 // --------------------------------------------------------------------- plan
 
@@ -98,7 +103,7 @@ export function usePlan(
         setState(previous => ({
           ...previous,
           phase: previous.result ? 'ready' : 'error',
-          error: asToolError(error, 'plan_home_savings'),
+          error: asToolError(error, 'plan_home_savings', client.locale),
           refreshing: false,
         }));
       }
@@ -160,6 +165,9 @@ export function useBankFeed(client: ToolClient, subject: Subject, onActivity: ()
   const [attempt, setAttempt] = useState(0);
   const notify = useRef(onActivity);
   notify.current = onActivity;
+  // A change of language makes a new client; the feed keeps its cursor and goes on with the new one.
+  const clientRef = useRef(client);
+  clientRef.current = client;
 
   const key = subjectKey(subject);
   const subjectRef = useRef(subject);
@@ -184,16 +192,19 @@ export function useBankFeed(client: ToolClient, subject: Subject, onActivity: ()
     const loadSummary = async () => {
       try {
         const period = lastCompleteMonths(new Date().toISOString().slice(0, 10), 3);
-        const summary = await client.bankSummary(subject, period);
+        const summary = await clientRef.current.bankSummary(subject, period);
         if (!cancelled) setState(previous => ({ ...previous, summary, summaryError: null }));
       } catch (error) {
         if (!cancelled)
-          setState(previous => ({ ...previous, summaryError: asToolError(error, 'get_bank_summary').message }));
+          setState(previous => ({
+            ...previous,
+            summaryError: asToolError(error, 'get_bank_summary', clientRef.current.locale).message,
+          }));
       }
     };
     const loadRuntime = async () => {
       try {
-        const runtime = await client.bankRuntime(subject);
+        const runtime = await clientRef.current.bankRuntime(subject);
         if (cancelled) return;
         pollMs = clampPoll(runtime.intervalMs);
         setState(previous => ({ ...previous, runtime, pollMs }));
@@ -213,13 +224,13 @@ export function useBankFeed(client: ToolClient, subject: Subject, onActivity: ()
         let requiresRefresh = false;
         if (first) {
           // Start near the end of the log: the five newest events are enough for the list.
-          const head = await client.bankUpdates(subject, 0, 1);
+          const head = await clientRef.current.bankUpdates(subject, 0, 1);
           cursor = Math.max(0, head.latestRevision - 5);
           // An empty log on an untouched ledger means the ledger holds nothing yet.
           if (head.latestRevision === 0) ledgerSize = 0;
         }
         for (let page = 0; page < 5; page += 1) {
-          const updates = await client.bankUpdates(subject, cursor, 100);
+          const updates = await clientRef.current.bankUpdates(subject, cursor, 100);
           cursor = updates.nextCursor;
           received.push(...updates.events);
           requiresRefresh ||= updates.requiresRefresh;
@@ -255,7 +266,11 @@ export function useBankFeed(client: ToolClient, subject: Subject, onActivity: ()
       } catch (error) {
         if (cancelled) return;
         nextDelay = 30_000;
-        setState(previous => ({ ...previous, phase: 'error', error: asToolError(error, 'get_bank_updates') }));
+        setState(previous => ({
+          ...previous,
+          phase: 'error',
+          error: asToolError(error, 'get_bank_updates', clientRef.current.locale),
+        }));
       }
       timer = setTimeout(poll, nextDelay);
     };
@@ -264,7 +279,7 @@ export function useBankFeed(client: ToolClient, subject: Subject, onActivity: ()
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [client, key, attempt]);
+  }, [key, attempt]);
 
   return { state, retry: useCallback(() => setAttempt(value => value + 1), []) };
 }

@@ -20,55 +20,116 @@
   #totals div:last-child dd { color: var(--rc-accent); }
   #expenses { color: var(--rc-muted); margin-top: 0; }
   details { margin-top: 4px; border-top: 1px solid var(--rc-line); }
+  .rc-lang { margin-top: 8px; }
 </style>
 <main>
   <div class="card-head">
-    <h2><!-- ICON:wallet -->Sample monthly cash flow</h2>
-    <span class="rc-pill rc-pill--violet">Fictional data</span>
+    <h2><!-- ICON:wallet --><span data-i18n="heading">Sample monthly cash flow</span></h2>
+    <span class="rc-pill rc-pill--violet" data-i18n="fictional">Fictional data</span>
   </div>
   <p id="coverage" role="status">Loading fictional transaction summary…</p>
   <dl id="totals"></dl>
   <details id="breakdown" hidden>
-    <summary>Spending by category</summary>
+    <summary data-i18n="breakdown">Spending by category</summary>
     <dl id="expenses"></dl>
   </details>
+  <div class="rc-lang" id="languages" role="group"></div>
 </main>
 <script>
+  // The three languages of cash-flow.messages.ts; tests/i18n-pages.test.ts keeps this copy equal to it.
+  const messages = {"en":{"title":"Sample cash flow","heading":"Sample monthly cash flow","fictional":"Fictional data","loading":"Loading fictional transaction summary…","coverage":"{count, plural, one {# month of fictional transactions} other {# months of fictional transactions}}","salary":"Estimated salary","spending":"Average spending","net":"Net cash flow","breakdown":"Spending by category","rent":"Housing (rent)","eatingOut":"Restaurants and takeout","unidentified":"Unidentified","unavailable":"Cash flow preview is unavailable.","language":"Language"},"ca":{"title":"Flux de caixa de mostra","heading":"Flux de caixa mensual de mostra","fictional":"Dades fictícies","loading":"S’està carregant el resum de moviments ficticis…","coverage":"{count, plural, one {# mes de moviments ficticis} other {# mesos de moviments ficticis}}","salary":"Sou estimat","spending":"Despesa mitjana","net":"Flux de caixa net","breakdown":"Despeses per categoria","rent":"Habitatge (lloguer)","eatingOut":"Restaurants i menjar per emportar","unidentified":"Sense identificar","unavailable":"La previsualització del flux de caixa no està disponible.","language":"Idioma"},"es":{"title":"Flujo de caja de muestra","heading":"Flujo de caja mensual de muestra","fictional":"Datos ficticios","loading":"Cargando el resumen de movimientos ficticios…","coverage":"{count, plural, one {# mes de movimientos ficticios} other {# meses de movimientos ficticios}}","salary":"Salario estimado","spending":"Gasto medio","net":"Flujo de caja neto","breakdown":"Gastos por categoría","rent":"Vivienda (alquiler)","eatingOut":"Restaurantes y comida para llevar","unidentified":"Sin identificar","unavailable":"La vista previa del flujo de caja no está disponible.","language":"Idioma"}};
+  const names = { en: 'English', ca: 'Català', es: 'Castellano' };
+  const tags = { en: 'en-IE', ca: 'ca-ES', es: 'es-ES' };
+  const storageKey = 'relocat.lang';
   const byId = id => document.getElementById(id);
-  const money = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'EUR' });
   const notify = (method, params) => window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
 
+  function toLocale(tag) {
+    const code = String(tag ?? '').trim().toLowerCase().split(/[-_]/)[0];
+    return Object.hasOwn(names, code) ? code : null;
+  }
+  // The order of chooseLocale in packages/i18n/browser.ts: the address, the stored choice, the host, the browser.
+  function pickLocale(search, stored, host, languages) {
+    return toLocale(new URLSearchParams(search).get('lang')) ?? toLocale(stored) ?? toLocale(host)
+      ?? languages.map(toLocale).find(Boolean) ?? 'en';
+  }
+  function stored() {
+    try { return localStorage.getItem(storageKey); } catch { return null; }
+  }
+
+  let hostLocale = window.openai?.locale;
+  let chosen = null;
+  let locale = 'en';
+  let summary = null;
+  let failed = false;
+
+  function say(key, values = {}) {
+    return messages[locale][key].replace(/\{(\w+), plural, one \{([^}]*)\} other \{([^}]*)\}\}/, (_, name, one, other) =>
+      (new Intl.PluralRules(tags[locale]).select(values[name]) === 'one' ? one : other).replace('#', values[name]));
+  }
+
   function renderRows(id, rows) {
+    const money = new Intl.NumberFormat(tags[locale], { style: 'currency', currency: 'EUR' });
     byId(id).replaceChildren(...rows.map(([label, amount]) => {
       const row = document.createElement('div');
       const name = document.createElement('dt');
       const value = document.createElement('dd');
       name.textContent = label;
-      value.textContent = Number.isFinite(amount) ? money.format(amount) : 'Unidentified';
+      value.textContent = Number.isFinite(amount) ? money.format(amount) : say('unidentified');
       row.append(name, value);
       return row;
     }));
   }
 
-  function render(summary) {
-    if (!Array.isArray(summary?.observedMonths) || !summary.monthlyExpenses) return;
-    byId('coverage').textContent = summary.observedMonths.length + ' months of fictional transactions';
+  function render() {
+    locale = chosen ?? pickLocale(location.search, stored(), hostLocale, [...(navigator.languages ?? [])]);
+    document.documentElement.lang = locale;
+    document.title = say('title');
+    for (const element of document.querySelectorAll('[data-i18n]')) element.textContent = say(element.dataset.i18n);
+    byId('languages').setAttribute('aria-label', say('language'));
+    for (const button of byId('languages').children) button.setAttribute('aria-pressed', String(button.lang === locale));
+    const known = Array.isArray(summary?.observedMonths) && summary.monthlyExpenses;
+    byId('coverage').textContent = known
+      ? say('coverage', { count: summary.observedMonths.length })
+      : say(failed ? 'unavailable' : 'loading');
+    if (!known) return;
     renderRows('totals', [
-      ['Estimated salary', summary.estimatedMonthlySalary],
-      ['Average spending', summary.monthlyCostOfLiving],
-      ['Net cash flow', summary.monthlyNetCashFlow],
+      [say('salary'), summary.estimatedMonthlySalary],
+      [say('spending'), summary.monthlyCostOfLiving],
+      [say('net'), summary.monthlyNetCashFlow],
     ]);
-    const labels = { Rent: 'Housing (rent)', 'Eating out': 'Restaurants and takeout' };
+    // Category names come from the statement; the two the sample relabels are translated.
+    const labels = { Rent: say('rent'), 'Eating out': say('eatingOut') };
     renderRows('expenses', Object.entries(summary.monthlyExpenses).map(([name, amount]) => [labels[name] ?? name, amount]));
     byId('breakdown').hidden = false;
   }
 
+  for (const code of Object.keys(names)) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.lang = code;
+    button.textContent = names[code];
+    button.onclick = () => {
+      // A choice made here wins for this view; stored, it is also the language of the next one.
+      chosen = code;
+      try { localStorage.setItem(storageKey, code); } catch {}
+      render();
+    };
+    byId('languages').append(button);
+  }
+  render();
+
   window.addEventListener('message', event => {
     if (event.source !== window.parent || event.data?.jsonrpc !== '2.0') return;
     const message = event.data;
-    if (message.id === 1 && message.result) notify('ui/notifications/initialized', {});
-    if (message.id === 1 && message.error) byId('coverage').textContent = 'Cash flow preview is unavailable.';
-    if (message.method === 'ui/notifications/tool-result') render(message.params?.structuredContent);
+    if (message.id === 1 && message.result) {
+      notify('ui/notifications/initialized', {});
+      hostLocale = message.result.hostContext?.locale ?? hostLocale;
+    }
+    if (message.id === 1 && message.error) failed = true;
+    if (message.method === 'ui/notifications/host-context-changed' && message.params?.locale) hostLocale = message.params.locale;
+    if (message.method === 'ui/notifications/tool-result') summary = message.params?.structuredContent ?? summary;
+    render();
   });
   window.parent.postMessage({
     jsonrpc: '2.0',

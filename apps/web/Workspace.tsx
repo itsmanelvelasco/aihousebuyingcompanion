@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { Habit, Person } from '../../packages/contracts/planner.ts';
+import { common } from '../../packages/i18n/common.ts';
 import type { ToolClient } from './client.ts';
 import { BankStrip } from './components/BankStrip.tsx';
 import { Wordmark } from './components/bits.tsx';
@@ -10,14 +11,17 @@ import { PersonPanel } from './components/PersonPanel.tsx';
 import { PlacesPanel } from './components/PlacesPanel.tsx';
 import { formatDate } from './format.ts';
 import { useBankFeed, usePlan } from './hooks.ts';
+import { bold, LanguageSwitcher, rich, useLocale, useMessages } from './i18n.tsx';
 import { journey } from './journey.ts';
 import type { Subject, WorkspaceLaunch } from './launch.ts';
 import { subjectOf } from './launch.ts';
+import { workspaceMessages } from './messages/workspace.messages.ts';
 import type { HabitOverrides } from './view-model.ts';
 
 export type WorkspaceMode = 'host' | 'standalone' | 'fixture';
 
 type Props = {
+  /** Made for the language on screen: a change of language brings a new client and a new plan. */
   client: ToolClient;
   launch: WorkspaceLaunch;
   mode: WorkspaceMode;
@@ -36,42 +40,41 @@ function SubjectBanner(props: {
   onSubject: (s: Subject) => void;
 }) {
   const { subject, launch, mode } = props;
+  const t = useMessages(workspaceMessages);
   // Inside a chat host the page has no address of its own to link to; the host starts the sign-in.
   const pages = mode !== 'host';
   if (subject.kind === 'demo')
     return (
       <p className="rc-note subject-banner">
-        <strong>Fictional demo persona, read-only.</strong> {subject.demoId} is an invented household with invented bank
-        movements. Nothing here belongs to a real person and nothing you change is saved.{' '}
+        {rich(t('demoBanner'), { b: bold, name: subject.demoId })}{' '}
         {launch.signedIn ? (
           <button type="button" className="rc-btn rc-btn--sm" onClick={() => props.onSubject({ kind: 'me' })}>
-            Show my own plan
+            {t('showMyPlan')}
           </button>
         ) : pages ? (
-          <a href="/login?next=%2Fworkspace">Sign in to plan with your own figures</a>
+          <a href="/login?next=%2Fworkspace">{t('signInOwnFigures')}</a>
         ) : (
-          'Connect your ReloCat account in the chat to plan with your own figures.'
+          t('connectInChat')
         )}
       </p>
     );
   if (subject.kind === 'me')
     return (
       <p className="rc-note subject-banner">
-        <strong>Your own plan.</strong> These are the figures saved to your account; only you and the assistants you
-        connected can read them. {pages ? <a href="/account">Manage your account</a> : null}
+        {rich(t('meBanner'), { b: bold })} {pages ? <a href="/account">{t('manageAccount')}</a> : null}
       </p>
     );
   if (subject.kind === 'inline')
     return (
       <p className="rc-note rc-note--warn subject-banner">
-        <strong>What-if estimate, not saved.</strong> These figures were typed into this page and are stored nowhere.{' '}
-        {pages && !launch.signedIn ? <a href="/login?next=%2Fworkspace">Sign in to keep them</a> : null}{' '}
+        {rich(t('inlineBanner'), { b: bold })}{' '}
+        {pages && !launch.signedIn ? <a href="/login?next=%2Fworkspace">{t('signInToKeep')}</a> : null}{' '}
         <button
           type="button"
           className="rc-btn rc-btn--sm rc-btn--quiet"
           onClick={() => props.onSubject({ kind: 'none' })}
         >
-          Clear estimate
+          {t('clearEstimate')}
         </button>
       </p>
     );
@@ -79,6 +82,9 @@ function SubjectBanner(props: {
 }
 
 export function Workspace({ client, launch, mode }: Props) {
+  const locale = useLocale();
+  const t = useMessages(workspaceMessages);
+  const shared = useMessages(common);
   const [subject, setSubjectState] = useState<Subject>(() => subjectOf(launch));
   const [codes, setCodes] = useState(launch.municipalityCodes);
   const [overrides, setOverrides] = useState<HabitOverrides>(noOverrides);
@@ -103,42 +109,47 @@ export function Workspace({ client, launch, mode }: Props) {
   const person = storedPerson;
   const trail = useMemo(
     () =>
-      journey({
-        result: plan.result ?? null,
-        placeCount: codes.length,
-        bankMovements: feed.summary?.transactionCount ?? null,
-        bankSynthetic: feed.summary?.synthetic ?? null,
-      }),
-    [plan.result, codes.length, feed.summary],
+      journey(
+        {
+          result: plan.result ?? null,
+          placeCount: codes.length,
+          bankMovements: feed.summary?.transactionCount ?? null,
+          bankSynthetic: feed.summary?.synthetic ?? null,
+        },
+        locale,
+      ),
+    [plan.result, codes.length, feed.summary, locale],
   );
   const stored = subject.kind === 'me' || subject.kind === 'demo';
   const label =
     subject.kind === 'demo'
       ? subject.demoId
       : subject.kind === 'me'
-        ? 'your profile'
+        ? t('labelMe')
         : subject.kind === 'inline'
-          ? 'what-if'
+          ? t('labelWhatIf')
           : null;
-  const name = subject.kind === 'me' ? 'you have' : subject.kind === 'demo' ? `${subject.demoId} has` : null;
+  const dated = plan.result ? formatDate(plan.result.asOf, locale) : null;
 
   return (
     <main>
       <header className="masthead">
-        <Wordmark />
-        <h1>How soon could you buy?</h1>
+        <div className="masthead-top">
+          <Wordmark />
+          <LanguageSwitcher />
+        </div>
+        <h1>{t('heading')}</h1>
         <p className="lede">
-          {name && plan.result
-            ? `Time until ${name} the upfront cash for a home, place by place. Plan dated ${formatDate(plan.result.asOf)}.`
-            : 'Time until you have the upfront cash for a home, place by place: at today’s rate, with your habits, and with what each place offers.'}
+          {subject.kind === 'me' && dated
+            ? t('ledeMe', { date: dated })
+            : subject.kind === 'demo' && dated
+              ? t('ledeDemo', { name: subject.demoId, date: dated })
+              : t('ledeGeneric')}
         </p>
       </header>
 
       {mode === 'fixture' ? (
-        <p className="rc-note rc-note--warn fixture-banner">
-          <strong>Fixture preview.</strong> Sample figures written by hand, not planner output. Toggles call the fixture
-          and the timelines do not recalculate.
-        </p>
+        <p className="rc-note rc-note--warn fixture-banner">{rich(t('fixture'), { b: bold })}</p>
       ) : null}
 
       <SubjectBanner subject={subject} launch={launch} mode={mode} onSubject={setSubject} />
@@ -195,10 +206,7 @@ export function Workspace({ client, launch, mode }: Props) {
 
       {plan.result ? <Notes result={plan.result} /> : null}
 
-      <footer className="foot">
-        ReloCat estimates upfront cash only. It does not assess a mortgage, and aid is never guaranteed until the
-        administration confirms it.
-      </footer>
+      <footer className="foot">{shared('upfrontCashOnly')}</footer>
     </main>
   );
 }

@@ -11,16 +11,21 @@ import type {
   Snapshot,
 } from '../contracts/places.ts';
 import { recommendationInput, schoolStage } from '../contracts/places.ts';
+import { defaultLocale, type Locale } from '../i18n/locales.ts';
+import { type Translate, translator } from '../i18n/messages.ts';
 import { bestCommute, railwayCoverage, schoolJourneys, timeSeconds } from './access.ts';
 import { getTown, missingMetrics, snapshotInfo } from './data.ts';
 import { evaluateIncentives } from './eligibility.ts';
 import { nextSchoolDay, normalizedName } from './geography.ts';
 
+import { recommendMessages } from './messages.ts';
 import { getRelocationResearch } from './relocation.ts';
+import { type Wording, wording } from './wording.ts';
 
 type Result = z.infer<typeof recommendationResult>;
 type ProfileResult = z.infer<typeof profileRecommendationResult>;
 type Weight = keyof NonNullable<RecommendationInput['weights']>;
+type Say = Translate<keyof (typeof recommendMessages)['en']>;
 
 function estimateHousing(snapshot: Snapshot, town: Municipality, housing: NonNullable<RecommendationInput['housing']>) {
   const metrics = snapshot.townMetrics[town.code];
@@ -42,55 +47,61 @@ function isFullyRural(town: Municipality, asOf: string) {
   );
 }
 
-function reasonsForSchool(journeys: SchoolJourney[]) {
+function reasonsForSchool(journeys: SchoolJourney[], t: Say, write: Wording) {
   const options = new Set(
     journeys.map(journey =>
       journey.mode === 'estimated_walk'
-        ? 'estimated walks'
+        ? t('schoolEstimatedWalks')
         : journey.mode === 'scheduled_rail_with_estimated_walk'
-          ? 'scheduled rail with estimated walks'
-          : 'nearby listed schools',
+          ? t('schoolRailAndWalks')
+          : t('schoolNearbyListed'),
     ),
   );
-  return `Requested school stages are covered by ${[...options].join(' and ')}.`;
+  return t('schoolCovered', { options: write.list([...options], ' and ') });
 }
 
 function assessProfile(
   profile: ProfileRecommendationInput['profile'],
   stages: RecommendationInput['schoolStages'],
   towns: Result['towns'],
+  t: Say,
 ): ProfileResult['profileAssessment'] {
   const applied: string[] = [];
   const followUps: string[] = [];
   const verificationNeeded: string[] = [];
-  if (stages?.length) applied.push('Screened the requested school stages.');
+  if (stages?.length) applied.push(t('appliedStages'));
   if (profile.hasChildren && stages === undefined) {
-    applied.push('Compared the range of education stages listed within each municipality.');
-    followUps.push('Which school stages should we require?');
+    applied.push(t('appliedStageRange'));
+    followUps.push(t('askStages'));
   }
   if (profile.workMode === 'hybrid' || profile.workMode === 'on_site') {
-    verificationNeeded.push('Check travel to the workplace from the shortlisted towns.');
+    verificationNeeded.push(t('verifyWorkTravel'));
   }
-  if (profile.preferredSetting === 'rural')
-    applied.push('Preferred towns with an official municipality-wide rural classification.');
-  if (profile.preferredSetting === 'larger_town') applied.push('Preferred towns with a larger published population.');
-  if (profile.hasDog)
-    verificationNeeded.push('Check pet permission for the specific home and suitable dog-walking areas nearby.');
+  if (profile.preferredSetting === 'rural') applied.push(t('appliedRural'));
+  if (profile.preferredSetting === 'larger_town') applied.push(t('appliedLargerTown'));
+  if (profile.hasDog) verificationNeeded.push(t('verifyDog'));
   if (profile.workMode === 'remote' || profile.workMode === 'hybrid') {
-    verificationNeeded.push('Check broadband availability and speed at the specific address.');
+    verificationNeeded.push(t('verifyBroadband'));
   }
   const status = !towns.length ? 'no_matches' : towns.some(town => town.score !== null) ? 'ranked' : 'exploratory';
-  if (status === 'exploratory') followUps.push('Would you prefer a rural municipality or a larger town?');
+  if (status === 'exploratory') followUps.push(t('askSetting'));
   return { status, applied, followUps, verificationNeeded };
 }
 
+/**
+ * Screen and rank the pilot towns. `locale` chooses the language of the reasons, compromises,
+ * limitations and of the measures listed for each town; scores, codes and figures do not change.
+ */
 export function recommendTowns(
   snapshot: Snapshot,
   policies: Policy[],
   input: RecommendationInput,
   asOf: string,
   profile?: ProfileRecommendationInput['profile'],
+  locale: Locale = defaultLocale,
 ): Result {
+  const t = translator(recommendMessages, locale);
+  const write = wording(locale);
   if (input.housing?.tenure === 'buy' && input.housing.homeSizeM2 === undefined) {
     throw new Error('Provide homeSizeM2 (constructed floor area) with a purchase budget to estimate a resale price.');
   }
@@ -132,41 +143,45 @@ export function recommendTowns(
     const rural = isFullyRural(municipality, asOf);
 
     if (input.comarca && normalizedName(input.comarca) !== normalizedName(municipality.comarca))
-      reasons.push('Outside the requested comarca.');
-    if (input.ruralOnly && !rural)
-      reasons.push('The requested municipality-wide rural classification is not evidenced.');
+      reasons.push(t('outsideComarca'));
+    if (input.ruralOnly && !rural) reasons.push(t('ruralNotEvidenced'));
     if (rural)
       matchReasons.push(
-        `Official rural classification: ${municipality.rural.category === 'special_attention' ? 'special attention' : 'rural'}.`,
+        t(municipality.rural.category === 'special_attention' ? 'ruralSpecialAttention' : 'ruralRural'),
       );
-    if (municipality.rural.category === 'partial')
-      tradeoffs.push('Rural tax benefits depend on the exact attached settlement.');
+    if (municipality.rural.category === 'partial') tradeoffs.push(t('ruralPartial'));
     addFactor('rural', rural ? 1 : 0, profile?.preferredSetting === 'rural' ? 1 : 0);
     if (preferLargerTown) {
       const population = metrics.find(metric => metric.kind === 'population');
       if (population) {
         factors.push({ value: population.value / maxPopulation, weight: 1 });
         matchReasons.push(
-          `Published population of ${population.value.toLocaleString('en')} (${population.observedAt}) informs the larger-town preference.`,
+          t('population', {
+            population: write.number(population.value, population.value.toLocaleString('en')),
+            observedAt: population.observedAt,
+          }),
         );
       }
     }
 
     const housingEstimate = input.housing ? estimateHousing(snapshot, municipality, input.housing) : undefined;
-    if (input.housing && !housingEstimate) reasons.push('Published housing data is insufficient to screen the budget.');
+    if (input.housing && !housingEstimate) reasons.push(t('housingInsufficient'));
     if (input.housing && housingEstimate) {
       const { amountEur, metric } = housingEstimate;
       const budget = input.housing.maxBudgetEur;
-      if (amountEur > budget) reasons.push('The housing estimate exceeds the requested budget.');
-      else matchReasons.push(`The ${metric.geography} housing estimate of €${amountEur} is within the stated budget.`);
+      if (amountEur > budget) reasons.push(t('housingOverBudget'));
+      else
+        matchReasons.push(
+          t(metric.geography === 'comarca' ? 'housingWithinComarca' : 'housingWithinMunicipality', {
+            amount: write.euros(Math.round(amountEur * 100), `€${amountEur}`),
+          }),
+        );
       addFactor('affordability', 1 - Math.min(1, amountEur / budget));
       if (metric.geography === 'comarca') {
         metrics.push(metric);
-        tradeoffs.push(
-          `Purchase estimate uses the ${metric.geographyName} comarca average because the municipal resale price is unavailable.`,
-        );
+        tradeoffs.push(t('comarcaAverage', { comarca: metric.geographyName }));
       }
-      tradeoffs.push('Housing budget is screened using historical averages. Check actual homes and transaction costs.');
+      tradeoffs.push(t('historicalAverages'));
     }
 
     const schoolMatches: SchoolJourney[] = [];
@@ -184,16 +199,16 @@ export function recommendTowns(
         if (available) schoolMatches.push(available);
         else {
           dataMissing.push(`school_access_${stage}`);
-          reasons.push(`No evidenced ${stage} school option meets the requested journey constraints.`);
+          reasons.push(t('noSchoolOption', { stage: t(`stage.${stage}`) }));
         }
       }
       if (schoolMatches.length === stages.length) {
-        matchReasons.push(reasonsForSchool(schoolMatches));
+        matchReasons.push(reasonsForSchool(schoolMatches, t, write));
         const timings = schoolMatches.map(journey => journey.estimatedMinutes);
         if (timings.every(minutes => minutes !== null)) {
           addFactor('schoolAccess', 1 - Math.min(1, Math.max(...timings) / (input.maxSchoolJourneyMinutes ?? 90)));
         }
-        tradeoffs.push('Verify school admissions, walkability and the return journey.');
+        tradeoffs.push(t('verifySchools'));
       }
     } else if (profile?.hasChildren && input.schoolStages === undefined) {
       const localStages = new Map<string, SchoolJourney>();
@@ -206,11 +221,11 @@ export function recommendTowns(
       addFactor('schoolAccess', localStages.size / schoolStage.options.length);
       schoolMatches.push(...localStages.values());
       if (localStages.size) {
-        matchReasons.push(`In-town schools are listed for ${localStages.size} education stage(s).`);
-        tradeoffs.push('Confirm the stages you need and check school admissions and travel.');
+        matchReasons.push(t('inTownSchools', { count: localStages.size }));
+        tradeoffs.push(t('confirmStages'));
       } else {
         dataMissing.push('local_school_option');
-        tradeoffs.push('The snapshot has no listed school in this municipality. Check nearby schools.');
+        tradeoffs.push(t('noListedSchool'));
       }
     }
 
@@ -220,14 +235,12 @@ export function recommendTowns(
         : undefined;
     if (input.commute && (!commute || commute.estimatedMinutes > input.commute.maxMinutes)) {
       if (!commute) dataMissing.push('direct_rail_commute');
-      reasons.push('No evidenced direct rail commute meets the stated destination, time limit and departure window.');
+      reasons.push(t('noCommute'));
     }
     if (input.commute && commute && commute.estimatedMinutes <= input.commute.maxMinutes) {
       addFactor('commute', 1 - commute.estimatedMinutes / input.commute.maxMinutes);
-      matchReasons.push(
-        `Direct ${commute.rail.line} connection in approximately ${commute.estimatedMinutes} minutes, including estimated walks from and to the municipal centres.`,
-      );
-      tradeoffs.push('Rail journey times come from the cached timetable and exclude delays.');
+      matchReasons.push(t('commute', { line: commute.rail.line, minutes: commute.estimatedMinutes }));
+      tradeoffs.push(t('railTimes'));
     }
     if ((input.commute || input.schoolMode === 'rail') && !railwayCoverage(snapshot, travelDate))
       dataMissing.push('rail_timetable_for_requested_date');
@@ -247,6 +260,7 @@ export function recommendTowns(
       municipality,
       { municipalityCode: municipality.code, intent: input.housing?.tenure },
       asOf,
+      locale,
     ).filter(incentive => incentive.geographicStatus !== 'does_not_apply');
     towns.push({
       municipality,
@@ -259,19 +273,15 @@ export function recommendTowns(
       commute: commute ?? null,
       incentives,
       dataMissing,
-      relocation: getRelocationResearch(snapshot, municipality.code, asOf),
+      relocation: getRelocationResearch(snapshot, municipality.code, asOf, locale),
     });
   }
 
   towns.sort(
     (a, b) => (b.score ?? -1) - (a.score ?? -1) || a.municipality.name.localeCompare(b.municipality.name, 'ca'),
   );
-  const limitations = [
-    'Recommendations cover the selected Catalan municipalities in the pilot. Scheduled rail coverage is limited to the FGC Lleida–La Pobla corridor.',
-    'Scores rank only known preference signals. The dated snapshot provides estimates and scheduled access.',
-  ];
-  if (!railwayCoverage(snapshot, travelDate))
-    limitations.push('The requested travel date is outside the cached FGC timetable.');
+  const limitations = [t('limitCoverage'), t('limitScores')];
+  if (!railwayCoverage(snapshot, travelDate)) limitations.push(t('limitTravelDate'));
   return {
     snapshot: snapshotInfo(snapshot),
     travelDate,
@@ -286,15 +296,22 @@ export function recommendTownsForProfile(
   policies: Policy[],
   input: ProfileRecommendationInput,
   asOf: string,
+  locale: Locale = defaultLocale,
 ): ProfileResult {
-  const { profile, limit, ...extra } = input;
+  // `locale` is how the result is worded, not a criterion: it is never reported as ignored.
+  const { profile, limit, locale: _, ...extra } = input as ProfileRecommendationInput & { locale?: unknown };
   const legacyStages = recommendationInput.shape.schoolStages.safeParse(extra.schoolStages);
   const schoolStages = profile.schoolStages ?? (legacyStages.success ? legacyStages.data : undefined);
   const ignoredCriteria = Object.keys(extra).filter(
     key => key !== 'schoolStages' || !legacyStages.success || profile.schoolStages !== undefined,
   );
-  const recommendation = recommendTowns(snapshot, policies, { schoolStages, limit }, asOf, profile);
-  const profileAssessment = assessProfile(profile, schoolStages, recommendation.towns);
+  const recommendation = recommendTowns(snapshot, policies, { schoolStages, limit }, asOf, profile, locale);
+  const profileAssessment = assessProfile(
+    profile,
+    schoolStages,
+    recommendation.towns,
+    translator(recommendMessages, locale),
+  );
   if (ignoredCriteria.length) profileAssessment.ignoredCriteria = ignoredCriteria;
   return { ...recommendation, profileAssessment };
 }

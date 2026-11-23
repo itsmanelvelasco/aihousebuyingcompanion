@@ -1169,3 +1169,58 @@ test('the bank’s consent desk: API key, loopback return addresses, expiry and 
   assert.equal((await fetch(`${bankUrl}${slow.data.consent_path}`)).status, 404);
   assert.deepEqual(bank.consents.waiting(), { requests: 0, codes: 0 });
 });
+
+test('the bank’s consent page is written in English, Catalan or Spanish and always says the bank is fictional', async t => {
+  const bank = createDemoBank({ apiKey, adminKey, seed: 'languages', startDate: '2026-11-01' });
+  await bank.ready;
+  const bankServer = createServer((request, response) => void bank.handle(request, response));
+  const bankUrl = await listen(bankServer);
+  t.after(async () => {
+    await bank.close();
+    await stop(bankServer);
+  });
+  const created = await call(`${bankUrl}/consents`, apiKey, 'POST', {
+    redirect_uri: 'http://127.0.0.1:8787/bank/consent/callback',
+    state: 's'.repeat(43),
+  });
+  const path: string = created.data.consent_path;
+  const page = async (query = '', headers: Record<string, string> = {}) => {
+    const response = await fetch(`${bankUrl}${path}${query}`, { headers });
+    return { response, html: await response.text() };
+  };
+
+  const english = await page();
+  assert.match(english.html, /<html lang="en">/);
+  assert.match(english.html, /<span class="tag">Fictional bank<\/span>/);
+  assert.match(english.html, /value="approve">Allow for 90 days<\/button>/);
+  assert.match(english.html, /Banc Demo is fictional: it has no logins, its customers are invented/);
+  assert.equal(english.response.headers.get('content-language'), 'en');
+  assert.equal(english.response.headers.get('vary'), 'Accept-Language, Cookie');
+  assert.match(english.response.headers.get('content-security-policy') ?? '', /^default-src 'none'/);
+  assert(english.html.includes(`<a href="${path}?lang=ca" lang="ca" hreflang="ca">Català</a>`));
+
+  const catalan = await page('', { 'Accept-Language': 'ca-ES,ca;q=0.9' });
+  assert.match(catalan.html, /<html lang="ca">/);
+  assert.match(catalan.html, /<span class="tag">Banc fictici<\/span>/);
+  assert.match(catalan.html, /Banc Demo és fictici: no té inicis de sessió, els seus clients són inventats/);
+  assert.match(catalan.html, /value="approve">Permet durant 90 dies<\/button>/);
+  assert.match(catalan.html, /L’aplicació de <strong>127\.0\.0\.1:8787<\/strong>/);
+
+  // The page's own links, and the language chosen on ReloCat (a cookie shared across ports of one host).
+  const spanish = await page('?lang=es', { 'Accept-Language': 'ca' });
+  assert.match(spanish.html, /<html lang="es">/);
+  assert.match(spanish.html, /<span class="tag">Banco ficticio<\/span>/);
+  assert.match(spanish.html, /Banc Demo es ficticio: no tiene inicios de sesión, sus clientes son inventados/);
+  assert.match(spanish.html, /value="deny">Deniega el acceso<\/button>/);
+  assert.match((await page('', { Cookie: 'rc_lang=es' })).html, /<html lang="es">/);
+  const odd = await page('?lang=%22%3E%3Cscript%3E');
+  assert.match(odd.html, /<html lang="en">/);
+  assert.doesNotMatch(odd.html, /<script/);
+
+  // The form is the same in every language: the same customers, the same decisions.
+  const form = (html: string) =>
+    [...html.matchAll(/<(?:form|select|option|button)\b[^>]*>/g)].map(match => match[0]).join('\n');
+  assert.equal(form(catalan.html), form(english.html));
+  assert.equal(form(spanish.html), form(english.html));
+  assert.match(form(english.html), /name="decision" value="approve"/);
+});

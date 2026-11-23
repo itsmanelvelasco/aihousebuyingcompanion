@@ -1,6 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { ApiError, escapeHtml as e } from '../../packages/http/server.ts';
+import { defaultLocale, type Locale } from '../../packages/i18n/locales.ts';
+import { translator } from '../../packages/i18n/messages.ts';
+import { languageSwitcher } from '../../packages/i18n/server.ts';
+import { consentPageMessages } from './consent.messages.ts';
 
 /**
  * Banc Demo's consent desk: how a customer of the fictional bank allows an application to read
@@ -17,6 +21,9 @@ import { ApiError, escapeHtml as e } from '../../packages/http/server.ts';
  *   4. The application exchanges the code, once, for the customer reference: `POST /consents/token`.
  *
  * Requests and codes live in memory only and expire in minutes. Everything is fictional.
+ *
+ * The page is written in English, Catalan or Spanish (`consent.messages.ts`); the customers' names
+ * are invented names and stay as they are.
  */
 
 export const createConsentSchema = z
@@ -43,6 +50,12 @@ export type ConsentDeskOptions = {
 };
 
 const maxOpen = 200;
+
+/** The language links of the consent page, in the bank's own look. */
+const switcherCss = `  .rc-lang { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 16px; font-size: 0.875rem; line-height: 1.25rem; }
+  .rc-lang a { display: inline-flex; align-items: center; min-height: 44px; color: var(--bank-muted); }
+  .rc-lang a[aria-current="true"] { color: var(--bank-ink); font-weight: 600; text-decoration-thickness: 2px; }
+`;
 
 function isLoopback(url: URL) {
   const host = url.hostname.toLowerCase();
@@ -100,18 +113,22 @@ export function createConsentDesk(options: ConsentDeskOptions) {
       };
     },
 
-    /** Step 2: the page the customer sees, and the origin its form will redirect to. */
-    page(id: string) {
+    /**
+     * Step 2: the page the customer sees, and the origin its form will redirect to. `switcher`
+     * adds the links that show this same page in another language.
+     */
+    page(id: string, locale: Locale = defaultLocale, switcher = false) {
       const request = open(id);
+      const t = translator(consentPageMessages, locale);
       const target = new URL(request.redirectUri);
       const customers = options.customers();
       const html = `<!doctype html>
-<html lang="en">
+<html lang="${locale}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Banc Demo · allow access</title>
+<title>${t('title')}</title>
 <style>
   /* Banc Demo's own look, on purpose not ReloCat's: system type, grey-blue ink, light only. */
   :root {
@@ -146,27 +163,32 @@ export function createConsentDesk(options: ConsentDeskOptions) {
   main > .hint { margin: 16px 0 0; }
   @media (pointer: coarse) { select { min-height: 56px; } }
   @media (prefers-reduced-motion: reduce) { button { transition: none; } button:active { transform: none; } }
-</style>
+${switcher ? switcherCss : ''}</style>
 </head>
 <body>
-<main>
-<p><span class="tag">Fictional bank</span></p>
+<main>${
+        switcher
+          ? `
+${languageSwitcher(locale, `/consent/${request.id}`)}`
+          : ''
+      }
+<p><span class="tag">${t('fictionalBank')}</span></p>
 <h1>Banc Demo</h1>
 <form class="card" method="post" action="/consent/${e(request.id)}">
-  <p><strong>Allow ReloCat to read the accounts of a customer?</strong></p>
-  <p>The application at <strong>${e(target.host)}</strong> asks to read the accounts, balances and movements of the customer you choose. It cannot move money: Banc Demo has no payments at all.</p>
-  <label>You are
+  <p><strong>${t('question')}</strong></p>
+  <p>${t('asks', { host: e(target.host) })}</p>
+  <label>${t('youAre')}
     <select name="customer_id" required>
       ${customers.map(customer => `<option value="${e(customer.id)}">${e(customer.name)} (${e(customer.id)})</option>`).join('')}
     </select>
   </label>
-  <p class="hint">A real bank would ask you to sign in and confirm with a second factor here. Banc Demo is fictional: it has no logins, its customers are invented and so is every movement. Nothing on this page concerns a real account.</p>
+  <p class="hint">${t('fictionalNote')}</p>
   <div class="actions">
-    <button class="primary" type="submit" name="decision" value="approve">Allow for ${consentDays} days</button>
-    <button type="submit" name="decision" value="deny">Deny access</button>
+    <button class="primary" type="submit" name="decision" value="approve">${t('allow', { days: consentDays })}</button>
+    <button type="submit" name="decision" value="deny">${t('deny')}</button>
   </div>
 </form>
-<p class="hint">After you choose, you return to ${e(target.host)}.</p>
+<p class="hint">${t('after', { host: e(target.host) })}</p>
 </main>
 </body>
 </html>`;

@@ -1,5 +1,9 @@
 import type { Policy } from '../contracts/places.ts';
 import type { AnswerSpec, FactAnswer, Person } from '../contracts/planner.ts';
+import { defaultLocale, type Locale } from '../i18n/locales.ts';
+import { type MessageValues, translator } from '../i18n/messages.ts';
+import { wording } from '../places/wording.ts';
+import { answerMessages, questionMessages } from './questions.messages.ts';
 
 /**
  * The one question set of ReloCat: every fact that decides a person's plan, defined once.
@@ -8,7 +12,11 @@ import type { AnswerSpec, FactAnswer, Person } from '../contracts/planner.ts';
  * with `validateAnswer`, store with `answerToInput` and try a what-if with `applyAnswer`. Nothing
  * here does money maths or screens a rule: which question is worth asking for the places compared
  * is the planner's job (`missingFacts` in `packages/planner/next-questions.ts`). This module is
- * plain data and pure functions with no runtime imports, so a browser bundle can include it.
+ * plain data and pure functions; its only runtime imports are the message catalogs and the pure
+ * formatters of `packages/i18n`, so a browser bundle can include it.
+ *
+ * The words of a question depend on the language (`questionsIn`, `questionById(id, locale)`); its
+ * id, input path, answer kind and the measures it decides do not. English is the default everywhere.
  *
  * "I don't know" is an answer. It is `null` in the typed state, it is saved as an explicit `null`
  * input, and it never becomes zero, `false` or a guess.
@@ -102,37 +110,36 @@ export type Question = {
   goesStale: 'never' | 'age' | 'tax_year' | 'school_year';
 };
 
-const kept =
-  'It is stored only if you are signed in and save it; otherwise it stays in this estimate and is sent nowhere else.';
-const familyNote = `About your family. It is used only to check the measures named here. ${kept}`;
-const healthNote = `About health. It is used only to check this one tax rate, and no detail beyond yes or no is asked. ${kept}`;
-const taxNote = `From your tax return. It is used only to compare with the limit of the measure. ${kept}`;
 /**
- * Where the figure is on the return. The Agència Tributària's "Manual práctico de Renta 2025.
- * Deducciones autonómicas", Catalonia, states the limit of a Catalan deduction that uses this same
- * figure as "la suma de las bases imponibles general y del ahorro menos el mínimo personal y
- * familiar", computed as "suma de las casillas [0435] y [0460] menos el importe de la casilla
- * [0520] de la declaración". Read on 2026-11-22 at
+ * A question without its words: what it decides, where it is stored and how it is answered. The
+ * words are in `questions.messages.ts`, one set per language, under `<id>.label`, `.question`,
+ * `.why` and `.help`.
+ *
+ * Where the tax base is on the return (`help.taxBase`): the Agència Tributària's "Manual práctico
+ * de Renta 2025. Deducciones autonómicas", Catalonia, states the limit of a Catalan deduction that
+ * uses this same figure as "la suma de las bases imponibles general y del ahorro menos el mínimo
+ * personal y familiar", computed as "suma de las casillas [0435] y [0460] menos el importe de la
+ * casilla [0520] de la declaración". Read on 2026-11-22 at
  * https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-practicos/irpf-2025-deducciones-autonomicas/comunidad-autonoma-cataluna/alquiler-vivienda-habitual.html
  * The box numbers are those of the 2025 return (form 100) and are stated as such: they can change.
  */
-const taxBaseHelp =
-  'This is not your salary. It is the general tax base plus the savings tax base, less the personal and family minimum. On the 2025 income tax return (Renta 2025, form 100) the Agència Tributària computes it as box 0435 plus box 0460 minus box 0520. Box numbers can change from one year to the next, so check the labels: base imponible general, base imponible del ahorro, mínimo personal y familiar. If you are not sure, choose “I don’t know”.';
+type Shape = Omit<Question, 'label' | 'question' | 'why' | 'help' | 'sensitivity' | 'kind'> & {
+  /** `own`: the question's own help text; `taxBase` and `schooling`: a help text several questions share. */
+  help?: 'own' | 'taxBase' | 'schooling';
+  /** Which note is said before a sensitive question. */
+  sensitivity?: 'family' | 'health' | 'tax';
+  kind: Exclude<Kind, { type: 'choice' }> | { type: 'choice'; options: string[] };
+};
 const euros = { type: 'money', storedAs: 'cents', min: 0, max: 50_000_000 } as const;
 const taxBase = { type: 'money', storedAs: 'eur', min: -1_000_000, max: 10_000_000 } as const;
 const generalRates: PolicyId[] = ['itp_young_buyer', 'itp_large_family', 'itp_single_parent', 'itp_disability'];
 
-/** The question set, in the order it is asked when nothing ranks one question above another. */
-export const questions: readonly Question[] = [
+/** The question set without its words, in the order it is asked. */
+const shapes: readonly Shape[] = [
   {
     id: 'monthlyIncome',
     group: 'plan',
     path: 'finance.monthlyIncomeCents',
-    label: 'Monthly income',
-    question: 'How much money comes into your household in a typical month, after tax?',
-    why: 'The plan saves what is left of your income after your spending each month.',
-    help: null,
-    sensitivity: null,
     kind: euros,
     allowUnknown: false,
     decides: [],
@@ -142,11 +149,6 @@ export const questions: readonly Question[] = [
     id: 'monthlyExpenses',
     group: 'plan',
     path: 'finance.monthlyExpensesCents',
-    label: 'Monthly spending',
-    question: 'How much does your household spend in a typical month, with rent, bills and debt payments included?',
-    why: 'The plan saves what is left of your income after your spending each month.',
-    help: null,
-    sensitivity: null,
     kind: euros,
     allowUnknown: false,
     decides: [],
@@ -156,11 +158,6 @@ export const questions: readonly Question[] = [
     id: 'purchaseSavings',
     group: 'plan',
     path: 'finance.currentSavingsCents',
-    label: 'Savings for the purchase',
-    question: 'How much have you already saved that you would spend on buying the home?',
-    why: 'It is the starting point of the timeline. A bank balance is never assumed to be available for the purchase.',
-    help: null,
-    sensitivity: null,
     kind: euros,
     allowUnknown: false,
     decides: [],
@@ -170,11 +167,7 @@ export const questions: readonly Question[] = [
     id: 'homeBudget',
     group: 'plan',
     path: 'housing.budgetCents',
-    label: 'Home budget',
-    question: 'What is the most you would pay for the home?',
-    why: 'The deposit, the transfer tax and the purchase fees are all shares of the price.',
-    help: 'If you do not have a figure, choose “I don’t know”: the plan can price a home of a given size from each town’s average instead.',
-    sensitivity: null,
+    help: 'own',
     kind: { type: 'money', storedAs: 'cents', min: 1, max: 50_000_000 },
     allowUnknown: true,
     decides: ['youth_purchase_small_town'],
@@ -184,11 +177,6 @@ export const questions: readonly Question[] = [
     id: 'floorArea',
     group: 'plan',
     path: 'housing.homeSizeM2',
-    label: 'Home size',
-    question: 'How large a home are you looking for, in square metres?',
-    why: 'Without a budget, the price is this floor area times the average price per square metre of each town.',
-    help: null,
-    sensitivity: null,
     kind: { type: 'number', unit: 'm²', min: 10, max: 2000 },
     allowUnknown: false,
     decides: [],
@@ -198,11 +186,6 @@ export const questions: readonly Question[] = [
     id: 'primaryResidence',
     group: 'household',
     path: 'eligibility.primaryResidence',
-    label: 'Main home',
-    question: 'Will the home you buy be the one you live in, your main home?',
-    why: 'Every reduced transfer-tax rate, the rural deductions and the aid for young buyers are for the home you live in.',
-    help: null,
-    sensitivity: null,
     kind: { type: 'boolean' },
     allowUnknown: true,
     decides: [
@@ -220,11 +203,6 @@ export const questions: readonly Question[] = [
     id: 'birthDate',
     group: 'household',
     path: 'eligibility.birthDate',
-    label: 'Date of birth',
-    question: 'What is your date of birth?',
-    why: 'A buyer aged 35 or younger pays 5% transfer tax instead of the general rate anywhere in Catalonia, and some aids and deductions have the same age limit. Your age is worked out for the day you could buy, so it does not go out of date.',
-    help: null,
-    sensitivity: null,
     kind: { type: 'date' },
     allowUnknown: false,
     decides: ['itp_young_buyer', 'youth_purchase_small_town', 'irpf_move', 'irpf_rent'],
@@ -235,11 +213,7 @@ export const questions: readonly Question[] = [
     id: 'children',
     group: 'household',
     path: 'eligibility.children',
-    label: 'Children',
-    question: 'Do children who depend on you live with you? Give the date of birth of each one, or say there are none.',
-    why: 'The reduced transfer tax of a rural municipality (4% or 3%) and the rural income-tax deductions are for households with a child aged 16 or younger.',
-    help: null,
-    sensitivity: familyNote,
+    sensitivity: 'family',
     kind: { type: 'children' },
     allowUnknown: false,
     decides: ['itp_buy', 'irpf_buy', 'irpf_move', 'irpf_rent'],
@@ -250,12 +224,6 @@ export const questions: readonly Question[] = [
     id: 'itpTransaction',
     group: 'household',
     path: 'eligibility.itpTransaction',
-    label: 'Purchase subject to transfer tax',
-    question:
-      'Will the purchase pay transfer tax (ITP)? That is the case for most resale homes; a new build sold by its developer pays VAT instead.',
-    why: 'The reduced rates are rates of the transfer tax, so none of them applies to a purchase that pays VAT.',
-    help: null,
-    sensitivity: null,
     kind: { type: 'boolean' },
     allowUnknown: true,
     decides: ['itp_buy', 'itp_rehab_buy', ...generalRates],
@@ -265,11 +233,6 @@ export const questions: readonly Question[] = [
     id: 'itpOccupancy',
     group: 'household',
     path: 'eligibility.satisfiesItpOccupancyRules',
-    label: 'Moving in and staying',
-    question: 'Will you move in within twelve months of buying and keep it as your main home for at least three years?',
-    why: 'A reduced transfer-tax rate is provisional: it is kept only if those two deadlines are met, or an exception in the law applies.',
-    help: null,
-    sensitivity: null,
     kind: { type: 'boolean' },
     allowUnknown: true,
     decides: ['itp_buy', ...generalRates],
@@ -279,12 +242,8 @@ export const questions: readonly Question[] = [
     id: 'childrenItpSchooling',
     group: 'household',
     path: 'eligibility.children',
-    label: 'Schooling for the rural transfer tax',
-    question:
-      'For each child aged 4 to 16: will the child meet the schooling conditions of the rural transfer-tax rate (the place of the school, the timing and staying enrolled)?',
-    why: 'The reduced transfer tax of a rural municipality needs a child aged 16 or younger who meets its schooling conditions; children aged 3 or younger are exempt.',
-    help: 'The Catalan Tax Agency sets the exact conditions. If you have not checked them yet, choose “I don’t know” and confirm with the agency.',
-    sensitivity: familyNote,
+    help: 'schooling',
+    sensitivity: 'family',
     kind: { type: 'per_child', flag: 'meetsItpSchooling' },
     allowUnknown: true,
     decides: ['itp_buy'],
@@ -294,11 +253,7 @@ export const questions: readonly Question[] = [
     id: 'largeFamily',
     group: 'household',
     path: 'eligibility.largeFamily',
-    label: 'Large family',
-    question: 'Does your family hold the official large-family title (família nombrosa)?',
-    why: 'A recognised large family pays 5% transfer tax on its main home anywhere in Catalonia.',
-    help: null,
-    sensitivity: familyNote,
+    sensitivity: 'family',
     kind: { type: 'boolean' },
     allowUnknown: true,
     decides: ['itp_large_family'],
@@ -308,11 +263,7 @@ export const questions: readonly Question[] = [
     id: 'singleParent',
     group: 'household',
     path: 'eligibility.singleParent',
-    label: 'Single-parent family',
-    question: 'Does your family hold the official single-parent family title (família monoparental)?',
-    why: 'A recognised single-parent family pays 5% transfer tax on its main home anywhere in Catalonia, and its deduction for moving to a rural municipality is doubled.',
-    help: null,
-    sensitivity: familyNote,
+    sensitivity: 'family',
     kind: { type: 'boolean' },
     allowUnknown: true,
     decides: ['itp_single_parent', 'irpf_move'],
@@ -322,11 +273,7 @@ export const questions: readonly Question[] = [
     id: 'disability65',
     group: 'household',
     path: 'eligibility.disability65',
-    label: 'Disability of 65% or more',
-    question: 'Do you, or a member of your family unit, have a recognised disability of 65% or more?',
-    why: 'A household with a recognised disability of 65% or more pays 5% transfer tax on its main home anywhere in Catalonia.',
-    help: null,
-    sensitivity: healthNote,
+    sensitivity: 'health',
     kind: { type: 'boolean' },
     allowUnknown: true,
     decides: ['itp_disability'],
@@ -336,11 +283,6 @@ export const questions: readonly Question[] = [
     id: 'firstRuralMove',
     group: 'household',
     path: 'eligibility.firstRuralMove',
-    label: 'First move to a rural municipality',
-    question: 'Would this be the first time you move your home to a rural municipality?',
-    why: 'The income-tax deduction for moving to a rural municipality (€750, or €1,000 in a special-attention one) is for a first move.',
-    help: null,
-    sensitivity: null,
     kind: { type: 'boolean' },
     allowUnknown: true,
     decides: ['irpf_move'],
@@ -350,12 +292,8 @@ export const questions: readonly Question[] = [
     id: 'childrenIrpfSchooling',
     group: 'household',
     path: 'eligibility.children',
-    label: 'Schooling for the rural income-tax deductions',
-    question:
-      'For each child aged 4 to 16: will the child go to school in the educational zone of the new home, or in the school assigned to it?',
-    why: 'The rural income-tax deductions count a child aged 16 or younger who meets their schooling rule; children aged 3 or younger are exempt.',
-    help: 'The Catalan Tax Agency sets the exact conditions. If you have not checked them yet, choose “I don’t know” and confirm with the agency.',
-    sensitivity: familyNote,
+    help: 'schooling',
+    sensitivity: 'family',
     kind: { type: 'per_child', flag: 'inDesignatedSchool' },
     allowUnknown: true,
     decides: ['irpf_buy', 'irpf_move', 'irpf_rent'],
@@ -365,11 +303,6 @@ export const questions: readonly Question[] = [
     id: 'ownsHomeInSpain',
     group: 'household',
     path: 'eligibility.ownsHomeInSpain',
-    label: 'Another home in Spain',
-    question: 'Do you own another home in Spain, or hold a usufruct over one?',
-    why: 'The state aid for buyers aged 35 or younger in small towns is not for people who already own a home in Spain, unless an official exception applies.',
-    help: null,
-    sensitivity: null,
     kind: { type: 'boolean' },
     allowUnknown: true,
     decides: ['youth_purchase_small_town'],
@@ -379,12 +312,7 @@ export const questions: readonly Question[] = [
     id: 'incomeWithinFiveIprem',
     group: 'household',
     path: 'eligibility.incomeWithinFiveIprem',
-    label: 'Income within five times IPREM',
-    question:
-      'Is your yearly income at most five times the IPREM, the public income index (5.5 or 6 times with a recognised disability)?',
-    why: 'The state aid for buyers aged 35 or younger in small towns has that income ceiling.',
-    help: 'The IPREM is set each year in the State Budget, and the call for the aid states the limit in euros. If you have not compared your income with it, choose “I don’t know”.',
-    sensitivity: null,
+    help: 'own',
     kind: { type: 'boolean' },
     allowUnknown: true,
     decides: ['youth_purchase_small_town'],
@@ -394,17 +322,9 @@ export const questions: readonly Question[] = [
     id: 'filing',
     group: 'tax',
     path: 'eligibility.filing',
-    label: 'Type of tax return',
-    question: 'Do you file your income tax return on your own, or jointly with your family unit?',
-    why: 'The rural deductions for moving and for renting have an income limit that depends on it: €30,000 on an individual return, €45,000 on a joint one.',
-    help: null,
-    sensitivity: null,
     kind: {
       type: 'choice',
-      options: [
-        { value: 'individual', label: 'On my own (individual)' },
-        { value: 'joint', label: 'Jointly' },
-      ],
+      options: ['individual', 'joint'],
     },
     allowUnknown: true,
     decides: ['irpf_move', 'irpf_rent'],
@@ -414,11 +334,8 @@ export const questions: readonly Question[] = [
     id: 'itpBuyerNetTaxBase',
     group: 'tax',
     path: 'eligibility.itpBuyerNetTaxBaseEur',
-    label: 'Your own tax base',
-    question: 'From your last income tax return: what was your own tax base, in euros?',
-    why: 'The 5% transfer tax for buyers aged 35 or younger applies only if this figure is at most €36,000.',
-    help: taxBaseHelp,
-    sensitivity: taxNote,
+    help: 'taxBase',
+    sensitivity: 'tax',
     kind: taxBase,
     allowUnknown: true,
     decides: ['itp_young_buyer', 'itp_rehab_buy'],
@@ -428,12 +345,8 @@ export const questions: readonly Question[] = [
     id: 'itpFamilyNetTaxBase',
     group: 'tax',
     path: 'eligibility.itpFamilyNetTaxBaseEur',
-    label: 'Your family’s tax bases',
-    question:
-      'From the last income tax returns of your family unit: what do the tax bases of all its members add up to, in euros?',
-    why: 'The rural reduced transfer tax and the 5% rates for large families, single-parent families and disability apply only if this total is at most €36,000 (more for some large and single-parent families).',
-    help: `Add the figure of each member who files a return. ${taxBaseHelp}`,
-    sensitivity: taxNote,
+    help: 'own',
+    sensitivity: 'tax',
     kind: taxBase,
     allowUnknown: true,
     decides: ['itp_buy', 'itp_large_family', 'itp_single_parent', 'itp_disability'],
@@ -443,12 +356,8 @@ export const questions: readonly Question[] = [
     id: 'irpfNetTaxBase',
     group: 'tax',
     path: 'eligibility.irpfNetTaxBaseEur',
-    label: 'Tax base of your return',
-    question:
-      'From your last income tax return: what was the tax base, in euros? Use the joint figure if you file jointly.',
-    why: 'The rural deductions for moving and for renting apply only if this figure is at most €30,000 on an individual return or €45,000 on a joint one.',
-    help: `${taxBaseHelp} The deduction looks at the return of the year of the move, so last year’s figure is an indication.`,
-    sensitivity: taxNote,
+    help: 'own',
+    sensitivity: 'tax',
     kind: taxBase,
     allowUnknown: true,
     decides: ['irpf_move', 'irpf_rent'],
@@ -458,12 +367,8 @@ export const questions: readonly Question[] = [
     id: 'irpfIndividualNetTaxBase',
     group: 'tax',
     path: 'eligibility.irpfIndividualNetTaxBaseEur',
-    label: 'Your individually computed tax base',
-    question:
-      'From your last income tax return: what was your own tax base computed individually, in euros, even if you file jointly?',
-    why: 'The rural income-tax deduction for buying a main home applies only if this figure is at most €36,000.',
-    help: taxBaseHelp,
-    sensitivity: taxNote,
+    help: 'taxBase',
+    sensitivity: 'tax',
     kind: taxBase,
     allowUnknown: true,
     decides: ['irpf_buy', 'irpf_renovate'],
@@ -473,11 +378,6 @@ export const questions: readonly Question[] = [
     id: 'depositRate',
     group: 'plan',
     path: 'housing.depositRate',
-    label: 'Deposit',
-    question: 'What share of the price would you pay upfront as a deposit, in percent?',
-    why: 'The deposit is the largest part of the upfront cash. Until you say otherwise the plan assumes 20%.',
-    help: null,
-    sensitivity: null,
     kind: { type: 'percent', min: 0, max: 100 },
     allowUnknown: false,
     decides: [],
@@ -487,12 +387,6 @@ export const questions: readonly Question[] = [
     id: 'emergencyReserve',
     group: 'plan',
     path: 'finance.emergencyReserveCents',
-    label: 'Emergency reserve',
-    question:
-      'How much of your savings do you want to keep aside and not spend on the purchase? Zero is a valid answer.',
-    why: 'The plan takes this reserve off your savings before counting them. Until you say otherwise it sets nothing aside.',
-    help: null,
-    sensitivity: null,
     kind: euros,
     allowUnknown: false,
     decides: [],
@@ -500,11 +394,55 @@ export const questions: readonly Question[] = [
   },
 ];
 
-const byId = new Map(questions.map(question => [question.id, question]));
-export const isQuestionId = (value: string): value is QuestionId => byId.has(value as QuestionId);
+type QuestionMessage = keyof (typeof questionMessages)['en'];
+type AnswerMessage = keyof (typeof answerMessages)['en'];
+const say = (locale: Locale) =>
+  translator(answerMessages, locale) as (key: AnswerMessage, values?: MessageValues) => string;
 
-export function questionById(id: QuestionId): Question {
-  const question = byId.get(id);
+function worded(shape: Shape, locale: Locale): Question {
+  const t = translator(questionMessages, locale);
+  const text = (part: string, values?: MessageValues) => t(`${shape.id}.${part}` as QuestionMessage, values);
+  const { id, group, path, help, sensitivity, kind, ...rest } = shape;
+  return {
+    id,
+    group,
+    path,
+    label: text('label'),
+    question: text('question'),
+    why: text('why'),
+    help: help === undefined ? null : help === 'own' ? text('help', { taxBase: t('help.taxBase') }) : t(`help.${help}`),
+    sensitivity: sensitivity === undefined ? null : t(`sensitivity.${sensitivity}`),
+    kind:
+      kind.type === 'choice'
+        ? { type: 'choice', options: kind.options.map(value => ({ value, label: text(`option.${value}`) })) }
+        : kind,
+    ...rest,
+  };
+}
+
+const worlds = new Map<Locale, { list: readonly Question[]; byId: Map<QuestionId, Question> }>();
+function inLocale(locale: Locale) {
+  let world = worlds.get(locale);
+  if (!world) {
+    const list = shapes.map(shape => worded(shape, locale));
+    world = { list, byId: new Map(list.map(question => [question.id, question])) };
+    worlds.set(locale, world);
+  }
+  return world;
+}
+
+/** The question set in one language, in the order it is asked when nothing ranks one question above another. */
+export const questionsIn = (locale: Locale = defaultLocale): readonly Question[] => inLocale(locale).list;
+
+/** The question set in English: the same objects as `questionsIn('en')`. */
+export const questions: readonly Question[] = questionsIn(defaultLocale);
+
+export const isQuestionId = (value: string): value is QuestionId =>
+  inLocale(defaultLocale).byId.has(value as QuestionId);
+
+/** One question, worded in `locale`. Everything but the words is the same in every language. */
+export function questionById(id: QuestionId, locale: Locale = defaultLocale): Question {
+  const question = inLocale(locale).byId.get(id);
   if (!question) throw new Error(`Unknown question ${id}`);
   return question;
 }
@@ -629,15 +567,33 @@ export function appliesTo(person: Person, id: QuestionId, day: string): boolean 
 
 // ------------------------------------------------------------ answering
 
-function describeChild(child: ChildFacts, index: number, day: string) {
+/** A child in words: with its position ("Child 2 (born 2015-05-05, aged 11)") or, for a list, without it. */
+function describeChild(child: ChildFacts, index: number, day: string, locale: Locale, numbered = true) {
+  const t = say(locale);
   const age = childAgeOn(child, day);
-  const born = child.birthDate ? `born ${child.birthDate}` : child.birthYear ? `born in ${child.birthYear}` : null;
-  const aged = age === null ? null : `aged ${age}`;
-  return `Child ${index + 1} (${[born, aged].filter(Boolean).join(', ') || 'age unknown'})`;
+  const number = index + 1;
+  if (age === null) return numbered ? t('childAgeUnknown', { number }) : t('ageUnknown');
+  if (child.birthDate) {
+    const born = wording(locale).date(child.birthDate);
+    return numbered ? t('childBornOn', { number, born, age }) : t('bornOn', { born, age });
+  }
+  if (child.birthYear)
+    return numbered
+      ? t('childBornIn', { number, year: child.birthYear, age })
+      : t('bornIn', { year: child.birthYear, age });
+  return numbered ? t('childAged', { number, age }) : t('aged', { age });
 }
 
-/** How a question is answered for this person today: the shape every surface renders its control from. */
-export function answerSpecFor(question: Question, person: Person | null, day: string): AnswerSpec {
+/**
+ * How a question is answered for this person today: the shape every surface renders its control
+ * from. The labels of the options and of the children are in the language of `locale`.
+ */
+export function answerSpecFor(
+  question: Question,
+  person: Person | null,
+  day: string,
+  locale: Locale = defaultLocale,
+): AnswerSpec {
   const { kind } = question;
   switch (kind.type) {
     case 'date':
@@ -650,10 +606,12 @@ export function answerSpecFor(question: Question, person: Person | null, day: st
         children: person
           ? schoolAgeChildren(person, day).map(index => ({
               index,
-              label: describeChild((childrenOf(person) ?? [])[index], index, day),
+              label: describeChild((childrenOf(person) ?? [])[index], index, day, locale),
             }))
           : [],
       };
+    case 'choice':
+      return questionById(question.id, locale).kind as AnswerSpec;
     default:
       return kind;
   }
@@ -662,60 +620,67 @@ export function answerSpecFor(question: Question, person: Person | null, day: st
 /**
  * Check a typed answer. Returns a message for the person, to show next to the field, or null when
  * the answer is acceptable. `null` (I don't know) is acceptable only where the question allows it.
+ * The message is in the language of `locale`; whether an answer is acceptable never depends on it.
  */
 export function validateAnswer(
   id: QuestionId,
   value: unknown,
   context: { today: string; childCount?: number },
+  locale: Locale = defaultLocale,
 ): string | null {
   const question = questionById(id);
   const { kind } = question;
-  if (value === undefined) return 'Give an answer first.';
-  if (value === null)
-    return question.allowUnknown ? null : 'This one needs a value: the plan cannot use “I don’t know” here.';
+  const t = say(locale);
+  const write = wording(locale);
+  if (value === undefined) return t('giveAnswer');
+  if (value === null) return question.allowUnknown ? null : t('needsValue');
   switch (kind.type) {
     case 'boolean':
-      return typeof value === 'boolean' ? null : 'Choose yes or no.';
+      return typeof value === 'boolean' ? null : t('yesOrNo');
     case 'date':
-      if (typeof value !== 'string' || !validDay(value)) return 'Enter the full date: day, month and year.';
-      if (value > context.today) return 'The date cannot be in the future.';
-      if (ageOn(value, context.today) > 120) return 'That date is more than 120 years ago.';
+      if (typeof value !== 'string' || !validDay(value)) return t('fullDate');
+      if (value > context.today) return t('dateInFuture');
+      if (ageOn(value, context.today) > 120) return t('dateTooOld');
       return null;
     case 'money': {
-      if (typeof value !== 'number' || !Number.isFinite(value)) return 'Enter an amount in euros, digits only.';
-      if (kind.storedAs === 'cents' && !Number.isSafeInteger(value)) return 'Enter an amount in euros and cents.';
+      if (typeof value !== 'number' || !Number.isFinite(value)) return t('amountDigits');
+      if (kind.storedAs === 'cents' && !Number.isSafeInteger(value)) return t('amountCents');
       const [min, max] = kind.storedAs === 'cents' ? [kind.min * 100, kind.max * 100] : [kind.min, kind.max];
-      if (value < min) return kind.min === 0 ? 'The amount cannot be negative.' : `Enter at least €${kind.min}.`;
-      return value > max ? `Enter at most €${kind.max.toLocaleString('en-GB')}.` : null;
+      if (value < min)
+        return kind.min === 0
+          ? t('amountNegative')
+          : t('amountAtLeast', { amount: write.euros(kind.min * 100, `€${kind.min}`) });
+      return value > max
+        ? t('amountAtMost', { amount: write.euros(kind.max * 100, `€${kind.max.toLocaleString('en-GB')}`) })
+        : null;
     }
     case 'number':
-      if (typeof value !== 'number' || !Number.isFinite(value)) return `Enter a number of ${kind.unit}.`;
-      return value < kind.min || value > kind.max ? `Enter between ${kind.min} and ${kind.max} ${kind.unit}.` : null;
+      if (typeof value !== 'number' || !Number.isFinite(value)) return t('numberOf', { unit: kind.unit });
+      return value < kind.min || value > kind.max
+        ? t('numberBetween', { min: write.number(kind.min), max: write.number(kind.max), unit: kind.unit })
+        : null;
     case 'percent':
       // Stored as a share: 20% is 0.2.
       return typeof value === 'number' && value >= kind.min / 100 && value <= kind.max / 100
         ? null
-        : `Enter a percentage between ${kind.min} and ${kind.max}.`;
+        : t('percentBetween', { min: kind.min, max: kind.max });
     case 'choice':
-      return kind.options.some(option => option.value === value) ? null : 'Choose one of the options.';
+      return kind.options.some(option => option.value === value) ? null : t('chooseOption');
     case 'children': {
-      if (!Array.isArray(value)) return 'List the children, or say there are none.';
-      if (value.length > 12) return 'List at most 12 children.';
+      if (!Array.isArray(value)) return t('listChildren');
+      if (value.length > 12) return t('tooManyChildren');
       for (const [index, child] of value.entries()) {
         const birthDate = (child as ChildAnswer | null)?.birthDate;
-        if (typeof birthDate !== 'string' || !validDay(birthDate))
-          return `Enter the full date of birth of child ${index + 1}: day, month and year.`;
-        if (birthDate > context.today) return `The date of birth of child ${index + 1} cannot be in the future.`;
-        if (ageOn(birthDate, context.today) > 120) return `The date of birth of child ${index + 1} is too long ago.`;
+        const number = index + 1;
+        if (typeof birthDate !== 'string' || !validDay(birthDate)) return t('childFullDate', { number });
+        if (birthDate > context.today) return t('childDateInFuture', { number });
+        if (ageOn(birthDate, context.today) > 120) return t('childDateTooOld', { number });
       }
       return null;
     }
     case 'per_child':
-      if (!Array.isArray(value) || value.some(flag => flag !== null && typeof flag !== 'boolean'))
-        return 'Answer yes, no or “I don’t know” for each child.';
-      return context.childCount !== undefined && value.length !== context.childCount
-        ? 'Answer for each child listed.'
-        : null;
+      if (!Array.isArray(value) || value.some(flag => flag !== null && typeof flag !== 'boolean')) return t('perChild');
+      return context.childCount !== undefined && value.length !== context.childCount ? t('eachChildListed') : null;
   }
 }
 
@@ -744,41 +709,50 @@ export function parseTyped(id: QuestionId, text: string): AnswerValue | undefine
   return kind.type === 'percent' ? Math.round(number * 100) / 10_000 : number;
 }
 
-const euroText = (eur: number) => `€${eur.toLocaleString('en-GB', { maximumFractionDigits: 2 })}`;
-
-/** An answer in words, for a list of what is known and for the candidates of a conflict. */
-export function describeAnswer(id: QuestionId, value: unknown, day: string): string {
-  const { kind } = questionById(id);
-  if (value === null || value === undefined) return 'I don’t know';
+/**
+ * An answer in words, for a list of what is known and for the candidates of a conflict. English
+ * keeps its plain forms (ISO dates, `€1,234.5`); Catalan and Spanish write amounts and dates as
+ * the language does.
+ */
+export function describeAnswer(id: QuestionId, value: unknown, day: string, locale: Locale = defaultLocale): string {
+  const { kind } = questionById(id, locale);
+  const t = say(locale);
+  const write = wording(locale);
+  if (value === null || value === undefined) return t('dontKnow');
   switch (kind.type) {
     case 'boolean':
-      return value === true ? 'Yes' : value === false ? 'No' : String(value);
+      return value === true ? t('yes') : value === false ? t('no') : String(value);
     case 'date':
       // A stored age instead of a date of birth is shown as what it is.
       return typeof value === 'number'
-        ? `Age ${value}, as stated`
-        : `Born ${String(value)}: ${ageOn(String(value), day)} on ${day}`;
-    case 'money':
-      return typeof value === 'number' ? euroText(kind.storedAs === 'cents' ? value / 100 : value) : String(value);
+        ? t('ageAsStated', { age: value })
+        : t('bornAgeOn', {
+            born: write.date(String(value)),
+            age: ageOn(String(value), day),
+            day: write.date(day),
+          });
+    case 'money': {
+      if (typeof value !== 'number') return String(value);
+      const eur = kind.storedAs === 'cents' ? value / 100 : value;
+      return write.euros(Math.round(eur * 100), `€${eur.toLocaleString('en-GB', { maximumFractionDigits: 2 })}`);
+    }
     case 'number':
-      return `${String(value)} ${kind.unit}`;
+      return `${typeof value === 'number' ? write.number(value) : String(value)} ${kind.unit}`;
     case 'percent':
-      return typeof value === 'number' ? `${Math.round(value * 10_000) / 100}%` : String(value);
+      return typeof value === 'number' ? write.percent(value) : String(value);
     case 'choice':
       return kind.options.find(option => option.value === value)?.label ?? String(value);
     case 'children': {
       if (!Array.isArray(value)) return String(value);
-      if (!value.length) return 'No children';
-      return (value as ChildFacts[])
-        .map((child, index) => describeChild(child, index, day).replace(/^Child \d+ \((.*)\)$/, '$1'))
-        .join('; ');
+      if (!value.length) return t('noChildren');
+      return (value as ChildFacts[]).map((child, index) => describeChild(child, index, day, locale, false)).join('; ');
     }
     case 'per_child':
       if (!Array.isArray(value)) return String(value);
       // A stored list of children carries the flag on each child.
       return (value as unknown[])
         .map(entry => (entry !== null && typeof entry === 'object' ? (entry as ChildFacts)[kind.flag] : entry))
-        .map(flag => (flag === true ? 'yes' : flag === false ? 'no' : 'not known'))
+        .map(flag => (flag === true ? t('flagYes') : flag === false ? t('flagNo') : t('flagUnknown')))
         .join(', ');
   }
 }
@@ -925,11 +899,14 @@ export function applyAnswer(
   }
 }
 
-/** A person nobody has said anything about: the starting point of an anonymous estimate. */
-export function blankPerson(id = 'what-if'): Person {
+/**
+ * A person nobody has said anything about: the starting point of an anonymous estimate. Its display
+ * name is in the language of `locale`; it is never stored.
+ */
+export function blankPerson(id = 'what-if', locale: Locale = defaultLocale): Person {
   return {
     id,
-    displayName: 'What-if estimate',
+    displayName: say(locale)('whatIf'),
     synthetic: false,
     householdSize: null,
     currentMunicipalityCode: null,

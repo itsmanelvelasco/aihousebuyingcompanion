@@ -1,6 +1,8 @@
 import type { Policy } from '../contracts/places.ts';
 import type { FactConflict, KnownFact, NextQuestion, Person, Place, PlacePlan } from '../contracts/planner.ts';
 import { person as personSchema, planAssumptions } from '../contracts/planner.ts';
+import { defaultLocale, type Locale } from '../i18n/locales.ts';
+import { type MessageValues, translator } from '../i18n/messages.ts';
 import type { Question, QuestionId } from '../model/questions.ts';
 import {
   answerSpecFor,
@@ -13,6 +15,9 @@ import {
   questions,
   stateOf,
 } from '../model/questions.ts';
+import { localizePolicy } from '../places/policy-text.ts';
+import { wording } from '../places/wording.ts';
+import { factMessages } from './plan.messages.ts';
 import type { Assumptions } from './plan.ts';
 import { planPlaces, withDerivedAges } from './plan.ts';
 
@@ -40,6 +45,9 @@ import { planPlaces, withDerivedAges } from './plan.ts';
  * the facts that decide a measure by months at stake, then by upfront cash, then the facts that only
  * move the Catalonia-wide baseline, then the defaults the plan is assuming (deposit, reserve).
  * A question already answered "I don't know" goes last: it is explained, not asked again as new.
+ *
+ * The comparisons above are numbers and run in English. Only what a person reads (labels, questions,
+ * why, help, what an answer could change, where a fact came from) is written in `locale`.
  */
 
 type Household = NonNullable<Person['household']>;
@@ -131,11 +139,26 @@ function switchedOff(policy: Policy): Policy {
   return { ...policy, effectiveFrom: past.opensOn, effectiveThrough: past.closesOn, callWindow: past };
 }
 
-function euros(cents: number): string {
-  return `€${(cents / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 })}`;
-}
+type FactMessage = keyof (typeof factMessages)['en'];
 
-const monthsText = (months: number) => `${months} ${months === 1 ? 'month' : 'months'}`;
+/** The sentences of one language and how it writes an amount and a date in them. */
+function wordsFor(locale: Locale) {
+  const write = wording(locale);
+  return {
+    locale,
+    t: translator(factMessages, locale) as (key: FactMessage, values?: MessageValues) => string,
+    /** Whole euros: what an answer could be worth is an estimate, never stated to the cent. */
+    euros: (cents: number) =>
+      write.euros(
+        Math.round(cents / 100) * 100,
+        `€${(cents / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 })}`,
+      ),
+    date: write.date,
+    percent: write.percent,
+  };
+}
+type Words = ReturnType<typeof wordsFor>;
+
 const better = (a: Gain, b: Gain) =>
   a.months !== b.months
     ? a.months > b.months
@@ -158,29 +181,45 @@ function gains(current: PlacePlan[], other: PlacePlan[]): Gain[] {
   });
 }
 
-function effectText(kind: Effect['kind'], gain: Gain, placeName: string, title: string, alsoNeeds: string[]) {
-  const more = alsoNeeds.length ? ` It also depends on: ${alsoNeeds.join(', ').toLowerCase()}.` : '';
-  if (kind === 'baseline')
-    return `Could lower the transfer tax you would pay anywhere in Catalonia by up to ${euros(gain.baselineCents)} (${title}). The estimate for ${placeName} stays as it is, because a lower rate is already counted there.${more}`;
-  const cash = gain.cents > 0 ? `lower the upfront cash by up to ${euros(gain.cents)}` : '';
-  const head =
-    gain.months > 0
-      ? `Could shorten the wait by up to ${monthsText(gain.months)} in ${placeName}${cash ? ` and ${cash}` : ''}`
-      : `Could ${cash} in ${placeName}`;
-  return `${head}, through “${title}”.${more}`;
+/** A label inside a list, as the language writes it: English lowers it whole, the others keep an acronym. */
+function inList(label: string, locale: Locale) {
+  if (locale === defaultLocale) return label.toLowerCase();
+  return /^\p{Lu}\p{Ll}/u.test(label) ? label.charAt(0).toLocaleLowerCase(locale) + label.slice(1) : label;
 }
 
-const sourceText: Record<string, string> = {
-  profile: 'your saved profile',
-  interview: 'the interview',
-  manual: 'typed in by you',
-  bank: 'bank movements',
-  listing: 'a listing',
-  what_if: 'this estimate only, not saved',
-};
+/** What an answer could change, as one or two whole sentences. */
+function effectText(
+  kind: Effect['kind'],
+  gain: Gain,
+  placeName: string,
+  title: string,
+  alsoNeeds: string[],
+  words: Words,
+) {
+  const { t, euros, locale } = words;
+  const place = placeName;
+  const head =
+    kind === 'baseline'
+      ? t('effectBaseline', { amount: euros(gain.baselineCents), title, place })
+      : gain.months > 0
+        ? gain.cents > 0
+          ? t('effectMonthsAndCash', { months: gain.months, place, amount: euros(gain.cents), title })
+          : t('effectMonths', { months: gain.months, place, title })
+        : t('effectCash', { amount: euros(gain.cents), place, title });
+  return alsoNeeds.length
+    ? `${head} ${t('alsoDependsOn', { list: alsoNeeds.map(label => inList(label, locale)).join(', ') })}`
+    : head;
+}
 
 /** Why a stored answer may no longer hold on the plan date, or null. */
-function staleness(question: Question, person: Person, observedAt: string | undefined, asOf: string): string | null {
+function staleness(
+  question: Question,
+  person: Person,
+  observedAt: string | undefined,
+  asOf: string,
+  words: Words,
+): string | null {
+  const { t, date } = words;
   if (!observedAt) return null;
   const given = observedAt.slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(given) || given >= asOf) return null;
@@ -191,19 +230,13 @@ function staleness(question: Question, person: Person, observedAt: string | unde
         ? person.born?.self === undefined
         : (childrenOf(person) ?? []).some(child => child.birthDate === undefined && child.birthYear === undefined);
     const days = (Date.parse(asOf) - Date.parse(given)) / 86_400_000;
-    return stated && days > 31
-      ? `Given as an age on ${given}. An age goes out of date with a birthday: give the date of birth instead.`
-      : null;
+    return stated && days > 31 ? t('staleAge', { given: date(given) }) : null;
   }
   if (question.goesStale === 'tax_year')
-    return given.slice(0, 4) < asOf.slice(0, 4)
-      ? `Given on ${given}, in an earlier year. It belongs to one tax return and a newer one probably exists: check it.`
-      : null;
+    return given.slice(0, 4) < asOf.slice(0, 4) ? t('staleTaxYear', { given: date(given) }) : null;
   if (question.goesStale === 'school_year') {
     const year = Number(asOf.slice(0, 4)) - (asOf.slice(5) < '09-01' ? 1 : 0);
-    return given < `${year}-09-01`
-      ? `Given on ${given}, before the current school year began. Check that it still holds.`
-      : null;
+    return given < `${year}-09-01` ? t('staleSchoolYear', { given: date(given) }) : null;
   }
   return null;
 }
@@ -219,6 +252,7 @@ export type PersonFacts = {
 /**
  * Everything the plan says about the person's facts: what is known and from where, what disagrees,
  * and what to ask next. `current` is the plan already computed for `places`, in the same order.
+ * Labels, questions and sentences are in `locale`; ids, input paths, states and amounts are not.
  */
 export function factsOf(
   who: Person,
@@ -227,7 +261,12 @@ export function factsOf(
   options: Assumptions,
   asOf: string,
   current: PlacePlan[],
+  locale: Locale = defaultLocale,
 ): PersonFacts {
+  const words = wordsFor(locale);
+  const { t, date, percent } = words;
+  /** The same question in the language of the result. */
+  const worded = (question: Question) => questionById(question.id, locale);
   const considered = policies.filter(policy => screenedIntents.has(policy.intent));
   const screenedIds = new Set(considered.map(policy => policy.id));
   const priceFromBudget = who.home.budgetCents !== null;
@@ -252,25 +291,38 @@ export function factsOf(
     knownFacts.push({
       id: question.id,
       inputPath: question.path,
-      label: question.label,
-      value: describeAnswer(question.id, value, asOf),
+      label: worded(question).label,
+      value: describeAnswer(question.id, value, asOf, locale),
       ...(fromBank ? { source: 'bank' as const } : answer?.source ? { source: answer.source } : {}),
       observedAt,
       confirmed: fromBank ? null : (answer?.confirmed ?? null),
       usedByPlan,
-      stale: fromBank ? null : staleness(question, who, answer?.observedAt, asOf),
+      stale: fromBank ? null : staleness(question, who, answer?.observedAt, asOf, words),
     });
   }
   const relied = knownFacts.filter(fact => fact.usedByPlan && questionById(fact.id as QuestionId).group !== 'plan');
   const reliedOn = relied.length
-    ? `Facts about you this plan relied on: ${relied
-        .map(fact => {
-          const from = fact.source ? sourceText[fact.source] : 'stated with this request';
-          const when = fact.observedAt ? `, given ${fact.observedAt.slice(0, 10)}` : '';
-          const sure = fact.confirmed === true ? ', confirmed' : fact.confirmed === false ? ', not confirmed' : '';
-          return `${fact.label.toLowerCase()}: ${fact.value} (${from}${when}${sure}${fact.stale ? '; possibly out of date' : ''})`;
-        })
-        .join('; ')}.`
+    ? t('reliedOn', {
+        facts: relied
+          .map(fact => {
+            // Where the fact came from, when, and how sure it is: attributes listed in brackets.
+            const details = [
+              t(fact.source ? `source.${fact.source}` : 'source.request'),
+              ...(fact.observedAt ? [t('reliedGiven', { date: date(fact.observedAt.slice(0, 10)) })] : []),
+              ...(fact.confirmed === true
+                ? [t('reliedConfirmed')]
+                : fact.confirmed === false
+                  ? [t('reliedNotConfirmed')]
+                  : []),
+            ].join(', ');
+            return t('reliedFact', {
+              label: inList(fact.label, locale),
+              value: fact.value,
+              details: fact.stale ? `${details}; ${t('reliedStale')}` : details,
+            });
+          })
+          .join('; '),
+      })
     : null;
 
   // ------------------------------------------------------------- conflicts
@@ -281,11 +333,11 @@ export function factsOf(
     conflicts.push({
       id: question.id,
       inputPath: question.path,
-      label: question.label,
-      question: question.question,
+      label: worded(question).label,
+      question: worded(question).question,
       candidates: (answer.candidates ?? []).map(candidate => ({
         ...candidate,
-        text: describeAnswer(question.id, candidate.value, asOf),
+        text: describeAnswer(question.id, candidate.value, asOf, locale),
       })),
     });
   }
@@ -311,9 +363,7 @@ export function factsOf(
       placeName: null,
       policyIds: [],
       alsoNeeds: [],
-      text: price
-        ? 'Needed to price the home: without a budget or a size, no upfront cash can be computed for any place.'
-        : 'Needed before any timeline can be estimated.',
+      text: price ? t('requiredPrice') : t('requiredTimeline'),
     });
   }
 
@@ -360,7 +410,7 @@ export function factsOf(
       for (const question of deciding) {
         const previous = effects.get(question.id);
         if (previous?.kind === 'required') continue;
-        const alsoNeeds = deciding.filter(other => other !== question).map(other => other.label);
+        const alsoNeeds = deciding.filter(other => other !== question).map(other => worded(other).label);
         const candidate: Effect = {
           kind,
           months: gain.months,
@@ -369,7 +419,7 @@ export function factsOf(
           placeName: places[best].name,
           policyIds: [...new Set([...(previous?.policyIds ?? []), policy.id])],
           alsoNeeds,
-          text: effectText(kind, gain, places[best].name, policy.title, alsoNeeds),
+          text: effectText(kind, gain, places[best].name, localizePolicy(policy, locale).title, alsoNeeds, words),
         };
         const previousGain: Gain | null = previous
           ? {
@@ -401,8 +451,8 @@ export function factsOf(
       alsoNeeds: [],
       text:
         id === 'depositRate'
-          ? `The plan assumes a deposit of ${Math.round(who.home.depositRate * 100)}% of the price. Your own figure changes the upfront cash directly.`
-          : 'The plan sets no emergency reserve aside, so all your savings count towards the purchase. A reserve is taken off them first.',
+          ? t('assumedDeposit', { rate: percent(Math.round(who.home.depositRate * 100) / 100) })
+          : t('assumedReserve'),
     });
   }
 
@@ -416,12 +466,12 @@ export function factsOf(
         {
           id: question.id,
           inputPath: question.path,
-          label: question.label,
-          question: question.question,
-          why: question.why,
-          help: question.help,
-          sensitivity: question.sensitivity,
-          answer: answerSpecFor(question, who, asOf),
+          label: worded(question).label,
+          question: worded(question).question,
+          why: worded(question).why,
+          help: worded(question).help,
+          sensitivity: worded(question).sensitivity,
+          answer: answerSpecFor(question, who, asOf, locale),
           allowUnknown: question.allowUnknown,
           state: status === 'known' ? ('missing' as const) : status,
           effect,
@@ -457,10 +507,11 @@ export function missingFacts(
   policies: Policy[],
   asOf: string,
   assumptions?: Parameters<typeof planAssumptions.parse>[0],
+  locale: Locale = defaultLocale,
 ): NextQuestion[] {
   const options = planAssumptions.parse(assumptions ?? {});
   const date = options.asOf ?? asOf;
   const who = withDerivedAges(personSchema.parse(person), date);
   const current = planPlaces(who, places, policies, options, date).plans;
-  return factsOf(who, places, policies, options, date, current).nextQuestions;
+  return factsOf(who, places, policies, options, date, current, locale).nextQuestions;
 }

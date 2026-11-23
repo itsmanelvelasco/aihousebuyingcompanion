@@ -3,17 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Discover places to live in Catalonia. Compare towns, schools, transport and housing support with ReloCat.">
+  <meta name="description" content="{{t:metaDescription}}">
   <meta name="theme-color" content="#fbf6eb" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#1b221c" media="(prefers-color-scheme: dark)">
-  <title>ReloCat · Find your place in Catalonia</title>
+  <title>{{t:title}}</title>
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="ReloCat">
-  <meta property="og:title" content="ReloCat · Find your place in Catalonia">
-  <meta property="og:description" content="Compare towns, school journeys and housing support before you decide where to move.">
+  <meta property="og:title" content="{{t:title}}">
+  <meta property="og:description" content="{{t:heroIntro}}">
   <meta property="og:image" content="{{og-image}}">
   <meta property="og:image:alt" content="{{og-alt}}">
   <meta name="twitter:card" content="summary_large_image">
+  <!-- ALTERNATES -->
   <!-- FAVICON -->
   <style>
 /* THEME */
@@ -38,6 +39,7 @@
     .masthead .rc-wordmark, .footer-bottom .rc-wordmark { min-height: 44px; }
     .site-nav { display: flex; align-items: center; gap: 8px; }
     .site-nav .rc-btn { white-space: nowrap; }
+    .site-nav .rc-lang { flex-wrap: nowrap; margin-inline-end: 8px; }
     .nav-link { display: inline-flex; align-items: center; min-height: 44px; padding-inline: 12px; font-size: var(--rc-text-md); font-weight: 700; text-decoration: none; }
     @media (hover: hover) { .nav-link:hover { text-decoration: underline; } }
 
@@ -207,6 +209,11 @@
       .village { width: 77%; mask-image: linear-gradient(90deg, transparent 3%, #000 49%); }
     }
     @media (max-width: 720px) {
+      /* The language switcher takes its own line under the wordmark and the links. */
+      .masthead { flex-wrap: wrap; row-gap: 0; }
+      .masthead .rc-wordmark { margin-inline-end: auto; }
+      .site-nav { display: contents; }
+      .site-nav .rc-lang { order: 1; flex: 1 0 100%; justify-content: flex-end; margin-inline-end: -8px; }
       .hero { display: grid; min-height: 0; }
       .hero-copy { padding: 28px 24px 8px; position: relative; z-index: 1; }
       /* Below 48 px the display tracking relaxes. */
@@ -221,13 +228,18 @@
       .agent-list { display: none; }
       .agent-picker { display: grid; margin-bottom: 20px; }
     }
+    @media (max-width: 560px) {
+      /* The longer Catalan and Spanish labels need the line; the hero and the footer link to the demo too. */
+      .site-nav .nav-link { display: none; }
+    }
     @media (max-width: 480px) {
       .masthead { min-height: 60px; gap: 8px; }
       /* The title flows over three lines here instead of breaking before the violet words. */
       h1 span { display: inline; }
       .discovery-intro, .question-intro { grid-template-columns: minmax(0, 1fr) 72px; }
       .masthead .rc-wordmark { font-size: 1.25rem; }
-      .site-nav .nav-link { display: none; }
+      /* Keeps the wordmark and the button on one line with the longer Catalan and Spanish labels. */
+      .site-nav .rc-btn { padding-inline: 10px; }
       .hero-copy { padding-inline: 20px; }
       .actions .rc-btn { flex: 1 1 100%; }
       .footer-content { grid-template-columns: minmax(0, 1fr); }
@@ -243,12 +255,13 @@
 </style>
 </head>
 <body>
-  <a class="skip" href="#main">Skip to content</a>
+  <a class="skip" href="#main">{{t:skip}}</a>
   <header class="masthead wrap">
-    <a class="rc-wordmark" href="/connect" aria-label="ReloCat home"><!-- MARK --><span>Relo<b>Cat</b></span></a>
-    <nav class="site-nav" aria-label="Main navigation">
-      <a class="nav-link" href="/preview">Town demo</a>
-      <a class="rc-btn rc-btn--sm" href="#setup">Connect an agent</a>
+    <a class="rc-wordmark" href="/connect" aria-label="{{t:homeLabel}}"><!-- MARK --><span>Relo<b>Cat</b></span></a>
+    <nav class="site-nav" aria-label="{{t:mainNav}}">
+      <!-- LANGUAGES -->
+      <a class="nav-link" href="/preview">{{t:townDemo}}</a>
+      <a class="rc-btn rc-btn--sm" href="#setup">{{t:connectAnAgent}}</a>
     </nav>
   </header>
 
@@ -256,11 +269,11 @@
     <section class="hero" aria-labelledby="hero-title">
       <img class="village" src="{{art:hero-valley}}" alt="" fetchpriority="high">
       <div class="hero-copy">
-        <h1 id="hero-title">Find your place <span>in Catalonia</span></h1>
-        <p>Compare towns, school journeys and housing support before you decide where to move.</p>
+        <h1 id="hero-title">{{t-html:heroTitle}}</h1>
+        <p>{{t:heroIntro}}</p>
         <div class="actions">
-          <a class="rc-btn rc-btn--primary" href="/preview">Explore towns</a>
-          <a class="rc-btn" href="#setup">Connect your agent</a>
+          <a class="rc-btn rc-btn--primary" href="/preview">{{t:exploreTowns}}</a>
+          <a class="rc-btn" href="#setup">{{t:connectYourAgent}}</a>
         </div>
       </div>
     </section>
@@ -268,31 +281,31 @@
     <section class="body-section discover" aria-labelledby="discover-title">
       <div class="discovery-intro">
         <div>
-          <h2 id="discover-title">Get a feel for everyday life</h2>
-          <p class="section-intro">Start with 18 Catalan municipalities in the pilot.</p>
+          <h2 id="discover-title">{{t:discoverTitle}}</h2>
+          <p class="section-intro">{{t:discoverIntro}}</p>
         </div>
         <img class="mascot welcome" src="{{art:mascot-welcome}}" alt="" width="227" height="208" loading="lazy">
       </div>
       <div>
         <dl class="storylines">
-          <div><!-- ICON:pin --><dt>Find towns that fit</dt><dd>Compare towns against your budget, school needs and transport constraints. See which requirements each town meets and what still needs checking.</dd></div>
-          <div><!-- ICON:school --><dt>Compare the school run and commute</dt><dd>Check nearby schools and dated travel estimates. Sources and sample dates help you decide which journeys to verify.</dd></div>
-          <div><!-- ICON:aid --><dt>Explore housing support and homes</dt><dd>Check published incentives and their application status. When live listing search is enabled, follow example links to confirm the price, bedrooms and availability.</dd></div>
+          <div><!-- ICON:pin --><dt>{{t:fitTitle}}</dt><dd>{{t:fitText}}</dd></div>
+          <div><!-- ICON:school --><dt>{{t:schoolTitle}}</dt><dd>{{t:schoolText}}</dd></div>
+          <div><!-- ICON:aid --><dt>{{t:supportTitle}}</dt><dd>{{t:supportText}}</dd></div>
         </dl>
-        <a class="discovery-link" href="https://github.com/itsmanelvelasco/aihousebuyingcompanion/blob/main/apps/mcp-server/README.md#data-and-refresh"><!-- ICON:link -->See the data sources</a>
+        <a class="discovery-link" href="https://github.com/itsmanelvelasco/aihousebuyingcompanion/blob/main/apps/mcp-server/README.md#data-and-refresh"><!-- ICON:link -->{{t:dataSources}}</a>
       </div>
     </section>
 
     <section class="body-section" id="setup" aria-labelledby="setup-title">
       <div class="setup-heading">
-        <h2 id="setup-title">Bring ReloCat into your chat</h2>
-        <p class="section-intro">Choose your AI agent for step-by-step connection instructions.</p>
+        <h2 id="setup-title">{{t:setupTitle}}</h2>
+        <p class="section-intro">{{t:setupIntro}}</p>
       </div>
       <div class="setup-panel">
-        <div class="agent-list" id="agents" role="group" aria-label="Choose an agent"></div>
+        <div class="agent-list" id="agents" role="group" aria-label="{{t:chooseAgent}}"></div>
         <div class="agent-detail">
           <div class="agent-picker rc-field">
-            <label for="agent-select">Choose an agent</label>
+            <label for="agent-select">{{t:chooseAgent}}</label>
             <select id="agent-select"></select>
           </div>
           <div class="agent-heading">
@@ -302,20 +315,20 @@
           </div>
           <p id="agent-intro"></p>
           <div class="endpoint rc-field" id="endpoint-box">
-            <label for="endpoint">ReloCat MCP server URL</label>
+            <label for="endpoint">{{t:endpointLabel}}</label>
             <div class="endpoint-row">
               <input id="endpoint" type="url" value="{{mcp-endpoint}}" spellcheck="false" autocomplete="off" aria-describedby="endpoint-note">
-              <button class="rc-btn rc-btn--primary" id="copy-url" type="button"><!-- ICON:copy -->Copy URL</button>
+              <button class="rc-btn rc-btn--primary" id="copy-url" type="button"><!-- ICON:copy -->{{t:copyUrl}}</button>
             </div>
             <p id="endpoint-note" class="meta"></p>
           </div>
           <div class="instructions" id="instructions"></div>
           <p class="copy-status" id="feedback" role="status"></p>
           <div class="agent-footer">
-            <a id="docs" target="_blank" rel="noopener noreferrer">Official setup guide<!-- ICON:external --></a>
-            <p class="meta">Available settings depend on your agent version and workspace permissions.</p>
+            <a id="docs" target="_blank" rel="noopener noreferrer">{{t:officialGuide}}<!-- ICON:external --></a>
+            <p class="meta">{{t:settingsNote}}</p>
           </div>
-          <noscript>Enable JavaScript to choose an agent and generate its configuration.</noscript>
+          <noscript>{{t:noscript}}</noscript>
         </div>
       </div>
     </section>
@@ -323,8 +336,8 @@
     <section class="body-section questions" aria-labelledby="questions-title">
       <div class="question-intro">
         <div>
-          <h2 id="questions-title">What would you ask?</h2>
-          <p class="section-intro">Copy a question into your agent after connecting ReloCat.</p>
+          <h2 id="questions-title">{{t:questionsTitle}}</h2>
+          <p class="section-intro">{{t:questionsIntro}}</p>
         </div>
         <img class="mascot guide" src="{{art:mascot-guide}}" alt="" width="289" height="221" loading="lazy">
       </div>
@@ -339,24 +352,24 @@
     <div class="wrap">
       <div class="footer-content">
         <div>
-          <h2>About the data</h2>
-          <p>Sources include official municipal statistics and dated relocation research for three pilot towns. Housing averages describe the local market. Check listing availability, school admissions and walkability separately. Incentives show application status and household eligibility separately.</p>
+          <h2>{{t:aboutDataTitle}}</h2>
+          <p>{{t:aboutDataText}}</p>
         </div>
         <div>
-          <h2>Running ReloCat yourself?</h2>
-          <p>Agents connect to <code>/mcp</code>. Town, school, transport and incentive tools need no sign-in. Tools that read or save a person’s own household, finances, bank summary or habits ask the agent to sign in with OAuth: the person signs in to their ReloCat account and approves the connection. Where the public demo is on, four fictional households can be read without an account; nothing in the demo is saved.</p>
+          <h2>{{t:selfHostTitle}}</h2>
+          <p>{{t-html:selfHostText}}</p>
           <details>
-            <summary>Local server and live listing setup</summary>
+            <summary>{{t:localSetupSummary}}</summary>
             <pre>npm run dev</pre>
-            <p>The local MCP endpoint is <code>http://127.0.0.1:8787/mcp</code>. Cloud agents need an HTTPS URL: deploy behind HTTPS with <code>PUBLIC_ORIGIN</code> set to that origin, which also becomes the OAuth issuer and the address this page offers. Accounts are created at <code>/signup</code>; <code>/account</code> lists connected agents and removes them.</p>
-            <p>Set <code>TREG_TOKEN</code> in the server environment to enable live example links. The provider may charge for searches. Town research runs without the key.</p>
+            <p>{{t-html:localSetupText}}</p>
+            <p>{{t-html:listingSetupText}}</p>
           </details>
         </div>
       </div>
       <div class="footer-bottom">
-        <a class="rc-wordmark" href="/connect" aria-label="ReloCat home"><!-- MARK --><span>Relo<b>Cat</b></span></a>
-        <nav class="footer-links" aria-label="Footer navigation">
-          <a href="/preview">Town demo</a>
+        <a class="rc-wordmark" href="/connect" aria-label="{{t:homeLabel}}"><!-- MARK --><span>Relo<b>Cat</b></span></a>
+        <nav class="footer-links" aria-label="{{t:footerNav}}">
+          <a href="/preview">{{t:townDemo}}</a>
           <a href="https://github.com/itsmanelvelasco/aihousebuyingcompanion">GitHub<!-- ICON:external --></a>
         </nav>
       </div>
@@ -366,85 +379,64 @@
   <template id="generic-agent-icon"><!-- ICON:add --></template>
   <script>
     const agentIcons = {{agent-icons}};
+    const messages = {{messages}};
     const agents = [
       {
         id: 'chatgpt',
         name: 'ChatGPT',
-        kind: 'Cloud connection',
-        docs: 'https://developers.openai.com/plugins/deploy/connect-chatgpt',
-        intro: 'Add ReloCat as a custom MCP plugin to use its tools in your conversations.',
-        steps: ['Open ChatGPT’s Plugins page. Select the plus button, then “Add custom MCP server”.','Name it ReloCat. Choose a public URL connection and paste the MCP server URL shown above. A configured Secure MCP Tunnel is another option.','For authentication choose OAuth if you want your own saved household and finances; ChatGPT then opens ReloCat’s sign-in and consent page. Without authentication the town tools and the public demo still work. Review the tools and create the plugin.','Install it, start a new chat, and type @ to select ReloCat. Try one of the prompts below.']
+        docs: 'https://developers.openai.com/plugins/deploy/connect-chatgpt'
       },
       {
         id: 'claude',
         name: 'Claude',
-        kind: 'Cloud connection',
-        docs: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp',
-        intro: 'Add a custom connector in Claude. Remote connectors connect from Claude’s cloud, including in Claude Desktop.',
-        steps: ['Open Customize → Connectors. Choose “+ Add”, then “Add custom connector”.','Name the connector ReloCat and paste the MCP server URL shown above.','ReloCat announces OAuth sign-in. When Claude asks you to connect, sign in to your ReloCat account and approve the access it lists; town tools work without it. Team or Enterprise users may need an administrator to add the connector first.','Enable ReloCat from the chat’s + menu → Connectors, then ask about a town.']
+        docs: 'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp'
       },
       {
         id: 'hermes',
         name: 'Hermes',
-        kind: 'Local or remote',
         docs: 'https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp',
-        intro: 'Add ReloCat to the MCP servers in your active Hermes profile. Localhost works when Hermes and ReloCat run on the same machine.',
-        steps: ['Merge this entry into mcp_servers in your active profile’s config.yaml (default: ~/.hermes/config.yaml). Preserve your existing servers.','Start a fresh Hermes session and ask it to use ReloCat’s town tools. They need no sign-in.','Personal tools answer with an OAuth sign-in challenge. If your Hermes version supports OAuth for MCP servers, follow its prompt to sign in to ReloCat; otherwise use the town tools and the public demo.'],
         snippet: url=>`mcp_servers:\n  relocat:\n    url: ${JSON.stringify(url)}`
       },
       {
         id: 'openclaw',
         name: 'OpenClaw',
-        kind: 'Local or remote',
         docs: 'https://docs.openclaw.ai/tools/mcp',
-        intro: 'Register ReloCat as a Streamable HTTP MCP server in OpenClaw.',
-        steps: ['Run the command below in the environment where OpenClaw runs.','Probe the connection, then ask your agent to use ReloCat. A remote OpenClaw installation cannot reach your laptop’s localhost.','Town tools need no sign-in. Personal tools answer with an OAuth sign-in challenge; complete the sign-in if your OpenClaw version offers it for MCP servers.'],
         snippet: url=>`openclaw mcp add relocat --url '${url}' --transport streamable-http\nopenclaw mcp doctor relocat --probe`
       },
       {
         id: 'codex',
         name: 'Codex',
-        kind: 'Local or remote',
         docs: 'https://developers.openai.com/codex/mcp',
-        intro: 'Add ReloCat to Codex’s MCP configuration using the CLI.',
-        steps: ['Run the command below on the machine where Codex runs.','Start a new session, check that ReloCat’s tools are available, and ask a town question. Town tools need no sign-in.','For your own saved household and finances, sign in with OAuth when Codex offers it for this server (see Codex’s MCP guide for the login command of your version); the browser opens ReloCat’s sign-in and consent page.'],
         snippet: url=>`codex mcp add relocat --url '${url}'`
       },
       {
         id: 'cursor',
         name: 'Cursor',
-        kind: 'Local or remote',
         docs: 'https://cursor.com/docs/context/mcp',
-        intro: 'Give Cursor Agent access to ReloCat’s tools through an MCP server entry.',
-        steps: ['Merge this entry into .cursor/mcp.json for this project, or ~/.cursor/mcp.json for your account. Preserve other servers.','Enable ReloCat in Cursor’s MCP settings, then use it from Agent. Town tools need no sign-in.','When Cursor shows that the server needs a login, sign in to your ReloCat account in the browser and approve the access. The server operator must allow Cursor’s return address (the cursor scheme in OAUTH_REDIRECT_SCHEMES).'],
         snippet: url=>JSON.stringify({mcpServers:{relocat:{url}}},null,2)
       },
       {
         id: 'gemini',
         name: 'Gemini CLI',
-        kind: 'Local or remote',
         docs: 'https://geminicli.com/docs/tools/mcp-server/',
-        intro: 'Connect the Gemini terminal agent using a Streamable HTTP endpoint. These instructions are for Gemini CLI.',
-        steps: ['Merge this into your Gemini CLI settings.json under mcpServers. Keep any existing servers.','Start a new CLI session and use /mcp to inspect the available tools. Town tools need no sign-in.','Personal tools need an OAuth sign-in: follow Gemini CLI’s MCP authentication prompt if your version shows one, then sign in to ReloCat in the browser and approve the access.'],
         snippet: url=>JSON.stringify({mcpServers:{relocat:{httpUrl:url}}},null,2)
       },
       {
         id: 'muse',
         name: 'Muse',
-        kind: 'Meta · setup unverified',
-        docs: 'https://ai.meta.com/muse/',
-        intro: 'Meta’s personal agent. A custom MCP connection path for the consumer Muse app is not verified.',
-        steps: ['Meta documents connections to apps and services, but we have not verified an official way to add an arbitrary MCP server to the personal agent.','Try the town demo or choose another agent for documented MCP setup.']
+        docs: 'https://ai.meta.com/muse/'
       },
       {
         id: 'other',
-        name: 'Another agent',
-        kind: 'Streamable HTTP',
-        docs: 'https://modelcontextprotocol.io/docs/learn/client-concepts',
-        intro: 'Use any MCP client that supports Streamable HTTP and can reach your ReloCat server.',
-        steps: ['Add a server named ReloCat in your agent’s MCP settings.','Select Streamable HTTP and enter the MCP server URL shown above. Choose OAuth where the client offers it: ReloCat supports discovery, dynamic client registration and PKCE, and its personal tools answer 401 with a sign-in challenge until you have signed in. No authentication is enough for the town tools and the public demo.','Connect, list the available tools, and try get_town_profile or recommend_towns. Client configuration formats differ; follow your client’s documentation.']
+        name: messages.otherName,
+        docs: 'https://modelcontextprotocol.io/docs/learn/client-concepts'
       }
-    ];
+    ].map(agent => ({
+      ...agent,
+      kind: messages[agent.id + 'Kind'],
+      intro: messages[agent.id + 'Intro'],
+      steps: Object.keys(messages).filter(key => key.startsWith(agent.id + 'Step')).map(key => messages[key]),
+    }));
 
     const get = id => document.getElementById(id);
     const endpoint = get("endpoint");
@@ -467,10 +459,10 @@
     async function copy(text, status, selectText) {
       try {
         await navigator.clipboard.writeText(text);
-        status.textContent = "Copied.";
+        status.textContent = messages.copied;
       } catch {
         selectText();
-        status.textContent = "Clipboard access is unavailable. Copy the selected text manually.";
+        status.textContent = messages.clipboardUnavailable;
       }
     }
 
@@ -504,10 +496,10 @@
       endpoint.setAttribute("aria-invalid", String(!url));
       get("copy-url").disabled = !url;
       get("endpoint-note").textContent = !url
-        ? "Enter a valid HTTP or HTTPS URL without credentials."
+        ? messages.endpointInvalid
         : local
-          ? "This address works for local agents. ChatGPT and Claude need an HTTPS URL they can reach or a supported tunnel."
-          : "Paste this address into your agent. Personal tools ask you to sign in to ReloCat with OAuth; town tools need no sign-in.";
+          ? messages.endpointLocal
+          : messages.endpointRemote;
 
       const config = get("config");
       config.hidden = !url || !active.snippet;
@@ -540,7 +532,7 @@
       const copyConfig = document.createElement("button");
       copyConfig.type = "button";
       copyConfig.className = "rc-btn rc-btn--sm";
-      copyConfig.textContent = "Copy configuration";
+      copyConfig.textContent = messages.copyConfiguration;
       copyConfig.onclick = () => copy(pre.textContent, feedback, () => selectContents(pre));
       config.append(pre, copyConfig);
       instructions.replaceChildren(steps, config);
@@ -561,11 +553,7 @@
       agentSelect.add(new Option(agent.name, agent.id));
     }
 
-    for (const text of [
-      "Use ReloCat to find towns where I could rent for €700 a month and reach a primary school without a car. Explain the trade-offs.",
-      "Compare Calaf, Juncosa and Ulldemolins. Show sources, research dates and anything that still needs checking.",
-      "Look for Idealista examples in Calaf. Separate search results from verified available homes.",
-    ]) {
+    for (const text of [messages.prompt1, messages.prompt2, messages.prompt3]) {
       const row = document.createElement("div");
       row.className = "prompt";
       const question = document.createElement("p");
@@ -573,8 +561,8 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "rc-btn rc-btn--sm";
-      button.textContent = "Copy question";
-      button.setAttribute("aria-label", "Copy question: " + text);
+      button.textContent = messages.copyQuestion;
+      button.setAttribute("aria-label", messages.copyQuestionLabel.replace("{question}", () => text));
       button.onclick = () => copy(text, get("prompt-feedback"), () => selectContents(question));
       row.append(question, button);
       get("prompts").append(row);

@@ -12,6 +12,7 @@
    with gold rewards, a "press" shadow on its game pieces and a pixel-art trail. */
 main { max-width: 890px; margin: auto; padding: clamp(12px, 3vw, 24px); }
 header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 12px; }
+header .rc-lang { margin-left: auto; }
 p { color: var(--rc-muted); margin-top: 4px; }
 strong { font-weight: var(--rc-weight-semibold); }
 h1 { font-size: clamp(1.75rem, 5vw, 2.5rem); margin: 8px 0; }
@@ -189,14 +190,15 @@ details.panel > summary { margin: -8px 0; }
 </head>
 <body>
 <main>
-<header><p class="rc-wordmark"><!-- MARK --><span>Relo<b>Cat</b></span></p><span class="rc-pill rc-pill--violet">Hackathon · fictional data</span></header>
-<div class="pair"><span><!-- ICON:pulse --> <span id="connection">Starting live board</span></span><a id="board-link" target="_blank" rel="noopener noreferrer" hidden>Open browser board<!-- ICON:external --></a></div>
-<nav class="nav" id="personas" aria-label="Demo personas"></nav>
+<header><p class="rc-wordmark"><!-- MARK --><span>Relo<b>Cat</b></span></p><span class="rc-pill rc-pill--violet" data-i18n="pill">Hackathon · fictional data</span>
+<div class="rc-lang" id="languages" role="group" aria-label="Language"><button type="button" data-lang="en" lang="en" aria-pressed="true">English</button><button type="button" data-lang="ca" lang="ca" aria-pressed="false">Català</button><button type="button" data-lang="es" lang="es" aria-pressed="false">Castellano</button></div></header>
+<div class="pair"><span><!-- ICON:pulse --> <span id="connection">Starting live board</span></span><a id="board-link" target="_blank" rel="noopener noreferrer" hidden><span data-i18n="openBoard">Open browser board</span><!-- ICON:external --></a></div>
+<nav class="nav" id="personas" aria-label="Demo personas" data-i18n-aria-label="personas"></nav>
 <div id="status" role="status" aria-live="polite"></div>
-<div id="view" aria-live="polite"><p>Loading the demo…</p></div>
+<div id="view" aria-live="polite"><p data-i18n="loading">Loading the demo…</p></div>
 <footer class="footer" id="controls" hidden>
-<span>Demo estimates use sample inputs in EUR.</span>
-<div><button type="button" class="rc-btn rc-btn--quiet rc-btn--sm" data-action="restart_persona">Reset persona</button><button type="button" class="rc-btn rc-btn--quiet rc-btn--sm" data-action="restart_all">Reset all four</button><button type="button" class="rc-btn rc-btn--quiet rc-btn--sm" id="fullscreen" hidden>Expand</button></div>
+<span data-i18n="footer">Demo estimates use sample inputs in EUR.</span>
+<div><button type="button" class="rc-btn rc-btn--quiet rc-btn--sm" data-action="restart_persona" data-i18n="resetPersona">Reset persona</button><button type="button" class="rc-btn rc-btn--quiet rc-btn--sm" data-action="restart_all" data-i18n="resetAll">Reset all four</button><button type="button" class="rc-btn rc-btn--quiet rc-btn--sm" id="fullscreen" hidden>Expand</button></div>
 </footer>
 </main>
 <!-- WIDGET -->

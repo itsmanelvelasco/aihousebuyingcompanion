@@ -7,6 +7,7 @@ import { after, test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { cashQuestions, moneyIn, statementNote } from '../apps/interviewer/cash.ts';
 import type { FactAnswers } from '../apps/interviewer/facts.ts';
 import {
   answeredFacts,
@@ -19,11 +20,15 @@ import {
   profileData,
   saveToProfile,
   voiceFactContext,
+  voiceLanguageChange,
+  voiceLanguageInstruction,
 } from '../apps/interviewer/facts.ts';
+import { interview } from '../apps/interviewer/messages.ts';
 import { createInterviewerHandler, type InterviewerOptions, interviewerEnv } from '../apps/interviewer/server.ts';
 import { registerInterviewerTools } from '../apps/mcp-server/interview-tools.ts';
 import { inputSchema } from '../packages/contracts/inputs.ts';
 import { planResult } from '../packages/contracts/planner.ts';
+import { cashFlowStatements, expenseCategories, summarizeCsv } from '../packages/finance/csv.ts';
 import { questions } from '../packages/model/questions.ts';
 import { Browser, mcp, startApp } from './support/app.ts';
 
@@ -685,4 +690,155 @@ test('on the main server, the interview answers of a signed-in person reach thei
   const rate = plan.plans[0].benefits.find(benefit => benefit.policyId === 'itp_buy');
   assert.deepEqual([rate?.eligibilityStatus, rate?.counted], ['eligible', true]);
   assert.equal(plan.knownFacts?.find(fact => fact.id === 'children')?.source, 'interview');
+});
+
+// ------------------------------------------------------------ languages
+
+test('the voice session speaks the language chosen on the page, with its instructions still in English', async () => {
+  // With no language chosen the line is the one the session always had: the model follows the person.
+  assert.equal(voiceLanguageInstruction(), "Speak in the user's language and keep each spoken turn short.");
+  assert.equal(voiceLanguageInstruction('en'), voiceLanguageInstruction());
+  assert.match(voiceLanguageInstruction('ca'), /^Speak with the person in Catalan \(Català\)/);
+  assert.match(voiceLanguageInstruction('es'), /^Speak with the person in Spanish \(Castellano\)/);
+  for (const locale of ['ca', 'es'] as const) {
+    const said = voiceLanguageInstruction(locale);
+    // "I don't know" is still an answer, and what is saved does not change with the language.
+    assert.match(said, /“I don’t know” said in (Catalan|Spanish)/);
+    assert.match(said, /Tool arguments and saved values keep their defined formats/);
+    assert.match(said, /Keep each spoken turn short\.$/);
+    assert.match(voiceLanguageChange(locale), /From now on speak with them in (Catalan|Spanish)/);
+  }
+  // The page builds the session instructions around that line and tells a live session about a change.
+  const page = await readFile(new URL('../apps/interviewer/app.ts', import.meta.url), 'utf8');
+  assert.match(page, /\$\{voiceLanguageInstruction\(locale\)\} Ask one question, then stop and listen\./);
+  assert.match(page, /voiceLanguageChange\(chosen\)/);
+  // The next question reaches the model in the reviewed wording of that language; ids and values do not change.
+  const answers: FactAnswers = { monthlyIncome: 320_000, itpBuyerNetTaxBase: null };
+  const english = voiceFactContext(answers, day);
+  const catalan = voiceFactContext(answers, day, 'ca');
+  const spanish = voiceFactContext(answers, day, 'es');
+  assert.deepEqual(catalan.answeredFactIds, english.answeredFactIds);
+  assert.equal(catalan.nextFactQuestion?.id, english.nextFactQuestion?.id);
+  assert.notEqual(catalan.nextFactQuestion?.question, english.nextFactQuestion?.question);
+  assert.match(spanish.nextFactQuestion?.question ?? '', /^¿/);
+  assert(!JSON.stringify(catalan).includes('320000'));
+  // The tool the model calls is the same in every language: English descriptions, the same properties.
+  assert.match(JSON.stringify(factToolParameters()), /Send null when the person says they do not know/);
+});
+
+test('the review list and the save messages are in the page language, with “I don’t know” kept as unknown', () => {
+  const answers: FactAnswers = { itpBuyerNetTaxBase: null, depositRate: 0.2, largeFamily: true };
+  assert.deepEqual(answeredFacts(answers, day), answeredFacts(answers, day, 'en'));
+  const unknown = (locale: 'en' | 'ca' | 'es') =>
+    answeredFacts(answers, day, locale).find(([, value]) => /know|sé/.test(value));
+  assert.deepEqual(unknown('en'), ['Your own tax base', 'I don’t know']);
+  assert.deepEqual(unknown('ca'), ['La teva base imposable', 'No ho sé']);
+  assert.deepEqual(unknown('es'), ['Tu base imponible', 'No lo sé']);
+  // What is stored is the same whatever the language: ids and typed values.
+  assert.deepEqual(profileData(answers, { currency: 'EUR' }, day), profileData(answers, { currency: 'EUR' }, day));
+  for (const locale of ['ca', 'es'] as const)
+    assert.equal(answeredFacts(answers, day, locale).length, answeredFacts(answers, day).length);
+});
+
+test('saving reports in the page language and English stays as it was', async () => {
+  const nothing = (locale?: 'en' | 'ca' | 'es') => saveToProfile(null, fetch, 'http://127.0.0.1:1/mcp', locale);
+  assert.deepEqual(await nothing(), { saved: false, reason: 'nothing', message: 'There are no answers to save yet.' });
+  assert.equal(((await nothing('ca')) as { message: string }).message, 'Encara no hi ha respostes per desar.');
+  assert.equal(((await nothing('es')) as { message: string }).message, 'Aún no hay respuestas que guardar.');
+  const offline = (async () => {
+    throw new Error('offline');
+  }) as unknown as typeof fetch;
+  const data = { finance: { currentSavingsCents: 1 } };
+  assert.equal(
+    ((await saveToProfile(data, offline, 'http://x/mcp')) as { message: string }).message,
+    'This page is not connected to a ReloCat account, so the answers stay on this device.',
+  );
+  assert.match(
+    ((await saveToProfile(data, offline, 'http://x/mcp', 'ca')) as { message: string }).message,
+    /no està connectada a un compte de ReloCat/,
+  );
+});
+
+test('the guided pay and spending questions follow the shared statement rule in every language', () => {
+  const money = moneyIn('en', 'EUR');
+  const cases = [
+    { averageBasis: 'period_too_short', coveredDays: 1, coveredFrom: '2026-10-28', coveredTo: '2026-10-28' },
+    { averageBasis: 'period_too_short', coveredDays: 9, coveredFrom: '2026-10-20', coveredTo: '2026-10-28' },
+    { averageBasis: 'period_too_short', coveredDays: 1 },
+    { averageBasis: 'partial_months_only', coveredDays: 40, coveredFrom: '2026-09-15', coveredTo: '2026-10-24' },
+    { averageBasis: 'complete_months', coveredDays: 61, coveredFrom: '2026-08-01', coveredTo: '2026-09-30' },
+    {},
+  ] as const;
+  for (const basis of cases)
+    for (const figures of [
+      { estimatedMonthlySalary: 2850, monthlyCostOfLiving: 1976.5 },
+      { estimatedMonthlySalary: null, monthlyCostOfLiving: null },
+    ]) {
+      const summary = { ...figures, ...basis } as Parameters<typeof cashFlowStatements>[0];
+      const rule = cashFlowStatements(summary, money);
+      // English is the rule's own wording, word for word.
+      assert.deepEqual(cashQuestions(summary, money), {
+        salaryQuestion: rule.salaryQuestion,
+        spendingQuestion: rule.spendingQuestion,
+      });
+    }
+  const tooShort = { estimatedMonthlySalary: null, monthlyCostOfLiving: null, ...cases[0] };
+  const catalan = cashQuestions(tooShort, moneyIn('ca', 'EUR'), 'ca');
+  assert.match(catalan.salaryQuestion, /només cobreix un sol dia \(28 d’oct\.? (de )?2026\), i és massa curt/);
+  assert.doesNotMatch(catalan.spendingQuestion, /mitjana|€/);
+  const rough = { estimatedMonthlySalary: 2850, monthlyCostOfLiving: 1976.5, ...cases[3] };
+  assert.match(
+    cashQuestions(rough, moneyIn('es', 'EUR'), 'es').spendingQuestion,
+    /indicación aproximada, no una media mensual: unos 1976,50\s€ de gasto al mes/,
+  );
+  // No statement at all: the plain questions.
+  assert.equal(cashQuestions(cases[5] as never, money, 'ca').salaryQuestion, 'Quin és el teu sou net habitual al mes?');
+  // A statement in another currency keeps its currency, written as the language writes it.
+  assert.equal(moneyIn('en', 'EUR')(1234.5), '€1,234.50');
+  assert.match(moneyIn('es', 'USD')(1234.5), /1234,50\sUS\$/);
+});
+
+test('the statement line keeps the stored English note and writes the same facts in the other languages', () => {
+  const short = summarizeCsv(
+    ['date,description,amount', '2026-10-28,Salary,2000', '2026-10-28,Mercadona,-45'].join('\n'),
+  );
+  assert.equal(
+    statementNote(short),
+    `2 transactions across 1 observed month. 0 identified internal transfers excluded. ${short.averagingNote}`,
+  );
+  const catalan = statementNote(short, 'ca');
+  assert.match(catalan, /^2 moviments en 1 mes observat\. S’han exclòs 0 transferències internes identificades\./);
+  assert.match(catalan, /1 dia\. És massa curt per a una xifra mensual, així que no se’n dona cap\./);
+  const full = summarizeCsv(
+    ['date,description,amount', '2026-08-31,Coffee,-3', '2026-09-01,Salary,2000', '2026-10-01,Coffee,-3'].join('\n'),
+  );
+  assert.match(statementNote(full, 'es'), /Las cifras mensuales son medias de 1 mes completo: 2026-09\./);
+  assert.match(statementNote(full, 'es'), /Quedan fuera por parciales: 2026-08, 2026-10/);
+  // A summary stored before the note existed still gets a line, never "undefined".
+  const { averagingNote: _, ...old } = full;
+  assert.doesNotMatch(statementNote(old), /undefined/);
+});
+
+test('the interview page carries a language switcher, and every key its template or script names is in the catalog', async () => {
+  const template = await readFile(new URL('../apps/interviewer/index.html', import.meta.url), 'utf8');
+  assert.match(
+    template,
+    /class="rc-lang" id="languages"[^>]*>(<button type="button" data-lang="(en|ca|es)"[^>]*>[^<]+<\/button>){3}/,
+  );
+  const keys = [...template.matchAll(/data-i18n(?:-aria-label)?="([^"]+)"/g)].map(match => match[1]);
+  assert.ok(keys.length >= 30);
+  for (const key of keys) assert.ok(key in interview.en, key);
+  for (const [, key, text] of template.matchAll(/data-i18n="([^"]+)"[^>]*>([^<]+)</g))
+    assert.equal(text, interview.en[key as keyof typeof interview.en], key);
+  // The classifier's categories are ids: each has a label, and the ids themselves are unchanged.
+  for (const category of expenseCategories) assert.ok(`category.${category}` in interview.en, category);
+  assert.equal(interview.ca['category.Rent'], 'Habitatge (lloguer)');
+  assert.ok(expenseCategories.includes('Rent'));
+  // The demo bank stays labelled as fictional, and unknown stays a word.
+  assert.match(interview.ca.demoBankHint, /moviments ficticis/);
+  assert.match(interview.es.demoBankHint, /movimientos ficticios/);
+  assert.deepEqual(
+    [interview.en.dontKnow, interview.ca.dontKnow, interview.es.dontKnow],
+    ['I don’t know', 'No ho sé', 'No lo sé'],
+  );
 });

@@ -1,7 +1,10 @@
 import type { Metric, Snapshot } from '../contracts/places.ts';
 import type { Place } from '../contracts/planner.ts';
 import { place } from '../contracts/planner.ts';
+import { defaultLocale, type Locale } from '../i18n/locales.ts';
+import { translator } from '../i18n/messages.ts';
 import { getTown } from '../places/data.ts';
+import { accessMessages } from '../places/messages.ts';
 
 /**
  * The place entity: one municipality node with its indicators and service counts.
@@ -44,8 +47,11 @@ function density(metrics: Metric[] | undefined): Indicator | null {
  * Resale price and rent fall back to the comarca figure when the municipal one is not published;
  * the indicator is then marked `geography: 'comarca'` and the municipal gap stays in `dataMissing`.
  * Throws when the municipality is outside the snapshot.
+ *
+ * `dataMissing` names fields; only the note on a comarca figure is a sentence, worded in `locale`.
  */
-export function buildPlace(snapshot: Snapshot, municipalityCode: string): Place {
+export function buildPlace(snapshot: Snapshot, municipalityCode: string, locale: Locale = defaultLocale): Place {
+  const t = translator(accessMessages, locale);
   const town = getTown(snapshot, municipalityCode);
   const municipal = snapshot.townMetrics[town.code];
   const comarca = snapshot.comarcaMetrics[town.comarca];
@@ -55,7 +61,7 @@ export function buildPlace(snapshot: Snapshot, municipalityCode: string): Place 
     const own = indicator(metricOf(municipal, kind));
     if (own) return own;
     const proxy = indicator(metricOf(comarca, kind));
-    dataMissing.push(proxy ? `${name} (municipal figure not published; comarca figure shown)` : name);
+    dataMissing.push(proxy ? t('comarcaFigureShown', { field: name }) : name);
     return proxy;
   };
   const required = (value: Indicator | null, name: string) => {

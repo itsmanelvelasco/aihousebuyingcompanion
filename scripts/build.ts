@@ -8,6 +8,12 @@ const bundles = [
     minify: true,
     legalComments: 'eof' as const,
   },
+  {
+    entryPoints: ['apps/mcp-server/voice-card-widget.ts'],
+    outfile: 'apps/mcp-server/dist/voice-card.js',
+    minify: true,
+    legalComments: 'eof' as const,
+  },
   { entryPoints: ['apps/board/widget.ts'], outfile: 'apps/board/dist/widget.js' },
   { entryPoints: ['apps/interviewer/app.ts'], outfile: 'apps/interviewer/dist/app.js' },
   {

@@ -3,8 +3,11 @@ import { RESOURCE_MIME_TYPE, registerAppResource, registerAppTool } from '@model
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { widgetUri as productWidgetUri } from '../../packages/config/product.ts';
 import type { Snapshot } from '../../packages/contracts/places.ts';
+import { escapeHtml } from '../../packages/http/server.ts';
+import { locales } from '../../packages/i18n/locales.ts';
 import { getTown } from '../../packages/places/data.ts';
 import { inlineUi } from '../../packages/ui/inline.ts';
+import { explorer } from './town-explorer.messages.ts';
 import { explorerInput, explorerResult } from './town-explorer-contract.ts';
 
 const widgetUri = productWidgetUri('town-explorer-v1.html');
@@ -21,7 +24,12 @@ export function loadTownExplorerPage() {
   const template = inlineUi(readFileSync(new URL('./town-explorer.html', import.meta.url), 'utf8'), {
     art: ['hero-valley'],
   });
-  return template.replace('<!-- WIDGET -->', () => `<script>${bundle.replace(/<\/script/gi, '<\\/script')}</script>`);
+  // The page is one static resource: its script picks the language. Without a script nothing can,
+  // so the one sentence that is read then is written in the three languages.
+  const noscript = locales.map(locale => `<p lang="${locale}">${escapeHtml(explorer[locale].noscript)}</p>`).join('');
+  return template
+    .replace('<!-- NOSCRIPT -->', () => noscript)
+    .replace('<!-- WIDGET -->', () => `<script>${bundle.replace(/<\/script/gi, '<\\/script')}</script>`);
 }
 
 export function registerTownExplorer(server: McpServer, snapshot: Snapshot, page: string) {

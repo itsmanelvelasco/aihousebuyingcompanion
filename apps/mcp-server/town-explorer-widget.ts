@@ -9,10 +9,16 @@ import {
   profileResult,
   recommendationResult,
 } from '../../packages/contracts/places.ts';
+import { browserLocale } from '../../packages/i18n/browser.ts';
+import { createFormat } from '../../packages/i18n/format.ts';
+import type { Locale } from '../../packages/i18n/locales.ts';
+import { type MessageValues, translator } from '../../packages/i18n/messages.ts';
 import { icon } from '../../packages/ui/icons.ts';
+import { type ExplorerKey, explorer } from './town-explorer.messages.ts';
 import type { ExplorerResult } from './town-explorer-contract.ts';
 import { explorerResult } from './town-explorer-contract.ts';
 import { mountTownMap } from './town-map.ts';
+import { applyMessages, mountLanguages, readLocalizedTool } from './widget-i18n.ts';
 
 type Profile = ReturnType<typeof profileResult.parse>;
 type Pilot = ReturnType<typeof municipalityListResult.parse>;
@@ -34,25 +40,71 @@ const retry = document.querySelector<HTMLButtonElement>('#retry-results')!;
 const snapshotInfo = document.querySelector<HTMLParagraphElement>('#snapshot')!;
 const allButton = document.querySelector<HTMLButtonElement>('#show-all')!;
 const resultsButton = document.querySelector<HTMLButtonElement>('#show-results')!;
-const euros = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
-const sampleDay = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' });
 const schoolStages = {
-  nursery: 'Nursery',
-  infantil: 'Infantil',
-  primary: 'Primary',
-  eso: 'ESO',
-  batxillerat: 'Batxillerat',
-  fp: 'Vocational',
-};
-const transitModes = { train: 'Train', bus: 'Bus', bus_and_train: 'Bus + train' };
+  nursery: 'stageNursery',
+  infantil: 'stageInfantil',
+  primary: 'stagePrimary',
+  eso: 'stageEso',
+  batxillerat: 'stageBatxillerat',
+  fp: 'stageFp',
+} as const;
+const transitModes = { train: 'modeTrain', bus: 'modeBus', bus_and_train: 'modeBusAndTrain' } as const;
 const eligibility = {
-  eligible: 'Eligible on supplied facts',
-  ineligible: 'Ineligible on supplied facts',
-  needs_verification: 'Eligibility needs verification',
-};
-const calls = { open: 'Open', closed: 'Closed', upcoming: 'Upcoming', unknown: 'Unknown' };
+  eligible: 'eligible',
+  ineligible: 'ineligible',
+  needs_verification: 'needsVerification',
+} as const;
+const calls = { open: 'callOpen', closed: 'callClosed', upcoming: 'callUpcoming', unknown: 'callUnknown' } as const;
+/** The tools that answer in the language of their `locale` argument. */
+const localizedTools = new Set(['recommend_towns', 'recommend_towns_for_profile', 'get_town_profile']);
 const requestOptions = { timeout: 15_000 };
 let latestSelection = 0;
+
+// ------------------------------------------------------------------ language
+// The language is decided here, in the browser: what the address or an earlier choice says, then
+// the chat host, then the browser. Text a tool returns is asked for in that language and shown as
+// received.
+let locale: Locale = browserLocale();
+let t = translator(explorer, locale);
+let format = createFormat(locale);
+/** Set once the person picks a language here: the host's language no longer replaces it. */
+let languageChosen = false;
+/** Reloads what is on screen after the language changed; set once the widget is connected. */
+let reload = () => {};
+
+/** Status lines written through `say` are rewritten when the language changes. */
+const said = new Map<HTMLElement, () => string>();
+function say(element: HTMLElement, text: (() => string) | string = '') {
+  if (typeof text === 'string') said.delete(element);
+  else said.set(element, text);
+  element.textContent = typeof text === 'string' ? text : text();
+}
+
+const map = mountTownMap(
+  code => selectFromMap(code),
+  () => ({ t, format }),
+);
+let selectFromMap = (_code: string) => {};
+
+const markLanguage = mountLanguages(document.querySelector<HTMLElement>('#languages')!, next => {
+  languageChosen = true;
+  setLocale(next);
+});
+
+function setLocale(next: Locale, force = false) {
+  const changed = next !== locale;
+  if (!changed && !force) return;
+  locale = next;
+  t = translator(explorer, next);
+  format = createFormat(next);
+  document.documentElement.lang = next;
+  document.title = t('title');
+  applyMessages(document, t);
+  markLanguage(next);
+  map.relabel();
+  for (const [element, text] of said) element.textContent = text();
+  if (changed) reload();
+}
 
 function escapeHtml(value: string) {
   return value.replace(
@@ -61,25 +113,30 @@ function escapeHtml(value: string) {
   );
 }
 
+/** A message as HTML text. Use plain `t` only for the messages that take a link as a value. */
+const text = (key: ExplorerKey, values?: MessageValues) => escapeHtml(t(key, values));
+/** A price in whole euros; the tools state euros, the formatter takes cents. */
+const euros = (amount: number) => format.euros(Math.round(amount * 100));
+
 function sourceLink(url: string, label: string) {
   const source = new URL(url);
   if (source.protocol !== 'https:' && source.protocol !== 'http:') return escapeHtml(label);
   return `<a href="${escapeHtml(source.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
 }
 
-function day(date: string) {
-  return sampleDay.format(new Date(`${date}T00:00:00Z`));
-}
-
 function travelTable(estimates: Profile['travelEstimates']) {
-  if (!estimates.length) return "<p class='muted'>No travel estimates in this snapshot.</p>";
+  if (!estimates.length) return `<p class='muted'>${text('noTravel')}</p>`;
   const rows = estimates
     .map(
       ({ destination, car, publicTransport: transit }) => `
     <tr>
       <th scope="row">${escapeHtml(destination)}</th>
-      <td>~${car.durationMinutes} min</td>
-      <td>${transit ? `~${transit.durationMinutes} min <small>${transitModes[transit.mode]}</small>` : '<small>No sample</small>'}</td>
+      <td>${text('aboutMinutes', { minutes: car.durationMinutes })}</td>
+      <td>${
+        transit
+          ? `${text('aboutMinutes', { minutes: transit.durationMinutes })} <small>${text(transitModes[transit.mode])}</small>`
+          : `<small>${text('noSample')}</small>`
+      }</td>
     </tr>`,
     )
     .join('');
@@ -87,11 +144,11 @@ function travelTable(estimates: Profile['travelEstimates']) {
     .map(
       ({ destination, car, publicTransport: transit }) => `
     <li><strong>${escapeHtml(destination)}</strong>
-      <small>${sourceLink(car.sourceUrl, 'Road model')} · ${escapeHtml(car.observedAt)}</small>
+      <small>${sourceLink(car.sourceUrl, t('roadModel'))} · ${escapeHtml(car.observedAt)}</small>
       ${
         transit
-          ? `<small>${day(transit.sampleDate)} · ${escapeHtml(transit.summary)} · ${transit.sourceUrls
-              .map((url, index) => sourceLink(url, `Timetable ${index + 1}`))
+          ? `<small>${escapeHtml(format.date(transit.sampleDate))} · ${escapeHtml(transit.summary)} · ${transit.sourceUrls
+              .map((url, index) => sourceLink(url, t('timetable', { number: index + 1 })))
               .join(' · ')}</small>`
           : ''
       }
@@ -100,28 +157,37 @@ function travelTable(estimates: Profile['travelEstimates']) {
     .join('');
   return `
     <table aria-labelledby="travel-heading">
-      <thead><tr><th scope="col">Destination</th><th scope="col">Car</th><th scope="col">Public transport</th></tr></thead>
+      <thead><tr><th scope="col">${text('destination')}</th><th scope="col">${text('car')}</th><th scope="col">${text('publicTransport')}</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <details><summary>Travel sources and sample dates</summary><ul class="items">${sources}</ul></details>`;
+    <details><summary>${text('travelSources')}</summary><ul class="items">${sources}</ul></details>`;
 }
 
 function renderMatch(match: Match) {
   const { matchReasons, tradeoffs, commute, housingEstimate } = match;
   if (!matchReasons.length && !tradeoffs.length && !commute && !housingEstimate) return '';
   return `<section class="evidence">
-    <h3>Shortlist evidence</h3>
+    <h3>${text('shortlistEvidence')}</h3>
     ${
       housingEstimate
-        ? `<p>Estimated purchase price ${euros.format(housingEstimate.amountEur)} · ${sourceLink(
-            housingEstimate.metric.sourceUrl,
-            housingEstimate.metric.geographyName,
-          )} ${housingEstimate.metric.geography === 'comarca' ? '(comarca) ' : ''}· ${escapeHtml(housingEstimate.metric.observedAt)}</p>`
+        ? `<p>${t(housingEstimate.metric.geography === 'comarca' ? 'purchaseEstimateComarca' : 'purchaseEstimate', {
+            amount: escapeHtml(euros(housingEstimate.amountEur)),
+            source: sourceLink(housingEstimate.metric.sourceUrl, housingEstimate.metric.geographyName),
+            observed: escapeHtml(housingEstimate.metric.observedAt),
+          })}</p>`
         : ''
     }
-    ${commute ? `<p>Estimated commute to ${escapeHtml(commute.rail.to.name)} · ${commute.estimatedMinutes} min · ${sourceLink(commute.rail.sourceUrl, 'Rail timetable')}</p>` : ''}
+    ${
+      commute
+        ? `<p>${t('commuteEstimate', {
+            destination: escapeHtml(commute.rail.to.name),
+            minutes: commute.estimatedMinutes,
+            source: sourceLink(commute.rail.sourceUrl, t('railTimetable')),
+          })}</p>`
+        : ''
+    }
     ${matchReasons.length ? `<ul class="match-list">${matchReasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul>` : ''}
-    ${tradeoffs.length ? `<p class="muted"><strong>What to check</strong></p><ul class="match-list">${tradeoffs.map(tradeoff => `<li>${escapeHtml(tradeoff)}</li>`).join('')}</ul>` : ''}
+    ${tradeoffs.length ? `<p class="muted"><strong>${text('whatToCheck')}</strong></p><ul class="match-list">${tradeoffs.map(tradeoff => `<li>${escapeHtml(tradeoff)}</li>`).join('')}</ul>` : ''}
   </section>`;
 }
 
@@ -131,38 +197,38 @@ function renderProfile(profile: Profile, match?: Match) {
     profile.metrics.find(metric => metric.kind === 'resale_eur_per_m2') ??
     profile.comarcaMetrics.find(metric => metric.kind === 'resale_eur_per_m2');
   const schools = nearbySchools.schools
-    .map(
-      ({ school }) =>
-        `<li>${sourceLink(school.sourceUrl, school.name)}
-      <small>${school.stages.map(stage => schoolStages[stage]).join(' · ')}${
+    .map(({ school }) => {
+      const where =
         school.municipalityCode === municipality.code
-          ? ' · In town'
+          ? text('inTown')
           : school.locality
-            ? ` · ${escapeHtml(school.locality)}`
-            : ' · Nearby town'
-      }</small></li>`,
-    )
+            ? escapeHtml(school.locality)
+            : text('nearbyTown');
+      return `<li>${sourceLink(school.sourceUrl, school.name)}
+      <small>${[...school.stages.map(stage => text(schoolStages[stage])), where].join(' · ')}</small></li>`;
+    })
     .join('');
   const measures = incentives
     .map(
       measure => `<li>${sourceLink(measure.sourceUrl, measure.title)}
-    <small>Application status · ${calls[measure.callStatus]}</small>
-    <small>${eligibility[measure.eligibilityStatus]}</small></li>`,
+    <small>${text('applicationStatus', { status: t(calls[measure.callStatus]) })}</small>
+    <small>${text(eligibility[measure.eligibilityStatus])}</small></li>`,
     )
     .join('');
+  const housingSource = housing ? sourceLink(housing.sourceUrl, housing.geographyName) : '';
   profileView.innerHTML = `
     <div class="overview">
       <div>
         <h2>${escapeHtml(municipality.name)}</h2>
         <p>${escapeHtml(municipality.comarca)} · ${sourceLink(municipality.identity.sourceUrl, `Idescat ${municipality.code}`)}</p>
-        <p class="muted">Snapshot ${day(snapshot.generatedOn)}</p>
+        <p class="muted">${text('snapshotDate', { date: format.date(snapshot.generatedOn) })}</p>
       </div>
       <div class="metric">
-        <small>Average resale price</small>
-        <strong>${housing ? `${euros.format(housing.value)}/m²` : 'Unavailable'}</strong>
+        <small>${text('averageResale')}</small>
+        <strong>${housing ? text('perSquareMetre', { amount: euros(housing.value) }) : text('unavailable')}</strong>
         ${
           housing
-            ? `<small>${sourceLink(housing.sourceUrl, housing.geographyName)}${housing.geography === 'comarca' ? ' (comarca)' : ''}
+            ? `<small>${housing.geography === 'comarca' ? t('comarcaSource', { source: housingSource }) : housingSource}
           · ${escapeHtml(housing.observedAt)}</small>`
             : ''
         }
@@ -170,27 +236,25 @@ function renderProfile(profile: Profile, match?: Match) {
     </div>
     ${match ? renderMatch(match) : ''}
     <section class="evidence">
-      <h3 id="travel-heading">${icon('train')}Travel times</h3>
-      <p class="muted">Approximate times from the town centre. Driving uses a road model. Public transport uses dated timetable samples.</p>
+      <h3 id="travel-heading">${icon('train')}${text('travelTimes')}</h3>
+      <p class="muted">${text('travelNote')}</p>
       ${travelTable(travelEstimates)}
     </section>
     <div class="panels">
       <section class="evidence">
-        <h3>${icon('school')}Nearby schools</h3>
-        <p class="muted">${sourceLink(nearbySchools.directory.sourceUrl, 'Official directory')} · Check admissions with each school.</p>
-        ${schools ? `<ul class="items">${schools}</ul>` : "<p class='muted'>No schools listed in this profile.</p>"}
+        <h3>${icon('school')}${text('nearbySchools')}</h3>
+        <p class="muted">${t('schoolsNote', { directory: sourceLink(nearbySchools.directory.sourceUrl, t('officialDirectory')) })}</p>
+        ${schools ? `<ul class="items">${schools}</ul>` : `<p class='muted'>${text('noSchools')}</p>`}
       </section>
       <section class="evidence">
-        <h3>${icon('aid')}Housing measures</h3>
-        ${measures ? `<ul class="items">${measures}</ul>` : "<p class='muted'>No measures listed in this snapshot.</p>"}
+        <h3>${icon('aid')}${text('housingMeasures')}</h3>
+        ${measures ? `<ul class="items">${measures}</ul>` : `<p class='muted'>${text('noMeasures')}</p>`}
       </section>
     </div>`;
 }
 
-async function readTool(call: CallTool, name: string, args: Record<string, unknown>) {
-  const result = await call(name, args);
-  if (result.isError || !result.structuredContent) throw new Error(`Could not read ${name}`);
-  return result.structuredContent;
+function readTool(call: CallTool, name: string, args: Record<string, unknown>) {
+  return readLocalizedTool(call, name, args, localizedTools.has(name) ? locale : null);
 }
 
 async function browserCall(): Promise<CallTool> {
@@ -221,10 +285,12 @@ async function connect() {
   });
   app.onhostcontextchanged = context => {
     if (context.theme) applyDocumentTheme(context.theme);
+    if (context.locale && !languageChosen) setLocale(browserLocale(context.locale));
   };
   await app.connect(undefined, requestOptions);
-  const theme = app.getHostContext()?.theme;
-  if (theme) applyDocumentTheme(theme);
+  const context = app.getHostContext();
+  if (context?.theme) applyDocumentTheme(context.theme);
+  if (!languageChosen) setLocale(browserLocale(context?.locale));
   document.querySelector('main')!.addEventListener('click', event => {
     const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null;
     if (!anchor || !app.getHostCapabilities()?.openLinks) return;
@@ -235,7 +301,7 @@ async function connect() {
         if (response.isError) throw new Error('The host rejected the link');
       })
       .catch(() => {
-        status.textContent = 'The host could not open this source link.';
+        say(status, () => t('linkFailed'));
       });
   });
   const call: CallTool = (name, args) => app.callServerTool({ name, arguments: args }, requestOptions);
@@ -254,25 +320,27 @@ function cardHighlight(match?: Match) {
   const estimate = match.housingEstimate;
   const resale = match.metrics.find(metric => metric.kind === 'resale_eur_per_m2');
   if (estimate)
-    return `${euros.format(estimate.amountEur)} estimated · ${estimate.metric.geography === 'comarca' ? 'Comarca' : 'Municipal'} price basis`;
+    return t(estimate.metric.geography === 'comarca' ? 'highlightEstimateComarca' : 'highlightEstimateMunicipal', {
+      amount: euros(estimate.amountEur),
+    });
   if (resale)
-    return `${euros.format(resale.value)}/m² · ${resale.geography === 'comarca' ? 'Comarca' : 'Municipal'} resale average`;
-  return 'Resale price unavailable in this shortlist';
+    return t(resale.geography === 'comarca' ? 'highlightResaleComarca' : 'highlightResaleMunicipal', {
+      amount: euros(resale.value),
+    });
+  return t('highlightUnavailable');
 }
 
 function cardAccess(match?: Match) {
   if (!match) return '';
-  if (match.commute) return `Rail commute · about ${match.commute.estimatedMinutes} min`;
+  if (match.commute) return t('accessRail', { minutes: match.commute.estimatedMinutes });
   const school = match.schools.find(journey => journey.mode !== 'unknown' && journey.estimatedMinutes !== null);
   if (!school) return match.matchReasons[0] ?? '';
-  const mode = school.mode === 'scheduled_rail_with_estimated_walk' ? 'rail and walk' : 'walk';
-  return `School access · about ${school.estimatedMinutes} min by ${mode}`;
+  return t(school.mode === 'scheduled_rail_with_estimated_walk' ? 'accessSchoolRail' : 'accessSchoolWalk', {
+    minutes: school.estimatedMinutes ?? format.unknown,
+  });
 }
 
 async function start() {
-  const map = mountTownMap(code => {
-    void selectTown(code, true);
-  });
   const { call, launch, preview } = await connect();
   const recommendation = launch.recommendation;
   let showShortlist = Boolean(recommendation);
@@ -299,7 +367,7 @@ async function start() {
       }
     }
     profileView.replaceChildren();
-    status.textContent = town ? `Loading ${town.name}…` : '';
+    say(status, town ? () => t('loadingTown', { town: town.name }) : '');
     if (!town) return;
 
     const match = showShortlist ? shortlist?.towns.find(item => item.municipality.code === code) : undefined;
@@ -312,12 +380,15 @@ async function start() {
       );
       if (selection !== latestSelection) return;
       renderProfile(profile, match);
-      status.textContent = '';
+      say(status);
     } catch {
       if (selection !== latestSelection) return;
-      status.textContent = `Could not load ${town.name}. Select its card or map pin to retry.`;
+      say(status, () => t('townFailed', { town: town.name }));
     }
   }
+  selectFromMap = code => {
+    void selectTown(code, true);
+  };
 
   async function renderView(results: boolean, preferred = active) {
     const view = ++latestSelection;
@@ -326,18 +397,18 @@ async function start() {
     active = null;
     chooser.hidden = true;
     list.replaceChildren();
-    snapshotInfo.textContent = '';
+    say(snapshotInfo);
     profileView.replaceChildren();
-    status.textContent = '';
+    say(status);
     map.setTowns([], results);
-    resultCount.textContent = '';
-    resultsTitle.textContent = results ? (preview ? 'Sample shortlist' : 'Town results') : 'Pilot towns';
+    say(resultCount);
+    say(resultsTitle, () => t(results ? (preview ? 'sampleShortlist' : 'townResults') : 'pilotTowns'));
     resultsButton.closest('.views')!.toggleAttribute('hidden', !recommendation);
     resultsButton.setAttribute('aria-pressed', String(results));
     allButton.setAttribute('aria-pressed', String(!results));
     retry.hidden = true;
     resultsStatus.classList.remove('hint');
-    resultsStatus.textContent = results ? 'Loading town results…' : 'Loading pilot towns…';
+    say(resultsStatus, () => t(results ? 'loadingResults' : 'loadingPilot'));
 
     try {
       if (results && recommendation && !shortlist) {
@@ -355,7 +426,7 @@ async function start() {
       }
     } catch {
       if (view !== latestSelection) return;
-      resultsStatus.textContent = results ? 'Could not load the town results.' : 'Could not load the pilot towns.';
+      say(resultsStatus, () => t(results ? 'resultsFailed' : 'pilotFailed'));
       retry.hidden = false;
       retry.onclick = () => {
         void renderView(results, preferred);
@@ -366,20 +437,20 @@ async function start() {
 
     const matches = results ? (shortlist?.towns ?? []) : [];
     towns = results ? matches.map(match => match.municipality) : (pilot?.municipalities ?? []);
-    if (assessment?.status === 'exploratory' && results) resultsTitle.textContent = 'Towns to explore';
+    if (assessment?.status === 'exploratory' && results) say(resultsTitle, () => t('townsToExplore'));
     const snapshot = results ? shortlist?.snapshot : pilot?.snapshot;
-    if (snapshot) snapshotInfo.textContent = `Data snapshot · ${day(snapshot.generatedOn)}`;
+    if (snapshot) say(snapshotInfo, () => t('dataSnapshot', { date: format.date(snapshot.generatedOn) }));
     if (!towns.length) {
-      resultsStatus.textContent = results
-        ? 'No towns met these requirements in the pilot data.'
-        : 'This snapshot has no municipalities to browse.';
+      say(resultsStatus, () => t(results ? 'noMatches' : 'noMunicipalities'));
       return;
     }
 
-    resultCount.textContent = `${towns.length} ${towns.length === 1 ? 'town' : 'towns'}`;
-    resultsStatus.textContent = preview && results ? 'Sample search for towns with access to ESO schools.' : '';
+    const count = towns.length;
+    say(resultCount, () => t('countTowns', { count }));
+    say(resultsStatus, preview && results ? () => t('sampleSearch') : '');
     if (results && assessment?.status === 'exploratory' && assessment.followUps.length) {
-      resultsStatus.textContent = assessment.followUps[0];
+      // A question the tool wrote, in the language it was asked for.
+      say(resultsStatus, assessment.followUps[0]);
     }
     resultsStatus.classList.add('hint');
     townSelect.options.length = 1;
@@ -403,7 +474,7 @@ async function start() {
     map.setTowns(towns, results, ranked);
     if (preferred && towns.some(town => town.code === preferred)) void selectTown(preferred, true);
     else if (results) void selectTown(towns[0].code);
-    else if (preferred) status.textContent = 'That town is outside the pilot snapshot. Choose one of the towns shown.';
+    else if (preferred) say(status, () => t('outsidePilot'));
   }
 
   list.addEventListener('click', event => {
@@ -419,9 +490,18 @@ async function start() {
   allButton.addEventListener('click', () => {
     if (showShortlist) void renderView(false);
   });
+  // A new language: the shortlist carries text the tool wrote, so it is asked for again.
+  reload = () => {
+    shortlist = undefined;
+    assessment = undefined;
+    void renderView(showShortlist, active);
+  };
   await renderView(showShortlist, launch.municipalityCode);
 }
 
+say(resultsTitle, () => t('exploreCatalonia'));
+say(resultsStatus, () => t('loadingTowns'));
+setLocale(locale, true);
 void start().catch(() => {
-  resultsStatus.textContent = 'Could not connect to the town data. Reopen the Town Explorer to retry.';
+  say(resultsStatus, () => t('connectFailed'));
 });

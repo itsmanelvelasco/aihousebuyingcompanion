@@ -2,8 +2,11 @@ import { z } from 'zod';
 import { municipalityListResult } from '../../packages/contracts/places.ts';
 import type { Person, PlanResult } from '../../packages/contracts/planner.ts';
 import { planResult } from '../../packages/contracts/planner.ts';
+import { defaultLocale, type Locale } from '../../packages/i18n/locales.ts';
+import { translator } from '../../packages/i18n/messages.ts';
 import type { Subject } from './launch.ts';
 import { workspaceLaunch } from './launch.ts';
+import { errorMessages } from './messages/errors.messages.ts';
 
 /**
  * Typed client for the MCP tools the workspace reads. It takes one `CallTool` function, so the same
@@ -119,66 +122,88 @@ function firstText(content: unknown) {
 
 const missingTool = /not found|unknown tool|not available|disabled/i;
 
-/** Human-readable reason for a failed call, without leaking protocol noise. */
-export function describeFailure(tool: string, detail: string): { kind: ToolErrorKind; message: string } {
+/**
+ * Human-readable reason for a failed call, without leaking protocol noise. A reason the server
+ * gave is shown as received; the workspace's own sentences are in the language asked for.
+ */
+export function describeFailure(
+  tool: string,
+  detail: string,
+  locale: Locale = defaultLocale,
+): { kind: ToolErrorKind; message: string } {
+  const t = translator(errorMessages, locale);
   if (missingTool.test(detail) && detail.includes(tool))
-    return { kind: 'unavailable', message: `This server does not offer the ${tool} tool yet.` };
+    return { kind: 'unavailable', message: t('toolUnavailable', { tool }) };
   const text = detail.replace(/^MCP error -?\d+:\s*/i, '').trim();
-  return { kind: 'failed', message: text ? text.slice(0, 280) : `The ${tool} tool returned an error.` };
+  return { kind: 'failed', message: text ? text.slice(0, 280) : t('toolFailed', { tool }) };
 }
 
-async function read<T extends z.ZodType>(call: CallTool, tool: string, args: Record<string, unknown>, schema: T) {
+async function read<T extends z.ZodType>(
+  call: CallTool,
+  tool: string,
+  args: Record<string, unknown>,
+  schema: T,
+  locale: Locale,
+) {
+  const t = translator(errorMessages, locale);
   let result: ToolResult;
   try {
     result = await call(tool, args);
   } catch (error) {
     if (error instanceof ToolError) throw error;
-    const failure = describeFailure(tool, error instanceof Error ? error.message : '');
+    const failure = describeFailure(tool, error instanceof Error ? error.message : '', locale);
     throw new ToolError(tool, failure.kind, failure.message);
   }
   if (result.isError) {
-    if (needsSignIn(result)) throw new ToolError(tool, 'signin', firstText(result.content) || 'Sign in to continue.');
-    const failure = describeFailure(tool, firstText(result.content));
+    if (needsSignIn(result)) throw new ToolError(tool, 'signin', firstText(result.content) || t('signInToContinue'));
+    const failure = describeFailure(tool, firstText(result.content), locale);
     throw new ToolError(tool, failure.kind, failure.message);
   }
   const parsed = schema.safeParse(result.structuredContent);
-  if (!parsed.success)
-    throw new ToolError(tool, 'invalid', `The ${tool} tool answered in a shape this workspace cannot read.`);
+  if (!parsed.success) throw new ToolError(tool, 'invalid', t('toolInvalid', { tool }));
   return parsed.data as z.infer<T>;
 }
 
-export function createToolClient(call: CallTool) {
+/**
+ * The tools of the workspace. With a `locale` the client states it to the tools that answer with
+ * display text (`plan_home_savings`) and words its own error messages in it; without one nothing
+ * is added to a call and the messages are English.
+ */
+export function createToolClient(call: CallTool, locale?: Locale) {
+  const language = locale ?? defaultLocale;
+  const ask = <T extends z.ZodType>(tool: string, args: Record<string, unknown>, schema: T) =>
+    read(call, tool, args, schema, language);
   return {
+    /** The language this client asks for and reports failures in. */
+    locale: language,
     /** Ask the server whose plan to show: it answers `me` when signed in, the demo persona asked for, or nobody. */
     launch: (request: { demoId?: string; municipalityCodes: string[] }) =>
-      read(call, 'show_workspace', request, workspaceLaunch),
+      ask('show_workspace', request, workspaceLaunch),
     plan: ({ subject, person, ...rest }: PlanRequest): Promise<PlanResult> =>
-      read(
-        call,
+      ask(
         'plan_home_savings',
-        { ...rest, ...(person ? { person } : subjectArgs(subject as Subject)) },
+        { ...rest, ...(person ? { person } : subjectArgs(subject as Subject)), ...(locale ? { locale } : {}) },
         planResult,
       ),
     bankUpdates: (subject: Subject, after: number, limit = 50) => {
       const { tool, args } = bankTool(subject, 'updates');
-      return read(call, tool, { ...args, after, limit }, bankUpdates);
+      return ask(tool, { ...args, after, limit }, bankUpdates);
     },
     bankRuntime: (subject: Subject) => {
       const { tool, args } = bankTool(subject, 'runtime');
-      return read(call, tool, args, bankRuntime);
+      return ask(tool, args, bankRuntime);
     },
     bankSummary: (subject: Subject, period: { from: string; to: string }) => {
       const { tool, args } = bankTool(subject, 'summary');
-      return read(call, tool, { ...args, ...period }, bankSummary);
+      return ask(tool, { ...args, ...period }, bankSummary);
     },
     /** Save details to the signed-in person's own profile. Only `me` can be written. */
     saveInputs: (
       data: Record<string, Record<string, unknown>>,
       confirmed: boolean,
       source: 'manual' | 'interview' = 'manual',
-    ) => read(call, 'save_my_inputs', { data, confirmed, source }, savedInputs),
-    municipalities: async () =>
-      (await read(call, 'list_catalonia_municipalities', {}, municipalityListResult)).municipalities,
+    ) => ask('save_my_inputs', { data, confirmed, source }, savedInputs),
+    municipalities: async () => (await ask('list_catalonia_municipalities', {}, municipalityListResult)).municipalities,
   };
 }
 export type ToolClient = ReturnType<typeof createToolClient>;
@@ -187,7 +212,12 @@ export type ToolClient = ReturnType<typeof createToolClient>;
  * `CallTool` for the standalone page: one stateless JSON-RPC `tools/call` per request to the MCP
  * endpoint on the same origin. No session and no SDK client, to keep the bundle small.
  */
-export function httpCallTool(endpoint: string, fetcher: typeof fetch = fetch): CallTool {
+export function httpCallTool(
+  endpoint: string,
+  fetcher: typeof fetch = fetch,
+  locale: Locale = defaultLocale,
+): CallTool {
+  const t = translator(errorMessages, locale);
   let id = 0;
   return async (name, args) => {
     const response = await fetcher(endpoint, {
@@ -200,7 +230,7 @@ export function httpCallTool(endpoint: string, fetcher: typeof fetch = fetch): C
     });
     // A personal tool without a session answers 401 or 403 and still carries the tool result that says why.
     if (!response.ok && response.status !== 401 && response.status !== 403)
-      throw new ToolError(name, 'failed', `The MCP endpoint answered with HTTP ${response.status}.`);
+      throw new ToolError(name, 'failed', t('httpStatus', { status: response.status }));
     const text = await response.text();
     // The server answers with JSON; an event stream carries the same message on a `data:` line.
     const body = response.headers.get('content-type')?.includes('text/event-stream')
@@ -214,10 +244,10 @@ export function httpCallTool(endpoint: string, fetcher: typeof fetch = fetch): C
     try {
       message = JSON.parse(body);
     } catch {
-      throw new ToolError(name, 'invalid', 'The MCP endpoint did not answer with JSON.');
+      throw new ToolError(name, 'invalid', t('notJson'));
     }
     if (message.error || !message.result) {
-      const failure = describeFailure(name, message.error?.message ?? '');
+      const failure = describeFailure(name, message.error?.message ?? '', locale);
       throw new ToolError(name, failure.kind, failure.message);
     }
     return message.result;

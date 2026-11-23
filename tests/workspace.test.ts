@@ -626,3 +626,207 @@ test('the details panel reads what changed from two plans and never does the sum
     { data: { eligibility: { primaryResidence: true } }, confirmed: true, source: 'interview' },
   ]);
 });
+
+// ----------------------------------------------------------------- languages
+
+/** Intl writes narrow and non-breaking spaces around units; the assertions read them as plain spaces. */
+const plain = (text: string | null) => (text ?? '').replace(/\s/g, ' ');
+
+test('with no language stated the workspace prints the English it always printed', () => {
+  const [ager] = fixturePlan.plans;
+  assert.equal(planHeadline(ager).headline, planHeadline(ager, 'en').headline);
+  assert.deepEqual(timelineSteps(ager, 60), timelineSteps(ager, 60, 'en'));
+  assert.deepEqual(benefitView(ager.benefits[1]), benefitView(ager.benefits[1], 'en'));
+  assert.equal(benefitView(ager.benefits[1]).amountLabel, '€1,200 per year, if confirmed');
+  assert.equal(benefitSummary(ager.benefits), '1 of 4 benefits counted');
+  assert.equal(
+    planHeadline(ager).priceText,
+    '€94,500 home, priced from the comarca average price per m² (no municipal figure)',
+  );
+  assert.deepEqual(
+    [formatEuros(null), formatDate(null), formatDuration(null), formatMonthsSaved(null), formatAgo(0, 2 * 86_400_000)],
+    ['Unknown', 'Unknown', 'No finite timeline', 'Not comparable', '2 days ago'],
+  );
+});
+
+test('the view models speak Catalan and Spanish, with figures written as each language writes them', () => {
+  const [ager] = fixturePlan.plans;
+  const catalan = planHeadline(ager, 'ca');
+  assert.equal(catalan.headline, 'A punt d’aquí a 1 any i 3 mesos');
+  assert.equal(
+    plain(catalan.priceText),
+    'Habitatge de 94.500 €, preu segons la mitjana comarcal per m² (sense xifra municipal)',
+  );
+  assert.equal(catalan.savedTotalText, '9 mesos abans');
+  const spanish = planHeadline(ager, 'es');
+  assert.equal(spanish.headline, 'A punto dentro de 1 año y 3 meses');
+  assert.equal(spanish.statusText, 'Estimado');
+  assert.equal(spanish.savedByHabitsText, '4 meses antes');
+
+  assert.deepEqual(
+    timelineSteps(ager, 60, 'ca').map(step => [step.label, step.text, step.shortText]),
+    [
+      ['Base', '2 anys', '2 a'],
+      ['Amb hàbits', '1 any i 8 mesos', '1 a 8 m'],
+      ['Amb aquest lloc', '1 any i 3 mesos', '1 a 3 m'],
+    ],
+  );
+  assert.equal(timelineSteps(ager, 60, 'es')[2].savedText, '5 meses antes');
+  assert.equal(formatMonthsSaved(1, 'ca'), '1 mes abans');
+  assert.equal(formatMonthsSaved(-3, 'es'), '3 meses más tarde');
+  assert.equal(formatAgo(0, 30_000, 'ca'), 'fa 30 s');
+  assert.equal(formatAgo(0, 2 * 86_400_000, 'es'), 'hace 2 días');
+
+  // The honest labels survive translation: counted, unverified and ineligible stay three different things.
+  const [counted, unverified, , ineligible] = ager.benefits;
+  assert.deepEqual(
+    [benefitView(counted, 'ca').countedLabel, benefitView(counted, 'ca').eligibilityLabel],
+    ['Comptat al pla', 'Elegible segons les dades aportades'],
+  );
+  assert.deepEqual(
+    [
+      benefitView(unverified, 'ca').countedLabel,
+      benefitView(unverified, 'ca').eligibilityLabel,
+      plain(benefitView(unverified, 'ca').amountLabel),
+    ],
+    ['No comptat', 'Elegibilitat: cal verificar-ho', '1.200 € l’any, si es confirma'],
+  );
+  assert.deepEqual(
+    [
+      benefitView(unverified, 'es').eligibilityLabel,
+      plain(benefitView(unverified, 'es').amountLabel),
+      benefitView(ineligible, 'es').amountLabel,
+    ],
+    ['Elegibilidad: hay que verificarlo', '1200 € al año, si se confirma', 'No elegible: sin importe'],
+  );
+  // The tone and the flags are data, not text: no language changes what is counted or confirmed.
+  for (const locale of ['ca', 'es'] as const)
+    assert.deepEqual(
+      ager.benefits.map(benefit => {
+        const view = benefitView(benefit, locale);
+        return [view.tone, view.counted, view.confirmed];
+      }),
+      ager.benefits.map(benefit => {
+        const view = benefitView(benefit);
+        return [view.tone, view.counted, view.confirmed];
+      }),
+    );
+  assert.equal(benefitSummary(ager.benefits, 'ca'), 'Comptats: 1 de 4 avantatges');
+  assert.equal(benefitSummary([], 'es'), 'Ninguna ventaja recogida para este lugar');
+  assert.equal(habitPlanView(fixturePlan.person.habits[0], fixturePlan, true, 'es').label, 'Contado en el plan');
+  assert.equal(factSourceLabel('bank', 'ca'), 'Observat als moviments bancaris');
+  assert.equal(factSourceLabel('somewhere', 'es'), 'Fuente no registrada');
+});
+
+test('unknown stays a word in every language, never zero and never a number', () => {
+  const [, , camarasa] = fixturePlan.plans;
+  const unknown = { en: 'Unknown', ca: 'Desconegut', es: 'Desconocido' } as const;
+  const noTimeline = { en: 'No finite timeline', ca: 'Sense termini finit', es: 'Sin plazo finito' } as const;
+  const notEstimated = { en: 'Not estimated', ca: 'No estimat', es: 'No estimado' } as const;
+  for (const locale of ['en', 'ca', 'es'] as const) {
+    assert.equal(formatEuros(null, locale), unknown[locale]);
+    assert.equal(formatDate(null, locale), unknown[locale]);
+    assert.equal(formatDuration(null, locale), noTimeline[locale]);
+    assert.doesNotMatch(formatDurationShort(null, locale), /\d/);
+    // A place with no figures: the indicators say unknown, with no source invented.
+    const rent = indicatorViews(camarasa.place, locale).find(item => item.key === 'rentEurPerMonth');
+    assert.deepEqual([rent?.value, rent?.known, rent?.sourceUrl], [unknown[locale], false, null]);
+    // A plan the planner could not estimate: no step shows a number.
+    for (const step of timelineSteps(camarasa, 60, locale)) {
+      assert.equal(step.text, notEstimated[locale]);
+      assert.equal(step.barPercent, null);
+    }
+    // Savings of zero or less: the headline is words, in the tone of "no end date".
+    const none = planHeadline(fixtureNoSavings.plans[0], locale);
+    assert.deepEqual([none.tone, none.headline], ['none', noTimeline[locale]]);
+    assert.doesNotMatch(none.savedTotalText, /\d/);
+  }
+  assert.equal(planHeadline(camarasa, 'ca').priceText, 'Preu de compra desconegut');
+  assert.equal(planHeadline(camarasa, 'es').headline, 'No hay datos suficientes para estimar');
+});
+
+test('what an answer changed is told in the language on screen, in the planner’s own figures', () => {
+  const [first, ...rest] = fixturePlan.plans;
+  assert(first.withPlaceBenefits, 'the fixture estimates its first place');
+  const before = {
+    ...fixturePlan,
+    plans: [{ ...first, withPlaceBenefits: { ...first.withPlaceBenefits, months: 20 } }, ...rest],
+  };
+  assert.deepEqual(planChanges(before, fixturePlan, 'ca'), [
+    { place: first.place.name, lines: ['Termini ara: 1 any i 3 mesos; abans: 1 any i 8 mesos.'] },
+  ]);
+  assert.deepEqual(planChanges(before, fixturePlan, 'es'), [
+    { place: first.place.name, lines: ['Plazo ahora: 1 año y 3 meses; antes: 1 año y 8 meses.'] },
+  ]);
+});
+
+test('the tool client states its language to the planner and words its own failures in it', async () => {
+  const sent: Record<string, unknown>[] = [];
+  const fixture = fixtureCallTool('1', 0);
+  const record = (name: string, args: Record<string, unknown>) => {
+    sent.push({ name, ...args });
+    return fixture(name, args);
+  };
+  const codes = fixturePlan.plans.map(plan => plan.place.municipalityCode);
+  // No language stated: the call is what it always was.
+  await createToolClient(record).plan({ subject: demoSubject, municipalityCodes: codes, assumptions });
+  assert.equal('locale' in sent[0], false);
+  assert.equal(createToolClient(record).locale, 'en');
+
+  const catalan = createToolClient(record, 'ca');
+  await catalan.plan({ subject: demoSubject, municipalityCodes: codes, assumptions });
+  await catalan.plan({ person: fixturePlan.person, municipalityCodes: codes, assumptions });
+  assert.deepEqual(
+    sent.slice(1).map(({ name, locale }) => [name, locale]),
+    [
+      ['plan_home_savings', 'ca'],
+      ['plan_home_savings', 'ca'],
+    ],
+  );
+  // Only the tools agreed to take a language get one: the bank tools and the launch stay as they were.
+  sent.length = 0;
+  await catalan.bankRuntime(demoSubject);
+  await catalan.launch({ municipalityCodes: codes });
+  await catalan.municipalities();
+  assert.ok(sent.every(call => !('locale' in call)));
+
+  // A reason the server gave is shown as received; the client's own sentences follow its language.
+  assert.equal(
+    describeFailure('plan_home_savings', '', 'ca').message,
+    'L’eina plan_home_savings ha retornat un error.',
+  );
+  assert.equal(
+    describeFailure('plan_home_savings', 'Tool plan_home_savings not found', 'es').message,
+    'Este servidor todavía no ofrece la herramienta plan_home_savings.',
+  );
+  assert.equal(
+    describeFailure('x', 'MCP error -32000: El servidor està ocupat', 'es').message,
+    'El servidor està ocupat',
+  );
+  const broken = createToolClient(async () => ({ structuredContent: { nonsense: true } }), 'es');
+  await assert.rejects(broken.plan({ subject: demoSubject, municipalityCodes: codes, assumptions }), {
+    kind: 'invalid',
+    message: 'La herramienta plan_home_savings ha respondido con una forma que este espacio de trabajo no sabe leer.',
+  });
+  const refused = httpCallTool(
+    'http://localhost/mcp',
+    (async () => new Response('', { status: 502 })) as typeof fetch,
+    'ca',
+  );
+  await assert.rejects(refused('plan_home_savings', {}), {
+    kind: 'failed',
+    message: 'El punt d’accés MCP ha respost amb HTTP 502.',
+  });
+});
+
+test('the built page carries the three languages and the language switcher', t => {
+  const page = loadWorkspacePage();
+  if (!page) return t.skip('apps/web/dist/workspace.js is not built');
+  // One sentence of each language (plain ASCII ones: the bundler escapes accented letters), the
+  // switcher's style from the theme and its element in the bundle.
+  for (const text of ['How soon could you buy?', 'Quan podries comprar?', 'Tu propio plan.'])
+    assert.ok(page.includes(text), `the bundle holds “${text}”`);
+  assert.match(page, /\.rc-lang \[aria-pressed="true"\]/);
+  assert.match(page, /className:\s*"rc-lang"/);
+  assert.match(page, /"aria-pressed"/);
+});

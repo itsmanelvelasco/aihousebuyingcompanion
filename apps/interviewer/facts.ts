@@ -1,3 +1,5 @@
+import { type Locale, localeNames } from '../../packages/i18n/locales.ts';
+import { translator } from '../../packages/i18n/messages.ts';
 import type { Answers, AnswerValue, Question, QuestionId } from '../../packages/model/questions.ts';
 import {
   answerSpecFor,
@@ -7,10 +9,12 @@ import {
   personFromAnswers,
   questionById,
   questions,
+  questionsIn,
   schoolAgeChildren,
   unansweredInOrder,
   validateAnswer,
 } from '../../packages/model/questions.ts';
+import { interview } from './messages.ts';
 
 /**
  * The plan facts in the interviewer: the shared question set (`packages/model/questions.ts`) asked
@@ -35,25 +39,33 @@ export function factQuestionsToAsk(answers: FactAnswers, today: string): Questio
   return unansweredInOrder(answers, today, coveredByInterview);
 }
 
-/** What the page shows and the voice model is told about one question. No answer is in it. */
-export function describeQuestion(question: Question, answers: FactAnswers, today: string) {
+/**
+ * What the page shows and the voice model is told about one question, worded in `locale`. No
+ * answer is in it.
+ */
+export function describeQuestion(question: Question, answers: FactAnswers, today: string, locale: Locale = 'en') {
   const person = personFromAnswers(answers, today);
+  const worded = questionById(question.id, locale);
   return {
-    id: question.id,
-    question: question.question,
-    why: question.why,
-    help: question.help,
-    sensitivity: question.sensitivity,
-    allowUnknown: question.allowUnknown,
-    answer: answerSpecFor(question, person, today),
+    id: worded.id,
+    question: worded.question,
+    why: worded.why,
+    help: worded.help,
+    sensitivity: worded.sensitivity,
+    allowUnknown: worded.allowUnknown,
+    answer: answerSpecFor(worded, person, today, locale),
   };
 }
 
 /** The answered facts as label and value in words, for the review list. */
-export function answeredFacts(answers: FactAnswers, today: string): [label: string, value: string][] {
-  return questions.flatMap((question): [string, string][] => {
+export function answeredFacts(
+  answers: FactAnswers,
+  today: string,
+  locale: Locale = 'en',
+): [label: string, value: string][] {
+  return questionsIn(locale).flatMap((question): [string, string][] => {
     const value = answers[question.id];
-    return value === undefined ? [] : [[question.label, describeAnswer(question.id, value, today)]];
+    return value === undefined ? [] : [[question.label, describeAnswer(question.id, value, today, locale)]];
   });
 }
 
@@ -162,12 +174,32 @@ export function applySpokenFacts(args: Record<string, unknown>, answers: FactAns
  * the question to ask next. Tax bases, disability and family status therefore reach OpenAI only if
  * the person says them aloud in the voice conversation itself.
  */
-export function voiceFactContext(answers: FactAnswers, today: string) {
+export function voiceFactContext(answers: FactAnswers, today: string, locale: Locale = 'en') {
   const [next] = factQuestionsToAsk(answers, today);
   return {
     answeredFactIds: questions.filter(question => answers[question.id] !== undefined).map(question => question.id),
-    nextFactQuestion: next ? describeQuestion(next, answers, today) : null,
+    // Worded in the language of the conversation, so the model asks the reviewed wording, not its own translation.
+    nextFactQuestion: next ? describeQuestion(next, answers, today, locale) : null,
   };
+}
+
+const spokenLanguages: Record<Locale, string> = { en: 'English', ca: 'Catalan', es: 'Spanish' };
+
+/**
+ * The line of the voice instructions that sets the language of the conversation. The instructions
+ * themselves stay in English. With no language chosen the model follows the person, as before;
+ * with Catalan or Spanish chosen on the page it speaks and listens in that language, and still
+ * follows the person if they clearly switch.
+ */
+export function voiceLanguageInstruction(locale: Locale = 'en') {
+  if (locale === 'en') return "Speak in the user's language and keep each spoken turn short.";
+  const language = `${spokenLanguages[locale]} (${localeNames[locale]})`;
+  return `Speak with the person in ${language}: they chose it for this page, so expect their answers in it, including “I don’t know” said in ${spokenLanguages[locale]}. Ask every question in ${spokenLanguages[locale]}; if they clearly switch to another language, follow them. Tool arguments and saved values keep their defined formats, whatever the language spoken. Keep each spoken turn short.`;
+}
+
+/** What to tell a live voice session when the person changes the page language. */
+export function voiceLanguageChange(locale: Locale) {
+  return `The person changed the page language to ${spokenLanguages[locale]} (${localeNames[locale]}). From now on speak with them in ${spokenLanguages[locale]}, and continue the interview where it was.`;
 }
 
 export const factInstructions = `After the savings figures are confirmed, ask the plan facts: the facts that decide which
@@ -288,23 +320,19 @@ export async function saveToProfile(
   data: Record<string, Record<string, unknown>> | null,
   fetcher: typeof fetch,
   endpoint: string,
+  locale: Locale = 'en',
 ): Promise<SaveOutcome> {
-  if (!data) return { saved: false, reason: 'nothing', message: 'There are no answers to save yet.' };
+  const t = translator(interview, locale);
+  const failed = { saved: false, reason: 'failed', message: t('save.failed') } as const;
+  if (!data) return { saved: false, reason: 'nothing', message: t('save.nothing') };
   const answer = await callOwnTool('save_my_inputs', { data, confirmed: true, source: 'interview' }, fetcher, endpoint);
-  if (!answer)
-    return {
-      saved: false,
-      reason: 'unavailable',
-      message: 'This page is not connected to a ReloCat account, so the answers stay on this device.',
-    };
+  if (!answer) return { saved: false, reason: 'unavailable', message: t('save.unavailable') };
   if (answer.isError) {
     const signIn = Boolean(answer._meta && 'mcp/www_authenticate' in answer._meta);
-    return signIn
-      ? { saved: false, reason: 'signed_out', message: 'Sign in to save. The answers are still on this device.' }
-      : { saved: false, reason: 'failed', message: 'The answers could not be saved. They are still on this device.' };
+    return signIn ? { saved: false, reason: 'signed_out', message: t('save.signed_out') } : failed;
   }
   const result = answer.structuredContent as { saved?: unknown; inputId?: unknown } | undefined;
   return result?.saved === true && typeof result.inputId === 'string'
     ? { saved: true, inputId: result.inputId }
-    : { saved: false, reason: 'failed', message: 'The answers could not be saved. They are still on this device.' };
+    : failed;
 }

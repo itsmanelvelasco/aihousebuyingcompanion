@@ -1,8 +1,12 @@
 import type { ReactNode } from 'react';
+import { common } from '../../../packages/i18n/common.ts';
 import { type IconName, iconAttributes, iconPaths, markSvg } from '../../../packages/ui/icons.ts';
 import type { ToolError } from '../client.ts';
 import { formatAgo, formatDate, formatMonthly, safeHref, sourceHost } from '../format.ts';
 import { useNow } from '../hooks.ts';
+import { useLocale, useMessages } from '../i18n.tsx';
+import { errorMessages } from '../messages/errors.messages.ts';
+import { placesMessages } from '../messages/places.messages.ts';
 
 /** An icon from the shared set. Decorative unless `label` names what it stands for. */
 export function Icon({ name, label }: { name: IconName; label?: string }) {
@@ -32,12 +36,14 @@ export function Wordmark() {
 
 /** Where a figure comes from: geography, date and a link, always next to the figure it describes. */
 export function Source(props: { url: string; observedAt?: string | null; geography?: string | null; label?: string }) {
+  const locale = useLocale();
+  const t = useMessages(placesMessages);
   const href = safeHref(props.url);
-  const label = props.label ?? sourceHost(props.url);
+  const label = props.label ?? sourceHost(props.url, locale);
   return (
     <small className="source">
-      {props.geography === 'comarca' ? 'Comarca figure · ' : ''}
-      {props.observedAt ? `${formatDate(props.observedAt)} · ` : ''}
+      {props.geography === 'comarca' ? `${t('comarcaFigure')} · ` : ''}
+      {props.observedAt ? `${formatDate(props.observedAt, locale)} · ` : ''}
       {href ? (
         <a href={href} target="_blank" rel="noopener noreferrer">
           {label}
@@ -54,7 +60,7 @@ export function Source(props: { url: string; observedAt?: string | null; geograp
  * `formatMonthly`'s, split at the slash, and an unknown amount stays the word it already was.
  */
 export function Monthly({ cents }: { cents: number | null | undefined }) {
-  const text = formatMonthly(cents);
+  const text = formatMonthly(cents, useLocale());
   const slash = text.lastIndexOf('/');
   if (slash < 0) return <>{text}</>;
   return (
@@ -92,27 +98,30 @@ export function Switch(props: {
 /** "12 s ago", kept current without re-rendering the rest of the panel. */
 export function Ago({ since, every = 1000 }: { since: number; every?: number }) {
   const now = useNow(every);
-  return <time dateTime={new Date(since).toISOString()}>{formatAgo(since, now)}</time>;
+  const locale = useLocale();
+  return <time dateTime={new Date(since).toISOString()}>{formatAgo(since, now, locale)}</time>;
 }
 
 const errorTitles = {
-  unavailable: 'Not available on this server',
-  failed: 'The request failed',
-  invalid: 'Unreadable answer',
-  signin: 'Sign in needed',
-};
+  unavailable: 'titleUnavailable',
+  failed: 'titleFailed',
+  invalid: 'titleInvalid',
+  signin: 'titleSignin',
+} as const;
 
 /** A failed tool call, with the reason and a way to try again. Never replaced by sample data. */
 export function ErrorNote(props: { title?: string; error: ToolError; onRetry?: () => void; compact?: boolean }) {
+  const t = useMessages(errorMessages);
+  const shared = useMessages(common);
   return (
     <div className={props.compact ? 'rc-note rc-note--error note-compact' : 'rc-note rc-note--error'} role="alert">
       <p>
-        <strong>{props.title ?? errorTitles[props.error.kind]}.</strong> {props.error.message}
+        <strong>{props.title ?? t(errorTitles[props.error.kind])}.</strong> {props.error.message}
       </p>
       {props.onRetry ? (
         <button type="button" className="rc-btn rc-btn--sm" onClick={props.onRetry}>
           <Icon name="refresh" />
-          Try again
+          {shared('tryAgain')}
         </button>
       ) : null}
     </div>

@@ -3,8 +3,12 @@ import type { PlaceBenefit, PlacePlan } from '../../../packages/contracts/planne
 import type { IconName } from '../../../packages/ui/icons.ts';
 import type { Municipality, ToolClient } from '../client.ts';
 import { ToolError } from '../client.ts';
-import { formatEuros, formatMonthly } from '../format.ts';
+import { formatCount, formatEuros, formatMonthly } from '../format.ts';
 import type { PlanState } from '../hooks.ts';
+import { bold, rich, useLocale, useMessages } from '../i18n.tsx';
+import { errorMessages } from '../messages/errors.messages.ts';
+import { formatMessages } from '../messages/format.messages.ts';
+import { placesMessages } from '../messages/places.messages.ts';
 import type { TimelineStep } from '../view-model.ts';
 import {
   benefitSummary,
@@ -46,6 +50,7 @@ type Props = {
 
 export function PlacesPanel(props: Props) {
   const { plan, codes } = props;
+  const t = useMessages(placesMessages);
   const plans = plan.result?.plans ?? [];
   const scale = longestTimeline(plans);
   const shown = new Set(plans.map(item => item.place.municipalityCode));
@@ -57,45 +62,42 @@ export function PlacesPanel(props: Props) {
       <header className="panel-head">
         <h2 id="places-title">
           <Icon name="compare" />
-          Places compared
+          {t('title')}
         </h2>
         <span className="muted" role="status">
           {plan.refreshing && plan.result
-            ? 'Updating the plan…'
+            ? t('updating')
             : plans.length
-              ? `${plans.length} ${plans.length === 1 ? 'place' : 'places'}, shortest timeline first`
+              ? t('countShortestFirst', { count: plans.length })
               : ''}
         </span>
       </header>
 
       {plans.length > 0 ? (
         <div className="legend" aria-hidden="true">
-          <span className="key key-baseline">Baseline</span>
-          <span className="key key-habits">With habits</span>
-          <span className="key key-place">With this place’s benefits</span>
+          <span className="key key-baseline">{t('legendBaseline')}</span>
+          <span className="key key-habits">{t('legendHabits')}</span>
+          <span className="key key-place">{t('legendPlace')}</span>
         </div>
       ) : null}
 
       {plan.error && plan.result ? (
-        <ErrorNote title="The plan could not be updated" error={plan.error} onRetry={props.onRetry} compact />
+        <ErrorNote title={t('updateFailed')} error={plan.error} onRetry={props.onRetry} compact />
       ) : null}
 
       {!props.userId ? (
-        <p className="rc-note">Choose who is planning to compare places.</p>
+        <p className="rc-note">{t('chooseWho')}</p>
       ) : codes.length === 0 ? (
         <div className="rc-empty">
           <div className="rc-art empty-art" aria-hidden="true" />
-          <p>
-            <strong>No places to compare yet.</strong> Add a municipality below, or ask ReloCat in the chat for towns
-            that fit and open them here.
-          </p>
+          <p>{rich(t('empty'), { b: bold })}</p>
         </div>
       ) : plan.phase === 'error' && plan.error ? (
-        <ErrorNote title="Could not load the plan" error={plan.error} onRetry={props.onRetry} />
+        <ErrorNote title={t('loadFailed')} error={plan.error} onRetry={props.onRetry} />
       ) : plan.phase === 'loading' ? (
         <>
           <p className="rc-sr-only" role="status">
-            Loading the plan…
+            {t('loading')}
           </p>
           <ol className="place-list">
             {codes.map(code => (
@@ -106,10 +108,7 @@ export function PlacesPanel(props: Props) {
           </ol>
         </>
       ) : plans.length === 0 && pending.length === 0 ? (
-        <p className="rc-note">
-          <strong>The plan returned no places.</strong> The codes sent ({codes.join(', ')}) may be outside the pilot
-          data. Remove them or add another municipality.
-        </p>
+        <p className="rc-note">{rich(t('noPlacesReturned', { codes: codes.join(', ') }), { b: bold })}</p>
       ) : (
         <ol className={plan.refreshing ? 'place-list is-refreshing' : 'place-list'}>
           {plans.map((item, index) => (
@@ -131,7 +130,7 @@ export function PlacesPanel(props: Props) {
 
       {missing.length > 0 && plans.length > 0 ? (
         <p className="rc-note rc-note--warn">
-          No plan came back for {missing.join(', ')}.{' '}
+          {t('noPlanFor', { codes: missing.join(', ') })}{' '}
           {missing.map(code => (
             <button
               key={code}
@@ -139,7 +138,7 @@ export function PlacesPanel(props: Props) {
               className="rc-btn rc-btn--quiet rc-btn--sm"
               onClick={() => props.onRemove(code)}
             >
-              Remove {code}
+              {t('removeCode', { code })}
             </button>
           ))}
         </p>
@@ -149,13 +148,9 @@ export function PlacesPanel(props: Props) {
         <div className="places-foot">
           <AddPlace client={props.client} codes={codes} onAdd={props.onAdd} />
           <Switch checked={props.includeUnverified} onChange={props.onIncludeUnverified}>
-            Count benefits that still need verification
+            {t('countUnverified')}
           </Switch>
-          {props.includeUnverified ? (
-            <p className="hint hint-warn">
-              Unverified benefits are now counted. These timelines assume aid that has not been confirmed.
-            </p>
-          ) : null}
+          {props.includeUnverified ? <p className="hint hint-warn">{t('unverifiedCounted')}</p> : null}
         </div>
       ) : null}
     </section>
@@ -165,9 +160,12 @@ export function PlacesPanel(props: Props) {
 function PlaceCard(props: { plan: PlacePlan; rank: number; scale: number; onRemove: () => void }) {
   const { plan } = props;
   const { place } = plan;
-  const headline = planHeadline(plan);
-  const steps = timelineSteps(plan, props.scale);
-  const rural = ruralLabel(place.rural);
+  const locale = useLocale();
+  const t = useMessages(placesMessages);
+  const words = useMessages(formatMessages);
+  const headline = planHeadline(plan, locale);
+  const steps = timelineSteps(plan, props.scale, locale);
+  const rural = ruralLabel(place.rural, locale);
   const gaps = new Set([...plan.dataMissing, ...place.dataMissing]);
   const titleId = useId();
 
@@ -181,7 +179,7 @@ function PlaceCard(props: { plan: PlacePlan; rank: number; scale: number; onRemo
           <h3 id={titleId}>{place.name}</h3>
           <p className="muted">
             {place.comarca}
-            {rural ? ` · ${rural}` : ''} · code {place.municipalityCode}
+            {rural ? ` · ${rural}` : ''} · {t('code', { code: place.municipalityCode })}
           </p>
         </div>
         <p className={`headline headline-${headline.tone}`}>{headline.headline}</p>
@@ -197,72 +195,68 @@ function PlaceCard(props: { plan: PlacePlan; rank: number; scale: number; onRemo
       {headline.tone === 'ok' || headline.tone === 'reached' ? (
         <dl className="saved">
           <div className="saved-habits">
-            <dt>Habits</dt>
+            <dt>{t('savedHabits')}</dt>
             <dd>{headline.savedByHabitsText}</dd>
           </div>
           <div className="saved-place">
-            <dt>This place</dt>
+            <dt>{t('savedPlace')}</dt>
             <dd>{headline.savedByPlaceText}</dd>
           </div>
           <div>
-            <dt>Against baseline</dt>
+            <dt>{t('savedBaseline')}</dt>
             <dd>{headline.savedTotalText}</dd>
           </div>
         </dl>
       ) : (
-        <p className="rc-note rc-note--warn">
-          {headline.tone === 'none'
-            ? 'At the current rate nothing is saved each month, so the upfront cash is never reached. This is not zero months: there is no end date to show.'
-            : 'The planner could not estimate this place. See the missing data below.'}
-        </p>
+        <p className="rc-note rc-note--warn">{headline.tone === 'none' ? t('neverReached') : t('notEstimable')}</p>
       )}
 
       <details className="place-details">
         <summary>
-          <span>Indicators, services and benefits</span>
+          <span>{t('detailsSummary')}</span>
           <span className="summary-meta">
-            {benefitSummary(plan.benefits)}
-            {gaps.size ? ` · ${gaps.size} data ${gaps.size === 1 ? 'gap' : 'gaps'}` : ''}
+            {benefitSummary(plan.benefits, locale)}
+            {gaps.size ? ` · ${t('dataGaps', { count: gaps.size })}` : ''}
           </span>
         </summary>
 
-        <h4>Indicators</h4>
+        <h4>{t('indicators')}</h4>
         <dl className="indicators">
-          {indicatorViews(place).map(item => (
+          {indicatorViews(place, locale).map(item => (
             <div key={item.key}>
               <dt>{item.label}</dt>
               <dd className={item.known ? undefined : 'unknown'}>{item.value}</dd>
               {item.sourceUrl ? (
                 <Source url={item.sourceUrl} observedAt={item.observedAt} geography={item.geography} />
               ) : (
-                <small className="source">No figure in the data</small>
+                <small className="source">{t('noFigure')}</small>
               )}
             </div>
           ))}
         </dl>
 
-        <h4>Services in the municipality</h4>
+        <h4>{t('services')}</h4>
         {place.services.length === 0 ? (
-          <p className="muted">No service counts in the data. That is unknown, not zero.</p>
+          <p className="muted">{t('noServices')}</p>
         ) : (
           <ul className="services">
             {place.services.map(item => (
               <li key={item.kind}>
                 <Icon name={serviceIcons[item.kind]} />
-                <span className="service-count">{item.count}</span>
+                <span className="service-count">{formatCount(item.count, locale)}</span>
                 <span>
-                  {serviceLabel(item.kind)}
-                  <Source url={item.sourceUrl} observedAt={item.observedAt} label="source" />
+                  {serviceLabel(item.kind, locale)}
+                  <Source url={item.sourceUrl} observedAt={item.observedAt} label={words('source')} />
                 </span>
               </li>
             ))}
           </ul>
         )}
-        {place.services.length > 0 ? <p className="hint">A kind that is not listed is unknown, not zero.</p> : null}
+        {place.services.length > 0 ? <p className="hint">{t('unlistedUnknown')}</p> : null}
 
-        <h4>Benefits</h4>
+        <h4>{t('benefits')}</h4>
         {plan.benefits.length === 0 ? (
-          <p className="muted">No benefits are listed for this place in the data.</p>
+          <p className="muted">{t('noBenefits')}</p>
         ) : (
           <ul className="benefits">
             {plan.benefits.map(benefit => (
@@ -273,7 +267,7 @@ function PlaceCard(props: { plan: PlacePlan; rank: number; scale: number; onRemo
 
         {plan.assumptions.length > 0 ? (
           <>
-            <h4>Assumed for this place</h4>
+            <h4>{t('assumed')}</h4>
             <ul className="plain-list">
               {plan.assumptions.map(text => (
                 <li key={text}>{text}</li>
@@ -283,7 +277,7 @@ function PlaceCard(props: { plan: PlacePlan; rank: number; scale: number; onRemo
         ) : null}
         {gaps.size > 0 ? (
           <>
-            <h4>Missing data</h4>
+            <h4>{t('missingData')}</h4>
             <ul className="plain-list gaps">
               {[...gaps].map(text => (
                 <li key={text}>
@@ -297,7 +291,7 @@ function PlaceCard(props: { plan: PlacePlan; rank: number; scale: number; onRemo
 
         <button type="button" className="rc-btn rc-btn--quiet rc-btn--sm remove" onClick={props.onRemove}>
           <Icon name="close" />
-          Remove {place.name} from the comparison
+          {t('removeFromComparison', { place: place.name })}
         </button>
       </details>
     </li>
@@ -306,6 +300,9 @@ function PlaceCard(props: { plan: PlacePlan; rank: number; scale: number; onRemo
 
 function StepRow({ step }: { step: TimelineStep }) {
   const hasBar = step.barPercent !== null;
+  const locale = useLocale();
+  const t = useMessages(placesMessages);
+  const upfront = formatEuros(step.upfrontCashCents, locale);
   return (
     <li className={`step step-${step.key} step-${step.state}`}>
       <div className="step-head">
@@ -316,16 +313,11 @@ function StepRow({ step }: { step: TimelineStep }) {
         {hasBar ? <span className="fill" style={{ transform: `scaleX(${(step.barPercent ?? 0) / 100})` }} /> : null}
       </div>
       <p className="step-foot">
-        {step.state === 'not_estimated' ? (
-          'No estimate for this step'
-        ) : (
-          <>
-            {formatEuros(step.upfrontCashCents)} upfront ·{' '}
-            {step.monthlySavingsCents !== null && step.monthlySavingsCents < 0
-              ? `${formatMonthly(-step.monthlySavingsCents)} short`
-              : `${formatMonthly(step.monthlySavingsCents)} saved`}
-          </>
-        )}
+        {step.state === 'not_estimated'
+          ? t('noEstimateStep')
+          : step.monthlySavingsCents !== null && step.monthlySavingsCents < 0
+            ? t('stepUpfrontShort', { upfront, monthly: formatMonthly(-step.monthlySavingsCents, locale) })
+            : t('stepUpfrontSaved', { upfront, monthly: formatMonthly(step.monthlySavingsCents, locale) })}
         {step.savedText ? <span className="step-saved"> · {step.savedText}</span> : null}
       </p>
     </li>
@@ -341,7 +333,9 @@ const benefitBadge = {
 } as const;
 
 function BenefitRow({ benefit }: { benefit: PlaceBenefit }) {
-  const view = benefitView(benefit);
+  const locale = useLocale();
+  const t = useMessages(placesMessages);
+  const view = benefitView(benefit, locale);
   return (
     <li className={`benefit benefit-${view.tone}`}>
       <div className="benefit-head">
@@ -368,7 +362,7 @@ function BenefitRow({ benefit }: { benefit: PlaceBenefit }) {
       <p className="benefit-text">
         {view.kindLabel}. {benefit.explanation}
       </p>
-      <Source url={benefit.sourceUrl} label="Official source" />
+      <Source url={benefit.sourceUrl} label={t('officialSource')} />
     </li>
   );
 }
@@ -379,6 +373,8 @@ function AddPlace(props: { client: ToolClient; codes: string[]; onAdd: (code: st
   const [towns, setTowns] = useState<Towns>({ phase: 'closed', list: [], error: null });
   const [choice, setChoice] = useState('');
   const selectId = useId();
+  const t = useMessages(placesMessages);
+  const errors = useMessages(errorMessages);
   const full = props.codes.length >= MAX_PLACES;
   const options = towns.list.filter(town => !props.codes.includes(town.code));
 
@@ -394,7 +390,7 @@ function AddPlace(props: { client: ToolClient; codes: string[]; onAdd: (code: st
           error:
             error instanceof ToolError
               ? error
-              : new ToolError('list_catalonia_municipalities', 'failed', 'The list of municipalities did not load.'),
+              : new ToolError('list_catalonia_municipalities', 'failed', errors('municipalitiesFailed')),
         }),
     );
   };
@@ -403,23 +399,23 @@ function AddPlace(props: { client: ToolClient; codes: string[]; onAdd: (code: st
     if (choice && !options.some(town => town.code === choice)) setChoice('');
   }, [choice, options]);
 
-  if (full) return <p className="hint">Eight places is the most the plan compares at once.</p>;
+  if (full) return <p className="hint">{t('maxPlaces')}</p>;
   if (towns.phase === 'closed')
     return (
       <button type="button" className="rc-btn" onClick={open}>
         <Icon name="add" />
-        Add a place
+        {t('addAPlace')}
       </button>
     );
   if (towns.phase === 'loading')
     return (
       <p className="hint" role="status">
-        Loading municipalities…
+        {t('loadingMunicipalities')}
       </p>
     );
   if (towns.phase === 'error' && towns.error)
-    return <ErrorNote title="Could not list municipalities" error={towns.error} onRetry={open} compact />;
-  if (options.length === 0) return <p className="hint">Every municipality in the pilot is already compared.</p>;
+    return <ErrorNote title={t('listFailed')} error={towns.error} onRetry={open} compact />;
+  if (options.length === 0) return <p className="hint">{t('allCompared')}</p>;
   return (
     <form
       className="add-place rc-field"
@@ -430,9 +426,9 @@ function AddPlace(props: { client: ToolClient; codes: string[]; onAdd: (code: st
         setChoice('');
       }}
     >
-      <label htmlFor={selectId}>Add a place</label>
+      <label htmlFor={selectId}>{t('addAPlace')}</label>
       <select id={selectId} value={choice} onChange={event => setChoice(event.currentTarget.value)}>
-        <option value="">Choose a municipality</option>
+        <option value="">{t('chooseMunicipality')}</option>
         {options.map(town => (
           <option key={town.code} value={town.code}>
             {town.name} · {town.comarca}
@@ -440,7 +436,7 @@ function AddPlace(props: { client: ToolClient; codes: string[]; onAdd: (code: st
         ))}
       </select>
       <button type="submit" className="rc-btn rc-btn--primary" disabled={!choice}>
-        Add place
+        {t('addPlace')}
       </button>
     </form>
   );

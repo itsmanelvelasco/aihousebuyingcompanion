@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { openDemo, updateDemo } from '../apps/board/demo.ts';
+import { stopNames } from '../apps/board/map.ts';
+import { board } from '../apps/board/messages.ts';
+import { sceneText } from '../apps/board/scenes.ts';
+import { missingInformation, statusLabel } from '../apps/board/screen.ts';
 
 test('onboarding batches answers atomically and separates the upfront and payoff milestones', () => {
   const { runId } = openDemo({ persona: 'onboarding' });
@@ -210,4 +215,128 @@ test('the board MCP endpoint refuses browser calls from other sites', async t =>
   assert.equal((await call('https://evil.example')).status, 403);
   assert.equal((await call(`http://127.0.0.1:${port}`)).status, 200);
   assert.equal((await call()).status, 200);
+});
+
+// ------------------------------------------------------------ languages
+
+test('the scripted scenes read the same in English as before, and in Catalan and Spanish from the same ids', () => {
+  const english = sceneText();
+  // The server writes the catalog's English, so the widget and the model never disagree.
+  const { runId } = openDemo({ persona: 'shortcuts', newRun: true });
+  const view = updateDemo({ runId, action: 'read_inbox' });
+  assert.ok('inbox' in view);
+  for (const route of view.inbox) {
+    assert.deepEqual({ title: route.title, detail: route.detail, verify: route.verify }, english.opportunity(route.id));
+    assert.equal(route.waypoint.label, english.step(route.id));
+  }
+  assert.equal(
+    english.opportunity('rule').detail,
+    'A fictional rule change reduces the upfront goal to €28,000. Your €28,000 reaches that goal. Sample rent is €1,150 and the modeled mortgage payment is €950, a €200 difference before ownership costs.',
+  );
+  assert.equal(
+    english.habit('coffee').action,
+    'Buy your four coffees at the sample station café for €2.50 each instead of €5. Try the cheaper café on your next coffee run.',
+  );
+  assert.deepEqual(
+    english.credits.stats.map(stat => stat.value),
+    ['€165,000', '20 years', '€0'],
+  );
+  assert.equal(english.financeNote('sampleGoal'), 'Uses the €54,000 sample upfront goal.');
+  assert.equal(english.coach(1, 10).milestone, '1 quest checked off. Keep them up to free up €10 a month.');
+
+  // The same scene in the other two languages: amounts as each writes them, and still labelled as invented.
+  const catalan = sceneText('ca');
+  const spanish = sceneText('es');
+  assert.match(
+    catalan.opportunity('rule').detail,
+    /^Un canvi de norma fictici redueix l’objectiu inicial a 28\.000\s€\./,
+  );
+  assert.match(
+    spanish.opportunity('rule').detail,
+    /^Un cambio de norma ficticio reduce el objetivo inicial a 28\.000\s€\./,
+  );
+  assert.match(catalan.habit('coffee').action, /2,50\s€ cadascun en lloc de 5\s€/);
+  assert.match(spanish.bankInsight, /ritmo de gasto de muestra te quedan 720\s€/);
+  assert.equal(catalan.personaLabel('payoff'), 'Habitatge sense deutes');
+  assert.match(spanish.coach(1, 10).milestone, /^1 misión completada\./);
+  assert.match(catalan.coach(2, 24).milestone, /^2 missions completades\./);
+  assert.deepEqual(spanish.credits.stats.at(1), { label: 'Camino de devolución', value: '20 años' });
+  // Persona names and place names are not translated.
+  assert.match(catalan.opportunity('listing').title, /Manresa/);
+  assert.match(spanish.you, /^Marc/);
+});
+
+test('the board sends ids with its scripted text, so the widget can show its own language', () => {
+  const { runId } = openDemo({ persona: 'onboarding', newRun: true });
+  const view = updateDemo({ runId, action: 'answer_batch', answers: { town: 'Manresa', reserve: 4000 } });
+  assert.ok('answers' in view);
+  assert.equal(view.group?.id, 'home');
+  assert.deepEqual(
+    view.extraGroups.map(group => group.id),
+    ['household', 'commute', 'buffer'],
+  );
+  assert.deepEqual(view.financeNotes, ['sampleGoal', 'reserve', 'unreportedDebt']);
+  assert.equal(
+    view.financeNote,
+    'Uses the €54,000 sample upfront goal. Your emergency reserve stays out of the buying fund. Monthly saving is before any unreported debt payments.',
+  );
+  const catalan = sceneText('ca');
+  assert.equal(catalan.groupTitle('home'), 'Explica’m l’habitatge que vols');
+  assert.equal(catalan.fieldLabel('town'), 'Poble on vols comprar');
+  assert.equal(sceneText('es').factLabel('savings'), 'Ahorrado');
+  // A field the script does not know is shown as it is, and a place name is not an example to translate.
+  assert.equal(catalan.fieldLabel('somethingElse'), 'somethingElse');
+  assert.equal(catalan.example('town'), null);
+});
+
+test('the town screen names what is missing in words, never as an input path', () => {
+  const paths = ['housing.homeSizeM2', 'transport.destinationCode'];
+  assert.equal(missingInformation(paths), 'More information needed: home size and where you commute to.');
+  assert.equal(
+    missingInformation(paths, 'ca'),
+    'Cal més informació: la superfície de l’habitatge i on et desplaces per feina.',
+  );
+  assert.equal(
+    missingInformation(paths, 'es'),
+    'Hace falta más información: la superficie de la vivienda y adónde te desplazas por trabajo.',
+  );
+  // A path with no name here is "more details"; a reason after a colon is not printed either.
+  const odd = ['eligibility.somethingNew', 'school.stages:required_for_constraints', 'school.stages'];
+  assert.equal(missingInformation(odd), 'More information needed: school stages and more details.');
+  for (const locale of ['en', 'ca', 'es'] as const) {
+    const said = missingInformation([...paths, ...odd, 'housing.tenure', 'housing.budgetCents'], locale);
+    assert.doesNotMatch(said, /housing\.|transport\.|school\.|eligibility\.|required_for|[a-z][A-Z]/, locale);
+  }
+  assert.equal(missingInformation([], 'es'), 'Hace falta más información: resuelve los conflictos del perfil.');
+  // The unknown state stays a word in each language, and an unmapped status is shown as the source wrote it.
+  assert.deepEqual(
+    (['en', 'ca', 'es'] as const).map(locale => statusLabel('unknown', locale)),
+    ['unknown', 'desconegut', 'desconocido'],
+  );
+  assert.equal(statusLabel('needs_verification', 'ca'), 'cal verificar-ho');
+  assert.equal(statusLabel('paused', 'es'), 'paused');
+});
+
+test('the board template carries a language switcher, and every key it names is in the catalog', () => {
+  const template = readFileSync(new URL('../apps/board/widget.html', import.meta.url), 'utf8');
+  assert.match(template, /class="rc-lang"[^>]*>(<button type="button" data-lang="(en|ca|es)"[^>]*>[^<]+<\/button>){3}/);
+  const keys = [...template.matchAll(/data-i18n(?:-aria-label)?="([^"]+)"/g)].map(match => match[1]);
+  assert.ok(keys.length >= 6);
+  for (const key of keys) assert.ok(key in board.en, key);
+  // The English template is what the catalog says, so the page reads the same before the script runs.
+  for (const [, key, text] of template.matchAll(/data-i18n="([^"]+)">([^<]+)</g))
+    assert.equal(text, board.en[key as keyof typeof board.en], key);
+  // The demo stays labelled as invented in every language.
+  assert.deepEqual(
+    [board.en.pill, board.ca.pill, board.es.pill],
+    ['Hackathon · fictional data', 'Hackathon · dades fictícies', 'Hackathon · datos ficticios'],
+  );
+  assert.match(board.ca.footer, /dades de mostra/);
+  assert.match(board.es.demoProfile, /ficticio .* solo lectura/);
+  assert.deepEqual(stopNames(), ['Start', 'Savings', 'Plan', 'Buy', 'Repay', 'Debt-free']);
+  assert.deepEqual(stopNames('ca'), ['Inici', 'Estalvi', 'Pla', 'Compra', 'Retorn', 'Sense deutes']);
+  // Canvas labels are drawn at 12 px in a fixed space: a translation may not be much longer than the English.
+  for (const key of ['chartToday', 'chartStart', 'chartMortgageShort', 'chartPaidShort', 'stopDebtFree'] as const)
+    for (const locale of ['ca', 'es'] as const)
+      assert.ok(board[locale][key].length <= board.en[key].length + 4, `${locale}.${key}`);
 });

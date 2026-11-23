@@ -94,7 +94,7 @@ export function registerInterviewerTools(server: McpServer) {
           mimeType: widgetType,
           text: renderVoiceCard(launchHref),
           _meta: {
-            ui: { prefersBorder: true },
+            ui: { prefersBorder: true, csp: { connectDomains: [], resourceDomains: [] } },
             ...(launchUrl && { 'openai/widgetCSP': { redirect_domains: [launchUrl.origin] } }),
           },
         },

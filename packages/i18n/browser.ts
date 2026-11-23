@@ -49,8 +49,12 @@ function openaiLocale() {
   return typeof host?.locale === 'string' ? host.locale : null;
 }
 
+/** What the person picked with the switcher in this view: it wins over everything, `?lang=` included. */
+let picked: Locale | undefined;
+
 /** The language to show now. `hostLocale` is what an MCP Apps host context states, when there is one. */
 export function browserLocale(hostLocale?: string | null): Locale {
+  if (picked) return picked;
   return chooseLocale({
     search: globalThis.location?.search,
     stored: stored(),
@@ -62,6 +66,7 @@ export function browserLocale(hostLocale?: string | null): Locale {
 
 /** Remembers a choice made with the language switcher and marks the document with it. */
 export function rememberLocale(locale: Locale) {
+  picked = locale;
   try {
     globalThis.localStorage?.setItem(localeStorageKey, locale);
   } catch {

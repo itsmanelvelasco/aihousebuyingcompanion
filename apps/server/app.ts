@@ -14,6 +14,8 @@ import type { RateLimitOptions } from '../../packages/http/rate-limit.ts';
 import { createRateLimiter } from '../../packages/http/rate-limit.ts';
 import type { ApiAccess } from '../../packages/http/server.ts';
 import { bearerToken, sendHtml, sendJson } from '../../packages/http/server.ts';
+import { translator } from '../../packages/i18n/messages.ts';
+import { requestLocale } from '../../packages/i18n/server.ts';
 import { createListingBudget } from '../../packages/listings/budget.ts';
 import type { BoardOptions, CallerResolution } from '../board/server.ts';
 import { createBoardApp } from '../board/server.ts';
@@ -23,6 +25,7 @@ import type { Caller } from '../mcp-server/identity.ts';
 import type { ProfileApiOptions } from '../profile-api/server.ts';
 import { createProfileApiHandler } from '../profile-api/server.ts';
 import { createAccountRoutes } from './account-routes.ts';
+import { routeMessages } from './errors.messages.ts';
 import { messagePage } from './pages.ts';
 import { createPeople } from './people.ts';
 
@@ -376,12 +379,13 @@ export function createApp(options: AppOptions) {
   function busy(request: IncomingMessage, response: ServerResponse, error: DatabaseBusyError) {
     response.setHeader('Retry-After', String(error.retryAfterSeconds));
     const page = request.method === 'GET' && String(request.headers.accept ?? '').includes('text/html');
-    if (page)
-      return sendHtml(
-        response,
-        503,
-        messagePage('ReloCat is busy', 'Nothing was changed. Wait a moment and try again.'),
-      );
+    if (page) {
+      const { locale } = requestLocale(request);
+      const t = translator(routeMessages, locale);
+      response.setHeader('Content-Language', locale);
+      response.setHeader('Vary', 'Accept-Language, Cookie');
+      return sendHtml(response, 503, messagePage(t('busyTitle'), t('busyMessage'), null, undefined, { locale }));
+    }
     return sendJson(response, 503, { error: 'Storage is busy; try again shortly', retryable: true });
   }
 

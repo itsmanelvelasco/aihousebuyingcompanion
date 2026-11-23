@@ -1,3 +1,10 @@
+import { common } from '../../packages/i18n/common.ts';
+import type { Locale } from '../../packages/i18n/locales.ts';
+import { translator } from '../../packages/i18n/messages.ts';
+import { board } from './messages.ts';
+import type { OpportunityId } from './scenes.ts';
+import { sceneText } from './scenes.ts';
+
 export const stops = [
   [48, 200],
   [126, 171],
@@ -33,7 +40,11 @@ const shortcut = [
   [344, 106],
   [371, 76],
 ];
-export const stopNames = ['Start', 'Savings', 'Plan', 'Buy', 'Repay', 'Debt-free'];
+/** The six stops of the trail, named in one language. They sit over the map in 12 px, so they stay short. */
+export function stopNames(locale: Locale = 'en') {
+  const t = translator(board, locale);
+  return [t('stopStart'), t('stopSavings'), t('stopPlan'), t('stopBuy'), t('stopRepay'), t('stopDebtFree')];
+}
 
 export function nextSegment(index: number, useShortcut: boolean) {
   const points = index === 4 && useShortcut ? shortcut : waypoints[index];
@@ -324,15 +335,26 @@ export function drawWorld(canvas: HTMLCanvasElement, completed: number, program 
 }
 
 type RouteLane = {
+  /** The scripted route this lane shows; its waypoint is then named in the chart's language. */
+  id?: OpportunityId;
   letter: string;
   upfrontMonths: number | null;
   debtFreeMonths: number | null;
   waypoint?: { label: string; offset: number };
 };
 
-export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[], selected: string, pastMonths: number) {
+export function drawRouteTimeline(
+  canvas: HTMLCanvasElement,
+  lanes: RouteLane[],
+  selected: string,
+  pastMonths: number,
+  locale: Locale = 'en',
+) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
+  const t = translator(board, locale);
+  const shared = translator(common, locale);
+  const scene = sceneText(locale);
   const width = Math.max(280, canvas.clientWidth);
   const height = canvas.clientHeight || 340;
   const scale = window.devicePixelRatio || 1;
@@ -358,6 +380,8 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
   const selectedColor = '#7950a7';
   const doneColor = '#1f7a55';
 
+  const labelFont = "12px Montserrat, ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif";
+
   function line(color: string, weight: number, points: [number, number][], dash: number[] = []) {
     if (!ctx) return;
     ctx.strokeStyle = color;
@@ -370,13 +394,23 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
     ctx.setLineDash([]);
   }
 
-  function label(value: string, xx: number, yy: number, color: string, bold = false, align: CanvasTextAlign = 'left') {
+  /** `room` is the width the text may take: a longer translation is narrowed to it instead of running over. */
+  function label(
+    value: string,
+    xx: number,
+    yy: number,
+    color: string,
+    bold = false,
+    align: CanvasTextAlign = 'left',
+    room?: number,
+  ) {
     if (!ctx) return;
     ctx.fillStyle = color;
-    ctx.font = `${bold ? 700 : 500} 12px Montserrat, ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif`;
+    ctx.font = `${bold ? 700 : 500} ${labelFont}`;
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
-    ctx.fillText(value, xx, yy);
+    if (room === undefined) ctx.fillText(value, xx, yy);
+    else ctx.fillText(value, xx, yy, Math.max(24, room));
   }
 
   function stop(xx: number, yy: number, color: string, radius = 5) {
@@ -396,10 +430,10 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
   ctx.fillRect(left, 25, today - left, bottom - 25);
   ctx.fillStyle = '#f4ecda';
   ctx.fillRect(mortgage, 25, width - mortgage, bottom - 25);
-  label('Years on the journey', 14, 17, '#55625a', true);
+  label(t('chartYears'), 14, 17, '#55625a', true);
   for (let years = 0; years * 12 <= horizon; years += 5) {
     const level = y(years * 12);
-    label(`${years}y`, 9, level, '#55625a');
+    label(t('chartYearTick', { count: years }), 9, level, '#55625a');
     if (years === 0)
       line('#e6dfcd', 1, [
         [left, level],
@@ -421,6 +455,7 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
     [3, 5],
   );
 
+  const todayLabel = width < 450 ? t('chartToday') : t('chartTodayYear', { year: pastMonths / 12 });
   const planned = lanes.filter(lane => lane.upfrontMonths !== null && lane.debtFreeMonths !== null);
   planned.sort((a, b) => Number(a.letter === selected) - Number(b.letter === selected));
   for (const lane of planned) {
@@ -440,14 +475,31 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
     if (isSelected) {
       const elapsed = pastMonths + lane.debtFreeMonths!;
       label(
-        elapsed % 12 ? `${Math.floor(elapsed / 12)}y ${elapsed % 12}m` : `${elapsed / 12} years`,
+        elapsed % 12
+          ? t('chartElapsed', { years: Math.floor(elapsed / 12), months: elapsed % 12 })
+          : shared('years', { count: elapsed / 12 }),
         finish + 4,
         finishMortgage - 13,
         color,
         true,
         'right',
       );
-      if (lane.waypoint) label(lane.waypoint.label, detour, waypointY - 14, color, true, 'center');
+      if (lane.waypoint) {
+        const name = lane.id ? scene.step(lane.id) : lane.waypoint.label;
+        // A waypoint right after today would be written over the "Today" label: it goes under the line instead.
+        ctx.font = `700 ${labelFont}`;
+        const reach = (ctx.measureText(name).width + ctx.measureText(todayLabel).width) / 2 + 8;
+        const crowded = Math.abs(waypointY - y(pastMonths)) < 16 && detour - today < reach;
+        label(
+          name,
+          detour,
+          crowded ? waypointY + 16 : waypointY - 14,
+          color,
+          true,
+          'center',
+          2 * Math.min(detour - 4, width - detour - 4),
+        );
+      }
     }
   }
   line(doneColor, 4.5, [
@@ -456,15 +508,31 @@ export function drawRouteTimeline(canvas: HTMLCanvasElement, lanes: RouteLane[],
   ]);
   stop(start, y(0), doneColor);
   stop(today, y(pastMonths), doneColor, 6);
-  label(
-    width < 450 ? 'Today' : `Today · year ${pastMonths / 12}`,
-    today,
-    y(pastMonths) - 14,
-    doneColor,
-    true,
-    'center',
+  label(todayLabel, today, y(pastMonths) - 14, doneColor, true, 'center');
+  // Three labels share the bottom line; each keeps to its own third so a longer language cannot overlap.
+  const mortgageLabel = width < 430 ? t('chartMortgageShort') : t('chartMortgage');
+  ctx.font = `700 ${labelFont}`;
+  const mortgageRoom = Math.min(
+    ctx.measureText(mortgageLabel).width,
+    Math.min(mortgage - (start - 10) - 8, width - 11 - mortgage - 8),
   );
-  label('Start saving', start - 10, height - 20, '#22352a', true);
-  label(width < 430 ? 'Mortgage' : 'Start mortgage', mortgage, height - 20, '#22352a', true, 'center');
-  label(width < 430 ? 'Paid off' : 'Mortgage paid off', width - 11, height - 20, '#22352a', true, 'right');
+  label(
+    t('chartStart'),
+    start - 10,
+    height - 20,
+    '#22352a',
+    true,
+    'left',
+    mortgage - mortgageRoom / 2 - (start - 10) - 8,
+  );
+  label(mortgageLabel, mortgage, height - 20, '#22352a', true, 'center', mortgageRoom);
+  label(
+    width < 430 ? t('chartPaidShort') : t('chartPaid'),
+    width - 11,
+    height - 20,
+    '#22352a',
+    true,
+    'right',
+    width - 11 - mortgage - mortgageRoom / 2 - 8,
+  );
 }

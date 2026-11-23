@@ -74,7 +74,7 @@ test('discovers schemas and exposes sourced profiles, schools and business indic
   const personal = await client.callTool({ name: 'get_person', arguments: {} });
   assert(personal.isError);
   const profileTool = listed.tools.find(tool => tool.name === 'recommend_towns_for_profile');
-  assert.deepEqual(Object.keys(profileTool?.inputSchema.properties ?? {}).sort(), ['limit', 'profile']);
+  assert.deepEqual(Object.keys(profileTool?.inputSchema.properties ?? {}).sort(), ['limit', 'locale', 'profile']);
   assert.deepEqual(profileTool?.inputSchema.required, ['profile']);
   assert.equal(profileTool?.inputSchema.additionalProperties, true);
 

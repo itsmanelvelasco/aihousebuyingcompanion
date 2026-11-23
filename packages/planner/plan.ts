@@ -3,9 +3,13 @@ import type { eligibility, Municipality, Policy } from '../contracts/places.ts';
 import type { HabitEffect, Person, Place, PlaceBenefit, PlacePlan, PlanResult } from '../contracts/planner.ts';
 import { person as personSchema, planAssumptions, planResult } from '../contracts/planner.ts';
 import { maxPlanningMonths, monthsToTarget } from '../finance/savings.ts';
+import { defaultLocale, type Locale } from '../i18n/locales.ts';
+import { type MessageValues, translator } from '../i18n/messages.ts';
 import { ageOn, childAgeOn } from '../model/questions.ts';
 import { callStatusOn, evaluateIncentives } from '../places/eligibility.ts';
+import { wording } from '../places/wording.ts';
 import { factsOf } from './next-questions.ts';
+import { planMessages } from './plan.messages.ts';
 
 /**
  * The plan that joins a person and a place: how many months until the person has the upfront cash
@@ -46,6 +50,10 @@ import { factsOf } from './next-questions.ts';
  *     with habits is never later than the baseline, with place benefits never later than with habits.
  *   - A timeline without a finite number of months has no purchase day. Its benefits are then listed
  *     as screened on the plan date, and say so; none is described against a day that does not exist.
+ *
+ * LANGUAGE. Every sentence of the result comes from `plan.messages.ts` and is written in the
+ * language passed as `locale` (English by default). The language changes sentences only: every
+ * amount, month, date, status, id and the order of the plans are the same in the three languages.
  */
 type Eligibility = z.infer<typeof eligibility>;
 type Household = NonNullable<Person['household']>;
@@ -88,27 +96,48 @@ const taxReturnDelayMonths = 12;
 const maxSettleRounds = 8;
 /** Intents screened for a purchase plan. Renovation measures depend on works this plan does not model. */
 const screenedIntents = new Set<Policy['intent']>(['buy', 'move', 'rent']);
-const unsettledReason =
-  'whether it applies depends on the day you could buy, and that day depends on whether it is counted. The two did not settle, so the plan takes the cautious figure and leaves it out.';
-/** Why a benefit that holds on the plan date is left out of a timeline that has no purchase day. */
-const noDayReason = (asOf: string) =>
-  `no day of purchase can be estimated, so this is the screening on the plan date (${asOf}). It holds on that date, but it would no longer hold by the time the cash could be saved, and without it the upfront cash is beyond what this plan estimates.`;
 
-export const planLimitations = [
-  'This is an arithmetic estimate from the figures supplied. It is not a mortgage offer, a credit assessment or a promise that a lender will approve a loan.',
-  'No aid, grant or tax benefit is guaranteed. Benefits are screened against the rules in the dated policy snapshot and must be confirmed with the Catalan Tax Agency or the housing agency before relying on them.',
-  'Prices are published municipal or comarca averages per square metre, not actual listings. The timeline assumes constant income, expenses and prices, with no interest or inflation.',
-  `Months are rounded up. Zero, negative or unknown monthly savings give no timeline rather than a misleading number, and neither does a target more than ${maxPlanningMonths} months away.`,
-  'Benefits tied to the purchase are screened on the estimated purchase day, with ages advanced to it. Tax bases, family status and the rules themselves are assumed to stay as they are on the plan date; the rules on the actual purchase day may differ.',
-];
+type PlanMessage = keyof (typeof planMessages)['en'];
 
-function euros(cents: number): string {
-  return `€${(cents / 100).toLocaleString('en-GB', { maximumFractionDigits: 2 })}`;
+/**
+ * The words of one language: its sentences and how it writes an amount, a share and a date.
+ *
+ * English writes whole euros without decimals and any other amount with both (`€26,989`,
+ * `€397.70`), and keeps ISO dates. Catalan and Spanish use the formats of `packages/i18n`.
+ */
+function wordsFor(locale: Locale) {
+  const write = wording(locale);
+  const t = translator(planMessages, locale) as (key: PlanMessage, values?: MessageValues) => string;
+  return {
+    locale,
+    t,
+    euros: (amountCents: number) => {
+      const cents = Math.round(amountCents);
+      const digits = cents % 100 === 0 ? 0 : 2;
+      const english = `€${(cents / 100).toLocaleString('en-GB', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+      return write.euros(cents, english);
+    },
+    percent: write.percent,
+    date: write.date,
+    number: write.number,
+    list: write.list,
+  };
+}
+type Words = ReturnType<typeof wordsFor>;
+
+/** What a plan cannot tell, in `locale`. */
+export function planLimitationsIn(locale: Locale = defaultLocale): string[] {
+  const { t } = wordsFor(locale);
+  return [
+    t('limitation1'),
+    t('limitation2'),
+    t('limitation3'),
+    t('limitation4', { maxMonths: maxPlanningMonths }),
+    t('limitation5'),
+  ];
 }
 
-function percent(rate: number): string {
-  return `${Math.round(rate * 10_000) / 100}%`;
-}
+export const planLimitations = planLimitationsIn(defaultLocale);
 
 /** A share of an amount in cents, rounded to the nearest cent. */
 function share(rate: number, amountCents: number): number {
@@ -227,36 +256,31 @@ function agesAreExact(person: Person): boolean {
 }
 
 /** "46", or "46 or 47" when the birthday decides. */
-function ageRange(age: number, months: number): string {
+function ageRange(age: number, months: number, words: Words): string {
   const [low, high] = [age + Math.floor(months / 12), age + Math.ceil(months / 12)];
-  return low === high ? `${low}` : `${low} or ${high}`;
+  return low === high ? `${low}` : words.t('ageRange', { low, high });
 }
 
 /**
  * The ages on the purchase day, as a sentence; empty when no age is known or the day is the plan date.
  * `exact` is the household on that day when every age comes from a date of birth.
  */
-function agesOn(facts: Household | undefined, months: number, exact?: Household): string {
+function agesOn(facts: Household | undefined, months: number, words: Words, exact?: Household): string {
   if (!facts || months === 0) return '';
   const children = (exact ?? facts).children ?? [];
   const age = (exact ?? facts).age;
-  const range = (value: number) => (exact ? `${value}` : ageRange(value, months));
-  const parts = [
-    ...(age === undefined ? [] : [`you would be ${range(age)}`]),
-    ...(children.length
-      ? [
-          `your ${children.length === 1 ? 'child' : 'children'} would be ${children.map(child => range(child.age)).join(', ')}`,
-        ]
-      : []),
-  ];
-  return parts.length ? `By then ${parts.join(' and ')}.` : '';
+  const range = (value: number) => (exact ? `${value}` : ageRange(value, months, words));
+  const ages = children.map(child => range(child.age)).join(', ');
+  const count = children.length;
+  if (age === undefined) return count ? words.t('agesChildren', { count, ages }) : '';
+  return count ? words.t('agesBoth', { age: range(age), count, ages }) : words.t('agesSelf', { age: range(age) });
 }
 
 /**
  * One screening for the two ages a person can have on a future day. The same answer for both is the
  * answer; different answers mean the birthday decides, which is unverified.
  */
-function mergeAges(youngest: Eligibility, oldest: Eligibility, date: string): Eligibility {
+function mergeAges(youngest: Eligibility, oldest: Eligibility, date: string, words: Words): Eligibility {
   const missing = [...new Set([...oldest.missingCriteria, ...youngest.missingCriteria])];
   if (youngest.eligibilityStatus === oldest.eligibilityStatus) return { ...oldest, missingCriteria: missing };
   return {
@@ -265,7 +289,7 @@ function mergeAges(youngest: Eligibility, oldest: Eligibility, date: string): El
     screenedAmountEur: undefined,
     unmetCriteria: [],
     missingCriteria: [
-      `Whether an age limit is still met on ${date} depends on birthdays this plan does not know.`,
+      words.t('birthdaysUnknown', { date: words.date(date) }),
       ...new Set([...oldest.unmetCriteria, ...youngest.unmetCriteria, ...missing]),
     ],
   };
@@ -308,13 +332,13 @@ function priceFor(person: Person, place: Place): Pick<PlacePlan, 'purchasePriceC
  *
  * The result states, habit by habit, what was done and why (`effects`), so no display has to derive it.
  */
-function habitSavings(person: Person, includeProposed: boolean) {
+function habitSavings(person: Person, includeProposed: boolean, words: Words) {
+  const { t, euros, percent, date } = words;
   const { basis, asOf } = person.finances;
   const spendingObserved =
     person.finances.expensesBasis === undefined
       ? basis === 'bank_observed' || basis === 'mixed'
       : person.finances.expensesBasis === 'bank_observed';
-  const period = asOf ? ` up to ${asOf}` : '';
   const effects: HabitEffect[] = person.habits.map(habit => {
     // Rounded down per habit: a partly kept habit never counts for more than it saved.
     const amount = Math.floor((habit.monthlySavingCents ?? 0) * (habit.adherence ?? 1));
@@ -330,30 +354,30 @@ function habitSavings(person: Person, includeProposed: boolean) {
       counted: true,
       countedMonthlyCents: amount,
       reason,
-      explanation: `${explanation}${habit.adherence === null ? '' : ` Scaled by the ${percent(habit.adherence)} of check-ins kept.`}`,
+      explanation:
+        habit.adherence === null
+          ? explanation
+          : `${explanation} ${t('habitScaled', { share: percent(habit.adherence) })}`,
     });
-    if (habit.status === 'paused') return left('paused', 'Not counted: the habit is paused.');
-    if (habit.monthlySavingCents === null)
-      return left('no_amount', 'Not counted: no monthly saving is attached to this habit.');
+    if (habit.status === 'paused') return left('paused', t('habitPaused'));
+    if (habit.monthlySavingCents === null) return left('no_amount', t('habitNoAmount'));
     if (habit.status === 'proposed')
       return includeProposed
-        ? taken('counted_as_proposed', `Counted as if adopted: ${euros(amount)} a month.`)
-        : left('not_adopted', 'Not counted: the habit is only proposed. Switch it on to see its effect.');
-    if (!spendingObserved) return taken('counted', `Counted: ${euros(amount)} a month on top of your stated spending.`);
-    if (asOf === null || habit.startedOn === undefined)
+        ? taken('counted_as_proposed', t('habitAsProposed', { amount: euros(amount) }))
+        : left('not_adopted', t('habitNotAdopted'));
+    if (!spendingObserved) return taken('counted', t('habitCounted', { amount: euros(amount) }));
+    if (habit.startedOn === undefined)
       return left(
         'start_unknown',
-        `Shown, not counted: your monthly spending comes from bank movements${period}, and ${habit.startedOn === undefined ? 'the day this habit started is not known' : 'the end of that period is not known'}, so the plan cannot tell whether its effect is already in that spending.`,
+        asOf === null ? t('habitStartUnknown') : t('habitStartUnknownUpTo', { asOf: date(asOf) }),
       );
+    if (asOf === null) return left('start_unknown', t('habitPeriodEndUnknown'));
     return habit.startedOn > asOf
       ? taken(
           'counted',
-          `Counted: ${euros(amount)} a month. It started on ${habit.startedOn}, after the bank movements your spending comes from (up to ${asOf}).`,
+          t('habitCountedAfter', { amount: euros(amount), startedOn: date(habit.startedOn), asOf: date(asOf) }),
         )
-      : left(
-          'inside_bank_figures',
-          `Shown, not counted: it started on ${habit.startedOn}, and your monthly spending comes from bank movements up to ${asOf}, which already include its effect.`,
-        );
+      : left('inside_bank_figures', t('habitInside', { startedOn: date(habit.startedOn), asOf: date(asOf) }));
   });
   const of = (keep: (effect: HabitEffect) => boolean) => person.habits.filter((_, index) => keep(effects[index]));
   return {
@@ -366,13 +390,21 @@ function habitSavings(person: Person, includeProposed: boolean) {
 type HabitSavings = ReturnType<typeof habitSavings>;
 
 /** Turn a screened policy into the kind, amount and timing of a benefit for this price and place. */
-function translate(result: Eligibility, place: Place, priceCents: number | null, tax: TaxReference): Translated {
+function translate(
+  result: Eligibility,
+  place: Place,
+  priceCents: number | null,
+  tax: TaxReference,
+  words: Words,
+): Translated {
+  const { t, euros, percent } = words;
   const effect = result.effect;
   const livingThere = result.intent === 'move' || result.intent === 'rent';
   const none = { amountCents: null, maxYears: null };
   if (!effect || effect.kind === 'unquantified') {
-    const reason = effect ? effect.reason : 'the amount is not modelled';
-    return { ...none, kind: 'unquantified', timing: 'not_applicable', what: `Not quantified: ${reason}.` };
+    // The reason is the policy's own text, already in the language of the screening.
+    const what = effect ? t('whatUnquantified', { reason: effect.reason }) : t('whatNotModelled');
+    return { ...none, kind: 'unquantified', timing: 'not_applicable', what };
   }
   switch (effect.kind) {
     case 'transfer_tax_rate': {
@@ -387,10 +419,10 @@ function translate(result: Eligibility, place: Place, priceCents: number | null,
           : Math.max(0, againstCents - share(reduced, priceCents));
       const what =
         reduced === null
-          ? 'A reduced transfer-tax rate may apply, depending on the nucleus where the home is.'
+          ? t('whatNucleus')
           : everywhere
-            ? `Transfer tax at ${percent(reduced)} instead of ${tax.standardLabel}, in any municipality of Catalonia.`
-            : `Transfer tax at ${percent(reduced)} instead of ${tax.baselineLabel}.`;
+            ? t('whatRateAnywhere', { rate: percent(reduced), standard: tax.standardLabel })
+            : t('whatRate', { rate: percent(reduced), baseline: tax.baselineLabel });
       return { kind: 'upfront_cost_reduction', amountCents, maxYears: null, timing: 'at_purchase', what };
     }
     case 'one_off_rate_of_price': {
@@ -407,7 +439,7 @@ function translate(result: Eligibility, place: Place, priceCents: number | null,
         amountCents: priceCents === null ? null : Math.min(capCents, share(effect.rate, priceCents)),
         maxYears: null,
         timing,
-        what: `A single payment of at most the lower of ${euros(capCents)} and ${percent(effect.rate)} of the price.`,
+        what: t('whatOneOffRate', { cap: euros(capCents), rate: percent(effect.rate) }),
       };
     }
     case 'one_off_eur': {
@@ -423,7 +455,7 @@ function translate(result: Eligibility, place: Place, priceCents: number | null,
         amountCents: eur === null ? null : Math.round(eur * 100),
         maxYears: null,
         timing,
-        what: 'A single payment or deduction.',
+        what: t('whatOneOff'),
       };
     }
     case 'annual_eur': {
@@ -433,23 +465,30 @@ function translate(result: Eligibility, place: Place, priceCents: number | null,
         amountCents: eur === null ? null : Math.round(eur * 100),
         maxYears: effect.maxYears,
         timing: livingThere ? 'while_living_there' : 'after_purchase',
-        what: `A yearly amount${effect.maxYears ? ` for at most ${effect.maxYears} years` : ''}.`,
+        what: effect.maxYears ? t('whatAnnualYears', { years: effect.maxYears }) : t('whatAnnual'),
       };
     }
     case 'annual_rate_of_cost': {
       // The base is what the household actually pays each year, which the person entity does not hold,
       // so the amount stays unknown and is never counted.
       const rate = forCategory(effect.rate, place.rural);
-      const cost = { purchase_payments: 'home-purchase payments', rent: 'rent paid', renovation: 'renovation costs' };
-      const base = effect.maxBaseEur === undefined ? '' : `, on at most ${euros(effect.maxBaseEur * 100)} a year`;
+      // The two limits are clauses that close the first sentence, in the order the rule states them.
+      const base = effect.maxBaseEur === undefined ? '' : t('limitBase', { base: euros(effect.maxBaseEur * 100) });
       const cap = effect.maxAmountEur
-        ? `, capped at ${euros(effect.maxAmountEur.individual * 100)} a year (${euros(effect.maxAmountEur.joint * 100)} on a joint return)`
+        ? t('limitCap', {
+            individual: euros(effect.maxAmountEur.individual * 100),
+            joint: euros(effect.maxAmountEur.joint * 100),
+          })
         : '';
+      const limits = `${base}${cap}`;
       return {
         ...none,
         kind: 'annual_cash',
         timing: livingThere ? 'while_living_there' : 'after_purchase',
-        what: `${rate === null ? 'A yearly share' : `${percent(rate)} a year`} of ${cost[effect.cost]}${base}${cap}. The amount depends on what you actually pay, which this plan does not know.`,
+        what:
+          rate === null
+            ? t(`whatCostShare.${effect.cost}`, { limits })
+            : t(`whatCostRate.${effect.cost}`, { rate: percent(rate), limits }),
       };
     }
   }
@@ -461,17 +500,20 @@ const eligibilityRank = { ineligible: 0, needs_verification: 1, eligible: 2 } as
  * Why a benefit that holds on the plan date does not hold on the purchase day, in plain language.
  * Null when the purchase day is the plan date or the screening there is no worse than today's.
  */
-function lostBy({ result, today, atPurchase }: Screened, when: When): string | null {
+function lostBy({ result, today, atPurchase }: Screened, when: When, words: Words): string | null {
+  const { t, date } = words;
   // Something that does not apply on the plan date either was never there to lose.
   if (!atPurchase || when.months === 0 || today.eligibilityStatus === 'ineligible') return null;
-  const day = `${when.date}, the day you could buy (${when.months} months after the plan date)`;
+  const day = { date: date(when.date), months: when.months };
   if (result.measureStatus !== 'active' && today.measureStatus === 'active')
-    return `the measure is in force until ${result.effectiveThrough} and is not confirmed for ${day}.`;
+    return t('lostMeasureEnds', { ...day, through: date(result.effectiveThrough) });
   if (eligibilityRank[result.eligibilityStatus] >= eligibilityRank[today.eligibilityStatus]) return null;
-  const ages = when.ages ? ` ${when.ages}` : '';
-  return result.eligibilityStatus === 'ineligible'
-    ? `it applies if you buy on the plan date, but not on ${day}.${ages} Criteria not met by then: ${result.unmetCriteria.join(' ')}`
-    : `it applies if you buy on the plan date, but it is not certain on ${day}.${ages} To verify: ${result.missingCriteria.join(' ')}`;
+  // Whole sentences, one after the other: what changes, the ages on that day, and the criteria.
+  const sentences =
+    result.eligibilityStatus === 'ineligible'
+      ? [t('lostNotOnDay', day), when.ages, t('criteriaNotMetByThen', { criteria: result.unmetCriteria.join(' ') })]
+      : [t('lostNotCertain', day), when.ages, t('toVerify', { criteria: result.missingCriteria.join(' ') })];
+  return sentences.filter(Boolean).join(' ');
 }
 
 /** Decide whether a translated benefit is counted, and say why in plain language. */
@@ -482,54 +524,57 @@ function benefitFor(
   place: Place,
   options: Assumptions,
   when: When,
+  words: Words,
 ): PlaceBenefit {
+  const { t, euros, date } = words;
   const { result } = screened;
   const { amountCents, timing, what } = translated;
   const unverified = result.eligibilityStatus === 'needs_verification';
-  const lost = lostBy(screened, when);
-  const eventDay = screened.atPurchase ? when.date : 'the plan date';
+  const lost = lostBy(screened, when, words);
+  const notCounted = (reason: string) => t('notCounted', { reason });
   let blocker: string | null = null;
   if (result.geographicStatus === 'does_not_apply' || result.eligibilityStatus === 'ineligible') {
-    blocker = lost ? `Not counted: ${lost}` : `Not counted, criteria not met: ${result.unmetCriteria.join(' ')}`;
+    blocker = lost ? notCounted(lost) : t('notCountedCriteria', { criteria: result.unmetCriteria.join(' ') });
   } else if (result.callStatus === 'closed') {
-    blocker = 'Not counted: the application call is closed.';
+    blocker = t('callClosed');
   } else if (result.callStatus === 'upcoming') {
-    blocker = 'Not counted: the application call has not opened yet.';
+    blocker = t('callUpcoming');
   } else if (result.callWindow === null) {
-    blocker = 'Not counted: no application call could be verified, so this aid cannot be claimed yet.';
+    blocker = t('callNone');
   } else if (timing === 'at_purchase' && result.callStatus === 'open' && callStatusOn(result, when.date) !== 'open') {
     // An open call only helps a purchase that happens while it is open; a later call is not known.
-    blocker = `Not counted: the application call is open today but closes before ${when.date}, the day you could buy, and no later call is known.`;
+    blocker = t('callClosesBefore', { date: date(when.date) });
   } else if (result.measureStatus !== 'active') {
     blocker = lost
-      ? `Not counted: ${lost}`
-      : `Not counted: the measure is not confirmed to be in force on ${eventDay}.`;
+      ? notCounted(lost)
+      : screened.atPurchase
+        ? t('notInForceOn', { date: date(when.date) })
+        : t('notInForceOnPlanDate');
   } else if (result.geographicStatus !== 'applies') {
-    blocker = `Not counted until verified: ${result.missingCriteria.join(' ')}`;
+    blocker = t('untilVerifiedGeo', { criteria: result.missingCriteria.join(' ') });
   } else if (unverified && !options.includeUnverifiedBenefits) {
-    blocker = lost
-      ? `Not counted: ${lost}`
-      : `Shown but not counted until verified: ${result.missingCriteria.join(' ')}`;
+    blocker = lost ? notCounted(lost) : t('shownUntilVerified', { criteria: result.missingCriteria.join(' ') });
   } else if (amountCents === null) {
-    blocker = 'Not counted: the amount cannot be computed from the facts known.';
+    blocker = t('amountUnknown');
   } else if (amountCents === 0) {
-    blocker = 'Not counted: it brings no reduction for this place.';
+    blocker = t('noReduction');
   } else if (timing === 'after_purchase') {
-    blocker =
-      'Not counted: it is received after the purchase (with a later tax return), so it does not shorten the time needed to gather the upfront cash. It lowers costs afterwards.';
+    blocker = t('afterPurchase');
   } else if (timing === 'while_living_there' && person.currentMunicipalityCode === place.municipalityCode) {
-    blocker =
-      'Not counted: you already live here, so if you receive it, it is already part of your income and savings.';
+    blocker = t('alreadyLiveHere');
   }
   const counted = blocker === null && amountCents !== null;
   const excluded = result.geographicStatus === 'does_not_apply' || result.eligibilityStatus === 'ineligible';
-  const caveat = unverified ? ' Counted at your request although eligibility is not verified.' : '';
+  const caveat = unverified ? ` ${t('countedUnverified')}` : '';
   const how =
     timing === 'at_purchase'
-      ? `Counted: lowers the upfront cash needed by ${euros(amountCents ?? 0)}.`
+      ? t('countedAtPurchase', { amount: euros(amountCents ?? 0) })
       : translated.kind === 'annual_cash'
-        ? `Counted as ${euros(Math.floor((amountCents ?? 0) / 12))} of extra monthly savings from month ${taxReturnDelayMonths + 1}, assuming you move here on the plan date and buy later.`
-        : `Counted as ${euros(amountCents ?? 0)} received after ${taxReturnDelayMonths} months, assuming you move here on the plan date and buy later.`;
+        ? t('countedAnnual', {
+            amount: euros(Math.floor((amountCents ?? 0) / 12)),
+            month: taxReturnDelayMonths + 1,
+          })
+        : t('countedOneOff', { amount: euros(amountCents ?? 0), months: taxReturnDelayMonths });
   return {
     policyId: result.id,
     title: result.title,
@@ -572,27 +617,30 @@ function generalRateBenefit(
   when: When,
   /** Why a rate that would be the baseline was left out; null when it was not. */
   leftOut: string | null,
+  words: Words,
 ): PlaceBenefit {
+  const { t, euros, date } = words;
   const { result } = screened;
   const { amountCents, what } = translated;
-  const lost = lostBy(screened, when);
+  const lost = lostBy(screened, when, words);
   let outcome: string;
   if (result === applied) {
-    outcome = `Applied to your baseline: it lowers the upfront cash by ${euros(amountCents ?? 0)} wherever you buy in Catalonia, so it is not counted as a saving of this place.`;
+    outcome = t('appliedBaseline', { amount: euros(amountCents ?? 0) });
   } else if (lost) {
-    outcome = `Not applied: ${lost}`;
+    outcome = t('notApplied', { reason: lost });
   } else if (result.eligibilityStatus === 'ineligible') {
-    outcome = `Not applied, criteria not met: ${result.unmetCriteria.join(' ')}`;
+    outcome = t('notAppliedCriteria', { criteria: result.unmetCriteria.join(' ') });
   } else if (result.measureStatus !== 'active') {
-    outcome = `Not applied: the measure is not confirmed to be in force on ${when.date}.`;
+    outcome = t('notAppliedNotInForce', { date: date(when.date) });
   } else if (result.eligibilityStatus === 'needs_verification') {
-    outcome = `Not applied to your baseline until verified: ${result.missingCriteria.join(' ')}${isLower ? ' If you qualify, you pay less transfer tax everywhere, and the transfer-tax saving of this place is smaller than shown.' : ''}`;
+    const until = t('notAppliedUntilVerified', { criteria: result.missingCriteria.join(' ') });
+    outcome = isLower ? `${until} ${t('ifYouQualify')}` : until;
   } else if (leftOut !== null) {
-    outcome = `Not applied: ${leftOut}`;
+    outcome = t('notApplied', { reason: leftOut });
   } else if (applied !== null) {
-    outcome = 'Not applied: another reduced rate is already your baseline, and reduced rates do not add up.';
+    outcome = t('notAppliedAnother');
   } else {
-    outcome = 'Not applied: it is not lower than the general transfer tax on this price.';
+    outcome = t('notAppliedNotLower');
   }
   return {
     policyId: result.id,
@@ -672,31 +720,40 @@ function planOne(
   asOf: string,
   standard: StandardTax | null,
   habits: HabitSavings,
+  words: Words,
 ): PlacePlan {
+  const { t, euros, percent, date, number, locale } = words;
   const { finances, home } = person;
   const assumptions: string[] = [];
   const dataMissing: string[] = [];
   const price = priceFor(person, place);
   const priceCents = price.purchasePriceCents;
 
-  if (price.priceBasis === 'budget') assumptions.push(`The price is your stated budget of ${euros(priceCents ?? 0)}.`);
+  if (price.priceBasis === 'budget') assumptions.push(t('assumeBudget', { amount: euros(priceCents ?? 0) }));
   else if (priceCents === null) {
-    if (home.budgetCents !== null) dataMissing.push('person.home.budgetCents (must be greater than zero)');
+    if (home.budgetCents !== null) dataMissing.push(t('missingBudgetPositive'));
     else {
-      if (home.floorAreaM2 === null) dataMissing.push('person.home.floorAreaM2 or person.home.budgetCents');
+      if (home.floorAreaM2 === null) dataMissing.push(t('missingAreaOrBudget'));
       if (!((place.indicators.resaleEurPerM2?.value ?? 0) > 0))
-        dataMissing.push(`resale price per m² for ${place.name}`);
+        dataMissing.push(t('missingResale', { place: place.name }));
     }
   } else {
     const resale = place.indicators.resaleEurPerM2;
-    const scope = price.priceBasis === 'comarca_eur_per_m2' ? `the ${place.comarca} comarca average` : place.name;
+    const figures = {
+      area: number(home.floorAreaM2 ?? 0, String(home.floorAreaM2)),
+      perM2: euros((resale?.value ?? 0) * 100),
+      // The observation date is the source's own text (a year, a quarter): it is not reformatted.
+      observedAt: String(resale?.observedAt),
+      price: euros(priceCents),
+    };
     assumptions.push(
-      `The price is ${home.floorAreaM2} m² × ${euros((resale?.value ?? 0) * 100)}/m² for ${scope} (${resale?.observedAt}) = ${euros(priceCents)}. It is an average of past sales, not a listing.`,
+      price.priceBasis === 'comarca_eur_per_m2'
+        ? t('assumePriceComarca', { ...figures, comarca: place.comarca })
+        : t('assumePriceTown', { ...figures, place: place.name }),
     );
-    if (price.priceBasis === 'comarca_eur_per_m2')
-      dataMissing.push(`municipal resale price per m² for ${place.name} (comarca average used)`);
+    if (price.priceBasis === 'comarca_eur_per_m2') dataMissing.push(t('missingMunicipalResale', { place: place.name }));
   }
-  if (standard === null) dataMissing.push('standard transfer-tax rate (no policy in the snapshot states it)');
+  if (standard === null) dataMissing.push(t('missingStandardRate'));
   if (finances.currentSavingsCents === null) dataMissing.push('person.finances.currentSavingsCents');
   if (finances.monthlyIncomeCents === null) dataMissing.push('person.finances.monthlyIncomeCents');
   if (finances.monthlyExpensesCents === null) dataMissing.push('person.finances.monthlyExpensesCents');
@@ -713,7 +770,7 @@ function planOne(
   // With dates of birth the ages on any later day are known, and no birthday is left open.
   const exact = agesAreExact(person);
   const screenOn = (list: Policy[], eventDate: string, household: Household | undefined) =>
-    evaluateIncentives(list, town, { municipalityCode: place.municipalityCode, eventDate, household }, asOf);
+    evaluateIncentives(list, town, { municipalityCode: place.municipalityCode, eventDate, household }, asOf, locale);
   // A move or a rental is assumed to start on the plan date, with everyone as old as they are today.
   const living = screenOn(livingPolicies, asOf, facts);
   const buyScreenings = new Map<number, Eligibility[]>();
@@ -731,7 +788,7 @@ function planOne(
     const youngest = screenOn(buyPolicies, date, facts && older(facts, low));
     const oldest = low === high || !facts ? youngest : screenOn(buyPolicies, date, older(facts, high));
     const merged = youngest.map((result, index) =>
-      oldest === youngest ? result : mergeAges(result, oldest[index], date),
+      oldest === youngest ? result : mergeAges(result, oldest[index], date, words),
     );
     buyScreenings.set(months, merged);
     return merged;
@@ -762,10 +819,10 @@ function planOne(
     priceCents > (firstBracketEndCents(standard) ?? Number.POSITIVE_INFINITY);
   const standardLabel =
     standard === null
-      ? 'the general rate'
+      ? t('labelGeneralRate')
       : aboveFirstBracket && standardCents !== null && priceCents
-        ? `the general tariff (${euros(standardCents)}, an average of ${percent(standardCents / priceCents)} on this price)`
-        : `the general ${percent(standard.standardRate)}`;
+        ? t('labelGeneralTariff', { amount: euros(standardCents), rate: percent(standardCents / priceCents) })
+        : t('labelGeneralPercent', { rate: percent(standard.standardRate) });
   const depositCents = priceCents === null ? null : share(home.depositRate, priceCents);
   const feesCents = priceCents === null ? null : share(options.purchaseFeesRate, priceCents);
 
@@ -783,12 +840,12 @@ function planOne(
     cautious: 'no' | 'place' | 'all' = 'no',
     why: 'unsettled' | 'no_day' = 'unsettled',
   ): Outcome => {
-    const leftOutReason = why === 'no_day' ? noDayReason(asOf) : unsettledReason;
+    const leftOutReason = why === 'no_day' ? t('reasonNoDay', { asOf: date(asOf) }) : t('reasonUnsettled');
     const day = addMonths(asOf, months);
     const when: When = {
       months,
       date: day,
-      ages: agesOn(person.household, months, exact ? householdOn(person, day) : undefined),
+      ages: agesOn(person.household, months, words, exact ? householdOn(person, day) : undefined),
     };
     const screened = screenedAt(months);
 
@@ -821,12 +878,12 @@ function planOne(
       baselineCents,
       standardLabel,
       baselineLabel: applied
-        ? `the ${percent(applied.rate)} you already qualify for anywhere in Catalonia (${applied.result.title})`
+        ? t('labelAlreadyQualify', { rate: percent(applied.rate), title: applied.result.title })
         : standardLabel,
     };
 
     const listed = screened.map(item => {
-      const translated = translate(item.result, place, priceCents, tax);
+      const translated = translate(item.result, place, priceCents, tax, words);
       const benefit = isGeneralRate(item.result)
         ? generalRateBenefit(
             item,
@@ -835,8 +892,9 @@ function planOne(
             possiblyLower.some(entry => entry.result === item.result),
             when,
             cautious === 'all' && candidate?.result === item.result ? leftOutReason : null,
+            words,
           )
-        : benefitFor(item, translated, person, place, options, when);
+        : benefitFor(item, translated, person, place, options, when, words);
       return { translated, benefit };
     });
     // Reduced transfer-tax rates are alternatives, not cumulative: only the largest reduction counts.
@@ -845,10 +903,9 @@ function planOne(
       .sort((a, b) => (b.benefit.amountCents ?? 0) - (a.benefit.amountCents ?? 0));
     const leaveOut = (item: (typeof listed)[number], reason: string) => {
       item.benefit.counted = false;
-      item.benefit.explanation = `${item.translated.what} Not counted: ${reason}`;
+      item.benefit.explanation = `${item.translated.what} ${t('notCounted', { reason })}`;
     };
-    for (const item of taxCuts.slice(1))
-      leaveOut(item, 'another reduced transfer-tax rate is already counted, and reduced rates do not add up.');
+    for (const item of taxCuts.slice(1)) leaveOut(item, t('reasonAnotherRate'));
     // The cautious figure differs from the plain one only when something was in fact left out.
     const leftOut =
       cautious === 'no'
@@ -901,8 +958,8 @@ function planOne(
         leaveOut(
           item,
           withoutDelayed === 0
-            ? 'you already have the upfront cash, so money that arrives later does not shorten anything.'
-            : `you could buy in ${withoutDelayed} month(s), before this money arrives ${taxReturnDelayMonths} months after the move.`,
+            ? t('reasonAlreadyHaveCash')
+            : t('reasonBuyBefore', { months: withoutDelayed, delay: taxReturnDelayMonths }),
         );
     const delayed: DelayedCash = {
       lumpCents: sumOf('while_living_there', 'one_off_cash'),
@@ -996,7 +1053,11 @@ function planOne(
   const { applied, possiblyLower, baselineCents, tax } = baselineOutcome;
   if (possiblyLower.length)
     dataMissing.push(
-      `household facts for the reduced transfer-tax rates that apply anywhere in Catalonia (${possiblyLower.map(({ result }) => result.id).join(', ')}): the baseline uses ${tax.baselineLabel} and could be as low as ${percent(Math.min(...possiblyLower.map(({ rate }) => rate)))}, which would shorten the baseline and shrink the transfer-tax saving of this place`,
+      t('missingGeneralRates', {
+        ids: possiblyLower.map(({ result }) => result.id).join(', '),
+        baseline: tax.baselineLabel,
+        rate: percent(Math.min(...possiblyLower.map(({ rate }) => rate))),
+      }),
     );
   const transferTax =
     standardCents === null || baselineCents === null
@@ -1053,76 +1114,98 @@ function planOne(
   };
   const months = withPlaceBenefits.months;
 
+  const monthlyFigures = { amount: euros(monthly), basis: t(`basis.${finances.basis}`) };
   assumptions.push(
-    `Upfront cash = ${percent(home.depositRate)} deposit (${euros(depositCents)}) + transfer tax at ${tax.baselineLabel} (${euros(baselineCents)}) + ${percent(options.purchaseFeesRate)} notary, registry and similar fees (${euros(feesCents)}) = ${euros(baselineOutcome.upfrontCents)}. The rest of the price is assumed to be financed; no lender has assessed it.`,
+    t('assumeUpfront', {
+      depositRate: percent(home.depositRate),
+      deposit: euros(depositCents),
+      baseline: tax.baselineLabel,
+      tax: euros(baselineCents),
+      feesRate: percent(options.purchaseFeesRate),
+      fees: euros(feesCents),
+      total: euros(baselineOutcome.upfrontCents),
+    }),
     applied
-      ? `The baseline transfer tax is ${percent(applied.rate)}, not ${standardLabel}, because every condition of "${applied.result.title}" is confirmed and that rate applies in any municipality of Catalonia. A place is credited only with the difference between that rate and its own.`
+      ? t('assumeBaselineApplied', {
+          rate: percent(applied.rate),
+          standard: standardLabel,
+          title: applied.result.title,
+        })
       : possiblyLower.length
-        ? `The baseline transfer tax is ${standardLabel}. A lower rate that applies anywhere in Catalonia is not assumed, because its conditions are not all confirmed; if you qualify, the baseline is shorter and the transfer-tax saving of a rural place is smaller than shown.`
-        : `The baseline transfer tax is ${standardLabel}: no reduced rate that applies anywhere in Catalonia is verified for you.`,
+        ? t('assumeBaselinePossiblyLower', { standard: standardLabel })
+        : t('assumeBaselineStandard', { standard: standardLabel }),
     finances.emergencyReserveCents > 0
-      ? `Available savings are ${euros(availableCents)}: current savings less the ${euros(finances.emergencyReserveCents)} emergency reserve.`
-      : `Available savings are ${euros(availableCents)}. No emergency reserve was declared, so none is set aside.`,
-    `Monthly savings are income less expenses (${euros(monthly)}), from ${finances.basis.replace('_', '-')} figures${finances.asOf ? ` as of ${finances.asOf}` : ''}.`,
+      ? t('assumeSavingsReserve', {
+          available: euros(availableCents),
+          reserve: euros(finances.emergencyReserveCents),
+        })
+      : t('assumeSavingsNoReserve', { available: euros(availableCents) }),
+    finances.asOf
+      ? t('assumeMonthlyAsOf', { ...monthlyFigures, asOf: date(finances.asOf) })
+      : t('assumeMonthly', monthlyFigures),
   );
   if (aboveFirstBracket && standard?.standardTariff)
     assumptions.push(
-      `The price is above ${euros(firstBracketEndCents(standard) ?? 0)}, so the general transfer tax is not a single rate. It follows the tariff by total value (${standard.standardTariff.map(bracket => `${percent(bracket.rate)} from ${euros(bracket.fromEur * 100)}`).join(', ')}): ${euros(standardCents ?? 0)} on this price. The price is taken as the property's total value, and the tax agency rounds the averaged rate, so the bill can differ by a few euros.`,
+      t('assumeTariff', {
+        threshold: euros(firstBracketEndCents(standard) ?? 0),
+        steps: standard.standardTariff
+          .map(bracket => t('tariffStep', { rate: percent(bracket.rate), amount: euros(bracket.fromEur * 100) }))
+          .join(', '),
+        tax: euros(standardCents ?? 0),
+      }),
     );
   if (habits.counted.length)
+    assumptions.push(t('assumeHabitsCounted', { count: habits.counted.length, amount: euros(habits.monthlyCents) }));
+  if (habits.withheld.length) {
+    const withheld = { count: habits.withheld.length, titles: habits.withheld.map(habit => habit.title).join(', ') };
     assumptions.push(
-      `${habits.counted.length} habit(s) add ${euros(habits.monthlyCents)} a month: each planned saving is scaled by its check-in adherence, or counted in full when there are no check-ins yet. Habit savings are the person's own estimates.`,
+      finances.asOf
+        ? t('assumeHabitsWithheldUpTo', { ...withheld, asOf: date(finances.asOf) })
+        : t('assumeHabitsWithheld', withheld),
     );
-  if (habits.withheld.length)
-    assumptions.push(
-      `${habits.withheld.length} active habit(s) are shown but not counted (${habits.withheld.map(habit => habit.title).join(', ')}): your monthly spending comes from bank movements${finances.asOf ? ` up to ${finances.asOf}` : ''}, which already include the effect of a habit that was running then. A habit is added on top only when it has a start date after that period.`,
-    );
-  if (options.includeProposedHabits) assumptions.push('Habits that are only proposed are counted as if adopted.');
+  }
+  if (options.includeProposedHabits) assumptions.push(t('assumeProposed'));
 
   const purchaseDay = (outcome: Outcome) =>
     outcome.months === null
-      ? 'no purchase day can be estimated, so it is screened on the plan date'
-      : `${outcome.when.date} (${outcome.months} months after ${asOf})`;
+      ? t('purchaseDayNone')
+      : t('purchaseDayOn', { date: date(outcome.when.date), months: outcome.months, asOf: date(asOf) });
   assumptions.push(
-    `Benefits tied to the purchase are screened on the day you could buy, with ages advanced to that day, not on the plan date. With the benefits of this place: ${purchaseDay(placeOutcome)}. The baseline: ${purchaseDay(baselineOutcome)}. Tax bases, family status and the rules themselves are assumed to stay as they are on ${asOf}.`,
+    t('assumeScreening', {
+      place: purchaseDay(placeOutcome),
+      baseline: purchaseDay(baselineOutcome),
+      asOf: date(asOf),
+    }),
   );
   if (placeOutcome.applied?.result.id !== applied?.result.id)
-    assumptions.push(
-      `The transfer tax anywhere in Catalonia differs between the two days: ${tax.baselineLabel} for the baseline and ${placeOutcome.tax.baselineLabel} with the benefits of this place, which is the rate this place is compared with.`,
-    );
-  if (habitsOutcome.held)
-    assumptions.push(
-      `With your habits the cash would be there before ${habitsOutcome.when.date}, but on that earlier day the transfer tax the baseline relies on does not apply, and the plan does not look for a day in between. The timeline with habits is therefore the baseline's day, ${habitsOutcome.when.date}: saving more never makes the purchase later.`,
-    );
-  const dayless = [
-    ...(baselineOutcome.noDay ? ['baseline'] : []),
-    ...(habitsOutcome.noDay ? ['with habits'] : []),
-    ...(placeOutcome.noDay ? ['with the benefits of this place'] : []),
-  ];
-  if (dayless.length)
-    assumptions.push(
-      `For the timeline ${[...new Set(dayless)].join(', ')} no day of purchase exists: a benefit that holds on the plan date would no longer hold by the time the cash could be saved, and without it the upfront cash is beyond the horizon. The benefits are listed as screened on the plan date, ${asOf}, and none of them is counted.`,
-    );
-  const unsettled = [
-    ...(baselineOutcome.settled ? [] : ['baseline']),
-    ...(habitsOutcome.settled ? [] : ['with habits']),
-    ...(placeOutcome.settled ? [] : ['with the benefits of this place']),
-  ];
-  if (unsettled.length)
-    assumptions.push(
-      `For the timeline ${[...new Set(unsettled)].join(', ')}, the day you could buy did not settle: counting a benefit moved the purchase to a day on which it does not apply. The benefits that depend on that day are left out there, which is the cautious figure.`,
-    );
+    assumptions.push(t('assumeTaxDiffers', { baseline: tax.baselineLabel, place: placeOutcome.tax.baselineLabel }));
+  if (habitsOutcome.held) assumptions.push(t('assumeHeld', { date: date(habitsOutcome.when.date) }));
+  /** The names of the timelines for which `is` holds, each once, as a list. */
+  const timelines = (is: (outcome: Outcome) => boolean) =>
+    [
+      ...new Set([
+        ...(is(baselineOutcome) ? [t('timelineBaseline')] : []),
+        ...(is(habitsOutcome) ? [t('timelineHabits')] : []),
+        ...(is(placeOutcome) ? [t('timelinePlace')] : []),
+      ]),
+    ].join(', ');
+  const dayless = timelines(outcome => outcome.noDay);
+  if (dayless) assumptions.push(t('assumeNoDay', { timelines: dayless, asOf: date(asOf) }));
+  const unsettled = timelines(outcome => !outcome.settled);
+  if (unsettled) assumptions.push(t('assumeUnsettled', { timelines: unsettled }));
   const beyond = (timeline: Timeline) =>
     timeline.months === null && timeline.monthlySavingsCents > 0 && timeline.upfrontCashCents > availableCents;
-  if (beyond(withPlaceBenefits) || beyond(baseline))
+  if (beyond(withPlaceBenefits) || beyond(baseline)) {
+    const horizon = { months: maxPlanningMonths, years: maxPlanningMonths / 12 };
     assumptions.push(
-      `No timeline is given${beyond(withPlaceBenefits) ? '' : ' for the baseline'}: at ${euros((beyond(withPlaceBenefits) ? withPlaceBenefits : baseline).monthlySavingsCents)} a month the upfront cash is more than ${maxPlanningMonths} months (${maxPlanningMonths / 12} years) away, beyond what this plan estimates.`,
+      beyond(withPlaceBenefits)
+        ? t('assumeBeyond', { ...horizon, amount: euros(withPlaceBenefits.monthlySavingsCents) })
+        : t('assumeBeyondBaseline', { ...horizon, amount: euros(baseline.monthlySavingsCents) }),
     );
+  }
   assumptions.push(
-    options.includeUnverifiedBenefits
-      ? 'Benefits whose eligibility is not yet verified are counted at your request; treat the shorter timeline as provisional.'
-      : 'Only benefits with every eligibility condition confirmed are counted; the others are listed, not counted.',
-    'A benefit tied to the purchase lowers the upfront cash. A benefit tied to living or renting in the place counts only on the assumption that you move there on the plan date and buy later, and arrives one tax year late. A benefit received after the purchase is never counted.',
+    options.includeUnverifiedBenefits ? t('assumeUnverifiedCounted') : t('assumeOnlyVerified'),
+    t('assumeTiming'),
   );
 
   return {
@@ -1162,14 +1245,15 @@ export function planForPlaces(
   policies: Policy[],
   assumptions: z.input<typeof planAssumptions> | undefined,
   asOf: string,
+  locale: Locale = defaultLocale,
 ): PlanResult {
   const options = planAssumptions.parse(assumptions ?? {});
   const date = options.asOf ?? asOf;
   // Ages are derived from dates of birth on the plan date, and the result states them.
   const who = withDerivedAges(personSchema.parse(person), date);
-  const { plans: unsorted, habits } = planPlaces(who, places, policies, options, date);
+  const { plans: unsorted, habits } = planPlaces(who, places, policies, options, date, locale);
   // What is known, what disagrees and what is still worth asking, for the places compared.
-  const facts = factsOf(who, places, policies, options, date, unsorted);
+  const facts = factsOf(who, places, policies, options, date, unsorted, locale);
   const order = (plan: PlacePlan) => plan.withPlaceBenefits?.months ?? Number.POSITIVE_INFINITY;
   const plans = unsorted
     .map(plan => (facts.reliedOn ? { ...plan, assumptions: [...plan.assumptions, facts.reliedOn] } : plan))
@@ -1187,7 +1271,7 @@ export function planForPlaces(
     conflicts: facts.conflicts,
     habits: habits.effects,
     plans,
-    limitations: planLimitations,
+    limitations: planLimitationsIn(locale),
   });
 }
 
@@ -1202,7 +1286,9 @@ export function planPlaces(
   policies: Policy[],
   options: Assumptions,
   date: string,
+  locale: Locale = defaultLocale,
 ): { plans: PlacePlan[]; habits: HabitSavings } {
+  const words = wordsFor(locale);
   const taxEffects = policies.flatMap(policy => (policy.effect?.kind === 'transfer_tax_rate' ? [policy.effect] : []));
   // The tariff by value, when a policy states it, is more complete than the single rate.
   const taxEffect = taxEffects.find(effect => effect.standardTariff) ?? taxEffects[0];
@@ -1210,6 +1296,9 @@ export function planPlaces(
     ? { standardRate: taxEffect.standardRate, standardTariff: taxEffect.standardTariff }
     : null;
   // What the habits add is the same for every place: it depends on the person only.
-  const habits = habitSavings(who, options.includeProposedHabits);
-  return { plans: places.map(place => planOne(who, place, policies, options, date, standard, habits)), habits };
+  const habits = habitSavings(who, options.includeProposedHabits, words);
+  return {
+    plans: places.map(place => planOne(who, place, policies, options, date, standard, habits, words)),
+    habits,
+  };
 }

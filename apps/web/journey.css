@@ -37,6 +37,8 @@
 }
 .journey-copy {
   display: grid;
+  /* The copy never widens the panel: a long title wraps and the progress label drops under its bar. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--rc-space-2);
 }
 .journey-copy h2 {
@@ -49,14 +51,16 @@
 }
 .journey-progress {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--rc-space-3);
+  gap: var(--rc-space-1) var(--rc-space-3);
   color: var(--rc-muted);
   font-size: var(--rc-text-sm);
   font-variant-numeric: tabular-nums;
 }
 .journey-progress progress {
-  flex: 1 1 auto;
+  flex: 1 1 6rem;
+  min-width: 0;
   max-width: 240px;
   height: 8px;
   border: 0;

@@ -13,6 +13,7 @@ import {
   requireBearer,
   sendJson,
 } from '../../packages/http/server.ts';
+import { requestLocale } from '../../packages/i18n/server.ts';
 import type { DemoBankCoreOptions } from './bank.ts';
 import { createDemoBankCore } from './bank.ts';
 import { createConsentDesk } from './consent.ts';
@@ -117,8 +118,16 @@ export function createDemoBank(options: DemoBankOptions) {
         .regex(/^consent-[0-9a-f]{32}$/, 'Invalid identifier')
         .parse(parts[1]);
       if (method === 'GET') {
-        const page = consents.page(consentId);
-        return void response.writeHead(200, pageHeaders([page.formAction])).end(page.html);
+        // The language of the customer's browser, or the one the page's own links ask for (`?lang=`).
+        const { locale } = requestLocale(request);
+        const page = consents.page(consentId, locale, true);
+        return void response
+          .writeHead(200, {
+            ...pageHeaders([page.formAction]),
+            'Content-Language': locale,
+            Vary: 'Accept-Language, Cookie',
+          })
+          .end(page.html);
       }
       if (method === 'POST') return redirect(response, consents.decide(consentId, await readForm(request)));
       throw new ApiError(405, 'Method not allowed');

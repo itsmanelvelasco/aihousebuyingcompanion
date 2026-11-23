@@ -1,14 +1,19 @@
 import { App, applyDocumentTheme } from '@modelcontextprotocol/ext-apps';
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { browserLocale, rememberLocale } from '../../packages/i18n/browser.ts';
+import type { Locale } from '../../packages/i18n/locales.ts';
+import { translator } from '../../packages/i18n/messages.ts';
 import type { CallTool } from './client.ts';
 import { createToolClient, httpCallTool } from './client.ts';
 import { Wordmark } from './components/bits.tsx';
 import { fixtureCallTool } from './fixtures/client.ts';
 import { fixturePlan } from './fixtures/plan.ts';
+import { bold, LanguageContext, LanguageSwitcher, rich, useLocale, useMessages } from './i18n.tsx';
 import type { WorkspaceLaunch } from './launch.ts';
 import { emptyLaunch, launchRequestFromQuery, parseLaunch } from './launch.ts';
+import { workspaceMessages } from './messages/workspace.messages.ts';
 import { Workspace } from './Workspace.tsx';
 
 const requestOptions = { timeout: 20_000 };
@@ -21,7 +26,9 @@ type Connection = { app: App | null; connected: boolean; failed: boolean };
  * (The package's `/react` entry has a `useApp` hook, but its type declarations do not resolve under
  * this repository's NodeNext settings, so the connection is made here with the same `App` class.)
  */
-function Hosted() {
+function Hosted({ onHostLocale }: { onHostLocale: (locale: string | undefined) => void }) {
+  const locale = useLocale();
+  const t = useMessages(workspaceMessages);
   const [launch, setLaunch] = useState<WorkspaceLaunch | null>(null);
   const [{ app, connected, failed }, setConnection] = useState<Connection>({
     app: null,
@@ -36,13 +43,15 @@ function Hosted() {
     created.ontoolresult = result => setLaunch(parseLaunch(result.structuredContent));
     created.onhostcontextchanged = context => {
       if (context.theme) applyDocumentTheme(context.theme);
+      if (context.locale) onHostLocale(context.locale);
     };
     setConnection({ app: created, connected: false, failed: false });
     created.connect(undefined, requestOptions).then(
       () => {
         if (!active) return;
-        const theme = created.getHostContext()?.theme;
-        if (theme) applyDocumentTheme(theme);
+        const context = created.getHostContext();
+        if (context?.theme) applyDocumentTheme(context.theme);
+        onHostLocale(context?.locale);
         setConnection({ app: created, connected: true, failed: false });
       },
       () => {
@@ -64,19 +73,19 @@ function Hosted() {
       clearTimeout(timer);
       document.removeEventListener('click', onClick);
     };
-  }, []);
+  }, [onHostLocale]);
 
   const client = useMemo(() => {
     if (!app) return null;
     const call: CallTool = (name, args) => app.callServerTool({ name, arguments: args }, requestOptions);
-    return createToolClient(call);
-  }, [app]);
+    return createToolClient(call, locale);
+  }, [app, locale]);
 
   if (failed)
     return (
       <Shell>
         <p className="rc-note rc-note--error" role="alert">
-          <strong>Could not connect to the chat.</strong> Reopen the ReloCat workspace to try again.
+          {rich(t('connectFailed'), { b: bold })}
         </p>
       </Shell>
     );
@@ -84,7 +93,7 @@ function Hosted() {
     return (
       <Shell>
         <p className="rc-note" role="status">
-          Opening the workspace…
+          {t('opening')}
         </p>
       </Shell>
     );
@@ -92,11 +101,15 @@ function Hosted() {
 }
 
 function Shell({ children }: { children: ReactNode }) {
+  const t = useMessages(workspaceMessages);
   return (
     <main>
       <header className="masthead">
-        <Wordmark />
-        <h1>How soon could you buy?</h1>
+        <div className="masthead-top">
+          <Wordmark />
+          <LanguageSwitcher />
+        </div>
+        <h1>{t('heading')}</h1>
       </header>
       {children}
     </main>
@@ -110,17 +123,24 @@ function Shell({ children }: { children: ReactNode }) {
  * named with `?demo=`, or nobody. The page never names a user id.
  */
 function Standalone() {
+  const locale = useLocale();
+  const t = useMessages(workspaceMessages);
   const query = new URLSearchParams(window.location.search);
   const fixture = query.get('fixture');
   const theme = query.get('theme');
   if (theme === 'dark' || theme === 'light') applyDocumentTheme(theme);
+  // The fixture keeps its own state between calls, so it is made once and outlives a change of language.
+  const fixtureCall = useMemo(() => (fixture !== null ? fixtureCallTool(fixture) : null), [fixture]);
   const client = useMemo(
     () =>
       createToolClient(
-        fixture !== null ? fixtureCallTool(fixture) : httpCallTool(new URL('/mcp', window.location.href).href),
+        fixtureCall ?? httpCallTool(new URL('/mcp', window.location.href).href, undefined, locale),
+        locale,
       ),
-    [fixture],
+    [fixtureCall, locale],
   );
+  // The launch is asked for once; a later change of language only makes a new client.
+  const launching = useRef(client);
   const [launch, setLaunch] = useState<WorkspaceLaunch | null>(null);
   useEffect(() => {
     let active = true;
@@ -131,7 +151,7 @@ function Standalone() {
       request.demoId = fixturePlan.person.id;
       request.municipalityCodes = fixturePlan.plans.map(plan => plan.place.municipalityCode);
     }
-    client.launch(request).then(
+    launching.current.launch(request).then(
       result => active && setLaunch(result),
       // A server without the tool still gets a usable workspace: nobody selected, the places kept.
       () => active && setLaunch({ ...emptyLaunch, municipalityCodes: request.municipalityCodes }),
@@ -139,12 +159,12 @@ function Standalone() {
     return () => {
       active = false;
     };
-  }, [client, fixture]);
+  }, [fixture]);
   if (!launch)
     return (
       <Shell>
         <p className="rc-note" role="status">
-          Opening the workspace…
+          {t('opening')}
         </p>
       </Shell>
     );
@@ -153,4 +173,38 @@ function Standalone() {
 
 // A fixture preview is always standalone, even when the page is shown inside a frame.
 const hosted = window.parent !== window && !new URLSearchParams(window.location.search).has('fixture');
-createRoot(document.getElementById('root')!).render(hosted ? <Hosted /> : <Standalone />);
+
+/**
+ * Holds the one language of the widget. At boot it is what `browserLocale` decides (`?lang=`, an
+ * earlier choice, the chat host, the browser); the switcher changes it and remembers the choice,
+ * and from then on what the host states no longer moves it.
+ */
+function Root() {
+  const [locale, setLocale] = useState<Locale>(() => browserLocale());
+  const chosen = useRef(false);
+  const language = useMemo(
+    () => ({
+      locale,
+      setLocale: (next: Locale) => {
+        chosen.current = true;
+        rememberLocale(next);
+        setLocale(next);
+      },
+    }),
+    [locale],
+  );
+  const onHostLocale = useCallback((hostLocale: string | undefined) => {
+    if (!chosen.current) setLocale(browserLocale(hostLocale));
+  }, []);
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    document.title = translator(workspaceMessages, locale)('documentTitle');
+  }, [locale]);
+  return (
+    <LanguageContext.Provider value={language}>
+      {hosted ? <Hosted onHostLocale={onHostLocale} /> : <Standalone />}
+    </LanguageContext.Provider>
+  );
+}
+
+createRoot(document.getElementById('root')!).render(<Root />);

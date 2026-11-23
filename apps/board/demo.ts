@@ -12,140 +12,67 @@ import type { Database } from '../../packages/db/database.ts';
 import { monthsToTarget } from '../../packages/finance/savings.ts';
 import type { Answers } from './intake.ts';
 import { answersSchema, answerValue, basicGroups, extraGroups, questionId, validateAnswers } from './intake.ts';
+import type { FinanceNote } from './scenes.ts';
+import { figures, habitIds, opportunityIds, sceneText } from './scenes.ts';
 
+/**
+ * The scripted scenes. Their wording lives in `scenes.messages.ts`; the server writes it in English,
+ * which is what the model reads, and the widget shows the same ids in the person's language.
+ */
+const english = sceneText('en');
 const people = {
-  onboarding: { name: 'Laia', label: 'Getting started' },
-  progress: { name: 'Marc', label: 'On the trail' },
-  shortcuts: { name: 'Núria', label: 'Faster routes' },
-  payoff: { name: 'Jordi', label: 'Debt-free home' },
+  onboarding: { name: 'Laia', label: english.personaLabel('onboarding') },
+  progress: { name: 'Marc', label: english.personaLabel('progress') },
+  shortcuts: { name: 'Núria', label: english.personaLabel('shortcuts') },
+  payoff: { name: 'Jordi', label: english.personaLabel('payoff') },
 };
 
 export const personaSchema = z.enum(['onboarding', 'progress', 'shortcuts', 'payoff']);
 type Persona = z.infer<typeof personaSchema>;
 
-const termMonths = 240;
+const { termMonths, initialTarget } = figures;
 const bank = {
   currency: 'EUR',
-  savings: 18400,
-  income: 2900,
-  spending: 2180,
-  debtPayments: 0,
-  discretionary: 280,
-  insight:
-    'At the sample spending rate you have €720 left each month. Two fewer paid outings would free up another estimated €40.',
+  savings: figures.bank.savings,
+  income: figures.bank.income,
+  spending: figures.bank.spending,
+  debtPayments: figures.bank.debtPayments,
+  discretionary: figures.bank.discretionary,
+  insight: english.bankInsight,
 };
-const initialTarget = 54000;
 
-const opportunities = [
-  {
-    id: 'rule',
-    category: 'Regulation',
-    title: 'Compare a lower deposit route',
-    detail:
-      'A fictional rule change reduces the upfront goal to €28,000. Your €28,000 reaches that goal. Sample rent is €1,150 and the modeled mortgage payment is €950, a €200 difference before ownership costs.',
-    verify: 'Check the actual rule, lender eligibility, fees and total ownership costs.',
-    target: 28000,
-    extra: 0,
-  },
-  {
-    id: 'job',
-    category: 'Income',
-    title: 'Hybrid job near Sabadell',
-    detail: 'A sample job would add €250 per month after estimated commute and childcare.',
-    verify: 'Confirm the offer, take-home pay and weekly commute.',
-    target: initialTarget,
-    extra: 250,
-  },
-  {
-    id: 'rural',
-    category: 'Rural program',
-    title: 'Explore a lower-rent move to Solsona',
-    detail: 'A fictional relocation program and lower rent could free up €230 per month after sample travel costs.',
-    verify: 'Check official program status, eligibility, schools and transport.',
-    target: initialTarget,
-    extra: 230,
-  },
-  {
-    id: 'listing',
-    category: 'Listing',
-    title: 'Compare a lower-cost home in Manresa',
-    detail:
-      'A simulated portal or builder lead lowers the modeled upfront goal to €45,000. This illustrates an Idealista-style or builder alert.',
-    verify: 'Check listing availability, fees, accessibility and train schedule.',
-    target: 45000,
-    extra: 0,
-  },
-  {
-    id: 'friends',
-    category: 'Community',
-    title: 'Try a cheaper weekend plan',
-    detail:
-      'Swap two paid outings for the sample first-buyer group’s park meetup and free up an estimated €40 per month.',
-    verify: 'See if the habit fits your schedule and budget.',
-    target: initialTarget,
-    extra: 40,
-  },
-] as const;
-const opportunityId = z.enum(['rule', 'job', 'rural', 'listing', 'friends']);
+/** Model-facing grouping of a route; the board does not show it. */
+const opportunityCategory = {
+  rule: 'Regulation',
+  job: 'Income',
+  rural: 'Rural program',
+  listing: 'Listing',
+  friends: 'Community',
+} as const;
+const opportunities = opportunityIds.map(id => {
+  const { title, detail, verify } = english.opportunity(id);
+  const { target, extra } = figures.opportunities[id];
+  return { id, category: opportunityCategory[id], title, detail, verify, target, extra };
+});
+const opportunityId = z.enum(opportunityIds);
 type Opportunity = z.infer<typeof opportunityId>;
 const routeSteps: Record<Opportunity, { label: string; offset: number }> = {
-  rule: { label: 'Review deposit rules', offset: 0 },
-  listing: { label: 'Move to Manresa', offset: 8 },
-  job: { label: 'Change jobs', offset: 4 },
-  rural: { label: 'Move to Solsona', offset: 6 },
-  friends: { label: 'Try cheaper outings', offset: 1 },
+  rule: { label: english.step('rule'), offset: 0 },
+  listing: { label: english.step('listing'), offset: 8 },
+  job: { label: english.step('job'), offset: 4 },
+  rural: { label: english.step('rural'), offset: 6 },
+  friends: { label: english.step('friends'), offset: 1 },
 };
-const habits = [
-  {
-    id: 'coffee',
-    icon: '☕',
-    title: 'Switch your coffee stop',
-    badge: 'Coffee Saver',
-    before: 20,
-    after: 10,
-    xp: 100,
-    action:
-      'Buy your four coffees at the sample station café for €2.50 each instead of €5. Try the cheaper café on your next coffee run.',
-  },
-  {
-    id: 'takeout',
-    icon: '🍲',
-    title: 'Cook once instead of ordering in',
-    badge: 'Home Chef',
-    before: 36,
-    after: 22,
-    xp: 85,
-    action:
-      'Replace one €36 delivery meal each month with a €22 grocery basket. Put Friday on your calendar as the first cook-at-home night.',
-  },
-  {
-    id: 'picnic',
-    icon: '🧺',
-    title: 'Swap a cinema trip for a park picnic',
-    badge: 'Good Neighbor',
-    before: 12,
-    after: 0,
-    xp: 100,
-    action: 'Invite another first-time buyer to the free park picnic in place of one €12 cinema ticket this month.',
-  },
-] as const;
-const habitId = z.enum(['coffee', 'takeout', 'picnic']);
+const habitIcons = { coffee: '☕', takeout: '🍲', picnic: '🧺' } as const;
+const habits = habitIds.map(id => {
+  const { title, badge, action } = english.habit(id);
+  const { before, after, xp } = figures.habits[id];
+  return { id, icon: habitIcons[id], title, badge, before, after, xp, action };
+});
+const habitId = z.enum(habitIds);
 type HabitId = z.infer<typeof habitId>;
 const routeLetter: Record<Opportunity, string> = { rule: 'A', listing: 'B', job: 'C', rural: 'D', friends: 'E' };
-const credits = {
-  title: 'A place of your own',
-  stats: [
-    { label: 'Mortgage principal repaid', value: '€165,000' },
-    { label: 'Repayment journey', value: '20 years' },
-    { label: 'Remaining debt', value: '€0' },
-  ],
-  milestones: [
-    { title: 'The first step', detail: 'Jordi set a savings goal and built an upfront fund.' },
-    { title: 'Keys in hand', detail: 'He bought his home and began repaying the mortgage.' },
-    { title: 'The finish line', detail: 'The last installment cleared. He owns the home outright.' },
-  ],
-  achievements: ['Trailblazer', 'Keys in Hand', 'Mortgage-Free'],
-};
+const credits = english.credits;
 
 export const openSchema = z.object({
   runId: z.uuid().optional(),
@@ -314,7 +241,8 @@ export function getView(runId: string, message?: string) {
   if (persona === 'onboarding') {
     const group =
       basicGroups
-        .map(({ title, questions }) => ({
+        .map(({ id, title, questions }) => ({
+          id,
           title,
           questions: questions.filter(question => state.answers[question.id] === undefined),
         }))
@@ -334,6 +262,15 @@ export function getView(runId: string, message?: string) {
       plan = { monthly, saved: available, target, ...routeTimeline(timeToGoal(available, target, monthly)) };
     }
     const basicQuestions = basicGroups.flatMap(group => group.questions);
+    const financeNotes: FinanceNote[] = [
+      typeof cashTarget === 'number'
+        ? 'customGoal'
+        : typeof budget === 'number' && budget > 0
+          ? 'budgetShare'
+          : 'sampleGoal',
+      ...(typeof reserve === 'number' ? (['reserve'] as const) : []),
+      ...(typeof debtPayments === 'number' ? [] : (['unreportedDebt'] as const)),
+    ];
     return {
       ...base,
       answers: { ...state.answers },
@@ -341,17 +278,9 @@ export function getView(runId: string, message?: string) {
       extraGroups,
       totalQuestions: basicQuestions.length,
       answeredBasic: basicQuestions.filter(question => state.answers[question.id] !== undefined).length,
-      financeNote: [
-        typeof cashTarget === 'number'
-          ? 'Uses your custom upfront goal.'
-          : typeof budget === 'number' && budget > 0
-            ? 'Models 30% of the purchase budget for deposit and buying costs.'
-            : 'Uses the €54,000 sample upfront goal.',
-        typeof reserve === 'number' ? 'Your emergency reserve stays out of the buying fund.' : '',
-        typeof debtPayments === 'number' ? '' : 'Monthly saving is before any unreported debt payments.',
-      ]
-        .filter(Boolean)
-        .join(' '),
+      financeNote: financeNotes.map(english.financeNote).join(' '),
+      // The same notes by id, for the widget to show in the person's language.
+      financeNotes,
       bank: state.bankConnected ? bank : null,
       plan,
       message:
@@ -374,14 +303,11 @@ export function getView(runId: string, message?: string) {
     const leaderboard = [
       { name: 'Cami', xp: 505 },
       { name: 'Sol', xp: 400 },
-      { name: 'Marc · You', xp },
+      { name: english.you, xp },
       { name: 'Nico', xp: 220 },
     ].sort((a, b) => b.xp - a.xp);
     const coach = {
-      headline: completed.length ? 'You’re building habits that stick.' : 'Marc, you’re past halfway!',
-      milestone: completed.length
-        ? `${completed.length} quests checked off. Keep them up to free up €${estimate} a month.`
-        : 'You’ve saved four months in a row. Your next quest could make each month count a little more.',
+      ...english.coach(completed.length, estimate),
       next: next
         ? `${next.title}. ${next.action} That can free up €${next.saving} a month.`
         : 'Keep the new habits going for another month.',
@@ -399,9 +325,9 @@ export function getView(runId: string, message?: string) {
         xpGoal: 650,
         checkpoint: completed.length ? 2 : 1,
         streak: 4,
-        rank: 1 + leaderboard.findIndex(person => person.name === 'Marc · You'),
+        rank: 1 + leaderboard.findIndex(person => person.name === english.you),
         coach,
-        badges: ['Trailblazer', 'Steady Saver', ...completed.map(quest => quest.badge)],
+        badges: english.badges(completed.map(quest => quest.id)),
         leaderboard,
         quests,
         estimate,
@@ -410,8 +336,7 @@ export function getView(runId: string, message?: string) {
     } as const;
   }
   if (persona === 'shortcuts') {
-    const monthly = 800;
-    const saved = 28000;
+    const { monthly, saved } = figures.shortcuts;
     const baseline = timeToGoal(saved, initialTarget, monthly)!;
     const inbox = opportunities
       .map(item => {
@@ -434,6 +359,8 @@ export function getView(runId: string, message?: string) {
       baseline: routeTimeline(baseline),
       pastMonths: 24,
       saved,
+      monthly,
+      target: initialTarget,
       inbox: state.inboxRead ? inbox : [],
       chosen: state.chosen,
       previewed: state.previewed,
@@ -454,8 +381,8 @@ export function getView(runId: string, message?: string) {
   return {
     ...base,
     payoff: {
-      original: 165000,
-      remaining: state.paid ? 0 : 620,
+      original: figures.payoff.original,
+      remaining: state.paid ? 0 : figures.payoff.installment,
       otherDebt: 0,
       percent: state.paid ? 100 : 99,
       paid: state.paid,

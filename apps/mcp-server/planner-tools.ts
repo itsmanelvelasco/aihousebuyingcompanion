@@ -3,6 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { stateSchema } from '../../packages/contracts/habits.ts';
 import { inputSchema } from '../../packages/contracts/inputs.ts';
+import { localeArgument } from '../../packages/contracts/locale.ts';
 import type { Policy, Snapshot } from '../../packages/contracts/places.ts';
 import { municipalityCode } from '../../packages/contracts/places.ts';
 import type { Person, PlanResult } from '../../packages/contracts/planner.ts';
@@ -15,9 +16,13 @@ import {
   planInput,
   planResult,
 } from '../../packages/contracts/planner.ts';
+import type { Locale } from '../../packages/i18n/locales.ts';
+import { translator } from '../../packages/i18n/messages.ts';
+import { toolLocale } from '../../packages/i18n/server.ts';
 import { bankSummaryInput, buildPerson } from '../../packages/model/person.ts';
 import { buildPlace } from '../../packages/model/place.ts';
 import { normalizedName } from '../../packages/places/geography.ts';
+import { factMessages } from '../../packages/planner/plan.messages.ts';
 import { planForPlaces } from '../../packages/planner/plan.ts';
 import type { Caller, PersonReader } from './identity.ts';
 import { anonymous, ownPerson, security } from './identity.ts';
@@ -131,7 +136,9 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
    * movements and habits are optional evidence, and each one that could not be read is reported
    * instead of being silently dropped.
    */
-  async function loadPerson(reader: PersonReader): Promise<{ person: Person; notes: string[] }> {
+  async function loadPerson(reader: PersonReader, locale: Locale = 'en'): Promise<{ person: Person; notes: string[] }> {
+    // The notes join the limitations a person reads, so they are written in the language of the result.
+    const t = translator(factMessages, locale);
     const raw = await reader.context().catch(() => {
       throw new PersonUnavailable('The stored profile is unavailable right now.');
     });
@@ -143,14 +150,14 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
       .bankSummary(period)
       .then(value => bankSummaryInput.parse(value))
       .catch(() => {
-        notes.push('Bank movements could not be read; only declared figures were used.');
+        notes.push(t('bankUnreadable'));
         return null;
       });
     const habitState = await reader
       .habits()
       .then(value => stateSchema.parse(value))
       .catch(() => {
-        notes.push('Habits could not be read; none were counted.');
+        notes.push(t('habitsUnreadable'));
         return null;
       });
     const name = context.resolved.data.location?.currentMunicipality;
@@ -200,6 +207,7 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
       demoId: demoId.optional().describe('A fictional demo persona, read-only'),
       municipalityCodes: planInput.shape.municipalityCodes,
       assumptions: planInput.shape.assumptions,
+      locale: localeArgument,
     })
     .strict();
 
@@ -213,8 +221,10 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
       annotations: readOnly,
       _meta: security('either'),
     },
-    input =>
+    (input, extra) =>
       guarded(async () => {
+        // The language of every sentence in the result; the summary for the model stays in English.
+        const locale = toolLocale(input.locale, extra._meta);
         const chosen = [input.person, input.me, input.demoId].filter(value => value !== undefined);
         if (chosen.length !== 1) return failure('Provide exactly one of me:true, person or demoId.');
         let loaded: { person: Person; notes: string[] };
@@ -222,10 +232,10 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
         else if (input.me) {
           const own = ownPerson(caller, 'person:read');
           if ('error' in own) return own.error;
-          loaded = await loadPerson(own.me);
-        } else loaded = await loadPerson(demoPerson(input.demoId as string));
-        const places = [...new Set(input.municipalityCodes)].map(code => buildPlace(snapshot, code));
-        const plan = planForPlaces(loaded.person, places, policies, input.assumptions, today());
+          loaded = await loadPerson(own.me, locale);
+        } else loaded = await loadPerson(demoPerson(input.demoId as string), locale);
+        const places = [...new Set(input.municipalityCodes)].map(code => buildPlace(snapshot, code, locale));
+        const plan = planForPlaces(loaded.person, places, policies, input.assumptions, today(), locale);
         const finite = plan.plans.filter(item => item.withPlaceBenefits?.months != null);
         const best = finite[0];
         const summary = best
@@ -353,8 +363,9 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
         annotations: readOnly,
         _meta: security('either'),
       },
-      input =>
+      (input, extra) =>
         guarded(async () => {
+          const locale = toolLocale(input.locale, extra._meta);
           const chosen = [input.person, input.me, input.demoId].filter(value => value !== undefined);
           if (chosen.length !== 1) return failure('Provide exactly one of me:true, person or demoId.');
           let who: Person;
@@ -364,8 +375,8 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
             if ('error' in own) return own.error;
             who = (await loadPerson(own.me)).person;
           } else who = (await loadPerson(demoPerson(input.demoId as string))).person;
-          const places = [...new Set(input.municipalityCodes)].map(code => buildPlace(snapshot, code));
-          const plan = planForPlaces(who, places, policies, input.assumptions, today());
+          const places = [...new Set(input.municipalityCodes)].map(code => buildPlace(snapshot, code, locale));
+          const plan = planForPlaces(who, places, policies, input.assumptions, today(), locale);
           return result(nextQuestionNote(plan), {
             asOf: plan.asOf,
             stored: input.me === true,
@@ -401,13 +412,13 @@ export function registerPlannerTools(server: McpServer, options: PlannerToolOpti
       title: 'Read a place: indicators and services',
       description:
         'Return one municipality as a place node: rural category, centre, sourced population, density, foreign-population share, resale price and rent, and service counts. Missing figures are null and named in dataMissing; a comarca figure used as a proxy is marked geography: comarca.',
-      inputSchema: z.object({ municipalityCode }).strict(),
+      inputSchema: z.object({ municipalityCode, locale: localeArgument }).strict(),
       outputSchema: place,
       annotations: readOnly,
     },
-    ({ municipalityCode: code }) =>
+    ({ municipalityCode: code, locale }, extra) =>
       guarded(() => {
-        const node = buildPlace(snapshot, code);
+        const node = buildPlace(snapshot, code, toolLocale(locale, extra._meta));
         return result(`${node.name}, ${node.comarca} · place node from the ${snapshot.generatedOn} snapshot.`, node);
       }),
   );

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { localeArgument } from './locale.ts';
 
 export const isoDate = z.iso.date();
 export const clockTime = z.iso.time({ precision: -1 });
@@ -414,6 +415,7 @@ export const incentivesInput = z
       .optional()
       .describe('Official settlement name for partially covered municipalities, e.g. Palau de Noguera'),
     household: household.optional(),
+    locale: localeArgument,
   })
   .strict();
 
@@ -498,6 +500,7 @@ export const recommendationInput = z
       .strict()
       .optional(),
     limit: z.number().int().min(1).max(10).optional(),
+    locale: localeArgument,
   })
   .strict();
 
@@ -535,6 +538,7 @@ export const profileRecommendationInput = z
   .looseObject({
     profile: relocationProfile.describe('Confirmed lifestyle facts and optional town preference. Omit unknown facts.'),
     limit: recommendationInput.shape.limit,
+    locale: localeArgument,
   })
   .meta({ additionalProperties: true });
 
@@ -588,7 +592,9 @@ export const profileRecommendationResult = recommendationResult.extend({
   }),
 });
 
-export const profileInput = z.object({ municipalityCode, travelDate: isoDate.optional() }).strict();
+export const profileInput = z
+  .object({ municipalityCode, travelDate: isoDate.optional(), locale: localeArgument })
+  .strict();
 export const destinationTravelEstimate = z.object({
   destinationId: z.enum(['lleida', 'barcelona', 'bcn_t1', 'bcn_t2', 'girona', 'girona_airport']),
   destination: z.string().min(1),

@@ -7,8 +7,12 @@ import type {
   Snapshot,
   TransportQuery,
 } from '../contracts/places.ts';
+import { defaultLocale, type Locale } from '../i18n/locales.ts';
+import { translator } from '../i18n/messages.ts';
 import { getTown, snapshotInfo } from './data.ts';
 import { distanceKm } from './geography.ts';
+import { accessMessages } from './messages.ts';
+import { wording } from './wording.ts';
 
 const MAX_STATION_DISTANCE_KM = 1.8;
 const MAX_SCHOOL_WALK_KM = 2;
@@ -82,7 +86,10 @@ function departureWindow(routes: RailRoute[], query: Pick<TransportQuery, 'depar
   return routes.filter(route => timeSeconds(route.departure) >= from && timeSeconds(route.departure) <= through);
 }
 
-export function getTransportOptions(snapshot: Snapshot, query: TransportQuery) {
+/** Direct rail departures between two towns. `locale` words the limitations; the routes do not change. */
+export function getTransportOptions(snapshot: Snapshot, query: TransportQuery, locale: Locale = defaultLocale) {
+  const t = translator(accessMessages, locale);
+  const write = wording(locale);
   const from = getTown(snapshot, query.municipalityCode);
   const to = getTown(snapshot, query.destinationCode);
   if (from.code === to.code)
@@ -92,11 +99,11 @@ export function getTransportOptions(snapshot: Snapshot, query: TransportQuery) {
     findRailRoutes(snapshot, query.travelDate, stationIds(snapshot, from), stationIds(snapshot, to)),
     query,
   );
-  const limitations = [
-    'Direct FGC RL1/RL2 timetabled services only. Check the operator for disruption, walking access and request stops.',
-  ];
+  const limitations = [t('railDirectOnly')];
   if (!covered)
-    limitations.push(`Cached schedules cover ${snapshot.rail.validFrom} through ${snapshot.rail.validThrough}.`);
+    limitations.push(
+      t('railCoverage', { from: write.date(snapshot.rail.validFrom), through: write.date(snapshot.rail.validThrough) }),
+    );
   return {
     snapshot: snapshotInfo(snapshot),
     municipalityCode: from.code,
@@ -220,7 +227,14 @@ function meetsSchoolQuery(journey: SchoolJourney, query: SchoolQuery) {
   );
 }
 
-export function getNearbySchools(snapshot: Snapshot, query: SchoolQuery, travelDate: string) {
+/** Schools in and around a town. `locale` words the limitations; the schools and journeys do not change. */
+export function getNearbySchools(
+  snapshot: Snapshot,
+  query: SchoolQuery,
+  travelDate: string,
+  locale: Locale = defaultLocale,
+) {
+  const t = translator(accessMessages, locale);
   const town = getTown(snapshot, query.municipalityCode);
   const journeys = schoolJourneys(snapshot, town, travelDate, query.arriveBy);
   const bySchool = new Map<string, SchoolJourney>();
@@ -228,11 +242,11 @@ export function getNearbySchools(snapshot: Snapshot, query: SchoolQuery, travelD
     if (!bySchool.has(journey.school.id)) bySchool.set(journey.school.id, journey);
   }
   const limitations = [
-    'The directory records authorized stages. Check admissions, catchment, school start times and school-bus eligibility separately.',
-    `Rail options depart from 06:30 and reach the school by ${query.arriveBy ?? '09:00'} local time. Walking legs are estimates from town centres; verify paths and return journeys.`,
-    'The pilot includes local schools and neighbouring schools within 15 km where covered by the snapshot.',
+    t('schoolDirectory'),
+    t('schoolRail', { arriveBy: query.arriveBy ?? '09:00' }),
+    t('schoolRadius'),
   ];
-  if (!railwayCoverage(snapshot, travelDate)) limitations.push('This date is outside the cached FGC timetable.');
+  if (!railwayCoverage(snapshot, travelDate)) limitations.push(t('schoolDateOutside'));
   return {
     snapshot: snapshotInfo(snapshot),
     travelDate,

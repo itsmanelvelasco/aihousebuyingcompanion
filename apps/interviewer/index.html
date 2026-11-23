@@ -97,7 +97,7 @@
   #guide-field fieldset > div:empty { display: none; }
   .guide-why, .guide-error { flex-basis: 100%; margin: 0; text-align: left; }
   .guide-error { color: var(--rc-danger); font-size: var(--rc-text-sm); font-weight: var(--rc-weight-semibold); }
-  .more { margin-top: 12px; }
+  .more { margin-top: 12px; display: grid; justify-items: center; gap: 4px; }
   .facts { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--rc-line); }
   dialog {
     width: min(100vw - 32px, 528px); max-height: 88svh; padding: clamp(16px, 4vw, 24px);
@@ -136,82 +136,83 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="rc-wordmark"><!-- MARK --><span>Relo<b>Cat</b></span></span><span class="brand-page">Interview</span></div>
-  <nav class="actions" aria-label="Interview tools">
+  <div class="brand"><span class="rc-wordmark"><!-- MARK --><span>Relo<b>Cat</b></span></span><span class="brand-page" data-i18n="brandPage">Interview</span></div>
+  <nav class="actions" aria-label="Interview tools" data-i18n-aria-label="tools">
     <button id="source-button" class="rc-btn rc-btn--sm" data-open="data-panel">Add bank data</button>
-    <button class="rc-btn rc-btn--sm" data-open="plan-panel">Your plan</button>
+    <button class="rc-btn rc-btn--sm" data-open="plan-panel" data-i18n="yourPlan">Your plan</button>
   </nav>
 </header>
 <main class="stage">
   <section id="conversation" class="conversation" data-voice="idle" aria-labelledby="title">
-    <h1 id="title">Let’s talk about your first home</h1>
-    <p class="intro">Start with your bank transactions, then talk through your first-home goals.</p>
+    <h1 id="title" data-i18n="heading">Let’s talk about your first home</h1>
+    <p class="intro" data-i18n="intro">Start with your bank transactions, then talk through your first-home goals.</p>
     <div class="voice-graphic" aria-hidden="true">
       <div class="wave"><i style="--height:10px"></i><i style="--height:21px"></i><i style="--height:34px"></i><i style="--height:25px"></i><i style="--height:13px"></i></div>
     </div>
     <p id="voice-status" role="status">Ready to talk.</p>
     <div class="actions voice-controls">
-      <button id="start" class="rc-btn rc-btn--gold">Start talking</button>
+      <button id="start" class="rc-btn rc-btn--gold" data-i18n="start">Start talking</button>
       <button id="mute" class="rc-btn" aria-pressed="false" hidden>Mute mic</button>
-      <button id="stop" class="rc-btn end" hidden>End conversation</button>
+      <button id="stop" class="rc-btn end" data-i18n="end" hidden>End conversation</button>
     </div>
     <p id="last-question" aria-live="polite" hidden></p>
     <form id="typed-answer" hidden>
-      <label for="answer">Your answer</label>
+      <label for="answer" data-i18n="yourAnswer">Your answer</label>
       <input id="answer" type="text" autocomplete="off" enterkeyhint="send" maxlength="1000" required>
-      <button id="send-answer" class="rc-btn" disabled>Send answer</button>
+      <button id="send-answer" class="rc-btn" data-i18n="sendAnswer" disabled>Send answer</button>
     </form>
     <form id="guided-answer" novalidate hidden>
       <div id="guide-field"></div>
-      <button class="rc-btn rc-btn--gold">Save answer</button>
-      <button id="skip" class="rc-btn" type="button">Skip question</button>
+      <button class="rc-btn rc-btn--gold" data-i18n="saveAnswer">Save answer</button>
+      <button id="skip" class="rc-btn" type="button" data-i18n="skip">Skip question</button>
       <p id="guide-error" class="guide-error" role="alert" hidden></p>
       <p id="guide-why" class="hint guide-why" hidden></p>
     </form>
-    <div class="more"><button class="rc-btn rc-btn--quiet" data-open="options-panel">Conversation options</button></div>
+    <div class="more"><button class="rc-btn rc-btn--quiet" data-open="options-panel" data-i18n="options">Conversation options</button>
+      <div class="rc-lang" id="languages" role="group" aria-label="Language"><button type="button" data-lang="en" lang="en" aria-pressed="true">English</button><button type="button" data-lang="ca" lang="ca" aria-pressed="false">Català</button><button type="button" data-lang="es" lang="es" aria-pressed="false">Castellano</button></div></div>
     <audio id="audio" autoplay></audio>
   </section>
 </main>
 <dialog id="data-panel" aria-labelledby="data-heading">
-  <div class="panel-head"><h2 id="data-heading">Add bank data</h2><button class="rc-btn rc-btn--sm" data-close>Close</button></div>
+  <div class="panel-head"><h2 id="data-heading" data-i18n="addBank">Add bank data</h2><button class="rc-btn rc-btn--sm" data-close data-i18n="close">Close</button></div>
   <div id="sources">
-    <p class="hint">Use a statement to ground the conversation in your actual spending.</p>
+    <p class="hint" data-i18n="bankHint">Use a statement to ground the conversation in your actual spending.</p>
     <div class="source-options">
-      <button id="bank" class="rc-btn source"><strong>Connect a bank</strong><small>Demo connection</small></button>
-      <input id="csv" type="file" accept=".csv,text/csv"><label class="rc-btn source" for="csv"><strong>Upload CSV</strong><small>Bank statement</small></label>
+      <button id="bank" class="rc-btn source"><strong data-i18n="connectBank">Connect a bank</strong><small data-i18n="demoConnection">Demo connection</small></button>
+      <input id="csv" type="file" accept=".csv,text/csv"><label class="rc-btn source" for="csv"><strong data-i18n="uploadCsv">Upload CSV</strong><small data-i18n="bankStatement">Bank statement</small></label>
     </div>
-    <label class="check"><input id="use-decisions" type="checkbox"> Categorize CSV with OpenAI</label>
-    <p class="hint">If selected, OpenAI receives shortened descriptions and whether each transaction is money in or out. Individual dates and amounts stay in this browser.</p>
-    <label>CSV currency <select id="currency"><option>EUR</option><option>USD</option><option>GBP</option></select></label>
+    <label class="check"><input id="use-decisions" type="checkbox"> <span data-i18n="categorize">Categorize CSV with OpenAI</span></label>
+    <p class="hint" data-i18n="categorizeHint">If selected, OpenAI receives shortened descriptions and whether each transaction is money in or out. Individual dates and amounts stay in this browser.</p>
+    <label><span data-i18n="csvCurrency">CSV currency</span> <select id="currency"><option>EUR</option><option>USD</option><option>GBP</option></select></label>
     <p class="hint" id="import-status" role="status">CSV columns should be date, description and amount. Use signed amounts.</p>
     <p class="hint" id="classifier-status" role="status"></p>
     <dl id="cash"></dl>
-    <details id="expense-details" hidden><summary>Monthly spending by category</summary><dl id="expenses"></dl></details>
+    <details id="expense-details" hidden><summary data-i18n="spendingByCategory">Monthly spending by category</summary><dl id="expenses"></dl></details>
   </div>
   <div id="bank-preview" hidden>
     <div class="bank-preview">
-      <h3>Demo Bank</h3>
-      <p>Everyday checking · 3 months of transactions</p>
-      <p class="hint">This connection uses fictional transactions and never asks for bank credentials.</p>
+      <h3 data-i18n="demoBankName">Demo Bank</h3>
+      <p data-i18n="demoBankAccount">Everyday checking · 3 months of transactions</p>
+      <p class="hint" data-i18n="demoBankHint">This connection uses fictional transactions and never asks for bank credentials.</p>
     </div>
-    <div class="actions"><button id="demo" class="rc-btn rc-btn--gold">Connect demo account</button><button id="bank-back" class="rc-btn">Back</button></div>
+    <div class="actions"><button id="demo" class="rc-btn rc-btn--gold" data-i18n="connectDemo">Connect demo account</button><button id="bank-back" class="rc-btn" data-i18n="back">Back</button></div>
     <p class="hint" id="bank-status" role="status"></p>
   </div>
 </dialog>
 <dialog id="plan-panel" aria-labelledby="plan-heading">
-  <div class="panel-head"><h2 id="plan-heading">Your home and savings plan</h2><button class="rc-btn rc-btn--sm" data-close>Close</button></div>
+  <div class="panel-head"><h2 id="plan-heading" data-i18n="planHeading">Your home and savings plan</h2><button class="rc-btn rc-btn--sm" data-close data-i18n="close">Close</button></div>
   <div id="plan" aria-live="polite"></div>
   <details>
-    <summary>Review or edit answers</summary>
+    <summary data-i18n="reviewAnswers">Review or edit answers</summary>
     <form id="profile">
       <div id="fields"></div>
-      <div class="actions"><button class="rc-btn rc-btn--gold">Save answers</button><button id="clear" class="rc-btn" type="button">Clear saved data</button></div>
+      <div class="actions"><button class="rc-btn rc-btn--gold" data-i18n="saveAnswers">Save answers</button><button id="clear" class="rc-btn" type="button" data-i18n="clearSaved">Clear saved data</button></div>
     </form>
     <p class="hint" id="save-status" role="status">Your summary and answers are saved in this browser.</p>
   </details>
   <section class="facts" aria-labelledby="facts-heading">
-    <h3 id="facts-heading">Details that decide your plan</h3>
-    <p class="hint">Asked after the money questions: they decide which tax measures and aids can be counted.</p>
+    <h3 id="facts-heading" data-i18n="factsHeading">Details that decide your plan</h3>
+    <p class="hint" data-i18n="factsHint">Asked after the money questions: they decide which tax measures and aids can be counted.</p>
     <dl id="facts"></dl>
     <p id="profile-status" class="hint" role="status">These answers are only on this device.</p>
     <div class="actions">
@@ -221,13 +222,13 @@
   </section>
 </dialog>
 <dialog id="options-panel" aria-labelledby="options-heading">
-  <div class="panel-head"><h2 id="options-heading">Conversation options</h2><button class="rc-btn rc-btn--sm" data-close>Close</button></div>
+  <div class="panel-head"><h2 id="options-heading" data-i18n="options">Conversation options</h2><button class="rc-btn rc-btn--sm" data-close data-i18n="close">Close</button></div>
   <div class="actions">
-    <button id="captions" class="rc-btn" aria-pressed="false">Captions</button>
-    <button id="type-toggle" class="rc-btn" aria-pressed="false" disabled>Type a reply</button>
-    <button id="guide" class="rc-btn">Guided interview</button>
+    <button id="captions" class="rc-btn" aria-pressed="false" data-i18n="captions">Captions</button>
+    <button id="type-toggle" class="rc-btn" aria-pressed="false" data-i18n="typeReply" disabled>Type a reply</button>
+    <button id="guide" class="rc-btn" data-i18n="guided">Guided interview</button>
   </div>
-  <p class="hint">Voice uses your microphone and sends your saved answers and financial summary to OpenAI. Uploaded CSV files are processed in this browser.</p>
+  <p class="hint" data-i18n="voiceHint">Voice uses your microphone and sends your saved answers and financial summary to OpenAI. Uploaded CSV files are processed in this browser.</p>
 </dialog>
 <script src="app.js"></script>
 </body>
