@@ -293,6 +293,11 @@ export const policy = z.object({
   territory: z.enum(['catalonia']).optional(),
   municipalityCodes: z.array(municipalityCode).optional(),
   /**
+   * Municipalities checked against the call's own table and found outside it. A grant with a
+   * municipality list says nothing about a municipality in neither list: that needs verification.
+   */
+  municipalityCodesOutside: z.array(municipalityCode).optional(),
+  /**
    * Application window, for a measure that is claimed through a call and whose own dates are not that window.
    * `null`: the measure needs a call and none could be verified, so `callStatus` stays `unknown`.
    * Absent: a grant's effective dates are its call window; tax measures have no call.
@@ -500,6 +505,13 @@ export const recommendationInput = z
       .strict()
       .optional(),
     limit: z.number().int().min(1).max(10).optional(),
+    excludedLimit: z
+      .number()
+      .int()
+      .min(0)
+      .max(1000)
+      .optional()
+      .describe('Most excluded municipalities to list with their reasons (default 20); all are counted.'),
     locale: localeArgument,
   })
   .strict();
@@ -578,7 +590,9 @@ export const recommendationResult = z.object({
       relocation: relocationResult,
     }),
   ),
+  /** The first excluded municipalities, by official code; `excludedCount` is how many there are in all. */
   excluded: z.array(z.object({ municipalityCode, reasons: z.array(z.string()), dataMissing: z.array(z.string()) })),
+  excludedCount: z.number().int().nonnegative(),
   limitations: z.array(z.string()),
 });
 
@@ -661,10 +675,19 @@ export const municipalityListInput = z
   .object({
     query: z.string().trim().min(1).max(100).optional().describe('Match municipality name, six-digit code, or comarca'),
     ruralOnly: z.boolean().optional(),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(1000)
+      .optional()
+      .describe('Most municipalities to return (default 40). Narrow with query instead of raising it.'),
   })
   .strict();
 export const municipalityListResult = z.object({
   snapshot: snapshotInfo,
+  /** How many municipalities matched before `limit` was applied. */
+  total: z.number().int().nonnegative(),
   municipalities: z.array(municipality),
   coverage: z.string(),
 });

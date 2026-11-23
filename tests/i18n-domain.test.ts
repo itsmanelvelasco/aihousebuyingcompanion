@@ -472,8 +472,8 @@ test('incentive screening and town recommendations change words only', () => {
     reason(pueblos) ?? '',
     /^La estimación del coste de la vivienda en (el municipio|la comarca), de \d{2,3}\.\d{3}\s€, está dentro del presupuesto indicado\.$/,
   );
-  assert.match(pobles.limitations[0], /^Les recomanacions cobreixen els municipis catalans/);
-  assert.match(pueblos.limitations[0], /^Las recomendaciones cubren los municipios catalanes/);
+  assert.match(pobles.limitations[0], /^Les recomanacions cobreixen tots els municipis de Catalunya/);
+  assert.match(pueblos.limitations[0], /^Las recomendaciones cubren todos los municipios de Cataluña/);
 });
 
 /** The plan a tool returned, without what the tool adds about where the answers live. */

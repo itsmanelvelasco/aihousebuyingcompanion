@@ -52,8 +52,6 @@ const ui = {
   state: node('state'),
   typeInstead: node<HTMLButtonElement>('type-instead'),
   topics: node('topics'),
-  placeYes: node<HTMLButtonElement>('place-yes'),
-  placeNo: node<HTMLButtonElement>('place-no'),
   question: node('question'),
   choices: node('choices'),
   figure: node('figure'),
@@ -161,12 +159,10 @@ let ready: Promise<unknown> = Promise.resolve();
 /** The question the session was last told to ask, and whether ReloCat has not asked it yet. */
 let expected: SpokenQuestion | null = null;
 let fresh = false;
-/** The next question is about a town, not the planner's: a match to confirm, or similar names to pick from. */
-let placeTurn: { confirm?: PlaceChoice; towns?: string[] } | null = null;
-/** A town found by name and waiting for the person's yes. */
-let proposal: PlaceChoice | null = null;
+/** The next question is about a town, not the planner's: similar names to pick from, when no town had the name said. */
+let placeTurn: { towns?: string[] } | null = null;
 /** What ReloCat last said, as the card shows it, with what the card knows about how to answer it. */
-let said: { text: string; asked: SpokenQuestion | null; confirm?: PlaceChoice; towns?: string[] } | null = null;
+let said: { text: string; asked: SpokenQuestion | null; towns?: string[] } | null = null;
 /** A chip the person tapped: the card asks for that one thing until it is answered or tapped again. */
 let topic: CardTopicId | null = null;
 /** An answer was tapped: the controls wait for the next question. */
@@ -282,20 +278,14 @@ function renderOrb() {
 /** The five chips: what was understood from what the person said. Empty stays empty. */
 function renderTopics() {
   const values = topicValues(interview, locale);
-  const any = Object.values(values).some(value => value !== null) || proposal !== null;
+  const any = Object.values(values).some(value => value !== null);
   ui.topics.hidden = !(talking() || any);
   for (const item of topicNodes) {
-    const awaiting = item.id === 'place' && proposal ? proposal.name : null;
-    const value = awaiting ?? values[item.id];
+    const value = values[item.id];
     show(item.value, value);
-    item.chip.dataset.state = awaiting ? 'asks' : value === null ? 'empty' : 'filled';
+    item.chip.dataset.state = value === null ? 'empty' : 'filled';
     item.chip.setAttribute('aria-pressed', String(topic === item.id));
     item.chip.disabled = !talking();
-  }
-  ui.placeYes.hidden = ui.placeNo.hidden = !proposal || !talking();
-  if (proposal) {
-    named(ui.placeYes, t('placeYes', { place: proposal.name }));
-    named(ui.placeNo, t('placeNo', { place: proposal.name }));
   }
 }
 
@@ -312,17 +302,9 @@ function asking(): { text: string; controls: AnswerControls; wrap: (answer: stri
     };
   }
   if (!said) return null;
-  const controls: AnswerControls = said.confirm
-    ? {
-        kind: 'chips',
-        options: [
-          { label: t('yes'), text: t('confirmPlace', { place: said.confirm.name }) },
-          { label: t('no'), text: t('rejectPlace', { place: said.confirm.name }) },
-        ],
-      }
-    : said.towns
-      ? { kind: 'chips', options: said.towns.map(town => ({ label: town, text: town })) }
-      : answerControls(said.asked, locale);
+  const controls: AnswerControls = said.towns
+    ? { kind: 'chips', options: said.towns.map(town => ({ label: town, text: town })) }
+    : answerControls(said.asked, locale);
   return { text: said.text, controls, wrap: plainly };
 }
 
@@ -507,20 +489,14 @@ function expect(question: unknown) {
   fresh = expected !== null;
 }
 
-/** Answer a function of the session, and keep what the card shows of it: the next question, a town to confirm. */
+/** Answer a function of the session, and keep what the card shows of it: the next question, towns to pick from. */
 async function runVoiceTool(tool: string, args: Record<string, unknown>) {
   const result = await voiceTools(tool, args);
   if ('nextQuestion' in result) expect(result.nextQuestion);
   if (tool === 'save_place') {
-    const outcome = result as { saved?: boolean; reason?: string; match?: PlaceChoice; similar?: PlaceChoice[] };
-    proposal = !outcome.saved && outcome.reason === 'needs_confirmation' ? (outcome.match ?? null) : null;
-    placeTurn = outcome.saved
-      ? null
-      : proposal
-        ? { confirm: proposal }
-        : outcome.similar?.length
-          ? { towns: outcome.similar.map(town => town.name) }
-          : {};
+    // A town that is in the list is stored at once; only a name that fits several or none is asked about.
+    const outcome = result as { saved?: boolean; similar?: PlaceChoice[] };
+    placeTurn = outcome.saved ? null : outcome.similar?.length ? { towns: outcome.similar.map(town => town.name) } : {};
   }
   // Connected and still not saved: the profile did not take it.
   if (tool.startsWith('save_') && interview.access === 'signed_in' && typeof result.sayOnce === 'string') {
@@ -564,7 +540,6 @@ function endConversation(why: { failure: CardKey; typing: boolean } | null) {
   queued = null;
   topic = null;
   said = null;
-  proposal = null;
   placeTurn = null;
   keyboardOpen = false;
   // The plan stays in sight when there is one.
@@ -623,7 +598,7 @@ async function startConversation(withMicrophone: boolean) {
       }
       // The opening asks nothing: the five chips say it, so its closing words are not repeated under the orb.
       const opening = said === null && !line.asks;
-      said = { text: opening ? '' : line.text, asked, confirm: town?.confirm, towns: town?.towns };
+      said = { text: opening ? '' : line.text, asked, towns: town?.towns };
       topic = null;
       answered = false;
       queued = null;
@@ -715,17 +690,6 @@ for (const item of topicNodes)
     renderQuestion();
     if (topic === 'place') ui.answer.focus();
   });
-/** The town found by name: yes or no, said for the person. */
-function answerProposal(key: 'confirmPlace' | 'rejectPlace') {
-  if (!proposal) return;
-  const place = proposal.name;
-  proposal = null;
-  sendAnswer(t(key, { place }));
-  renderTopics();
-  renderQuestion();
-}
-ui.placeYes.addEventListener('click', () => answerProposal('confirmPlace'));
-ui.placeNo.addEventListener('click', () => answerProposal('rejectPlace'));
 // The trail asks for the plan and opens its summary; tapped again, it closes it.
 ui.trail.addEventListener('click', () => {
   planShown = !planShown;

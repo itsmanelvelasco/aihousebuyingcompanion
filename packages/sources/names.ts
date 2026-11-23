@@ -17,6 +17,20 @@ export function normaliseName(name: string | undefined) {
     .replaceAll(/\s+/g, ' ');
 }
 
+/** Comarques that publishers name in two ways. The snapshot keeps Idescat's spelling. */
+const comarcaAliases: Record<string, string> = { "val d'aran": 'aran' };
+
+/** A comparable comarca name: `normaliseName` plus the known alternative spellings. */
+export function normaliseComarca(name: string | undefined) {
+  const text = normaliseName(name);
+  return comarcaAliases[text] ?? text;
+}
+
+/** Every spelling of a comarca that a publisher may filter by. */
+export function comarcaSpellings(name: string) {
+  return name === 'Aran' ? ['Aran', "Val d'Aran"] : [name];
+}
+
 export type NamedRow = { municipi?: string; comarca?: string };
 
 /**
@@ -34,13 +48,18 @@ export function matchTownsByName<Row extends NamedRow>(towns: SourceTown[], rows
     if (group) group.push(row);
     else byName.set(name, [row]);
   }
+  const sameName = new Map<string, number>();
+  for (const town of towns) {
+    const name = normaliseName(town.name);
+    sameName.set(name, (sameName.get(name) ?? 0) + 1);
+  }
   const matched = new Map<string, Row[]>();
   for (const town of towns) {
     const name = normaliseName(town.name);
     const candidates = byName.get(name);
-    if (!candidates?.length || towns.some(other => other !== town && normaliseName(other.name) === name)) continue;
-    const comarca = normaliseName(town.comarca);
-    if (candidates.every(row => normaliseName(row.comarca) === comarca)) matched.set(town.code, candidates);
+    if (!candidates?.length || (sameName.get(name) ?? 0) > 1) continue;
+    const comarca = normaliseComarca(town.comarca);
+    if (candidates.every(row => normaliseComarca(row.comarca) === comarca)) matched.set(town.code, candidates);
   }
   return matched;
 }

@@ -8,7 +8,7 @@
 - `packages/places/data.ts`: snapshot loading/validation.
 - `packages/places/recommend.ts`, `access.ts`, `eligibility.ts`: matching, school/transport access and policy rules.
 - `packages/contracts/places.ts`: municipality and tool contracts.
-- `data/towns.json`, `data/incentives.json`: versioned pilot evidence.
+- `data/towns.json`, `data/incentives.json`: versioned evidence for every municipality of Catalonia (`npm run data:refresh` rebuilds the snapshot from the official list).
 - `data/travel-estimates.json`: approximate, dated travel evidence; `data/relocat-pilot-data.json`: separately sourced opportunity research with its own availability/eligibility uncertainty.
 - `packages/places/relocation.ts`, `packages/listings/search.ts`: join pilot research without overriding official metrics; retrieve indexed property examples only when the optional provider is configured.
 - `apps/mcp-server/town-explorer.ts`, `town-explorer-widget.ts`: interactive Town Explorer and profile-derived recommendations, using the same domain functions/contracts.
@@ -37,7 +37,7 @@ Data is live but pre-cached. `data/towns.json` is the committed baseline; `packa
   | `idescat-emex` | Idescat municipal profile (EMEX) | Population, rent, unemployment, affiliates, surface `f261`, density `f262`, foreign-nationality share `f184`/`f263` |
   | `gencat-equipaments` | Generalitat facilities directory `8gmd-gz7i` | Primary care, hospitals, libraries, sports facilities |
   | `gencat-municipis-rurals` | Rural municipalities list `7gqm-722r` | Each town's rural category, with the resolution it comes from |
-  | `gencat-centres-docents` | School directory `kvmv-ahh4`, latest school year | Schools within 15 km of a pilot town centre |
+  | `gencat-centres-docents` | School directory `kvmv-ahh4`, latest school year | Every school of Catalonia that lists a stage (journeys consider those within 15 km of a town centre) |
   | `gencat-cens-comercial` | Retail census `2dhj-q3r8`, latest year | Shops and shops per 1,000 residents |
   | `gencat-compravendes-habitatge` | Agència de l'Habitatge annual sales workbooks (weekly) | Second-hand sales and price per m², by town and by comarca |
   | `fgc-gtfs` | FGC GTFS feed | RL1/RL2 stops, trips and service dates |

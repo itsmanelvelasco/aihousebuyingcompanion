@@ -9,14 +9,15 @@ import { madridDate } from '../packages/places/geography.ts';
 import rail from '../packages/sources/definitions/fgc-gtfs.ts';
 import schools from '../packages/sources/definitions/gencat-centres-docents.ts';
 import rural from '../packages/sources/definitions/gencat-municipis-rurals.ts';
-import { createSourceContext, socrataQuery, socrataUpdatedOn, soqlList } from '../packages/sources/http.ts';
+import { createSourceContext, socrataQuery, socrataUpdatedOn } from '../packages/sources/http.ts';
 import { sources } from '../packages/sources/registry.ts';
 import type { LiveData, SourceContext } from '../packages/sources/source.ts';
 import { runSource } from '../packages/sources/source.ts';
 import { coordinates } from '../packages/sources/values.ts';
-import { lleidaCode, recommendableCodes, urls } from './sources.ts';
+import { urls } from './sources.ts';
 
-type EmexNodes = { fitxes: { v: { v: { content: string; v: { id: string; content: string }[] }[] } } };
+type EmexTown = { id: string; content: string };
+type EmexNodes = { fitxes: { v: { v: { content: string; v: EmexTown[] | EmexTown }[] } } };
 const asOf = madridDate();
 const committed = fileURLToPath(new URL('../data/towns.json', import.meta.url));
 const outFlag = process.argv.indexOf('--out');
@@ -80,7 +81,7 @@ async function withSources(snapshot: Snapshot, context: SourceContext, fetched =
 
 const context = (municipalities: SourceContext['municipalities']) =>
   createSourceContext({ municipalities, env: process.env });
-const version = () => `catalonia-pilot-${asOf}-${randomUUID().slice(0, 8)}`;
+const version = () => `catalonia-${asOf}-${randomUUID().slice(0, 8)}`;
 
 /**
  * `--sources-only`: keeps the committed municipalities (codes, names, centres) and refetches
@@ -95,30 +96,32 @@ async function refreshSourcesOnly() {
 
 /** Rebuilds the snapshot from nothing: the official identity and centre of each town, then every source. */
 async function refreshAll() {
-  const codes = [...recommendableCodes, lleidaCode].sort();
   const base = createSourceContext({ municipalities: [] });
   const [ids, centres, geoObserved] = await Promise.all([
     base.json<EmexNodes>(urls.emexNodes),
-    socrataQuery(base, 'wpyq-we8x', { $where: `codi_municipi in (${soqlList(codes)})`, $limit: '100' }),
+    socrataQuery(base, 'wpyq-we8x', { $order: 'codi_municipi', $limit: '2000' }),
     socrataUpdatedOn(base, 'wpyq-we8x'),
   ]);
+  // Every municipality of Catalonia, as Idescat lists them under their comarca.
   const byCode = new Map(
     ids.fitxes.v.v.flatMap(comarca =>
-      comarca.v.map(town => [town.id, { name: town.content, comarca: comarca.content }] as const),
+      [comarca.v].flat().map(town => [town.id, { name: town.content, comarca: comarca.content }] as const),
     ),
   );
+  const codes = [...byCode.keys()].sort();
+  if (codes.length < 900) throw new Error(`Only ${codes.length} municipalities listed by Idescat`);
   const identities = codes.map(code => {
     const town = byCode.get(code);
     const centre = centres.find(row => row.codi_municipi === code);
     const location = coordinates(centre?.latitud, centre?.longitud);
     if (!town || !centre?.municipi || !centre.cap_de_municipi || !location)
       throw new Error(`Missing official identity or centre for ${code}`);
-    if (town.comarca !== centre.comarca) throw new Error(`Conflicting comarques for ${code}`);
+    // Idescat settles the comarca: the geography dataset lags behind changes such as Aiguafreda's move to Osona.
     return {
       code,
       name: centre.municipi,
       comarca: town.comarca,
-      recommendable: code !== lleidaCode,
+      recommendable: true,
       identity: { observedAt: asOf, sourceUrl: urls.emexNodes },
       centre: { ...location, name: centre.cap_de_municipi, observedAt: geoObserved, sourceUrl: urls.geography },
     };

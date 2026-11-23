@@ -46,7 +46,7 @@ import { registerWorkspace } from './workspace.ts';
 
 const lleidaCode = '251207';
 const placeCoverage =
-  'Selected Catalan municipalities, including the FGC Lleida–La Pobla corridor and Lleida as a transport destination.';
+  'Every municipality of Catalonia. Scheduled rail journeys cover the FGC Lleida–La Pobla corridor only; sample travel times and relocation research exist for a few towns.';
 /** How the model chooses the language of a result: said once in the server instructions. */
 export const languageGuidance =
   'Tools that return text for display (start_homebuying_interview, recommend_towns, recommend_towns_for_profile, get_town_profile, get_applicable_incentives, check_housing_incentives, plan_home_savings, get_next_questions, get_place, and the tools about the signed-in person) take an optional locale: pass ca, es or en to match the language the person writes in, and answer in that language. Codes, ids, statuses and numbers are the same in every language.';
@@ -115,9 +115,9 @@ export function createMcpServer(options: McpServerOptions) {
   server.registerTool(
     'list_catalonia_municipalities',
     {
-      title: 'Find municipalities in the pilot',
+      title: 'Find municipalities of Catalonia',
       description:
-        'Resolve a municipality name or comarca to six-digit Idescat codes and see the places covered by the pilot.',
+        'Resolve a municipality name or comarca to six-digit Idescat codes. Every municipality of Catalonia is covered. Pass a query (name, code or comarca): without one only the first matches are returned, with the total.',
       inputSchema: municipalityListInput,
       outputSchema: municipalityListResult,
       annotations: readOnly,
@@ -125,7 +125,7 @@ export function createMcpServer(options: McpServerOptions) {
     input => {
       const query = normalizedName(input.query ?? '');
       const asOf = today();
-      const municipalities = snapshot.municipalities.filter(
+      const matches = snapshot.municipalities.filter(
         town =>
           [town.name, town.code, town.comarca].some(value => normalizedName(value).includes(query)) &&
           (!input.ruralOnly ||
@@ -133,8 +133,14 @@ export function createMcpServer(options: McpServerOptions) {
               town.rural.effectiveFrom !== null &&
               town.rural.effectiveFrom <= asOf)),
       );
-      return result(`${municipalities.length} municipalities found in the pilot snapshot.`, {
+      const municipalities = matches.slice(0, input.limit ?? 40);
+      const summary =
+        municipalities.length < matches.length
+          ? `${matches.length} municipalities match; the first ${municipalities.length} are listed. Narrow the search with a name or a comarca.`
+          : `${matches.length} municipalities found.`;
+      return result(summary, {
         snapshot: metadata,
+        total: matches.length,
         municipalities,
         coverage: placeCoverage,
       });
@@ -156,7 +162,7 @@ export function createMcpServer(options: McpServerOptions) {
       const recommendation = recommendTowns(snapshot, policies, input, today(), undefined, locale);
       const names = recommendation.towns.map(town => town.municipality.name);
       const summary = names.length
-        ? `${names.join(', ')} meet the requested pilot screening criteria.`
+        ? `${names.join(', ')} meet the requested screening criteria.`
         : 'No towns met all requested screening criteria with the available data.';
       return result(summary, recommendation);
     },
@@ -167,7 +173,7 @@ export function createMcpServer(options: McpServerOptions) {
     {
       title: 'Recommend Catalan towns from a lifestyle profile',
       description:
-        'Shortlist pilot municipalities from a profile with household type, children, school stages, dog, work mode and town preference. Pass confirmed profile facts and optionally a result limit. Use recommend_towns for budget and detailed journey filters.',
+        'Shortlist municipalities of Catalonia from a profile with household type, children, school stages, dog, work mode and town preference. Pass confirmed profile facts and optionally a result limit. Use recommend_towns for budget and detailed journey filters.',
       inputSchema: profileRecommendationInput,
       outputSchema: profileRecommendationResult,
       annotations: readOnly,
@@ -179,7 +185,7 @@ export function createMcpServer(options: McpServerOptions) {
       const names = recommendation.towns.map(town => town.municipality.name).join(', ');
       const summary =
         status === 'ranked'
-          ? `Top pilot matches for the supplied preferences: ${names}.`
+          ? `Top matches for the supplied preferences: ${names}.`
           : status === 'exploratory'
             ? `Pilot towns to explore: ${names}.`
             : 'No towns met all requested screening criteria with the available data.';
@@ -262,7 +268,7 @@ export function createMcpServer(options: McpServerOptions) {
     {
       title: 'Compare scheduled rail departures',
       description:
-        'Return direct FGC RL1/RL2 station-to-station journeys between two pilot municipalities on an exact local service date, with optional departure bounds and total departures in the requested window.',
+        'Return direct FGC RL1/RL2 station-to-station journeys between two municipalities of the corridor on an exact local service date, with optional departure bounds and total departures in the requested window.',
       inputSchema: transportQuery,
       outputSchema: transportResult,
       annotations: readOnly,
@@ -285,7 +291,7 @@ export function createMcpServer(options: McpServerOptions) {
     const incentives = evaluateIncentives(policies, town, input, asOf, locale).filter(
       incentive => includeExcluded || incentive.geographicStatus !== 'does_not_apply',
     );
-    return result(`${incentives.length} housing measures for ${town.name} in the pilot catalogue.`, {
+    return result(`${incentives.length} housing measures for ${town.name} in the catalogue.`, {
       snapshot: metadata,
       municipality: town,
       evaluatedOn: input.eventDate ?? asOf,
@@ -353,7 +359,7 @@ export function createMcpServer(options: McpServerOptions) {
     {
       title: 'Find Idealista property examples',
       description:
-        'Search the web live through treg for Idealista listing examples in up to three pilot towns. Budget and bedrooms are search hints, not verified filters. Returns original links and search timestamps; availability and exact location remain unverified. Costs up to USD 0.01 per town. Requires server-side TREG_TOKEN; otherwise returns provider_unavailable and search links.',
+        'Search the web live through treg for Idealista listing examples in up to three towns. Budget and bedrooms are search hints, not verified filters. Returns original links and search timestamps; availability and exact location remain unverified. Costs up to USD 0.01 per town. Requires server-side TREG_TOKEN; otherwise returns provider_unavailable and search links.',
       inputSchema: homeSearchInput,
       outputSchema: homeSearchResult,
       annotations: { readOnlyHint: true, openWorldHint: true, destructiveHint: false, idempotentHint: false },

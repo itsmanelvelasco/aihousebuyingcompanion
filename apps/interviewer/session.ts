@@ -33,7 +33,7 @@ import { planForVoice, workspaceLink } from './plan.ts';
  * - The plan is `plan_home_savings` and nothing else.
  */
 
-/** A town of the pilot the person chose: an exact match of `list_catalonia_municipalities`, confirmed. */
+/** A town the person chose: an exact match of `list_catalonia_municipalities`. */
 export type PlaceChoice = { code: string; name: string; comarca: string };
 
 /** What the page keeps in this browser about the interview. */
@@ -82,6 +82,9 @@ const rankedQuestions = z.object({
 const townList = z.object({
   municipalities: z.array(z.object({ code: z.string().regex(/^\d{6}$/), name: z.string(), comarca: z.string() })),
 });
+
+/** A normalised town name without its leading article (“la pobla de segur” → “pobla de segur”). */
+const withoutArticle = (name: string) => name.replace(/^(el|la|els|les|l|es|sa|ses|s)\s+/, '');
 
 export function createInterview(deps: {
   call: CallTool;
@@ -303,7 +306,10 @@ export function createInterview(deps: {
   async function pilotTowns(): Promise<PlaceChoice[] | null> {
     if (towns !== undefined) return towns;
     if (access === 'standalone') return null;
-    const parsed = townList.safeParse((await call('list_catalonia_municipalities', {}))?.structuredContent);
+    // Every town, not the tool's default page: the list is what a spoken name is matched against.
+    const parsed = townList.safeParse(
+      (await call('list_catalonia_municipalities', { limit: 1000 }))?.structuredContent,
+    );
     // A failed read is tried again next time instead of being remembered as "no list".
     if (!parsed.success) return null;
     towns = parsed.data.municipalities.map(({ code, name, comarca }) => ({ code, name, comarca }));
@@ -321,6 +327,11 @@ export function createInterview(deps: {
     const wanted = normalizedName(name);
     const exact = wanted ? list.filter(town => normalizedName(town.name) === wanted || town.code === wanted) : [];
     if (exact.length === 1) return { status: 'exact' as const, town: exact[0] };
+    // “Pobla de Segur” is “la Pobla de Segur”: the article is often dropped aloud. Only when one town fits.
+    const bare = withoutArticle(wanted);
+    const sameBare =
+      !exact.length && bare ? list.filter(town => withoutArticle(normalizedName(town.name)) === bare) : [];
+    if (sameBare.length === 1) return { status: 'exact' as const, town: sameBare[0] };
     const similar = exact.length
       ? exact
       : wanted
@@ -350,17 +361,19 @@ export function createInterview(deps: {
     return { saved: true as const, place: found.town, places: places.map(place => place.name), ...where };
   }
 
-  /** `save_place` as the voice model reads it, with what to do next. */
+  /**
+   * `save_place` as the voice model reads it, with what to do next. Naming a town is choosing it: an
+   * exact match is stored at once, and only a name that fits several towns or none is asked about.
+   */
   async function savePlaceSpoken(args: Record<string, unknown>) {
     const name = typeof args.name === 'string' ? args.name : '';
-    const outcome = await savePlace(name, args.confirmed === true);
+    const outcome = await savePlace(name, true);
     if (outcome.saved) return { ...outcome, nextQuestion: spoken(await nextQuestion()) };
     const say = {
       unavailable: 'The list of towns cannot be read here, so no town can be chosen. Go on with the next question.',
       no_exact_match:
-        'No town of the pilot has exactly this name, so nothing was stored. Read the similar names, if any, and ask which one they mean; otherwise say the town is not covered yet. Never pick one for them.',
-      needs_confirmation:
-        'Exact match found, nothing stored yet. Say the name and comarca of the match, and after the person confirms call save_place again with confirmed true.',
+        'No available town has exactly this name, so nothing was stored. Read the similar names, if any, and ask which one they mean; otherwise say in one sentence that ReloCat cannot plan for that town yet and offer the closest names of the list of available towns. Never pick one for them.',
+      needs_confirmation: 'Exact match found, nothing stored yet.',
     }[outcome.reason];
     return { ...outcome, instruction: say };
   }

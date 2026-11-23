@@ -14,7 +14,7 @@ The three required MCP tools are `recommend_towns`, `get_town_profile` and `get_
 
 - [x] Preserve the supplied relocation pilot research export for three towns and four opportunities in `data/relocat-pilot-data.json`, with historical leads and a separately dated public-data snapshot.
 - [x] Join relocation research to official town codes and expose it through MCP profiles and recommendations, with separate coverage, source status, check dates, deadline conflicts and unresolved eligibility.
-- [ ] Expand detailed opportunity research beyond Calaf, Juncosa and Ulldemolins; 14 other recommendation candidates and the Lleida transport destination currently have no loaded research.
+- [ ] Expand detailed opportunity research beyond Calaf, Juncosa and Ulldemolins; every other municipality currently has no loaded research.
 - [x] Integrate the plugin branch with the profile API; map demo personas to persisted users and save grouped interview inputs.
 - [x] Add the profile adapter, missing screening questions, upfront target and emergency reserve inputs.
 - [x] Convert cents/euros explicitly and count debt once; keep live balances separate from declared purchase savings.

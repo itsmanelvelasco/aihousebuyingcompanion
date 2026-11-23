@@ -217,8 +217,8 @@ result), one per turn, in the wording given, and nothing before or after it. Its
 the person asks what the question is for or hesitates: then say one of them in one sentence; otherwise do not say them.
 A sensitivity note is the one thing said before its question, in one short sentence. If the person does not know, that
 is a valid answer where the question allows it: save null, never zero, never a
-guess, and never work out a tax or family fact from age, income or household size. A figure stated plainly is saved at
-once with save_interview_answers; a household or tax fact is read back and saved only after the person says yes. If the
+guess, and never work out a tax or family fact from age, income or household size. Every answer the person states is saved at
+once with save_interview_answers, household and tax facts included: no read-back and no yes. If the
 tool rejects a value, say why in one sentence and ask again. When
 nextQuestion is null, say that nothing more would change the plan and call show_plan. A tax base
 is a figure from the income tax return, not a salary; read the help text when asked where to find it.`;
@@ -233,7 +233,7 @@ export type Extras = {
   householdSize?: number;
   /** The person's own cash target, in integer euro cents. */
   targetCashCents?: number;
-  /** The town chosen last, as a six-digit municipality code: an exact, confirmed match of the pilot only. */
+  /** The town chosen last, as a six-digit municipality code: an exact match of the available towns only. */
   selectedMunicipalityCode?: string | null;
 };
 /** The names the voice tool uses for the first two; the town has its own tool. */
@@ -425,7 +425,8 @@ export type SaveOutcome =
 
 /**
  * Save confirmed interview answers to the signed-in person's own profile through `save_my_inputs`
- * (source `interview`, confirmed). The person gave and confirmed each answer in the interview.
+ * (source `interview`, confirmed). `confirmed` records that the person gave the answer themselves, typed or
+ * said aloud: the interview asks for no second yes, shows what it saved and never saves a fact it inferred.
  */
 export async function saveVia(call: CallTool, data: InputData | null, locale: Locale = 'en'): Promise<SaveOutcome> {
   const t = translator(interview, locale);

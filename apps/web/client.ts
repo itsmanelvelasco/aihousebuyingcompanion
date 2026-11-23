@@ -263,7 +263,8 @@ export function createToolClient(call: CallTool, locale?: Locale) {
      */
     recommend: (request: RecommendationRequest): Promise<Recommendation> =>
       ask('recommend_towns', { ...request, ...(locale ? { locale } : {}) }, recommendationResult),
-    municipalities: async () => (await ask('list_catalonia_municipalities', {}, municipalityListResult)).municipalities,
+    municipalities: async () =>
+      (await ask('list_catalonia_municipalities', { limit: 1000 }, municipalityListResult)).municipalities,
   };
 }
 export type ToolClient = ReturnType<typeof createToolClient>;

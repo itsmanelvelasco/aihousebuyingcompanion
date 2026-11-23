@@ -181,7 +181,12 @@ function geographicCheck(policy: Policy, town: Municipality, date: string, nucle
   // A measure for the whole of Catalonia does not depend on the municipality or its rural classification.
   if (policy.territory === 'catalonia') return [true, t('geoCatalonia')];
   if (policy.mechanism === 'grant') {
-    if (!policy.municipalityCodes?.includes(town.code)) return [false, t('geoGrantList')];
+    if (!policy.municipalityCodes?.includes(town.code)) {
+      // Only a municipality checked against the call's table is ruled out; any other is unknown.
+      return policy.municipalityCodesOutside?.includes(town.code)
+        ? [false, t('geoGrantList')]
+        : [undefined, t('geoGrantUnchecked')];
+    }
   } else {
     if (date < '2026-02-24') return [undefined, t('geoHistorical')];
     if (town.rural.category === 'not_listed' || (town.rural.effectiveFrom && date < town.rural.effectiveFrom)) {

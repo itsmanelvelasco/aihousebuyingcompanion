@@ -47,7 +47,7 @@ export const recommendMessages = defineMessages(
     railTimes: 'Rail journey times come from the cached timetable and exclude delays.',
 
     limitCoverage:
-      'Recommendations cover the selected Catalan municipalities in the pilot. Scheduled rail coverage is limited to the FGC Lleida–La Pobla corridor.',
+      'Recommendations cover every municipality of Catalonia. Scheduled rail coverage is limited to the FGC Lleida–La Pobla corridor.',
     limitScores:
       'Scores rank only known preference signals. The dated snapshot provides estimates and scheduled access.',
     limitTravelDate: 'The requested travel date is outside the cached FGC timetable.',
@@ -108,7 +108,7 @@ export const recommendMessages = defineMessages(
       railTimes: 'Els temps de viatge en tren provenen de l’horari desat i no inclouen retards.',
 
       limitCoverage:
-        'Les recomanacions cobreixen els municipis catalans seleccionats per al pilot. La cobertura de tren amb horari es limita al corredor d’FGC Lleida–La Pobla.',
+        'Les recomanacions cobreixen tots els municipis de Catalunya. La cobertura de tren amb horari es limita al corredor d’FGC Lleida–La Pobla.',
       limitScores:
         'Les puntuacions només ordenen els senyals de preferència coneguts. El conjunt de dades, amb la seva data, aporta estimacions i accessos amb horari.',
       limitTravelDate: 'La data de viatge demanada queda fora de l’horari d’FGC desat.',
@@ -169,7 +169,7 @@ export const recommendMessages = defineMessages(
       railTimes: 'Los tiempos de viaje en tren proceden del horario guardado y no incluyen retrasos.',
 
       limitCoverage:
-        'Las recomendaciones cubren los municipios catalanes seleccionados para el piloto. La cobertura de tren con horario se limita al corredor de FGC Lleida–La Pobla.',
+        'Las recomendaciones cubren todos los municipios de Cataluña. La cobertura de tren con horario se limita al corredor de FGC Lleida–La Pobla.',
       limitScores:
         'Las puntuaciones solo ordenan las señales de preferencia conocidas. El conjunto de datos, con su fecha, aporta estimaciones y accesos con horario.',
       limitTravelDate: 'La fecha de viaje pedida queda fuera del horario de FGC guardado.',
@@ -194,8 +194,7 @@ export const accessMessages = defineMessages(
       'The directory records authorized stages. Check admissions, catchment, school start times and school-bus eligibility separately.',
     schoolRail:
       'Rail options depart from 06:30 and reach the school by {arriveBy} local time. Walking legs are estimates from town centres; verify paths and return journeys.',
-    schoolRadius:
-      'The pilot includes local schools and neighbouring schools within 15 km where covered by the snapshot.',
+    schoolRadius: 'Local schools and neighbouring schools within 15 km are included.',
     schoolDateOutside: 'This date is outside the cached FGC timetable.',
 
     researchStatus:
@@ -218,8 +217,7 @@ export const accessMessages = defineMessages(
         'El directori recull les etapes autoritzades. Comprova a part l’admissió, la zona d’influència, l’horari d’entrada i el dret al transport escolar.',
       schoolRail:
         'Les opcions en tren surten a partir de les 06:30 i arriben a l’escola abans de les {arriveBy}, hora local. Els trams a peu són estimacions des del centre dels pobles; verifica els camins i els trajectes de tornada.',
-      schoolRadius:
-        'El pilot inclou les escoles locals i les de pobles veïns a menys de 15 km, quan el conjunt de dades les cobreix.',
+      schoolRadius: 'S’hi inclouen les escoles locals i les de pobles veïns a menys de 15 km.',
       schoolDateOutside: 'Aquesta data queda fora de l’horari d’FGC desat.',
 
       researchStatus:
@@ -241,8 +239,7 @@ export const accessMessages = defineMessages(
         'El directorio recoge las etapas autorizadas. Comprueba aparte la admisión, la zona de influencia, el horario de entrada y el derecho al transporte escolar.',
       schoolRail:
         'Las opciones en tren salen a partir de las 06:30 y llegan a la escuela antes de las {arriveBy}, hora local. Los tramos a pie son estimaciones desde el centro de los pueblos; verifica los caminos y los trayectos de vuelta.',
-      schoolRadius:
-        'El piloto incluye las escuelas locales y las de pueblos vecinos a menos de 15 km, cuando el conjunto de datos las cubre.',
+      schoolRadius: 'Se incluyen las escuelas locales y las de pueblos vecinos a menos de 15 km.',
       schoolDateOutside: 'Esta fecha queda fuera del horario de FGC guardado.',
 
       researchStatus:

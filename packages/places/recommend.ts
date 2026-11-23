@@ -23,6 +23,8 @@ import { getRelocationResearch } from './relocation.ts';
 import { type Wording, wording } from './wording.ts';
 
 type Result = z.infer<typeof recommendationResult>;
+/** Excluded municipalities whose reasons a result spells out by default; the rest are only counted. */
+export const excludedListed = 20;
 type ProfileResult = z.infer<typeof profileRecommendationResult>;
 type Weight = keyof NonNullable<RecommendationInput['weights']>;
 type Say = Translate<keyof (typeof recommendMessages)['en']>;
@@ -286,7 +288,9 @@ export function recommendTowns(
     snapshot: snapshotInfo(snapshot),
     travelDate,
     towns: towns.slice(0, input.limit ?? 3),
-    excluded,
+    // Every town is screened; the reasons are listed for the first ones only, with the full count.
+    excluded: excluded.slice(0, input.excludedLimit ?? excludedListed),
+    excludedCount: excluded.length,
     limitations,
   };
 }

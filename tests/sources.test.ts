@@ -16,7 +16,7 @@ import sales, { salesMetrics, salesUrl } from '../packages/sources/definitions/g
 import equipaments, { countFacilities } from '../packages/sources/definitions/gencat-equipaments.ts';
 import { ruralStatuses } from '../packages/sources/definitions/gencat-municipis-rurals.ts';
 import { countSocialServices } from '../packages/sources/definitions/gencat-serveis-socials.ts';
-import emex, { emexMetrics } from '../packages/sources/definitions/idescat-emex.ts';
+import emex, { emexMetrics, emexPageUrl, emexTableMetrics } from '../packages/sources/definitions/idescat-emex.ts';
 import { createRequester, createSourceContext } from '../packages/sources/http.ts';
 import { createLiveData } from '../packages/sources/live.ts';
 import { matchTownsByName, normaliseName } from '../packages/sources/names.ts';
@@ -235,6 +235,40 @@ function emexProfile(values: Record<string, string>) {
   };
 }
 
+/** The all-municipalities EMEX table: the same figures in every town's column, dated 2025. */
+function emexTable(codes: string[], values: Record<string, string>) {
+  return {
+    fitxes: {
+      indicadors: { i: Object.entries(values).map(([id, v]) => ({ id, r: '2025', v: codes.map(() => v).join(',') })) },
+      cols: { col: codes.map(id => ({ scheme: 'mun', id })) },
+    },
+  };
+}
+
+test('the Idescat table for every municipality becomes dated metrics; a town without a column gets none', () => {
+  const places = [
+    { code: alcoletge, name: 'Alcoletge', comarca: 'Segrià' },
+    { code: '999999', name: 'Nowhere', comarca: 'Enlloc' },
+  ];
+  const metrics = emexTableMetrics(
+    places,
+    emexTable([alcoletge], { f261: '16.70', f262: '220.3', f321: '3679', f184: '616', f263: '3679', f407: '0.0' }),
+  );
+  assert.deepEqual(Object.keys(metrics), [alcoletge]);
+  assert.deepEqual(
+    metrics[alcoletge].map(entry => [entry.kind, entry.value, entry.observedAt]),
+    [
+      ['population', 3679, '2025'],
+      ['area_km2', 16.7, '2025'],
+      ['population_density_per_km2', 220.3, '2025'],
+      ['foreign_population_percent', 16.7, '2025'],
+    ],
+  );
+  // A rent of zero stands for "not published"; every figure cites the town's public Idescat page.
+  assert.ok(metrics[alcoletge].every(entry => entry.sourceUrl === emexPageUrl(alcoletge)));
+  assert.ok(metrics[alcoletge].every(entry => entry.geographyName === 'Alcoletge'));
+});
+
 test('Idescat profiles become dated metrics; unpublished figures stay unknown', () => {
   const town = { code: alcoletge, name: 'Alcoletge', comarca: 'Segrià' };
   const metrics = emexMetrics(
@@ -440,7 +474,10 @@ function officialFetch(
     if (override) return override;
     if (url.hostname === 'api.idescat.cat') {
       return json(
-        emexProfile({ f261: '10', f262: '50.5', f321: '505', f184: '101', f263: '505', f407: '400', f406: '9' }),
+        emexTable(
+          towns.map(town => town.code),
+          { f261: '10', f262: '50.5', f321: '505', f184: '101', f263: '505', f407: '400', f406: '9' },
+        ),
       );
     }
     if (url.hostname === 'www.fgc.cat') return new Response(gtfs());
@@ -629,9 +666,16 @@ test('the annual sales sheet becomes dated resale metrics and a changed layout i
   );
   // A sheet for another period, such as a quarter of a year in progress, is not an annual figure.
   assert.throws(() => salesMetrics(sheets, places, 2026), /Unexpected annual municipis/);
+  // A comarca the workbook does not price is left out; pricing none at all is a broken download.
+  assert.deepEqual(
+    Object.keys(
+      salesMetrics(sheets, [...places, { code: '999999', name: 'Nowhere', comarca: 'Enlloc' }], 2025).comarcaMetrics,
+    ),
+    ['Pallars Jussà', 'Segrià'],
+  );
   assert.throws(
     () => salesMetrics(sheets, [{ code: '999999', name: 'Nowhere', comarca: 'Enlloc' }], 2025),
-    /Missing resale reference price for Enlloc/,
+    /No comarca resale reference price found/,
   );
 });
 

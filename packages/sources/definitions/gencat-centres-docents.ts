@@ -3,6 +3,7 @@ import type { School } from '../../contracts/places.ts';
 import { school, source } from '../../contracts/places.ts';
 import { distanceKm } from '../../places/geography.ts';
 import { socrata, socrataQuery, socrataUpdatedOn, soqlList } from '../http.ts';
+import { comarcaSpellings } from '../names.ts';
 import { withDerivedServices } from '../overlay.ts';
 import type { LiveData, SourceTown } from '../source.ts';
 import { defineSource } from '../source.ts';
@@ -10,6 +11,7 @@ import { coordinates, latestYear } from '../values.ts';
 
 const dataset = 'kvmv-ahh4';
 const pageLimit = 4000;
+const maxPages = 5;
 /** Schools this close to a pilot town centre are kept, whatever municipality they stand in. */
 const nearbyKm = 15;
 export const schoolUrl = `${socrata}/d/${dataset}`;
@@ -75,19 +77,24 @@ export default defineSource({
   ttlMs: 24 * 60 * 60 * 1000,
   schema: value,
   async fetch(context) {
-    const comarques = [...new Set(context.municipalities.map(town => town.comarca))].sort();
+    const comarques = [...new Set(context.municipalities.flatMap(town => comarcaSpellings(town.comarca)))].sort();
     const year = await latestYear(context, dataset);
-    const [rows, observedAt] = await Promise.all([
-      socrataQuery<SchoolRow[]>(context, dataset, {
+    const observedAt = await socrataUpdatedOn(context, dataset);
+    // The whole of Catalonia is more than one page; a short page ends the download.
+    const rows: SchoolRow[] = [];
+    for (let page = 0; page < maxPages; page++) {
+      const batch = await socrataQuery<SchoolRow[]>(context, dataset, {
         $where: `any=${year} and nom_comarca in (${soqlList(comarques)})`,
         $order: 'codi_centre',
         $limit: String(pageLimit),
-      }),
-      socrataUpdatedOn(context, dataset),
-    ]);
-    if (!Array.isArray(rows) || !rows.length || rows.length === pageLimit) {
-      throw new Error('Incomplete school directory download');
+        $offset: String(page * pageLimit),
+      });
+      if (!Array.isArray(batch)) throw new Error('Incomplete school directory download');
+      rows.push(...batch);
+      if (batch.length < pageLimit) break;
+      if (page === maxPages - 1) throw new Error('Incomplete school directory download');
     }
+    if (!rows.length) throw new Error('Incomplete school directory download');
     return { schools: schoolsNear(rows, context.municipalities), directory: { observedAt, sourceUrl: schoolUrl } };
   },
   overlay: withSchools,

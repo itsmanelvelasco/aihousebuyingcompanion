@@ -14,7 +14,7 @@ test('joins research by string code without replacing official statistics or imp
   source.publicDataSnapshot.townMetrics = { '080312': [{ value: -999 }] };
   const snapshot = combineRelocationData(official(), source);
   assert.deepEqual(snapshot.townMetrics, official().townMetrics);
-  assert.equal(snapshot.municipalities.length, 18);
+  assert.equal(snapshot.municipalities.length, 947);
   assert.equal(snapshot.relocation?.municipalities.length, 3);
   assert.equal(snapshot.relocation?.municipalities[0].municipalityCode, '080312');
   assert(!('publicDataSnapshot' in snapshot.relocation!));

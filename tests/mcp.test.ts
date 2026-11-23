@@ -184,7 +184,7 @@ test('serves the read-only Town Explorer widget and preserves headless municipal
   const profile = profileResult.parse(await tool('get_town_profile', selection));
   assert.equal(profile.municipality.name, 'Calaf');
   assert.equal(profile.travelEstimates.length, 6);
-  assert((await client.callTool({ name: 'show_town_explorer', arguments: { municipalityCode: '083015' } })).isError);
+  assert((await client.callTool({ name: 'show_town_explorer', arguments: { municipalityCode: '999999' } })).isError);
 
   const recommendation = {
     tool: 'recommend_towns',
@@ -221,6 +221,7 @@ test('screens a three-town rural rail shortlist and requires opt-in to comarca p
     schoolMode: 'rail',
     maxSchoolJourneyMinutes: 50,
     housing: { tenure: 'buy', homeSizeM2: 85, maxBudgetEur: 130_000 },
+    excludedLimit: 1000,
   };
   const localOnly = recommendationResult.parse(await tool('recommend_towns', args));
   assert.deepEqual(
@@ -301,7 +302,8 @@ test('uses the household profile to rank by setting or to suggest exploratory to
     );
     assert.equal(ranked.profileAssessment.status, 'ranked');
     if (preferredSetting === 'larger_town') {
-      assert.equal(ranked.towns[0].municipality.code, balaguer);
+      // The most populated municipality of the snapshot comes first.
+      assert.equal(ranked.towns[0].municipality.name, 'Barcelona');
       assert(ranked.towns[0].metrics.some(metric => metric.kind === 'population' && metric.sourceUrl));
     } else {
       assert(ranked.towns.every(town => ['rural', 'special_attention'].includes(town.municipality.rural.category)));
@@ -367,7 +369,16 @@ test('serves Calaf, Juncosa and Ulldemolins from the fixed demo snapshot', async
 });
 
 test('covers all six travel endpoints for every mapped municipality', async () => {
-  for (const { code } of snapshot.municipalities) {
+  const mapped = Object.keys(travelEstimates);
+  assert.equal(mapped.length, 18);
+  // A municipality without sampled journeys reports none: unknown, never an invented time.
+  const unmapped = snapshot.municipalities.find(town => !mapped.includes(town.code));
+  assert(unmapped);
+  assert.deepEqual(
+    profileResult.parse(await tool('get_town_profile', { municipalityCode: unmapped.code })).travelEstimates,
+    [],
+  );
+  for (const code of mapped) {
     const profile = profileResult.parse(
       await tool('get_town_profile', { municipalityCode: code, travelDate: '2026-12-05' }),
     );
@@ -500,7 +511,7 @@ test('returns joined relocation research through MCP profiles and recommendation
   assert.equal(profile.relocation.research?.opportunities.length, 2);
   assert(profile.metrics.length > 0);
   assert(profile.relocation.research?.opportunities.every(offer => offer.sources.length));
-  const calaf = recommendationResult.parse(await tool('recommend_towns', { comarca: 'Anoia' }));
+  const calaf = recommendationResult.parse(await tool('recommend_towns', { comarca: 'Anoia', limit: 10 }));
   assert.equal(
     calaf.towns.find(t => t.municipality.code === '080312')?.relocation.research?.opportunities[0].id,
     'calaf-casetes-dels-mestres',
@@ -547,7 +558,7 @@ test('local test UI runs real tools and rejects foreign origins and disallowed t
   assert.equal(page.status, 200);
   assert.match(await page.text(), /Try your move/);
   const config = await (await fetch(new URL('/test/config', base))).json();
-  assert.equal(config.towns.length, 18);
+  assert.equal(config.towns.length, 947);
   assert.equal(config.liveSearchConfigured, false);
   assert(!JSON.stringify(config).includes('TREG_TOKEN'));
   const request = (tool: string, origin = base.origin) =>

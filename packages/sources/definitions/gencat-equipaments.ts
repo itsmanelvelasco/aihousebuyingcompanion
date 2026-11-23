@@ -6,6 +6,7 @@ import { defineSource } from '../source.ts';
 
 const dataset = '8gmd-gz7i';
 const pageLimit = 50_000;
+const maxListedCodes = 100;
 type Kind = z.infer<typeof serviceCount>['kind'];
 
 /**
@@ -41,9 +42,17 @@ const directoryCode = (code: string) => code.replace(/^0/, '');
  */
 export function countFacilities(rows: FacilityRow[], codes: string[], observedAt: string) {
   const provenance = { observedAt, sourceUrl: `${socrata}/d/${dataset}` };
+  const byCode = new Map<string, FacilityRow[]>();
+  for (const row of rows) {
+    if (!row.idequipament || !row.codi_municipi) continue;
+    const code = row.codi_municipi.padStart(6, '0');
+    const group = byCode.get(code);
+    if (group) group.push(row);
+    else byCode.set(code, [row]);
+  }
   return Object.fromEntries(
     codes.map(code => {
-      const local = rows.filter(row => row.idequipament && row.codi_municipi?.padStart(6, '0') === code);
+      const local = byCode.get(code) ?? [];
       const counts = categories.map(({ kind, label }) => ({
         ...provenance,
         kind,
@@ -66,7 +75,12 @@ export default defineSource({
     const [rows, observedAt] = await Promise.all([
       socrataQuery<FacilityRow[]>(context, dataset, {
         $select: 'idequipament,nom,categoria,codi_municipi',
-        $where: `codi_municipi in (${soqlList([...new Set(codes.flatMap(code => [code, directoryCode(code)]))])})`,
+        // A long list of codes does not fit in a request address; then the whole directory is read.
+        ...(codes.length <= maxListedCodes
+          ? {
+              $where: `codi_municipi in (${soqlList([...new Set(codes.flatMap(code => [code, directoryCode(code)]))])})`,
+            }
+          : {}),
         $order: 'idequipament',
         $limit: String(pageLimit),
       }),

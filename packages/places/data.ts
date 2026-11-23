@@ -152,7 +152,7 @@ export function getTown(snapshot: Snapshot, code: string) {
   const town = snapshot.municipalities.find(town => town.code === code);
   if (!town)
     throw new Error(
-      `Municipality ${code} is outside this snapshot. Use list_catalonia_municipalities for pilot coverage.`,
+      `Municipality ${code} is outside this snapshot. Use list_catalonia_municipalities to find its code.`,
     );
   return town;
 }
@@ -174,7 +174,7 @@ type ServiceCounts = NonNullable<Snapshot['services']>;
  * Service counts that follow from data already in the snapshot: schools from the official school
  * directory, FGC rail stops from the timetable feed and shops from the retail census metric.
  * A kind is only reported when its source lists at least one facility or states a figure: the
- * directory keeps schools near pilot towns only, and the feed covers FGC lines, not all rail.
+ * feed covers the FGC Lleida - la Pobla lines, not all rail.
  */
 export function derivedServices(snapshot: Pick<Snapshot, 'municipalities' | 'townMetrics' | 'schools' | 'rail'>) {
   const counts: ServiceCounts = {};

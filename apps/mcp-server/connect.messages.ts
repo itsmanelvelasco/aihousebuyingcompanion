@@ -21,7 +21,7 @@ export const connect = defineMessages(
     exploreTowns: 'Explore towns',
     connectYourAgent: 'Connect your agent',
     discoverTitle: 'Get a feel for everyday life',
-    discoverIntro: 'Start with 18 Catalan municipalities in the pilot.',
+    discoverIntro: 'Start with any of the 947 municipalities of Catalonia.',
     fitTitle: 'Find towns that fit',
     fitText:
       'Compare towns against your budget, school needs and transport constraints. See which requirements each town meets and what still needs checking.',
@@ -70,7 +70,7 @@ export const connect = defineMessages(
       exploreTowns: 'Explora pobles',
       connectYourAgent: 'Connecta el teu agent',
       discoverTitle: 'Fes-te una idea del dia a dia',
-      discoverIntro: 'Comença amb els 18 municipis catalans de la prova pilot.',
+      discoverIntro: 'Comença amb qualsevol dels 947 municipis de Catalunya.',
       fitTitle: 'Troba pobles que t’encaixin',
       fitText:
         'Compara pobles segons el teu pressupost, les necessitats escolars i les limitacions de transport. Mira quins requisits compleix cada poble i què cal comprovar encara.',
@@ -118,7 +118,7 @@ export const connect = defineMessages(
       exploreTowns: 'Explora pueblos',
       connectYourAgent: 'Conecta tu agente',
       discoverTitle: 'Hazte una idea del día a día',
-      discoverIntro: 'Empieza con los 18 municipios catalanes de la prueba piloto.',
+      discoverIntro: 'Empieza con cualquiera de los 947 municipios de Cataluña.',
       fitTitle: 'Encuentra pueblos que encajen contigo',
       fitText:
         'Compara pueblos según tu presupuesto, las necesidades escolares y las limitaciones de transporte. Mira qué requisitos cumple cada pueblo y qué falta por comprobar.',

@@ -950,9 +950,12 @@ test('the suggestions show the real tool’s answer as returned: ranked places, 
   // Hard filters ran on the server; what they excluded is listed with its reason, never dropped.
   assert.equal(view.excluded.length, spanish.excluded.length);
   assert.ok(view.excluded.length > 0);
-  const calaf = view.excluded.find(item => item.code === '080312');
-  assert.equal(calaf?.name, 'Calaf');
-  assert.match(calaf?.reasons.join(' ') ?? '', /rural/);
+  // Every exclusion is counted; the first ones are listed, each with its name and its reason.
+  assert.ok(view.excludedCount >= view.excluded.length);
+  assert.equal(view.excludedCount, spanish.excludedCount);
+  const first = view.excluded[0];
+  assert.equal(first.name, names[first.code]);
+  assert.ok(first.reasons.length > 0);
   assert.deepEqual(view.limitations, spanish.limitations);
   // A place already compared is marked, and is not offered again.
   const vallfogona = view.places.find(place => place.code === '252402');

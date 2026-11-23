@@ -249,7 +249,7 @@ export function SuggestPlaces({ client, person, codes, maxPlaces, onAdd }: Props
           )}
           {view.excluded.length ? (
             <details className="suggest-excluded" open={view.places.length === 0}>
-              <summary>{t('excluded', { count: view.excluded.length })}</summary>
+              <summary>{t('excluded', { count: view.excludedCount })}</summary>
               <ul className="plain-list">
                 {view.excluded.map(item => (
                   <li key={item.code}>

@@ -675,8 +675,8 @@ test('the voice session is told which facts are answered and what to ask next, n
   // The instructions lead the model: one question, the reason, confirmation before saving, null for unknown.
   assert.match(factInstructions, /one per turn/);
   assert.match(factInstructions, /save null, never zero, never a\s+guess/);
-  // A plain figure is saved at once; a household or tax fact still needs a yes. The why is said only on request.
-  assert.match(factInstructions, /saved only after the person says yes/);
+  // Every stated answer is saved at once, household and tax facts included. The why is said only on request.
+  assert.match(factInstructions, /no read-back and no yes/);
   assert.match(factInstructions, /otherwise do not say them/);
 });
 

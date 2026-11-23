@@ -69,7 +69,8 @@ export function fixtureCallTool(variant: string, delayMs = 350): CallTool {
           reasons: ['Sample exclusion: the published housing data are not enough to screen the budget.'],
           dataMissing: ['resale_transactions'],
         })),
-        limitations: ['Sample limitation: the suggestions cover the pilot municipalities only.'],
+        excludedCount: towns.length - fits.length,
+        limitations: ['Sample limitation: the suggestions are sample data.'],
       });
     }
     if (name === 'save_my_habit')
@@ -147,6 +148,7 @@ export function fixtureCallTool(variant: string, delayMs = 350): CallTool {
       return ok({
         snapshot: { version: 'fixture', generatedOn: '2026-11-21' },
         coverage: 'Fixture towns.',
+        total: towns.length,
         municipalities: towns,
       });
     return fail(`MCP error -32602: Tool ${name} not found`);

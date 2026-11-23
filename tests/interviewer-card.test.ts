@@ -389,9 +389,9 @@ test('the interview opens with a quick explanation, a free answer, and only what
       assert.match(said, /a figure they\s+did not mention is left out, never zero and never a guess/);
       assert.match(
         said,
-        /a household or tax fact is never inferred from what they said\s+and is saved only after they say yes to it/,
+        /a household or tax fact is saved when they state it and is\s+never inferred from something else they said/,
       );
-      assert.match(said, /a town is stored only on an exact match of the pilot and after a yes/);
+      assert.match(said, /a town is stored at once when it is exactly one of the available towns/);
       // Then only what is missing, in one short sentence, and the plan as soon as it can be computed.
       assert.match(
         said,
@@ -416,7 +416,7 @@ test('the interview opens with a quick explanation, a free answer, and only what
   // One call for a free answer is what the function says too.
   assert.match(
     voiceTools('card')[0].description,
-    /free answer at the start, call it ONCE with every figure they stated, and with nothing they did not say/,
+    /Call it ONCE per reply of the person, with every figure that reply stated, whatever question was asked, and with nothing they did not say/,
   );
 
   // A thinking pause does not end the turn: semantic detection at its most patient. Refused, the session falls back
@@ -524,9 +524,9 @@ test('not connected in the chat: answers stay in the card and the person is told
   const second = await interview.saveSpoken({ purchaseSavings: 20_000 });
   assert.deepEqual([where(second).stored, where(second).sayOnce], ['device', undefined]);
   assert.deepEqual(interview.journey.unsaved, ['monthlyIncome', 'monthlyExpenses', 'purchaseSavings']);
-  // The towns come through the host too: an exact match, confirmed.
-  assert.equal((await interview.savePlaceSpoken({ name: 'talarn' })).saved, false);
-  assert.equal((await interview.savePlaceSpoken({ name: 'Talarn', confirmed: true })).saved, true);
+  // The towns come through the host too: an exact match is stored as soon as it is named, and nothing else is.
+  assert.equal((await interview.savePlaceSpoken({ name: 'Talar' })).saved, false);
+  assert.equal((await interview.savePlaceSpoken({ name: 'talarn' })).saved, true);
   assert.equal((await cardVoiceContext(interview, 'es', day)).surface, 'card');
   assert.deepEqual((await cardVoiceContext(interview, 'es', day)).places, ['Talarn']);
 });
@@ -1674,7 +1674,13 @@ test('the orb starts the conversation, then mutes it; the state is a word; typed
   );
   assert.match(update.session.instructions, /Speak with the person in Spanish/);
   assert.match(update.session.instructions, /has not connected their ReloCat account in this chat/);
-  assert.deepEqual(update.session.audio.input.transcription, { model: 'gpt-4o-mini-transcribe', language: 'es' });
+  // The language to transcribe, and the names of the available towns as a hint for their spelling.
+  assert.deepEqual(update.session.audio.input.transcription, {
+    model: 'gpt-4o-mini-transcribe',
+    language: 'es',
+    prompt: 'Home buying in Catalonia. Town names such as: Talarn, Lleida.',
+  });
+  assert.match(update.session.instructions, /ReloCat can plan only for the 2 municipalities of Catalonia listed below/);
   assert.equal(update.session.audio.input.turn_detection.type, 'semantic_vad');
 
   await browser.receive({ type: 'session.updated', session: { tools: [{}] } });
@@ -1975,22 +1981,17 @@ test('a free answer is saved in one call, shown as chips that fill in, and nothi
   );
   assert.deepEqual(saved.updated, ['monthlyIncome', 'monthlyExpenses', 'purchaseSavings', 'householdSize']);
   assert.deepEqual([saved.rejected, saved.stored], [[], 'device']);
-  // The town is an exact match of the pilot, proposed and not stored: it waits for a yes.
-  assert.deepEqual(
-    [place.saved, place.reason, place.match],
-    [false, 'needs_confirmation', { code: '252154', name: 'Talarn', comarca: 'Pallars Jussà' }],
-  );
-  // What was understood, as chips: each figure formatted for the language, the town with a yes and a no.
+  // The town is exactly one of the available towns: it is stored as soon as it is named, with no yes asked.
+  assert.deepEqual([place.saved, place.places], [true, ['Talarn']]);
+  // What was understood, as chips: each figure formatted for the language, and the town.
   assert.deepEqual(topics(), [
     ['filled', money(310_000)],
     ['filled', money(205_000)],
     ['filled', money(2_400_000)],
     ['filled', '2'],
-    ['asks', 'Talarn'],
+    ['filled', 'Talarn'],
   ]);
-  assert.deepEqual([card.node('place-yes').hidden, card.node('place-no').hidden], [false, false]);
-  assert.deepEqual([card.label('place-yes'), card.label('place-no')], ['Sí, Talarn', 'Talarn no']);
-  // The figures are cents in the plan the card asks for, and no town is in it yet.
+  // The figures are cents in the plan the card asks for, with the town.
   await settle(250);
   await card.serve();
   const planned = card.toolCalls.findLast(call => call.name === 'plan_home_savings');
@@ -2004,22 +2005,7 @@ test('a free answer is saved in one call, shown as chips that fill in, and nothi
     ],
     [310_000, 205_000, 2_400_000, 2],
   );
-  assert.deepEqual(plain(planned?.arguments.municipalityCodes), []);
-
-  // The follow-up names only what is missing; the card shows its question and the same yes and no under it.
-  await card.says('Solo falta el lugar. ¿Te refieres a Talarn, en el Pallars Jussà?');
-  assert.equal(card.text('question'), '¿Te refieres a Talarn, en el Pallars Jussà?');
-  assert.deepEqual(
-    card.chips().map(chip => chip.textContent),
-    ['Sí', 'No'],
-  );
-  await card.click('place-yes');
-  assert.equal(card.answers().at(-1), 'Sí, Talarn.');
-  assert.deepEqual([card.node('place-yes').hidden, card.node('place-no').hidden], [true, true]);
-  for (const chip of card.chips()) assert.equal(chip.disabled, true);
-  const [confirmed] = await card.calls(['save_place', { name: 'Talarn', confirmed: true }]);
-  assert.deepEqual([confirmed.saved, confirmed.places], [true, ['Talarn']]);
-  assert.deepEqual(card.topic('topic-place'), ['filled', 'Talarn']);
+  assert.deepEqual(plain(planned?.arguments.municipalityCodes), ['252154']);
 
   // A filled chip is tapped to correct it: the card asks for that one figure in a compact field.
   await card.says('¿Cuántos metros buscas?');
@@ -2098,7 +2084,6 @@ test('a free answer is saved in one call, shown as chips that fill in, and nothi
     plain(partial.toolCalls.findLast(call => call.name === 'plan_home_savings')?.arguments.municipalityCodes),
     [],
   );
-  assert.deepEqual([partial.node('place-yes').hidden, partial.node('place-no').hidden], [true, true]);
 
   // An empty chip asks for its item: a figure in the compact field, the town by name in the reply field.
   await partial.says('Quants estalvis tens per a la compra?');
@@ -2115,7 +2100,7 @@ test('a free answer is saved in one call, shown as chips that fill in, and nothi
   partial.node('answer').value = 'Lleida';
   await partial.submit('typed-answer');
   assert.equal(partial.answers().at(-1), 'Lloc: Lleida');
-  // A name that is not exactly a town of the pilot stores nothing; the similar names are offered to tap.
+  // A name that is not exactly an available town stores nothing; the similar names are offered to tap.
   const [unknownTown] = await partial.calls(['save_place', { name: 'Lle' }]);
   assert.deepEqual([unknownTown.saved, unknownTown.reason], [false, 'no_exact_match']);
   await partial.says('No el trobo. Vols dir Lleida?');

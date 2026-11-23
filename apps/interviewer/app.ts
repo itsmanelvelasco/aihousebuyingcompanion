@@ -815,6 +815,7 @@ async function voiceContext(): Promise<VoiceContext> {
       ...(extras.targetCashCents === undefined ? [] : ['targetCash']),
     ],
     places: places.map(place => place.name),
+    towns: (await interview.pilotTowns()) ?? [],
     nextQuestion: interview.spoken(await interview.nextQuestion()),
   };
 }

@@ -421,7 +421,7 @@ async function start() {
           shortlist = recommendationResult.parse(response);
         }
       } else if (!results && !pilot) {
-        pilot = municipalityListResult.parse(await readTool(call, 'list_catalonia_municipalities', {}));
+        pilot = municipalityListResult.parse(await readTool(call, 'list_catalonia_municipalities', { limit: 1000 }));
         pilot.municipalities.sort((a, b) => a.name.localeCompare(b.name, 'ca'));
       }
     } catch {

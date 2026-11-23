@@ -82,8 +82,8 @@ A personal tool called without sign-in answers HTTP `401` with `WWW-Authenticate
 | Tool | Use |
 | --- | --- |
 | `search_homes` | Find indexed Idealista examples live through treg; returns links, search timestamps and unverified filter/location status. |
-| `list_catalonia_municipalities` | Search pilot coverage by name, comarca or six-digit Idescat code. |
-| `recommend_towns` | Apply hard constraints first, then rank with weighted affordability, school, commute and rural preferences. Read `excluded` for constraint failures or missing evidence. |
+| `list_catalonia_municipalities` | Search every municipality of Catalonia by name, comarca or six-digit Idescat code. Returns the first 40 matches and the total unless `limit` says otherwise. |
+| `recommend_towns` | Apply hard constraints first, then rank with weighted affordability, school, commute and rural preferences. Read `excluded` for constraint failures or missing evidence: it lists the first 20 (`excludedLimit` changes that) and `excludedCount` counts them all. |
 | `recommend_towns_for_profile` | Shortlist towns from household and lifestyle facts. Returns ranked or exploratory towns and what to verify. |
 | `get_town_profile` | Read municipal and comarca indicators, map coordinates, school access, dated rail evidence, sample travel estimates and geographically relevant policies. |
 | `show_town_explorer` | Open the Town Explorer map and cards with a recommendation query or a preselected six-digit municipality code. |
@@ -139,7 +139,7 @@ The committed snapshot returns Térmens, Vallfogona de Balaguer and Vilanova de 
 
 ### Quick travel comparisons
 
-`get_town_profile` returns `travelEstimates` for all 18 mapped municipalities. The endpoints are Lleida-Pirineus and its bus station, Barcelona Sants, Barcelona Airport T1 and T2, Girona railway station, and Girona-Costa Brava Airport.
+`get_town_profile` returns `travelEstimates` for the 18 municipalities with sampled journeys; any other municipality returns none (unknown). The endpoints are Lleida-Pirineus and its bus station, Barcelona Sants, Barcelona Airport T1 and T2, Girona railway station, and Girona-Costa Brava Airport.
 
 Car estimates use an OpenStreetMap-based road model from the town centre, rounded to five minutes. Traffic and parking can change the time. [FOSSGIS OSRM service and OpenStreetMap attribution](https://routing.openstreetmap.de/about.html)
 

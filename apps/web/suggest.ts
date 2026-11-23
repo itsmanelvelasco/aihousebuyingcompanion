@@ -78,6 +78,8 @@ export type SuggestionView = {
   /** Suggested places that are not compared yet and still fit under the limit of the comparison, in rank order. */
   addable: string[];
   excluded: { code: string; name: string | null; reasons: string[]; dataMissing: string[] }[];
+  /** How many municipalities were excluded in all; `excluded` lists the first ones. */
+  excludedCount: number;
   limitations: string[];
 };
 
@@ -114,6 +116,7 @@ export function suggestionView(
       reasons: item.reasons,
       dataMissing: item.dataMissing,
     })),
+    excludedCount: result.excludedCount,
     limitations: result.limitations,
   };
 }

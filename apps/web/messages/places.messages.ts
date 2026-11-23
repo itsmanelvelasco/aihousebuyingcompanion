@@ -56,7 +56,7 @@ export const placesMessages = defineMessages(
     addAPlace: 'Add a place',
     loadingMunicipalities: 'Loading municipalities…',
     listFailed: 'Could not list municipalities',
-    allCompared: 'Every municipality in the pilot is already compared.',
+    allCompared: 'Every municipality is already compared.',
     chooseMunicipality: 'Choose a municipality',
     addPlace: 'Add place',
 
@@ -177,7 +177,7 @@ export const placesMessages = defineMessages(
       addAPlace: 'Afegeix un lloc',
       loadingMunicipalities: 'Carregant els municipis…',
       listFailed: 'No s’han pogut llistar els municipis',
-      allCompared: 'Tots els municipis del pilot ja es comparen.',
+      allCompared: 'Tots els municipis ja es comparen.',
       chooseMunicipality: 'Tria un municipi',
       addPlace: 'Afegeix el lloc',
 
@@ -297,7 +297,7 @@ export const placesMessages = defineMessages(
       addAPlace: 'Añade un lugar',
       loadingMunicipalities: 'Cargando los municipios…',
       listFailed: 'No se han podido listar los municipios',
-      allCompared: 'Todos los municipios del piloto ya se comparan.',
+      allCompared: 'Todos los municipios ya se comparan.',
       chooseMunicipality: 'Elige un municipio',
       addPlace: 'Añade el lugar',
 

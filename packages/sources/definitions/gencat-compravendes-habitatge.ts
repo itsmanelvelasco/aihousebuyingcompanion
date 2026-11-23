@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Metric } from '../../contracts/places.ts';
 import { metric, municipalityCode } from '../../contracts/places.ts';
 import { madridDate } from '../../places/geography.ts';
+import { normaliseComarca } from '../names.ts';
 import { withComarcaMetrics, withMetrics } from '../overlay.ts';
 import type { LiveData, SourceContext, SourceTown } from '../source.ts';
 import { defineSource } from '../source.ts';
@@ -37,16 +38,17 @@ export function annualRows(rows: Sheet, scope: Scope, year: number) {
 /**
  * Second-hand sales and prices from the two annual sheets. Municipal rows exist only for towns the
  * statistic covers (more than 2,000 residents); the others get no figure. Every comarca of the given
- * towns must have a reference price, or the whole value is rejected.
+ * towns gets its reference price when the workbook states one; none at all rejects the whole value.
  */
 export function salesMetrics(sheets: Record<Scope, Sheet>, towns: SourceTown[], year: number) {
   const municipal = annualRows(sheets.municipis, 'municipis', year);
   const areas = annualRows(sheets.ambits, 'ambits', year);
   const observedAt = String(year);
+  const municipalByCode = new Map(municipal.map(row => [String(row[0]).padStart(5, '0'), row]));
   const townMetrics = Object.fromEntries(
     towns.map(town => {
       // The workbook uses the five-digit INE code, without the Idescat control digit.
-      const row = municipal.find(row => String(row[0]).padStart(5, '0') === town.code.slice(0, 5));
+      const row = municipalByCode.get(town.code.slice(0, 5));
       const scope = {
         geography: 'municipality' as const,
         geographyName: town.name,
@@ -67,9 +69,13 @@ export function salesMetrics(sheets: Record<Scope, Sheet>, towns: SourceTown[], 
     }),
   );
   const comarcaMetrics = Object.fromEntries(
-    [...new Set(towns.map(town => town.comarca))].sort().map(comarca => {
-      const value = numeric(areas.find(row => row[0] === comarca)?.[usedPriceColumn.ambits]);
-      if (value === undefined || value <= 0) throw new Error(`Missing resale reference price for ${comarca}`);
+    [...new Set(towns.map(town => town.comarca))].sort().flatMap(comarca => {
+      const name = normaliseComarca(comarca);
+      const value = numeric(
+        areas.find(row => typeof row[0] === 'string' && normaliseComarca(row[0]) === name)?.[usedPriceColumn.ambits],
+      );
+      // A comarca the workbook does not price is left out: unknown, never zero.
+      if (value === undefined || value <= 0) return [];
       const entry: Metric = {
         kind: 'resale_eur_per_m2',
         value,
@@ -79,9 +85,11 @@ export function salesMetrics(sheets: Record<Scope, Sheet>, towns: SourceTown[], 
         observedAt,
         sourceUrl: salesUrl('ambits', year),
       };
-      return [comarca, [entry]] as const;
+      return [[comarca, [entry]] as const];
     }),
   );
+  // A layout change would price almost nothing: that is a broken download, not missing data.
+  if (!Object.keys(comarcaMetrics).length) throw new Error('No comarca resale reference price found');
   return { year, townMetrics, comarcaMetrics };
 }
 

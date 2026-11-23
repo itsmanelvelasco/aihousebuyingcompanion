@@ -69,6 +69,74 @@ export function emexMetrics(town: SourceTown, profile: EmexProfile): Metric[] {
   return metrics;
 }
 
+/** The public page of a municipality's figures, cited as the source of what the table states. */
+export const emexPageUrl = (code: string) => `https://www.idescat.cat/emex/?id=${code}`;
+
+type EmexIndicator = { id: string; r?: string; v?: string };
+export type EmexAllTowns = {
+  fitxes: { indicadors: { i: EmexIndicator[] | EmexIndicator }; cols: { col: { id: string }[] | { id: string } } };
+};
+
+const fields = [...new Set([...indicators.map(indicator => indicator.field), nationality.foreign, nationality.total])];
+/** The same indicators for every municipality of Catalonia in one answer, one column per municipality. */
+export const emexTableUrl = `https://api.idescat.cat/emex/v1/dades.json?i=${fields.join(',')}&tipus=mun&lang=ca`;
+
+const published = (text: string | undefined) =>
+  text !== undefined && /^-?\d+(\.\d+)?$/.test(text.trim()) ? Number(text) : undefined;
+
+/**
+ * Turns the all-municipalities table into dated municipal metrics for the given towns. A town the
+ * table has no column for gets nothing, and an unpublished figure is left out, never zeroed.
+ */
+export function emexTableMetrics(towns: SourceTown[], table: EmexAllTowns): Record<string, Metric[]> {
+  const columns = new Map(oneOrMany(table.fitxes.cols.col).map((column, index) => [column.id, index]));
+  const byField = new Map(
+    oneOrMany(table.fitxes.indicadors.i).map(indicator => [
+      indicator.id,
+      { observedAt: indicator.r, values: (indicator.v ?? '').split(',') },
+    ]),
+  );
+  const result: Record<string, Metric[]> = {};
+  for (const town of towns) {
+    const column = columns.get(town.code);
+    if (column === undefined) continue;
+    const scope = {
+      geography: 'municipality' as const,
+      geographyName: town.name,
+      sourceUrl: emexPageUrl(town.code),
+    };
+    const read = (field: string) => {
+      const entry = byField.get(field);
+      return { value: published(entry?.values[column]), observedAt: entry?.observedAt };
+    };
+    const metrics: Metric[] = [];
+    for (const { field, kind, unit } of indicators) {
+      const { value, observedAt } = read(field);
+      if (value === undefined || value < 0 || !observedAt || (positiveOnly.has(kind) && value === 0)) continue;
+      metrics.push({ ...scope, kind, unit, value, observedAt });
+    }
+    const foreign = read(nationality.foreign);
+    const total = read(nationality.total);
+    if (
+      foreign.value !== undefined &&
+      total.value &&
+      foreign.value >= 0 &&
+      foreign.value <= total.value &&
+      foreign.observedAt
+    ) {
+      metrics.push({
+        ...scope,
+        kind: 'foreign_population_percent',
+        unit: '% of residents',
+        value: Math.round((foreign.value / total.value) * 1000) / 10,
+        observedAt: foreign.observedAt,
+      });
+    }
+    if (metrics.length) result[town.code] = metrics;
+  }
+  return result;
+}
+
 export default defineSource({
   id: 'idescat-emex',
   title: 'El municipi en xifres (EMEX)',
@@ -77,12 +145,13 @@ export default defineSource({
   ttlMs: 24 * 60 * 60 * 1000,
   schema: z.record(municipalityCode, z.array(metric).nonempty()),
   async fetch(context) {
-    const profiles = await Promise.all(
-      context.municipalities.map(town => context.json<EmexProfile>(emexProfileUrl(town.code))),
-    );
-    return Object.fromEntries(
-      context.municipalities.map((town, index) => [town.code, emexMetrics(town, profiles[index])]),
-    );
+    // One request covers every municipality; a profile per town would be hundreds of requests.
+    const table = await context.json<EmexAllTowns>(emexTableUrl);
+    const metrics = emexTableMetrics(context.municipalities, table);
+    if (Object.keys(metrics).length < context.municipalities.length) {
+      throw new Error('The municipal figures table does not cover every municipality');
+    }
+    return metrics;
   },
   overlay: withMetrics,
 });
